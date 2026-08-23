@@ -79,7 +79,7 @@ indent-style = "space"
 | `T20` | flake8-print — **실행 경로에서** print 금지 |
 
 > **충돌·제외**: `COM812`/`COM819`(포매터가 트레일링 콤마 처리)는 ignore.
-> `TC`(type-checking)는 Dagster 충돌로 보류. `PD901`(df 네이밍)은 ruff 0.13에서 제거됨.
+> `TC`(type-checking)는 Dagster 충돌로 켜지 않는다. `PD901`(df 네이밍)은 ruff 0.13에서 제거됨.
 > `TRY003`(예외 메시지를 클래스 밖에 작성)은 ignore — 파이프라인 디버깅 메시지 가독성 우선.
 
 > 🔴 **`T20`의 면제 범위가 곧 "실행 경로"의 정의다.** `scripts/**`는 hook 가드가 결정 사유를
@@ -357,7 +357,7 @@ def load_config(path: Path, retries: int = 3) -> dict[str, str] | None:
 - `FA` — 필요 시 `from __future__ import annotations` 권장.
 - `RUF013` — 암묵적 Optional(`x: int = None`) 금지.
 - `UP` — `Optional`/`List` 등 구문법을 모던 문법으로 자동 수정.
-- `TC`(type-checking import 분리)는 **Dagster 런타임 타입 introspection과 충돌**해 보류한다.
+- `TC`(type-checking import 분리)는 **켜지 않는다** — Dagster 런타임 타입 introspection과 충돌한다.
 - 테스트(`**/tests/**`)는 `ANN`·`D`·`S101`(assert)·`ARG`(미사용 인자) 면제(`per-file-ignores`).
 - `Q`(따옴표 스타일)는 포매터가 강제하는 double-quote와 동일 기본값이라 충돌 없이 명시적으로 둔다.
 - `ARG`(미사용 인자)는 Dagster 자산 함수의 `context` 등 실제 미사용 인자를 잡는다 — 필요 시 `_` 접두사로 의도 표시.

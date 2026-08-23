@@ -35,27 +35,12 @@ compose 쪽은 `legacy-storage` profile로 **상시 기동만 끊긴 레거시**
 
 ### 현행 사실
 
-> **관측 시각** 2026-08-22 10:59 KST(`date` 실측) · **모집단** 저장소 전체(`compose.yml` 서비스 6개,
-> `k8s/**` 매니페스트, `dagster/dockerfile.d/src/` 설정, `dagster_project/` 코드) ·
-> **계측 도구** `grep -rn` / `cat` / `sed -n`(파일 정적 판독. 러닝 클러스터 질의 아님).
-> ⚠️ 아래 "0건"은 검색 경로가 살아 있음을 대조군으로 확인한 뒤 적었다 —
-> 같은 조건의 `readinessProbe` 검색이 **2건 hit**했다([../conventions/monitoring.md](../conventions/monitoring.md) §3).
+📌 **선언 vs 실제 대조표와 그 수치는 저장소 밖에 있다** —
+`$OBSIDIAN_VAULT/status/observations.md` §관측·모니터링 실태.
+관측 시각·모집단·계측 도구·대조군이 그쪽에 병기돼 있다.
 
-| 축 | 선언 | 실제 |
-| --- | --- | --- |
-| **Prometheus** | `compose.yml:186-206` · profile `monitoring` · `prom/prometheus:v2.21.0` · 포트 `9000:9090` · `deploy.resources` 1 CPU / 1G | **healthcheck 없음**, `depends_on`이 조건 없는 구식 리스트([../conventions/docker.md](../conventions/docker.md) §1-4 미준수) |
-| **스크레이프 타깃** | `prometheus/prometheus.yml`(11줄, 이 디렉터리의 **유일한 파일**) | `prometheus:9090`(self) + `seaweedfs:9324` **2개뿐** · `scrape_interval: 30s` · `rule_files` · `alerting`(Alertmanager) · `remote_write` **전무** |
-| **SeaweedFS 메트릭** | compose는 `-metricsPort=9324`(`compose.yml:173`), 호스트 미게시(내부 스크레이프 전용). `monitoring` profile이 함께 걸려 있어(`:162-165`) 수집기와 같이 뜬다 | **compose 쪽은 응답한다** — 다만 그 대상이 `legacy-storage`, 즉 **정본이 아니다**(스토리지 정본은 2026-08-19 K8s로 이전). 🔴 그리고 **정본인 `k8s/seaweedfs.yaml`의 `args`에는 `-metricsPort`가 없고 포트도 s3·filer·master 3개뿐** — 이 두 사실이 겹쳐 **응답하는 대상과 정본이 갈렸다** |
-| **compose healthcheck** | 서비스 6개 | **2개만** — `postgres`(`pg_isready`) · `trino`(`curl /v1/info`). `dagster-webserver`·`dagster-daemon`·`seaweedfs`·`prometheus` 없음 |
-| **K8s probe** | — | readiness **2개뿐** — `k8s/spark/spark-connect-server.yaml`(tcpSocket 15002) · `k8s/spark/spark-thrift-server.yaml`(exec/beeline `SELECT 1`). liveness·startup 0건 |
-| **Prometheus Operator** | — | **미설치**(`scripts/k8s-operators.sh`는 Spark·Flink·CNPG만 설치). `k8s/` 전체에 `ServiceMonitor`·`PodMonitor`·`PrometheusRule` **0건** |
-| **Dagster 설정** | `dagster/dockerfile.d/src/dagster.yaml` 최상위 키 7개(scheduler · run_coordinator · run_launcher · run_storage · schedule_storage · event_log_storage · telemetry) | **`run_monitoring` 없음**, **`compute_logs` 미설정**(기본 `LocalComputeLogManager`), `telemetry.enabled: true` |
-| **Dagster 알림** | — | `dagster_project` 전체에 sensor · `@asset_check` · Slack/이메일 알림 **0건** |
-| **Dagster 스케줄** | `defs/automation.py`의 `dbt_all_schedule`, cron `0 * * * *`, `execution_timezone="Asia/Seoul"` | `default_status=STOPPED` — 근거 주석이 신호 포화(배경 소음)를 든다 |
-| **Flink 오퍼레이터 메트릭** | `k8s/flink/operator-values.yaml`의 `kubernetes.operator.metrics.reporter.slf4j.*` | **slf4j 리포터**, `interval: 5 MINUTE` → **로그로만** 나간다. Prometheus 리포터 미설정 |
-| **Spark 메트릭** | driver UI 4040 Ingress만 | `k8s/spark/` 전체에 `prometheus`·`jmx` **0건** — `spark.ui.prometheus.enabled`·JMX exporter 미설정 |
-| **Grafana · Alertmanager · exporter** | — | 저장소 전체 **0건** |
-| **실질 관측 수단** | — | ⓐ Docker json-file 로그 ⓑ Dagster `context.log` + 머티리얼라이즈 메타데이터 ⓒ Spark·Flink Web UI(Ingress) ⓓ readinessProbe 2개 |
+여기 두지 않는 이유는 **그 표가 가장 빨리 낡는 종류**이기 때문이다. healthcheck 하나를 붙이거나
+probe 하나를 지우면 값이 바뀌는데, 규칙 문서에 박아 두면 아무도 손대지 않아도 거짓이 된다.
 
 ### 대안 비교 — 왜 지금 쓰지 않는가
 
@@ -88,14 +73,14 @@ compose 쪽은 `legacy-storage` profile로 **상시 기동만 끊긴 레거시**
   🔴 **원인은 같다 — SeaweedFS가 compose와 K8s에 이중으로 존재한다.** 방향만 뒤집혔다.
   ⚠️ 그리고 갈리는 것이 하나 더 있다. **발견 경로**다. 2026-08-18은 사람이 그 자리에서 한 번
   데었기 때문에 드러났지만, 지금 그 자리에서 답하는 것은 **초록불을 띄우는 수집기**다.
-  ⚠️ 이것을 *결정*으로 적어 둔 문장은 찾지 못했다 — 모집단 `docs/**/*.md`,
-  키워드 `metricsPort`·`9324` 검색에서 hit는 [../conventions/docker.md](../conventions/docker.md)의
-  compose profile 설명 1건뿐이었다(2026-08-22 10:59 KST). **"기록이 없다"이지 "결정이 없었다"가 아니다.**
-- Prometheus 이미지가 **`prom/prometheus:v2.21.0`** 이고, 이는 **2020-09-11 릴리스**다.
-  현재 최신 안정은 **`v3.14.0`(2026-08-17)** 으로 **메이저 한 계열이 통째로 뒤에 있다**
-  (관측 시각 2026-08-22 · 출처 GitHub 릴리스 이력, 아래 §참고). 버전 고정 자체는 규칙에 맞다
-  ([../conventions/docker.md](../conventions/docker.md) §1-3) — **문제는 고정이 아니라
-  갱신된 적이 없다는 것**이고, 이 격차를 "관리되는 고정"이 아니라 **방치의 신호**로 읽는다.
+  ⚠️ 이것을 *결정*으로 적어 둔 문장은 찾지 못했다.
+  🔴 **그러나 "기록이 없다"는 "결정이 없었다"가 아니다** — 검색 결과를 의도의 부재로 읽지 않는다.
+  검색 모집단과 hit 수는 `$OBSIDIAN_VAULT/status/observations.md` §기록의 부재 vs 결정의 부재.
+- 🔴 **버전 고정과 방치는 겉모습이 같다.** 태그가 박혀 있으면 규칙에는 맞지만
+  ([../conventions/docker.md](../conventions/docker.md) §1-3), 그것이 *관리되는 고정*인지
+  *한 번 적고 잊은 것*인지는 태그만 봐서 알 수 없다.
+  ⇒ 판별 기준은 **갱신 이력**이다. 메이저 계열이 통째로 뒤처져 있으면 방치로 읽는다.
+  현재 격차는 `$OBSIDIAN_VAULT/status/observations.md` §Prometheus 버전 격차.
 - **Prometheus 자신에 healthcheck가 없다.** 수집기가 죽어도 compose는 정상으로 보고한다 —
   "메트릭이 0"과 "수집기가 죽었다"를 구분할 수단이 그 서비스 자체에 없다
   ([../conventions/monitoring.md](../conventions/monitoring.md) §3).
