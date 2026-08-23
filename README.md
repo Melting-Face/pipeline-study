@@ -220,8 +220,7 @@ DBT_TARGET=dev dbt build                                 # Trino로 값 대조
 ```mermaid
 flowchart TB
     U(["🚦 사용자 · 최종 게이트<br/>커밋 · 발행 · apply는 사람이 승인"])
-    SUP["supervisor · 메인 루프<br/>미션 정의 · 배정 · 취합 · 보고"]
-    DIR["director · 판정자 · 쓰기 X<br/>계획 · 권한 매니페스트 · 배정<br/>판정축: 계획 대비 실행 정합<br/>🔴 Agent 도구 실재 미확인"]
+    SUP["supervisor · 메인 루프<br/>미션 정의 · 계획 · 배정 · 취합 · 보고<br/>판정축: 계획 대비 실행 정합"]
 
     subgraph impl["구현 축 · 쓰기 O · model=inherit"]
         DE["data-engineer<br/>Dagster 에셋 · dbt 모델"]
@@ -238,7 +237,7 @@ flowchart TB
 
     RES["researcher · 외부 1차 출처<br/>질의 유출 통제 · 인젝션 격리"]
 
-    subgraph outside["director 관할 밖 · supervisor 직접 배정"]
+    subgraph outside["게이트·기록 · 자기 판정 대상을 배정·수정하지 않는다"]
         SEC["security · 반출 · 규제 컨펌 게이트<br/>계획 1회 · 작업내용 1회 · 델타 조건부"]
         ARC["archivist · 저널 기록 전담"]
         SKM["skill-matcher · 스킬 배선 감사"]
@@ -261,14 +260,11 @@ flowchart TB
 - 축(**구현 / 실측 대조 / 체계 감사**)은 도메인이 달라도 **동일**하다 — 판단 규칙을 하나로 유지하려는 것.
   분석·공개는 **새 축이 아니라 새 도메인**이라 구현 축 1명(`analyst`·`tech-writer`)만 두고 판정은 재사용한다.
 - **판정자는 쓰지 않는다** — `disallowedTools: Write, Edit, NotebookEdit`으로 미부여(난이도)가 아니라 거부(강제).
-  **`director`도 판정자다**(2026-08-20) — 도구로 직접 작업하지 않고 계획·배정·판정만 하며,
-  판정 축은 **「계획 대비 실행 정합」**(값=`*-verifier` / 체계=`*-qa` / 노출=`security` / 배선=`skill-matcher` /
-  기록=`archivist`와 중첩되지 않는다).
-- **관할 밖 4종**(`security`·`archivist`·`skill-matcher`·`tech-writer`)은 supervisor가 직접 배정한다 —
-  기준은 **이해충돌 하나**이고 형태가 넷 다 다르다 — `archivist`·`skill-matcher`는 **계층 자체를 감사·기록**하고,
-  `security`는 **director 결정을 컨펌**하므로 지휘를 받으면 자기 컨펌이 되며, `tech-writer`는
-  **director의 행동 규칙이 담긴 정본**을 쓴다. 🔴 **「관할 밖」(4종)과 「계층 밖」(`archivist`·`skill-matcher` 2종)은
-  다른 축**이다 — `security`·`tech-writer`는 관할 밖이지만 도메인 산출물을 다뤄 **계층 밖은 아니다**.
+  판정 축은 다섯이고 서로 중첩되지 않는다: 값=`*-verifier` / 체계=`*-qa` / 노출=`security` /
+  배선=`skill-matcher` / 기록=`archivist`. **「계획 대비 실행 정합」은 supervisor가 직접 진다.**
+- 🔴 **판정자는 자기 판정 대상을 배정·수정하지 않는다.** 2계층이라 배정 주체가 supervisor 하나뿐이어서
+  이 원칙의 **강제는 도구 축**에 있다 — 판정자 6종의 쓰기 거부, `tech-writer`의 `except`(아래).
+  **「계층 밖」은 `archivist`·`skill-matcher` 2종**이다(도메인 작업을 하지 않고 계층 자체를 감사·기록한다).
 - **`tech-writer`는 저장소의 문서 소유자**다 — `docs/**`와 최상위 `README.md`를 쓴다. 🔴 단 가드는 디렉터리
   단위라 `docs/analyses/**`(내용은 `analyst` 소관)와 `docs/conventions/**`(규칙 신설은 supervisor 소관)는
   **규율로만** 갈린다. 🔴 **2026-08-22부터 `docs/conventions/**` 에는 `ask` 프롬프트도 없다**(정본 설계 게이트
@@ -280,9 +276,14 @@ flowchart TB
   `researcher`에 보낼 **조사 요청서**를 반환한다(`skill-matcher`→supervisor→`researcher`→supervisor→채점·제안
   →`security`→🚦사람). 찾기는 `researcher`, 배선 판정은 `skill-matcher`, 출처 신뢰성은 `security`로 **셋이 갈린다** —
   🔴 **감사자가 배선까지 하면 자기가 배선한 것을 자기가 감사**하게 되어 이 워커의 존재 이유가 사라진다.
-- ⚠️ **3계층(supervisor→director→subagent) 성립 여부는 `미확인`이다** — 2026-08-19엔 서브에이전트에 `Agent`
-  도구가 없어 중첩 위임 불가로 봤으나, 그 에러 문구가 자기모순(같은 세션의 supervisor는 `Agent`를 썼다)이라
-  **원인이 프론트매터 선언일 가능성**이 남는다. 새 세션에서 재측정할 때까지 배정은 supervisor가 대행한다.
+- 🔴 **2026-08-23에 3계층 → 2계층으로 바뀌었다.** 중간 계층 `director`를 폐기했다 — 3축 실측이 모두 같은
+  방향이었다: ⓐ 정의 파일 17,430바이트인데 판정 축 문구가 정본 5~6곳 **중복** ⓑ 저널 65건 중 **실배정 1건**
+  (91~97% 미경유) ⓒ `Agent` 호출 발행 시 `Agent is disabled for this session, in subagents as well as here`로
+  **배정 불가 재현**(대조군: 같은 워커의 `Bash` 성공 · supervisor의 `Agent` 8회 성공).
+  🔴 폐기 이유는 "안 돌아서"가 아니라 **유령 행위자**다 — 절차가 존재하지 않는 행위자를 지시하면
+  *지켜지지 않는 것이 아니라 지킬 수 없고*, 실제로 그 때문에 **`security` 컨펌이 하루 0회**였던 기록이 있다.
+  잃은 것은 **Δ 이탈 보고의 독립 주체** 하나이고, `security`가 G2에서 **변경 파일 집합을 직접 재구성**해
+  대조하는 것으로 대체했다. 상세 [`agents.md` §director 폐기](docs/conventions/agents.md).
 
 ### 파이프라인 — 미션 한 건이 흐르는 경로
 
@@ -326,7 +327,7 @@ flowchart LR
 | [`journal_guard.py`](scripts/journal_guard.py) | `SessionStart` · `PreToolUse(Write)` · `Stop` | 저널 `NN` 넘버링 경합 · 규약 위반 생성 · 기록 누락 경고 |
 | [`session_sync_guard.py`](scripts/session_sync_guard.py) | `PreToolUse(Bash·Agent·Edit\|Write\|NotebookEdit)` | 병렬 세션의 중복 작업 · 워킹트리 전역 git 명령 |
 | [`protected_paths_guard.py`](scripts/protected_paths_guard.py) | `PreToolUse(Bash)` | 보호 경로(`.env`·lock 등) 우회 수정 |
-| [`worker_path_guard.py`](scripts/worker_path_guard.py) | `tech-writer`·`researcher`·`director`·`data-engineer`·`devops-engineer`·`archivist`·`data-extractor` 프론트매터 `hooks` | 워커별 쓰기 경로 이탈(`allow`/`deny`) + **`except`**(넓은 `allow` 안에 박힌 파일 단위 구멍 막이 — `tech-writer`의 `docs/security.md`·`docs/skills.md`. `allow`/`deny`보다 **먼저** 평가, 대소문자 무시) + **가드 스크립트 자기보호**(`*_guard.py`는 워커 무관 `deny`) (✅ `tech-writer` 3셀 대조로 실발동 확인 — 🔴 단 **뒤 3종은 2026-08-20 신규 배선분이라 `미확인`**, 새 세션 재대조 필요. 🔴 **`except` 축은 ✅ 라이브 실발동 확인 — 단 `Edit` 도구 한정**이고 `Write`·`NotebookEdit`은 미시도다. 근거는 *"막혔다"* 가 아니라 *"`allow` 분기와 **다른 분기 문구**로 막혔다"* 이며, 대조군이 **먼저** 통과해 관측 경로 생존을 확보했다. 정본 [`agents.md`](docs/conventions/agents.md) §`except` 축 대조) |
+| [`worker_path_guard.py`](scripts/worker_path_guard.py) | `tech-writer`·`researcher`·`data-engineer`·`devops-engineer`·`archivist`·`data-extractor` 프론트매터 `hooks` | 워커별 쓰기 경로 이탈(`allow`/`deny`) + **`except`**(넓은 `allow` 안에 박힌 파일 단위 구멍 막이 — `tech-writer`의 `docs/security.md`·`docs/skills.md`. `allow`/`deny`보다 **먼저** 평가, 대소문자 무시) + **가드 스크립트 자기보호**(`*_guard.py`는 워커 무관 `deny`) (✅ `tech-writer` 3셀 대조로 실발동 확인 — 🔴 단 **뒤 3종은 2026-08-20 신규 배선분이라 `미확인`**, 새 세션 재대조 필요. 🔴 **`except` 축은 ✅ 라이브 실발동 확인 — 단 `Edit` 도구 한정**이고 `Write`·`NotebookEdit`은 미시도다. 근거는 *"막혔다"* 가 아니라 *"`allow` 분기와 **다른 분기 문구**로 막혔다"* 이며, 대조군이 **먼저** 통과해 관측 경로 생존을 확보했다. 정본 [`agents.md`](docs/conventions/agents.md) §`except` 축 대조) |
 | [`analyst_path_guard.py`](scripts/analyst_path_guard.py) | `analyst` 프론트매터 `hooks` | 같은 목적 (✅ 실발동 확인 — 과거 미발동은 **`hooks`가 정의 로드 시점에 스냅샷**되기 때문) |
 
 - 🔴 **`hooks`를 세션 도중 추가·수정하면 그 세션에는 반영되지 않는다** — 배선을 바꾸면 **새 세션에서** 3셀 대조를 다시 돌린다.

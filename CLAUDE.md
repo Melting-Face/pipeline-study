@@ -271,23 +271,27 @@
   파일 경로 경계는 **`ask`가 아니라 `deny`** 여야 막힌다(auto 모드가 파일 도구의 `ask`를 흡수).
   🔴 **스킬 설치·`skills-lock.json` 편집은 하지 않는다** — 외부 코드를 실행 컨텍스트에 주입하는 **공급망·비가역**
   행위라 계획만 반환하고 `security` 컨펌 → 사용자 승인을 거친다.
-- **에이전트 오케스트레이션·기록관**: AI 세션을 **3계층(supervisor→director→subagent)** 으로 나눈다(**director는 우선 1명**,
-  도메인 무관). 규칙은 여기, **근거·실측·반증 사례는 정본** [`docs/conventions/agents.md`](docs/conventions/agents.md)에 둔다.
-  **director는 판정자다** — 도구로 직접 작업하지 않고 **배정계획 + 권한 매니페스트**(워커별 대상 경로·
-  비가역 유무·필요 게이트)를 supervisor에 제출해 **승인받은 뒤 배정·감독**한다. 판정 축은
-  **「계획 대비 실행 정합」**(도메인 품질이 아니다 — `*-verifier`=값 / `*-qa`=체계 / `security`=노출 /
-  `skill-matcher`=배선 / `archivist`=기록과 중첩되지 않는다). **승인 범위 밖**(비가역·비용·규약변경·범위 밖)
-  **이나 특이사항**(드리프트·결과충돌·반복실패·비승인변경)은 **supervisor에 에스컬레이션**한다.
+- **에이전트 오케스트레이션·기록관**: AI 세션을 **2계층(supervisor → worker)** 으로 나눈다.
+  규칙은 여기, **근거·실측·반증 사례는 정본** [`docs/conventions/agents.md`](docs/conventions/agents.md)에 둔다.
+  supervisor가 **분해·계획(plan 모드·스킬) → 권한 매니페스트 → 배정 → 판정 → 보고**를 직접 한다.
+  🔴 **분해 전에 3문항에 답한다** — ①무엇을(산출물 형태까지) ②왜 지금(Rule of Three인가 한 번의 불편인가)
+  ③성공을 어떻게 아는가(관측 경로가 살아 있는가). **하나라도 못 답하면 분해하지 말고 사용자에 `[질의]`**
+  (선택지와 권고안을 함께). 추측으로 채운 전제는 계획서 안에서 사실처럼 굳는다.
   🔴 권한 매니페스트는 **선언이지 기계 강제가 아니다**.
-  **`security`·`archivist`·`skill-matcher`·`tech-writer` 4종은 director 관할 밖**(supervisor 직접 배정) —
-  기준은 **이해충돌 하나**다. 🔴 **「관할 밖」(4종)과 「계층 밖」(`archivist`·`skill-matcher` 2종)은 다른 축**이다.
-  ⚠️ **3계층 성립 여부는 `미확인`** — 열릴 때까지 supervisor가 배정과 `security` 컨펌을 대행하고,
-  **새 세션에서 실호출로 재측정**한다(자기보고 아닌 런타임 응답으로).
+  🔴 **판정자는 자기 판정 대상을 배정·수정하지 않는다** — 강제는 **도구 축**이다(판정자 6종 쓰기 거부,
+  `tech-writer`의 `except`). **「계층 밖」은 `archivist`·`skill-matcher` 2종**(계층 자체를 감사·기록).
+  판정 축 다섯은 중첩되지 않는다: `*-verifier`=값 / `*-qa`=체계 / `security`=노출 / `skill-matcher`=배선 /
+  `archivist`=기록. **「계획 대비 실행 정합」은 supervisor가 직접 진다**(아래 Δ 자기신고 문제 참조).
+  ⚠️ **`director` 계층은 2026-08-23 폐기**했다 — 서브에이전트에 `Agent`가 없어 배정이 불가능한데
+  규약만 살아 있어 **컨펌이 하루 0회가 된 사고**를 냈다. 🔴 **아무도 실행할 수 없는 절차를 적으면
+  지켜지지 않는 게 아니라 지킬 수 없다.** 저널·옛 문서의 "3계층"·"관할 밖"은 폐기 전 판본이다.
 
   **① 게이트·저널** — 🔴 **`security` 최종 컨펌은 「계획(G1) + 작업내용(G2) + 계획 델타(Δ·조건부)」**.
   **G1·G2는 한 벌로** 올린다(쪼개면 **파일 사이의 조합에서 생기는 노출**을 구조적으로 못 본다).
   **Δ 트리거**는 계획 밖의 ⓐ쓰기 경로 추가 ⓑ비가역 작업 ⓒ외부 발신이고, **비가역은 실행 *전에* 판정**한다.
-  게이트를 좁힌 대가는 director의 **이탈 보고 의무**다. 동일 결정 재컨펌 2회 초과 시 에스컬레이션.
+  게이트를 좁힌 대가는 supervisor의 **이탈 보고 의무**인데, 2계층에서 그것은 **자기신고**다
+  ⇒ **G2에서 `security`가 `git status`·`git diff --stat`으로 변경 파일 집합을 직접 재구성**해
+  G1 매니페스트와 대조한다(제출 목록을 재료로 삼지 않는다). 동일 결정 재컨펌 2회 초과 시 에스컬레이션.
   🔴 **"호출이 줄었다"를 실효로 읽지 않는다**(원칙 7).
   저널의 **기록 주체는 `archivist`**(경합 방지 single-writer) — 호출 실패·세션 급종료·**워커 배정 불가** 시에만
   supervisor가 폴백한다. **`$OBSIDIAN_VAULT`(기본 `~/obsidian`)** 의 `agents/<YYYY-MM-DD>/<NN>-<mission>.md`에
@@ -351,16 +355,15 @@
 
   **③ 강제 수단과 그 한계** — **프론트매터는 `model`·`disallowedTools`까지 명시**한다 — `model`은 **생략 시 기본값이 `inherit`**라
   전원이 최상위 모델로 돌아 비용 제어가 사라진다. 판정·기록 워커(`*-verifier`·`*-qa`·`archivist`·`skill-matcher`)는
-  **`sonnet`**, 결정을 만드는 쪽(`director`·`*-engineer`·`analyst`·`security`)은 **`inherit`**.
+  **`sonnet`**, 결정을 만드는 쪽(`*-engineer`·`analyst`·`security`)은 **`inherit`**.
   판정자 6종은 `disallowedTools: Write, Edit, NotebookEdit`으로 **미부여(난이도) → 거부(강제)** 로 올린다.
-  🔴 **`director`의 `disallowedTools: Agent(...)`는 기계 강제가 아니다 — 효력 미확인**이다
-  (서브에이전트에 `Agent` 도구 자체가 없어 세부 규칙까지 도달하지 못한다). 선언은 의도 기록으로 남기되
-  "막혔다"고 읽지 말고 **`skill-matcher`·`archivist`는 supervisor가 직접 배정**한다.
-  🔴 **`Agent(security)`는 막지 않는다** — 관할 밖은 *배정* 금지이지 *컨펌 질의* 금지가 아니다.
+  🔴 **인자형 `disallowedTools`(`Agent(archivist)` 같은)는 세부 필터가 아니라 도구 전체를 제거할 수 있다** —
+  폐기된 `director`가 그 사례다(`tools:` 미지정일 때 배정 33회가 실제로 돌았고, 명시로 바꾼 커밋 뒤 `Agent`가 사라졌다).
+  ⇒ **통제를 좁히는 변경일수록 실호출로 확인**한다.
   ❌ **`permissionMode`는 쓰지 않는다** — 부모가 auto 모드면 **무시**되어 "막았다고 믿는" 상태만 만든다.
   🔴 **워커별 경로 범위는 `permissions`로 못 건다**(세션 전역) — **에이전트 정의 내 `hooks`만이 유일한 수단**이고
   강제 범위는 **`Write`/`Edit`/`NotebookEdit` 도구 경로뿐**이다. `disallowedTools`가 `Write`를 **먼저 제거**하는
-  워커(`director`·`researcher`)는 hook에 도달조차 않으니 그 층은 심층 방어로만 읽는다.
+  워커(`researcher`)는 hook에 도달조차 않으니 그 층은 심층 방어로만 읽는다.
   🔴 **`hooks`를 고쳤으면 새 세션에서 재대조**한 뒤 "막힌다"고 쓴다 — 단 **적용 대상은 「배선」(matcher·`command`)뿐**이고
   **가드 스크립트 본문은 매 호출 즉시 반영**된다(로직 수정은 즉시, 프론트매터 수정만 새 세션).
   🔴 프론트매터 `command`는 `settings.json`과 **인용 규칙이 다르다**(정본 `"$CLAUDE_PROJECT_DIR/scripts/….py"`) —
