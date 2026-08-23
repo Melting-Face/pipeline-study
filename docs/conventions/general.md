@@ -43,7 +43,8 @@
 ### 실행 (pre-commit)
 
 커밋 시 [`pre-commit`](https://pre-commit.com/)이 린터·포매터·시크릿 스캔을 자동 실행한다(`.pre-commit-config.yaml`).
-규칙의 단일 출처는 위 표의 "설정 위치"인 도구 네이티브 파일이며, pre-commit은 **'언제 무엇을 실행할지'만** 정의한다(스테이징된 파일만 검사).
+규칙의 단일 출처는 위 표의 "설정 위치"인 도구 네이티브 파일이다.
+pre-commit은 **'언제 무엇을 실행할지'만** 정의하며 스테이징된 파일만 검사한다.
 
 ```bash
 uv tool install pre-commit
@@ -193,7 +194,16 @@ git push origin v0.1.0
 uv run scripts/doc_lint.py                 # 저장소 전체
 uv run scripts/doc_lint.py --summary       # 파일별 위반 수(진척 측정)
 uv run scripts/doc_lint.py docs/setup.md   # 특정 파일
+uv run scripts/doc_lint.py --links         # 링크·앵커 (전역)
 ```
+
+🔴 **링크 검사는 반드시 저장소 전역 1회로 돈다.** 디렉터리를 나눠 검사하면
+**각자 0건인데 합집합에 깨진 링크가 남는다** — 실제로 두 관측자가 각자
+`.claude/agents/**`와 `docs/**`를 검사해 둘 다 0건을 보고했는데 경계에 2건이 있었다.
+
+⚠️ **앵커 슬러그를 손으로 계산하지 마라.** 구두점이 제거되면 그 자리의 공백이
+**합쳐지지 않고 각각 하이픈**이 된다(`RBAC·최소권한 (2.5 · 2.6)` → `…rbac최소권한-25--26`).
+이 규칙을 틀리면 **정상 링크를 위반으로 잡아 "고치다가" 실제로 깨뜨린다.**
 
 ### 서술 규칙
 

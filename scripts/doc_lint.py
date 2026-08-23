@@ -52,6 +52,16 @@ EMPHASIS_MARKER = "🔴"
 
 # 기본 검사 대상 — 사람과 AI가 함께 읽는 문서만. 벤더·생성물은 제외한다.
 DEFAULT_TARGETS = ("CLAUDE.md", "README.md", "docs", "notebooks/README.md")
+
+# 링크 검사는 **저장소 전역 1회**로 돈다.
+#   🔴 분업하면 경계에 사각이 생긴다 — 2026-08-24 실측에서 두 관측자가 각자
+#      `.claude/agents/**`(221건)와 `docs/**`를 검사해 **둘 다 0건**을 보고했는데
+#      합집합에는 깨진 링크가 2건 있었다. 값이 아니라 **모집단**이 문제였다.
+LINK_SCAN_DIRS = ("docs", ".claude/agents", ".claude/commands", "notebooks")
+LINK_SCAN_FILES = ("README.md", "CLAUDE.md")
+
+# `.claude/skills/`는 **외부에서 설치한 벤더 콘텐츠**라 검사하지 않는다.
+#   우리가 고칠 수 없고, 코드 예시의 제네릭 `[T](x: T)`가 링크로 오인된다.
 EXCLUDE_PARTS = ("dbt_packages", "target", ".venv", "node_modules")
 
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
@@ -90,6 +100,64 @@ def width(text: str) -> int:
     )
 
 
+def heading_slug(text: str) -> str:
+    """제목을 GitHub 앵커 슬러그로 바꾼다.
+
+    🔴 **구두점이 제거되면 그 자리의 공백은 합쳐지지 않고 각각 하이픈이 된다.**
+    `4-3. 서비스 RBAC·최소권한 (2.5 · 2.6)` → `…rbac최소권한-25--26`
+    (`·` 양옆 공백이 `--`가 된다). 이 규칙을 틀리면 **정상 링크를 위반으로
+    잡아 "고치다가" 실제로 깨뜨린다.**
+    """
+    text = re.sub(r"[`*\[\]()]", "", text).strip().lower()
+    text = "".join(c for c in text if c.isalnum() or c.isspace() or c in "-_")
+    return re.sub(r"\s", "-", text)
+
+
+def check_links(repo_root: Path) -> list[str]:
+    """저장소 전역의 상대 링크와 앵커가 실재하는지 본다."""
+    targets: list[Path] = [repo_root / f for f in LINK_SCAN_FILES]
+    for d in LINK_SCAN_DIRS:
+        targets.extend(sorted((repo_root / d).rglob("*.md")))
+    docs = [
+        f
+        for f in targets
+        if f.is_file() and not any(p in f.parts for p in EXCLUDE_PARTS)
+    ]
+
+    slugs: dict[Path, set[str]] = {}
+    for f in docs:
+        body = f.read_text(encoding="utf-8")
+        slugs[f] = {
+            heading_slug(m.group(2))
+            for m in re.finditer(r"^(#{1,6})\s+(.*)$", body, re.MULTILINE)
+        }
+
+    findings: list[str] = []
+    for f in docs:
+        rel = f.relative_to(repo_root)
+        # 🔴 펜스 코드 블록은 제외한다 — 코드의 제네릭·슬라이스가 링크로 오인된다.
+        prose_lines, in_fence = [], False
+        for line in f.read_text(encoding="utf-8").splitlines():
+            if FENCE_RE.match(line):
+                in_fence = not in_fence
+                continue
+            if not in_fence:
+                prose_lines.append(line)
+        prose = "\n".join(prose_lines)
+        link_re = r"\]\((?!https?:|mailto:)([^)#]*)(?:#([^)]+))?\)"
+        for m in re.finditer(link_re, prose):
+            path_part, anchor = m.group(1), m.group(2)
+            target = (f.parent / path_part).resolve() if path_part else f.resolve()
+            if path_part and not target.exists():
+                findings.append(f"{rel}: dead-link {path_part} — 대상 파일이 없다")
+                continue
+            if anchor and target in slugs and anchor not in slugs[target]:
+                findings.append(
+                    f"{rel}: dead-anchor {path_part}#{anchor} — 그런 절이 없다"
+                )
+    return findings
+
+
 def main() -> int:
     """대상 문서를 훑어 규약 위반을 출력하고, 위반이 있으면 종료코드 1을 낸다."""
     parser = argparse.ArgumentParser(description="마크다운 가독성 규약 검사")
@@ -97,7 +165,18 @@ def main() -> int:
         "paths", nargs="*", help="검사할 파일/디렉터리 (기본: 저장소 문서 전체)"
     )
     parser.add_argument("--summary", action="store_true", help="파일별 위반 수만 출력")
+    parser.add_argument(
+        "--links", action="store_true", help="저장소 전역 링크·앵커만 검사"
+    )
     args = parser.parse_args()
+
+    if args.links:
+        root = Path(__file__).resolve().parent.parent
+        link_findings = check_links(root)
+        for finding in link_findings:
+            print(finding)
+        print(f"\n링크 위반 {len(link_findings)}건", file=sys.stderr)
+        return 1 if link_findings else 0
 
     repo_root = Path(__file__).resolve().parent.parent
     targets = (
