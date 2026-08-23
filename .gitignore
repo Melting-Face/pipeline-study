@@ -83,6 +83,16 @@ kubeconfig-oci
 # (2026-08-19 실측). 슬래시 없는 형태가 디렉터리·링크 양쪽을 덮는다.
 .claude/.claims
 
+# 조사 게이트 런타임 상태 — `researcher`의 승인 URL 목록(approved.json)과 질의 로그
+# (queries.jsonl). 생성 주체는 scripts/research_gate_guard.py.
+# 🔴 **감사 근거라 저장소 *안*에 둔다**(`security`가 G2에서 읽는다) — 그러나 조회 대상·
+# 질의문이 박제되므로 형상관리 대상은 아니다. 세션 수명의 런타임 상태다.
+# `.claude/.claims`와 같은 이유로 **끝 슬래시를 붙이지 않는다**(슬래시는 디렉터리만 매칭).
+# 🔴 gitignore는 보조다 — `git add -f`와 이미 추적 중인 파일에는 무력하므로
+# `.pre-commit-config.yaml`의 `no-research-state-files` 훅이 2층을 맡는다.
+# 근거: docs/conventions/agents.md §researcher 조사 프로토콜
+.claude/.research
+
 # Dagster 로컬 인스턴스 산출물 (DAGSTER_HOME=dagster/dockerfile.d/src 로 호스트 실행 시 생성)
 dagster/dockerfile.d/src/storage/
 dagster/dockerfile.d/src/.telemetry/

@@ -131,7 +131,9 @@
       "Bash(*wget*--post-data*)",
       "Bash(*wget*--post-file*)",
       "Bash(*wget*--method*)",
-      "Bash(*tistory.com*)"
+      "Bash(*tistory.com*)",
+      "Bash(*.claude/.research/approved*)",
+      "Bash(*.research/approved*)"
     ]
   },
   "hooks": {
