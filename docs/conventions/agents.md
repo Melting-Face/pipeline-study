@@ -64,7 +64,10 @@ flowchart TB
 ```
 
 🔴 **화살표가 supervisor에서만 나간다** — 워커는 서로를 배정하지 못한다. 이것은 규약이면서
-동시에 **런타임 사실**이다: 서브에이전트에는 `Agent` 도구가 없다(§director 폐기의 실측).
+동시에 **현재 실효**다: 워커 정의가 `tools:`에 `Agent`를 열거하지 않아 도구가 제거된다.
+🔴 **「런타임 사실」이 아니다**(2026-08-24 정정) — 하네스는 서브에이전트에 `Agent`를 **기본 지급**하고
+공식 문서는 **3계층까지 허용**한다(§널리 퍼진 서술 대조 ⑥ · §director 폐기의 반증 박스).
+⇒ 이 화살표를 유지하는 것은 **`tools:` 전원 명시**이고, 한 워커라도 미지정이면 조용히 열린다.
 
 🔴 **hook 가드는 구현 워커의 쓰기에도 걸리지만 그림에 선을 긋지 않았다** — 그 엣지 하나가
 dagre 랭크를 끌어당겨 `impl`이 반대편으로 밀려나기 때문이다(실측 후 제거). 대신 여기 적는다:
@@ -301,9 +304,37 @@ dagre 랭크를 끌어당겨 `impl`이 반대편으로 밀려나기 때문이다
 | `model` | 아니오 | ✅ 전원 | **생략 시 기본값 `inherit`** → 전원이 최상위 모델로 돈다(아래) |
 | `permissionMode` | 아니오 | ❌ 미채택 | 🔴 **부모가 auto 모드면 무시**된다 — 이 저장소는 auto로 도는 세션이 있어 **실효 0**. 넣으면 "막았다고 믿는" 상태만 만든다 |
 | `maxTurns` | 아니오 | ❌ 미채택 | 폭주 실측 사례 없음(YAGNI). 관측되면 그때 |
-| `skills` | 아니오 | 🟡 `data-engineer`만(`dagster-expert`) | 🔴 **작동한다**(2026-08-19 probe 실측 — 아래). 기동 시 **전체 본문이 주입**돼 토큰이 상시 붙고, **lock 미고정 스킬은 무결성 미검증 콘텐츠의 상시 주입**이 된다 → **`skills-lock.json` 등재분만** 프리로드한다 |
+| `skills` | 아니오 | 🟡 `data-engineer`만(`dagster-expert`) | 🔴 **작동한다**(2026-08-19 probe 실측 — 아래). 🔴 **주입 단위는 스킬 디렉터리가 아니라 `SKILL.md` 한 파일이다**(2026-08-23 실측 — `references/` 하위는 **미주입**. 근거는 [skills.md](../skills.md) §③). 그 한 파일이 기동 시 상시 붙으므로 **lock 미고정 스킬은 무결성 미검증 콘텐츠의 상시 주입**이 된다 → **`skills-lock.json` 등재분만** 프리로드한다. 🔴 **`references/` 경로를 지문에 적으려면 `Read` 안내를 함께** 붙인다(안 붙이면 죽은 참조) |
 | `hooks` | 아니오 | 🟢 `analyst`·`tech-writer` **실발동 확인** / 🟡 `data-engineer`·`devops-engineer`·`archivist` **배선만**(2026-08-20 신규 — 그 전까지 **미배선**) / ⚪ `researcher`·`director` 도달 불가 | **워커별 경로 강제의 유일한 수단**이고 **작동한다**(2026-08-20 각각 3셀 대조 — 가드 `permissionDecisionReason` 원문·즉시 `deny`). 🔴 **`worker_path_guard.py`의 `BOUNDARIES`에 경계가 적혀 있다고 그 워커가 막히는 것이 아니다** — 7종 중 3종은 `hooks`가 없어 **한 번도 실행되지 않았다**(§배선 감사). 경계표를 읽고 "막힌다"고 판단하지 말고 **해당 워커 정의의 `hooks`를 함께 확인**한다. 과거 `analyst` 미발동의 원인도 규명됐다: **hooks는 정의 로드 시점에 스냅샷**되어 세션 도중 추가한 배선은 반영되지 않는다 → **hooks(배선)를 고치면 새 세션에서 재검증**한다. ✅ 단 **스크립트 본문은 매 호출 시 실행되어 즉시 반영**된다(2026-08-20 3셀 대조로 분리 확인 — 변인 하나, 차단 문구가 **바뀐 뒤의 allow 목록**을 출력). 🔴 확인된 것은 **`Write`·`Edit`·`NotebookEdit` 경로뿐**(`Bash` 경유는 matcher 밖 = 규율). `researcher`는 `Write` 자체가 없어 **가드에 도달하지 않는다**(미확인). 🔴 **더 정확히는 실발동이 확인된 도구는 `Write`·`Edit` 둘이고 `NotebookEdit`은 미시도**다 — `NotebookEdit`은 경로 키가 **`notebook_path`** 라 matcher가 걸려도 조용히 갈릴 수 있는 갈래이므로 **3도구로 일반화하지 않는다**. `Edit`은 2026-08-22 `except` 축 라이브 3셀로 확인됐다(1차는 *존재하지 않는 `old_string`* 설계라 도구가 hook보다 **먼저** 실패해 **판정 불가**였고, **실존 `old_string`으로 변인 하나만 바꾼 2차**에서 대조군 포함 **3/3 기대 일치** — §`except` 축 대조) |
 | `mcpServers` | 아니오 | ❌ 미채택 | 워커 전용 MCP 서버 없음 |
+
+### 널리 퍼진 서술 대조 (2026-08-24 — 1차 출처 + 자체 프로브)
+
+바깥에서 정리돼 도는 「서브에이전트 × 스킬」 설명 8개를 **공식 문서(A등급)** 와 **이 저장소 실측**에 각각 대조했다.
+이 표의 목적은 지식 전달이 아니라 **같은 검증의 반복을 막는 것**이다 — 판정이 갈린 항목은 갈린 이유를 함께 적는다.
+
+🔴 **두 축을 섞지 마라** — 「하네스가 무엇을 허용하는가」와 「이 저장소가 무엇을 선택했는가」는 다른 축이다.
+아래 ③⑥이 정확히 그 혼동으로 정본에 잘못 적혀 있었다.
+
+| # | 널리 퍼진 서술 | 공식 문서 | 이 저장소 | 갈리는 이유 |
+| --- | --- | --- | --- | --- |
+| ① | 프론트매터 `skills:`로 스킬 프리로드 | ✅ 근거 있음(§Preload skills into subagents) | ✅ `data-engineer`×`dagster-expert` 1건 | — |
+| ② | "**전체 내용**이 주입된다" | 🟡 *"the full content of each listed skill"* 이라고만 하고 **`SKILL.md` 단일 파일 ↔ 디렉터리 전체를 구분하지 않는다**(`미확인`) | 🔴 **`SKILL.md` 한 파일뿐** — `references/` 미주입(2026-08-23 프로브) | 문서가 모호한 지점을 **실측이 갈랐다**. 문서 문구를 그대로 옮기면 `references/`가 주입된다고 오독한다 |
+| ③ | "`skills:` 밖 스킬도 `Skill` 도구로 호출 가능" | ✅ 근거 있음. `Skill`은 **기본 도구에 포함**되고, `disallowedTools`가 **먼저** 적용된 뒤 `tools`가 나머지 풀에서 해석된다 | ❌ 워커 13종 전부 `tools:` 명시 → `Skill` 제거됨 | **하네스 제약이 아니라 정책**이다. `tools:`는 화이트리스트라 열거하지 않으면 사라진다 |
+| ④ | `tools:` 리스트 표기 | ✅ 둘 다 유효 | 콤마 문자열로 통일 | 표기 차이는 무해 |
+| ⑤ | "model+Tool+Skill을 한꺼번에 지정" | ✅ 단 필드는 더 있다 — `disallowedTools`·`hooks`·`permissionMode`, 그리고 **`model` 기본값은 `inherit`** | 급소 3개를 전부 명시한다(§프론트매터) | 예시 YAML이 `disallowedTools`·`hooks`를 빠뜨리면 **통제가 없는 워커**가 된다 |
+| ⑥ | **"Subagents cannot spawn other subagents"** | ❌ **근거 없음 — 정반대다.** *"By default, a subagent can spawn subagents of its own, up to three layers below the main conversation. At the depth limit, Claude Code withholds the `Agent` tool from every subagent except a fork."* | ✅ **실재 확인**(2026-08-24 프로브 — 서브에이전트가 `Agent` 호출 → **손자 에이전트가 결과를 반환**. 대조군 `Bash` 선통과) | 🔴 **이 문서가 틀리게 적고 있었다** → §director 폐기 |
+| ⑦ | 스킬 `context: fork`(격리 실행) | ✅ 근거 있음(§Frontmatter reference) — 동반 필드 `agent:`(포크 시 사용할 워커 종류)·`background:`(v2.1.218+) | 미사용 | 이 저장소는 격리를 **워커 단위**로 하고 스킬은 데이터로만 쓴다 |
+| ⑧ | `.agents/skills` ↔ `.claude/skills` 공통 관리가 과제 | — | ✅ 이미 그 구조 — 실디렉터리 10 + 심볼릭 링크 6(→`../../.agents/skills/`) | 🔴 **세는 도구가 단위를 바꾼다**: `find … -name SKILL.md`는 링크 미추적으로 **10**, 링크를 따라가는 판정은 **16**이다 |
+
+**출처**(전부 A등급, 2026-08-24 `researcher` 릴레이로 페치): `code.claude.com/docs/en/sub-agents`
+§Preload skills into subagents·§Available tools·§Supported frontmatter fields·§Let subagents spawn their own subagents /
+`/docs/en/skills` §Frontmatter reference·§Run skills in a subagent / `/docs/en/tools-reference` §Agent 도구 동작 /
+`/docs/en/features-overview` §Understand how features load.
+
+🔴 **`미확인`으로 남긴 것**(단정하지 않는다): ⓐ ②의 주입 단위 — 공식 문서가 이 구분 자체를 **언급하지 않는다**
+(우리 실측이 더 구체적이라 그것을 쓰되, *"문서가 그렇게 말한다"* 고 적지 않는다) ⓑ 중첩 스폰의 버전별 변천
+— C등급 블로그끼리 상충하고 CHANGELOG는 승인하지 않았다. **현재 문서가 "기본 허용"이라는 사실만 확정**했다.
 
 ### 권한 매트릭스 (실측)
 
@@ -681,10 +712,12 @@ Read, Edit, or Write tools"*.
   "인젝션"으로 분류하지 않는다 — 출처가 신뢰 경계 **안**이고 의도가 성능 최적화다.
   분류를 틀리면 대응도 틀린다(안내는 규약 우선순위로 처리, 인젝션은 차단·보고).
 
-- 🔴 **`director`의 `Agent(archivist)`·`Agent(skill-matcher)` 차단은 2026-08-19 실측에서 검증되지 않았다** — 서브에이전트에게는
-  **`Agent` 도구 자체가 없어서**(`No such tool available: Agent. Agent is disabled for this session,
+- 🔴 **`director`의 `Agent(archivist)`·`Agent(skill-matcher)` 차단은 2026-08-19 실측에서 검증되지 않았다** — 그 워커에게
+  **`Agent` 도구가 남아 있지 않아서**(`No such tool available: Agent. Agent is disabled for this session,
   in subagents as well as here`) 세부 규칙까지 도달하지 못했다. 선언은 남기되 **효력은 미확인**이다.
-  더 큰 함의는 아래 §3계층의 실측 한계다.
+  🔴 **원인을 정정한다**(2026-08-24) — *"서브에이전트에게는 `Agent`가 없다"* 가 아니다. 하네스는 **기본 지급**하며
+  (§널리 퍼진 서술 대조 ⑥), 사라진 것은 **인자형 선언이 도구를 통째로 껐기** 때문이다. 즉 이 항목은
+  **「도달 못 함」의 사례가 아니라 「좁히는 선언이 대상을 지운」 사례**다. 더 큰 함의는 아래 §3계층의 실측 한계다.
 - **`director`의 `Agent(archivist)`·`Agent(skill-matcher)` 차단**은 "저널을 직접 쓰지 마라"·"스킬 배선은 네 관할이 아니다"
   (`director.md`)를 **기계 강제**로 올리려는 선언이다. `skill-matcher`를 막는 이유는 **감사 대상에 director 자신이
   포함**되기 때문이다 — 자기가 자기 배선을 감사시키면 게이트가 아니다.
@@ -1148,7 +1181,7 @@ Read, Edit, or Write tools"*.
 | 계층 | 실체(Claude Code 대응) | 책임 | 경계(하지 않는 것) |
 | --- | --- | --- | --- |
 | **supervisor** | 메인 루프(대화 주체) | 미션 목표·성공조건 정의 → **하위작업 분해·계획**(plan 모드·스킬) → **배정계획 + 권한 매니페스트** 작성 → `security` G1 → 배정·병렬조율 → **품질·승인 게이트** → **계획 대비 실행 정합** 판정 → `security` G2 → 결과 취합·사용자 보고. 미션 저널(MOC) 개설·유지 | 직접 실행작업(워커에 위임) · **자기 판정 대상의 수정** |
-| **worker**<br/>(subagent) | `Agent` 툴 **워커 서브에이전트** | 배정받은 **단일 작업** 수행 → **supervisor 승인 아래** 실행하고 결과를 반환·보고 | 다른 워커 배정(도구가 없다) · 무승인 실행 |
+| **worker**<br/>(subagent) | `Agent` 툴 **워커 서브에이전트** | 배정받은 **단일 작업** 수행 → **supervisor 승인 아래** 실행하고 결과를 반환·보고 | 다른 워커 배정(**`tools:`에서 `Agent` 미열거** — 하네스 제약이 아니라 정책. §대조 ⑥) · 무승인 실행 |
 | **security**<br/>(게이트) | `Agent` 툴 워커(읽기 전용) | **supervisor 결정의 최종 컨펌** — **계획(G1)·작업내용(G2)·계획 델타(Δ)** 를 판정해 `[승인]`/`[반려]`. 노출·규제·거버넌스 점검 | 직접 수정·실행 |
 | **archivist**<br/>(계층 밖) | `Agent` 툴 워커 | **모든 결정·액션의 기록 주체** — 체크포인트마다 저널 기록, 정합 감사·MOC 유지 | 판단·실행 · 저널 외 파일 수정 |
 | **skill-matcher**<br/>(계층 밖) | `Agent` 툴 워커(읽기 전용) | **스킬↔워커 배선 감사** — 별점 루브릭 채점, 매핑 드리프트·죽은 참조·lock↔디스크 불일치·출처 위반 판정. 미충족 갭은 **`researcher` 조사 요청서**를 설계하고 회신 후보에 별점·배선처를 매겨 **제안** | 스킬 설치·lock 편집·워커 정의 수정·**배선** · **직접 웹 검색**(`researcher` 몫) · 외부 스킬 **신뢰성 최종 판정**(`security` 몫) |
@@ -1171,7 +1204,28 @@ Read, Edit, or Write tools"*.
 | --- | --- | --- |
 | 서술량 | 정의 파일 **17,430바이트**, 판정 축 문구가 이 문서 **5~6곳 중복** | 단일 출처가 없어 한쪽만 고치면 드리프트했다(아래 자기모순 사례) |
 | 실적 | 저널 **65건 중 실배정 1건**(2026-08-18/04) + 반쪽 1건 → **91~97% 미경유** | 전 워커 중 최하위. `data-engineer`·`devops-*` 같은 통상 관할 워커도 전부 supervisor 직접 배정이었다 |
-| 런타임 | director가 `Agent` 호출을 **발행**하니 `No such tool available: Agent. Agent is disabled for this session, in subagents as well as here` | **배정 불가 재현**(2026-08-19 문구와 한 글자도 다르지 않다). 대조군: 같은 워커의 `Bash` 성공 + supervisor의 `Agent` 8회 성공 ⇒ 프로브 유효 |
+| 런타임 | director가 `Agent` 호출을 **발행**하니 `No such tool available: Agent. Agent is disabled for this session, in subagents as well as here` | **배정 불가 재현**(2026-08-19 문구와 한 글자도 다르지 않다). 대조군: 같은 워커의 `Bash` 성공 + supervisor의 `Agent` 8회 성공 ⇒ 프로브 유효. ⚠️ **이 축은 2026-08-24 반증됐다 — 아래 박스** |
+
+> 🔴 **런타임 축 반증 (2026-08-24)** — *"서브에이전트에 `Agent`가 없다"* 는 **일반 명제로 틀렸다.**
+>
+> **① 공식 문서(A등급)**: *"By default, a subagent can spawn subagents of its own, **up to three layers**
+> below the main conversation. At the depth limit, Claude Code withholds the `Agent` tool from every
+> subagent except a fork."* (`code.claude.com/docs/en/sub-agents` §Let subagents spawn their own subagents)
+> **② 자체 프로브 2셀**: 서브에이전트가 `Agent`를 실제로 호출 → **손자 에이전트가 결과를 반환**했다.
+> 대조군 `Bash`가 **먼저** 성공했으므로 "경로가 죽어서 아무것도 안 돌았다"로 읽을 수 없다.
+>
+> **그래서 위 표의 문구는 무엇이었나** — `Agent is disabled for **this session**`이다. 세션 축의 진술을
+> **하네스 축의 진술로 읽었다.** 아래 §인자형 `disallowedTools` 가설이 이로써 **강하게 지지된다**:
+> 하네스는 기본으로 `Agent`를 주므로, director가 그것을 잃은 것은 **선언이 도구를 끈 결과**다.
+>
+> 🔴 **여전히 참인 것과 갈라 적는다** — `tools:`를 **명시한** 워커에 `Agent`가 없는 것은 지금도 사실이다
+> (화이트리스트). 즉 `skill-matcher`의 **`researcher` 릴레이 2왕복**은 유효하다. 반증된 것은
+> *"하네스가 막는다"* 이지 *"우리 워커가 못 한다"* 가 아니다. **막는 주체가 하네스에서 정책으로 바뀌었다.**
+>
+> 🔴 **폐기 결정 자체는 유지된다** — 남은 두 축(서술량·**실적 91~97% 미경유**)만으로 충분하다.
+> 그러나 **근거가 하나 줄었다는 사실을 지운 채 결론만 남기지 않는다.** 되살릴지는 **실적 축**으로 판단할 일이지
+> "안 되니까"가 아니다. 🔴 **일반화 금지**: 프로브가 관측한 것은 `tools:` **미명시** 컨텍스트 하나이고,
+> 각 워커 정의에서의 실재는 그 워커를 직접 띄워야 갈린다.
 
 🔴 **유일하게 성공한 배정은 프론트매터를 명시하기 *전*이었다.** 2026-08-18/04는 `tools:` 미지정
 (=전 도구 상속) 상태에서 도구 **33회**·104,536토큰·9분38초로 하위 워커까지 실제 배정했다.
@@ -1190,7 +1244,11 @@ Agent(skill-matcher)`를 **명시**한 뒤로 `Agent`가 사라졌다 — **인�
 
 **잃지 않은 것**: 자기감사 방지의 실효 강제는 director가 아니라 **워커 단위 도구 통제**에 얹혀
 있었다 — ⓐ `tech-writer`의 `except` 축 ⓑ 판정자 6종의 `disallowedTools` ⓒ 워커에게 `Agent`가
-없어 **서로를 배정할 수 없다**는 런타임 사실. 셋 다 계층 수와 무관하다.
+없어 **서로를 배정할 수 없다**는 사실. 셋 다 계층 수와 무관하다.
+🔴 ⓒ의 근거를 정정한다(2026-08-24) — 이것은 **런타임 사실이 아니라 `tools:` 화이트리스트의 결과**다.
+하네스는 기본으로 `Agent`를 준다(§널리 퍼진 서술 대조 ⑥). **통제 효과는 같지만 유지 조건이 다르다** —
+런타임 사실은 저절로 유지되고, **정책은 `tools:`를 계속 명시해야 유지된다.** 어느 워커든 `tools:`를
+빼는 순간 ⓒ가 조용히 사라진다. ⇒ **`tools:` 미지정 워커를 만들지 않는다**(전원 명시가 이 축의 전제).
 
 **계획 기능의 이관**: 하위작업 분해·게이트 설계는 **supervisor가 plan 모드 + 스킬로** 수행한다
 (사용자 결정 2026-08-23). director의 §설계 게이트 3문항도 supervisor 규율로 옮겼다(§설계 게이트).
@@ -2038,9 +2096,16 @@ updated: <YYYY-MM-DDThh:mm+09:00>    # KST
 - 워커는 supervisor가 `Agent` 툴로 호출한다. 위임은 기본 `general-purpose`,
   도메인이 맞으면 **전문 워커**(`security` · `data-*` 3종 · `devops-*` 3종)를 쓴다.
 
-> 🔴 **중첩 위임은 런타임에 존재하지 않는다** — 서브에이전트에는 `Agent` 도구가 없다.
+> 🔴 **중첩 위임은 이 저장소의 워커에게 존재하지 않는다** — `tools:`에 `Agent`를 열거하지 않기 때문이다.
 > 2026-08-19 최초 관측, **2026-08-23 재현**(문구가 한 글자도 다르지 않았다):
 > `No such tool available: Agent. Agent is disabled for this session, in subagents as well as here`
+>
+> 🔴 **2026-08-24 정정 — 이 박스는 「런타임에 존재하지 않는다」고 단언하고 있었고 그것은 틀렸다.**
+> 공식 문서는 **기본 3계층 허용**을 명시하고, 자체 프로브에서 **손자 에이전트가 실제로 결과를 반환**했다
+> (§널리 퍼진 서술 대조 ⑥ · §director 폐기 §런타임 축 반증). 위 런타임 문구는 `for **this session**`이었다 —
+> **세션 축의 진술을 하네스 축으로 읽은 것**이 오독의 정체다.
+> ⇒ **결론(중첩을 쓰지 않는다)은 유지하되 근거를 바꾼다**: 하네스가 막아서가 아니라 **우리가 안 여는 것**이다.
+> 🔴 이 차이가 실무를 가른다 — 하네스 사실은 저절로 유지되지만 **정책은 `tools:`를 계속 명시해야 유지된다.**
 >
 > **이 판정은 한 번 흔들렸다가 다시 굳었다** — 문구의 *"in subagents as well as here"* 가
 > **자기모순**(같은 세션의 supervisor는 `Agent`를 정상 사용)이라 2026-08-20에 `미확인`으로
