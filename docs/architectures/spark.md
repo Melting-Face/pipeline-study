@@ -111,6 +111,91 @@ RBAC·ServiceAccount·러너 이미지는 **이미 준비돼 있다.** 남은 �
   보이지만, 부모 링크가 없으므로 **스냅샷 간 증분(diff) 의미론에 기대는 조회는 성립하지 않는다.**
 - 부수 효과로 스냅샷이 단조 증가하므로 **expire snapshots 유지보수가 실제로 필요하다**(아래 §안전 순서).
 
+### 🔴 `createOrReplace`는 계보를 끊는다 (2026-08-23 실측)
+
+> 위 §`createOrReplace`는 이력을 지우지 않는다(2026-08-22)의 **후속 실측**이다. 그때 `parent_id`가
+> 전부 `None`이라는 것까지는 봤고, 이번에 **그 결과가 무엇을 불가능하게 만드는지**를 실행으로 확인했다.
+> 관측 수단은 `scripts/iceberg_changelog_probe.py`의 진단 파트이며 엔진은 **Spark 3.5.9 / Iceberg 1.11.0**이다.
+
+`poc.sample`의 `.history` 실측 — **스냅샷 8개가 전부 `parent_id = NULL`**, 그중
+**`is_current_ancestor = true`는 마지막 1개뿐**이고 나머지 **7개는 고아**다.
+원인은 `k8s/spark/poc_ingest.py:54`의 `df.writeTo(TABLE).createOrReplace()`이고,
+같은 파일의 주석은 이를 ***"createOrReplace로 멱등"*** 이라 적는다.
+
+#### 📌 "멱등"은 데이터 축이다
+
+- **결과 데이터는 실제로 멱등하다** — 몇 번을 돌려도 테이블 내용은 같다. 주석은 그 뜻으로 참이다.
+- **그러나 계보는 매번 끊긴다.** 실행마다 `parent_id = NULL`인 **새 루트**가 서고 직전까지의
+  스냅샷이 통째로 `is_current_ancestor = false`가 된다.
+- ⇒ 🔴 **두 축을 같은 말로 덮으면 「증분·changelog 읽기가 구조적으로 불가능해진 것」을 못 본다.**
+  "멱등하다"는 문장은 이 손실에 대해 아무 말도 하지 않는데, 읽는 사람은 안심하고 지나간다.
+  ([philosophy.md](../philosophy.md) §계측 단위 — 값이 아니라 *무엇에 대한 값인지*가 어긋난 경우다.)
+
+#### 실증 — 시간순 인접이 부모-자식을 뜻하지 않는다
+
+`.snapshots`를 `committed_at`으로 정렬해 **인접 두 행(6→7)** 에 창을 잡자 이렇게 죽었다.
+
+```text
+IllegalArgumentException: Starting snapshot (exclusive) ... is not a parent ancestor of end snapshot
+```
+
+- ⇒ 🔴 **창은 `.history`의 `parent_id`로 계보를 걸어 잡아야 한다.** `committed_at` 정렬은
+  changelog 창의 근거가 되지 못한다.
+- **대비군**: 같은 카탈로그의 `poc.sample_flink`는 `parent_id` 연쇄가 정상이다
+  (스냅샷 4개 전부 current ancestor). 즉 카탈로그·스토리지의 문제가 아니라 **쓰기 모드의 문제**다.
+
+#### 🔴 Phase 2 함의 — 미결
+
+대용량 bronze 인제스트를 Spark로 옮길 때([../redesign.md](../redesign.md) Phase 2)
+**이 쓰기 모드를 그대로 쓰면 그 테이블은 changelog·스트리밍 소스가 될 수 없다.**
+
+- 스트림 소스 후보를 고르는 축은 [flink.md](flink.md) §급소(append 전용)와 같은 축이다.
+- ⚠️ **`poc_ingest.py`의 쓰기 모드 수정 여부는 `미결`이다** — 코드 변경이라 별도 결정이 필요하고
+  이번 실측 범위에서는 **관측만** 했다.
+
+### Iceberg `create_changelog_view` 의미론 — 실측 (2026-08-23)
+
+> 🔴 **이 절은 실측이다**(아래 §Spark 3.5.9 → 4.1 상향 결정은 여전히 *결정* 단계다 — 섞어 읽지 않는다).
+> 엔진은 **Spark 3.5.9 / Iceberg 1.11.0**, 수단은 `scripts/iceberg_changelog_probe.py`,
+> 게이트 규약·종료 코드는 [../test.md](../test.md) **§5-3**이다.
+
+프로브 테이블에 **append 3행 → append 2행 → update 1행**을 만든 뒤 창과 옵션을 바꿔 가며 읽었다.
+
+| 창 / 옵션 | 변경분 |
+| --- | --- |
+| append 창 `s1→s2` | `{INSERT: 2}` |
+| 갱신 창 `s2→s3`, `identifier_columns` **없음** | `{DELETE: 1, INSERT: 1}` |
+| 갱신 창 `s2→s3`, `identifier_columns => array('id')` | `{UPDATE_BEFORE: 1, UPDATE_AFTER: 1}` |
+
+- 🔴 **`UPDATE`는 `append`가 아니라 `overwrite` 스냅샷을 남긴다** — 프로브 계보의 ops가
+  `append, append, overwrite`였다. 같은 "한 행을 고쳤다"가 **스냅샷 연산 종류를 바꾼다.**
+- 📌 **`identifier_columns`는 성능 옵션이 아니라 표현 옵션이다.** 주지 않으면 갱신이
+  `DELETE`+`INSERT`로 풀리고, 주면 `UPDATE_BEFORE`/`UPDATE_AFTER`로 접힌다. 하류에서 이 두 표현을
+  같게 다루면 **건수가 2배로 세어진다.**
+
+#### 🔴 축 분리가 실증됐다 — "변경분을 읽는다"는 엔진마다 범위가 다르다
+
+| 축 | 실측/근거 | 상태 |
+| --- | --- | --- |
+| **Spark `create_changelog_view`** | overwrite 스냅샷 테이블(`poc.sample`)에서도 **뷰 생성 성공** | ✅ 2026-08-23 실측 |
+| **Flink 스트리밍 읽기** | `IncrementalAppendScan` 기반이라 **append만** 본다 | 📄 문서화된 제약 · **이번에 Flink 잡으로는 `미검증`** |
+
+⇒ **같은 "변경분"이라는 말 아래 두 엔진의 허용 범위가 다르다.** Spark 축의 통과를 Flink 축의
+보증으로 읽지 않는다(그 축은 Flink 잡으로만 닫힌다 — [flink.md](flink.md)).
+
+#### 카탈로그 현황과 소스 적격성 진단 (읽기 전용 · 2026-08-23)
+
+Spark Connect와 카탈로그 Postgres 양쪽에서 확인했다. 네임스페이스는 `poc`·`chk`·`eicu`·`mimiciv`이고
+🔴 **`eicu`·`mimiciv`는 테이블 0개** — "원천 미확보"가 카탈로그 수준에서 재확인됐다.
+
+| 테이블 | 행수 | 계보 | ops | `spark_changelog` | `flink_stream` |
+| --- | --- | --- | --- | --- | --- |
+| `poc.sample` | 3 | 1 (고아 7) | `overwrite` | 가능 | **불가** |
+| `poc.sample_flink` | 12 | 4 | `append` | 가능 | **가능** |
+
+⇒ 🔴 **현재 카탈로그에서 Flink 스트림 소스로 쓸 수 있는 테이블은 `poc.sample_flink` 하나뿐이다.**
+이 표는 **관문이 아니라 관측**이며 종료 코드를 바꾸지 않는다([../test.md](../test.md) §5-3).
+
 ### 🔴 SeaweedFS 체크섬 결함 — aws-chunked 프레이밍이 안 벗겨진다 (2026-08-22)
 
 이 미션 최대의 발견이다. **Iceberg 상향이 만든 결함이 아니라, 이미 잠재해 있던 결함을 상향이
@@ -239,9 +324,23 @@ pyspark classic 빌더가 `spark.remote`를 보고 RemoteSparkSession으로 위�
 - **부수 해소**: "`dbt compile --target spark_connect`가 600초 초과·무출력 종료"(이전 세션 관측)는
   **재현되지 않는다**(4.9s, exit 0). Spark Connect gRPC 클라이언트는 UNAVAILABLE에 백오프 재시도를
   하므로 **port-forward가 끊긴 상태에서는 에러가 아니라 무한 대기처럼 보인다** — 정황상 원인이다(미확정).
-- **러너 이미지 버전(실측 고정)**: Spark **3.5.9** / Iceberg **1.11.0** / hadoop-aws **3.3.4** ↔ aws-java-sdk-bundle **1.12.262**.
-  `hadoop-aws`는 베이스 이미지의 `hadoop-client-*`와 **정확히 같은 버전**이어야 한다.
-  이미지 태그 **`0.4.0` → `0.5.0`**(Iceberg 상향분).
+- **러너 이미지 버전**: `hadoop-aws`는 베이스 이미지의 `hadoop-client-*`와 **정확히 같은 버전**이어야
+  한다. 이미지 태그는 **`0.4.0` → `0.5.0`**(Iceberg 상향분).
+  🔴 **아래 표의 두 열은 축이 다르다** — 왼쪽은 **실측 고정값**, 오른쪽은 **2026-08-23에 결정만 된
+  목표값**이며 **아직 굽지 않았다**(아래 §Spark 3.5.9 → 4.1 상향 결정).
+
+  | 항목 | 현행(실측 고정) | 목표(결정 완료 · **이행 전**) |
+  | --- | --- | --- |
+  | Spark | **3.5.9** | **4.1.0** |
+  | Scala | **2.12** | **2.13** (4.x는 2.13 전용 — `SPARK-45314`) |
+  | JDK | `미확인`(베이스 이미지 기본값) | **17+** (4.x가 JDK 8/11 drop — `SPARK-45315`) |
+  | Iceberg | **1.11.0** | 1.11.0 유지 — 런타임 좌표만 `iceberg-spark-runtime-4.1_2.13` |
+  | Hadoop S3A | `org.apache.hadoop:hadoop-aws` **3.3.4** | `org.apache.hadoop:hadoop-aws` **3.4.2** |
+  | AWS SDK | `com.amazonaws:aws-java-sdk-bundle` **1.12.262**(v1) | 🔴 `software.amazon.awssdk:bundle` **2.29.52**(v2) |
+
+  🔴 **AWS SDK는 버전만 오르는 게 아니라 *좌표 자체가 바뀐다*.** Hadoop 3.4.0이 S3A를 SDK v2로
+  옮기면서 **v1 `aws-java-sdk-bundle` JAR을 제거**했다(`HADOOP-18820`). 버전 문자열만 갈아끼우면
+  **의존성이 통째로 빠진 채로도 빌드가 통과**할 수 있으니 groupId·artifactId부터 바꾼다.
 - executor 메모리·셔플 파티션 튜닝이 성능 핵심.
 
 ### Iceberg 1.6.1 → 1.11.0 상향 근거 (2026-08-22 실측)
@@ -272,6 +371,109 @@ Iceberg 상향을 검토하며 *"Flink(1.11.0)가 만든 **V3** 테이블을 Spa
 - ⇒ **`format-version`을 명시적으로 3으로 지정하지 않는 한** 신규 테이블은 V3로 만들어지지 않는다.
 - 📌 **"라이브러리가 V3를 지원한다"와 "V3를 기본으로 쓴다"는 다른 축이다.** 지원 여부만 보고
   기본값을 추정하면, 이번처럼 존재하지 않는 위험에 대비하느라 상향 자체를 미루게 된다.
+
+### Spark 3.5.9 → 4.1 상향 결정 (2026-08-23) — 🟡 **결정 완료 · 이행 전**
+
+> 🔴 **상태를 먼저 읽어라.** 이 절은 **조사와 결정의 기록이며 아직 아무것도 올리지 않았다.**
+> 러너 이미지는 여전히 Spark **3.5.9**이고(위 §러너 이미지 버전), 아래 표의 "결과" 열은
+> **실행 실측이 아니라 1차 출처로 실재를 확인한 좌표·문구**다. 조사 관측 시각은 **2026-08-23**이다.
+
+**동기와 근거가 갈린다.** 출발점은 *"버전을 최신화하고 싶다"* 였다. 그런데 이 저장소 규약은
+**"최신이 아니라 Iceberg가 지원하는 짝"** 이고(위 §Iceberg 1.6.1 → 1.11.0 상향 근거와 같은 규칙),
+확인해 보니 그 상한이 **정확히 4.1**이었다. 지목한 버전은 맞았지만 **맞은 이유는 최신이라서가 아니다** —
+최신은 **4.2**이고, 4.2는 Iceberg가 `-4.2` 런타임을 발행하지 않아 이 규약에서 탈락한다.
+
+#### 확인 항목 (전부 A등급 1차 출처)
+
+| 확인 항목 | 결과 | 출처 |
+| --- | --- | --- |
+| Spark 4.1.0 GA | **2025-12-16** (4.x 두 번째) | Spark 공식 릴리스 페이지 |
+| Spark 4.2.0 GA | 2026-07-14 | Spark 공식 news |
+| Spark 4.x 런타임 전제 | **Scala 2.13 전용**(`SPARK-45314` — 2.12 drop) · **JDK 17+**(`SPARK-45315` — JDK 8/11 drop) | Spark 4.0.0 릴리스 노트 |
+| **Iceberg multi-engine 매트릭스** | Spark **3.5 = `Maintained`**(initial 1.4.0) · **4.0 = `Maintained`**(initial 1.10.0) · **4.1 = `Maintained`**(initial **1.11.0**). 🔴 **4.2 행 자체가 없다** | `apache/iceberg` `site/docs/multi-engine-support.md`(main, 최종 커밋 2026-07-02 `da8ff447`) |
+| Iceberg 런타임 아티팩트 | `iceberg-spark-runtime-3.5_2.13` ✅ · `4.0_2.13` ✅ · **`4.1_2.13` ✅**(1건, `v=1.11.0`) · **`4.2_2.13` ❌ 0건** | Maven Central Solr API |
+| **Spark Operator 1.0.0**(= 저장소가 핀한 chart **1.8.0**) | **"Support Apache Spark 4.0, 4.1, and 4.2 and drop Spark 3.5"** (2026-07-26) | apache/spark-kubernetes-operator Releases |
+| 러너 베이스 이미지 태그 | `apache/spark:4.1.0-scala2.13-java17-python3-ubuntu` **실재**(java21 변형도 실재) | Docker Hub v2 API **원문** |
+| Spark 번들 Hadoop | **4.1.0 = `hadoop-client-* 3.4.2`** (4.2.0은 3.5.0) | Spark 4.2.0 릴리스 노트 라이브러리 업그레이드 표 |
+| Hadoop 3.4.2의 AWS SDK v2 | `<aws-java-sdk-v2.version>2.29.52</aws-java-sdk-v2.version>` | `apache/hadoop` `rel/release-3.4.2` `hadoop-project/pom.xml` |
+| 좌표 실재 | `software.amazon.awssdk:bundle:2.29.52` ✅ · `org.apache.hadoop:hadoop-aws:3.4.2` ✅ | Maven Central |
+| **Hadoop 3.4.0 S3A** | **AWS SDK v2로 전환**(`HADOOP-18073` — "The S3A connector now uses the V2 AWS SDK") · **v1 `aws-java-sdk-bundle` JAR 제거**(`HADOOP-18820`) | Hadoop 3.4.0 릴리스 노트 |
+| dbt-spark 1.11.0 | CHANGELOG **"Add support for Spark v4.x"**(PR #1537) | `dbt-labs/dbt-adapters` CHANGELOG · PyPI |
+
+⚠️ **Docker Hub 태그는 "있다"가 아니라 *이름*으로 판정한다** — `4.1.0` 계열 태그가 **70개**인데
+그중 다수가 `preview1`~`preview4` 접두를 달고 있다. 개수만 보고 고르면 프리뷰를 굽게 된다.
+
+#### 판정 — ★★★★☆ 조건부 채택 (changelog 도입 **다음**)
+
+- **`pyspark<3.6` 핀만 해제**한다. 러너 Spark가 4.1이면 클라이언트도 따라가야 한다.
+- 🔴 **`dbt-spark<1.12` 핀은 유지**한다. 이 경로는 어댑터 계약이 아니라 **pyspark 내부 위임 동작**에
+  얹혀 있어(위 §"미지원"과 "동작 안 함"은 다른 축이다) minor 업그레이드가 **에러 없이** 깨뜨릴 수 있다.
+  상한을 올릴 때의 관문은 그대로 `scripts/spark_connect_smoke.py`다([../test.md](../test.md) §5-1).
+- **동반 작업**: 러너 이미지 재빌드(Scala 2.13 · JDK 17+ 베이스) · Iceberg 런타임 좌표를
+  `…-4.1_2.13`으로 교체 · **S3A 좌표 v1→v2 교체**(위 표).
+- **순서**: Iceberg changelog 도입(★★★★★)을 **먼저** 닫는다. 그쪽은 신규 상주 인프라가 0이고
+  이 상향과 **독립**이라, 둘을 붙이면 문제가 생겼을 때 변인이 둘이 된다.
+  - ✅ **이 순서는 지켜졌다** — **changelog PoC는 현행 3.5.9에서 먼저 통과했다**(2026-08-23,
+    위 §`create_changelog_view` 의미론 · [../test.md](../test.md) §5-3). ⇒ 이후 4.1로 올려 같은
+    프로브가 깨지면 **변인은 엔진 하나**로 좁혀진다. 🔴 반대로 상향과 함께 도입했다면
+    `create_changelog_view` 실패가 프로시저 문제인지 엔진 문제인지 가를 수 없었다.
+
+#### 🔴 발견 1 — 현행 조합은 이미 공식 지원 밖이다
+
+이 상향의 진짜 근거는 **최신화가 아니라 지원 범위 복귀**다.
+
+- 저장소가 핀한 Spark Operator chart **1.8.0**(appVersion **1.0.0**)의 릴리스 노트가
+  **"drop Spark 3.5"** 를 명시한다. ⇒ **현행 Spark 3.5.9는 이 오퍼레이터의 지원 목록에 없다.**
+- 지금 도는 이유는 오퍼레이터가 `sparkVersion`을 관대하게 다루기 때문이지 **지원돼서가 아니다.**
+- 📌 이 문서가 dbt-spark Connect 경로에 대해 이미 적은 **"미지원과 동작 안 함은 다른 축이다"**(위 §)가
+  **오퍼레이터 축에서 그대로 재현**됐다. 같은 함정이 두 축에서 났다는 것은
+  **"돌고 있다"를 지원 근거로 읽는 습관이 이 스택 전반에 있다**는 뜻이다.
+
+#### 🔴 발견 2 — 같은 질문에 조사 2회가 정반대로 답했다
+
+dbt-spark의 Spark 4.x 지원 여부를 두 번 조사했고 결과가 **정면으로 갈렸다.**
+
+| 회차 | 실제로 본 저장소 | 답 |
+| --- | --- | --- |
+| 1차 | **`dbt-labs/dbt-adapters`** (현행 · 이 저장소가 쓰는 것) | "Spark v4.x 지원 추가"(PR #1537) |
+| 2차 | `dbt-labs/dbt-spark` (**이전 완료된 구 저장소**, 안내문만 남음) | **0건** |
+
+- ⇒ `CLAUDE.md`가 이미 적어 둔 **"같은 서비스가 두 환경에 이중 존재하면 살아 있는 레거시가
+  정본 대신 답한다"** 의 정확한 재현이다(모니터링 축에서 방향을 달리해 2회 발생한 것과 같은 계열).
+  **부정 답변("0건")이 나온 쪽이 죽은 저장소였다** — 모집단을 확인하지 않으면 이 0은 사실처럼 읽힌다.
+- **1차를 채택한다.** 🔴 다만 **이행 시 `dbt build` 실행으로 재확인**하고 **문서 대조로 닫지 않는다** —
+  CHANGELOG는 *"무엇을 넣었다"* 의 기록이지 *"우리 경로에서 같은 값이 난다"* 가 아니다.
+
+#### 🔴 발견 3 — 같은 URL에 두 번 물었더니 답이 상충했다
+
+Docker Hub의 `4.1.0-scala2.13-java17-python3-ubuntu` 태그 존재 여부를 `WebFetch`로 두 번 물었을 때
+**1차는 "존재", 2차는 "False"** 였다. `curl` + `json.load`로 **API 응답 원문을 직접 파싱**해
+실재를 확정했다.
+
+📌 **요약을 관측으로 읽지 않는다.** 존재/부재처럼 이분법으로 떨어지는 사실일수록 **원문에서 직접
+판정**한다 — 요약 계층은 같은 입력에도 답이 흔들리고, 흔들린 티가 나지 않는다.
+
+#### changelog는 4.1이 주지 않는다 (엔진 축 정리)
+
+Spark **4.2.0**에는 **Spark 자체 DSv2 CDC API**(`SPARK-55948`, `CHANGES` 절)가 들어갔지만
+**4.1에는 없고**, 애초에 Iceberg 전용도 아니다. ⇒ 이 저장소의 변경분 조회는
+**Iceberg Spark 프로시저 `create_changelog_view`** 로 간다
+(`options => map('start-snapshot-id', …, 'end-snapshot-id', …)`, `net_changes`·`identifier_columns` 인자).
+스트림 소스 결정의 전문은 [flink.md](flink.md) §스트림 소스를 Redpanda에서 Iceberg changelog로 바꾼 근거.
+
+#### 🔴 닫지 못한 것 2건 — 상향에 착수하기 전에 읽어라
+
+1. **22모델 값 정합은 여전히 미검증이다.** 원천 대용량 3종 부재로 `dbt build` 실행 검증을 못 한다
+   ([../redesign.md](../redesign.md) Phase 2). 엔진을 3.5 → 4.1로 올리면 **값이 갈릴 가능성이
+   새로 생기는데 확인 수단이 없다.** 🔴 `sqlfluff`·`dbt compile` 통과를 값 정합으로 읽지 않는다 —
+   그 게이트가 보증하는 것은 스타일·구문까지다([../conventions/dbt.md](../conventions/dbt.md) §templater).
+2. **S3A 체크섬 축이 새로 열린다.** Hadoop **3.4.0부터 S3A가 SDK v2**를 쓰므로, 이 저장소가
+   **이미 두 번 겪은** SeaweedFS aws-chunked 손상 경로(위 §SeaweedFS 체크섬 결함)가
+   **이번엔 S3A 축에서 재현될 수 있다.** 완화 env(`AWS_REQUEST_CHECKSUM_CALCULATION` ·
+   `AWS_RESPONSE_CHECKSUM_VALIDATION`)는 SDK v2 **전역 설정**이라 S3A까지 덮을 것으로 **보이나
+   이것은 추론이다.** 🔴 확인 방법은 **일부러 위반시키는 것**이다 — env를 뺀 채 한 번 써서 손상이
+   재현되는지 보고, 되돌려 복구되는지 본다. 그래야 "안 났다"가 **관측 경로 생존**과 함께 유효해진다
+   ([philosophy.md](../philosophy.md) 원칙 7). ⇒ 현 시점 상태는 `미확인`이다.
 
 ## 심화: Iceberg 파일 컴팩션 (Spark vs Trino) — 이 프로젝트 관점
 
@@ -328,6 +530,10 @@ Iceberg 상향을 검토하며 *"Flink(1.11.0)가 만든 **V3** 테이블을 Spa
 
 - Spark 문서: https://spark.apache.org/docs/latest/
 - Spark 4.2.0 릴리스: https://spark.apache.org/releases/spark-release-4-2-0.html
+- Spark 4.1.0 릴리스(상향 목표): https://spark.apache.org/releases/spark-release-4-1-0.html
+- Spark 4.0.0 릴리스(Scala 2.13 전용·JDK 17+ 근거): https://spark.apache.org/releases/spark-release-4-0-0.html
+- Iceberg multi-engine 지원 매트릭스(Spark 4.1 상한 근거): https://iceberg.apache.org/multi-engine-support/
+- Hadoop 3.4.0 릴리스 노트(S3A의 AWS SDK v2 전환): https://hadoop.apache.org/docs/r3.4.0/hadoop-project-dist/hadoop-common/release/3.4.0/RELEASENOTES.3.4.0.html
 - Apache Spark Kubernetes Operator: https://apache.github.io/spark-kubernetes-operator/ · 릴리스: https://github.com/apache/spark-kubernetes-operator/releases
 - Iceberg + Spark: https://iceberg.apache.org/docs/latest/spark-getting-started/
 - Iceberg Spark 프로시저(`rewrite_data_files`): https://iceberg.apache.org/docs/latest/spark-procedures/

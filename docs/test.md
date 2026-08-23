@@ -21,6 +21,7 @@
 | Dagster 에셋 pytest | ✅ `src/tests/`(`__init__.py`)·`pytest` | ❌ 없음 | 뼈대만 |
 | 통합·스모크 | ✅ `dg check`·`dbt build` | ⚠️ 수동 | CI 게이트 미구성. 🔴 **`dbt build`는 22모델에 대해 한 번도 돌지 않았다**(§5-1 B9) |
 | Iceberg 유지보수 잡 | ✅ `iceberg_maintenance_job` | ❌ 없음 | 🔴 **구조적 커버리지 공백 2건**(§5-2) |
+| Iceberg changelog 판독 | ✅ `scripts/iceberg_changelog_probe.py` | ⚠️ 수동 1회(**2026-08-23 실측**, 종료 코드 `0`) | 실인프라 수동 관문(§5-3). 진단표는 관문이 아니다 |
 | 분석 재현성 | ✅ `notebooks/`·`nbconvert` | ⚠️ 수동 1회(2026-08-19, 스타터 노트북 전 셀 실행) | 리포트(`docs/analyses/`)는 아직 없음 |
 
 ## 테스트 계층 (우선순위 순)
@@ -37,9 +38,13 @@
 | 5 | **dbt singular 테스트** | ★★☆☆☆ | 스키마 테스트로 표현 못 하는 교차 테이블 불변식만 선별 사용 |
 | 6 | **분석 재현성** | ★★☆☆☆ | 파이프라인이 아니라 **결론**을 방어한다. 실인프라가 필요해 비싸고 느리지만, 다른 어떤 계층도 "이 수치가 재현되는가"를 묻지 않는다 |
 
-> **실인프라에 붙는 계층은 둘뿐이고, 둘 다 상시 CI가 아니라 수동 관문이다** — §5-1(Spark Connect
-> 어댑터 스모크, *의존성 상한 인상 직전*)과 §6(분석 재현성, *분석 산출물 공유 직전*).
-> 나머지는 실인프라 미접속이 원칙이다(격리·재현).
+> **실인프라에 붙는 계층은 셋이고, 셋 다 상시 CI가 아니라 수동 관문이다** — §5-1(Spark Connect
+> 어댑터 스모크, *의존성 상한 인상 직전*) · **§5-3**(Iceberg changelog 판독, *changelog 경로를 건드리기
+> 직전*) · §6(분석 재현성, *분석 산출물 공유 직전*). 나머지는 실인프라 미접속이 원칙이다(격리·재현).
+>
+> 🔴 **예외가 둘에서 셋으로 늘었다(2026-08-23).** "분석 재현성만 실인프라에 붙는다"는 초기 서술은
+> 이미 §5-1로 깨졌고 이번에 §5-3이 더해졌다 — **예외는 계층이 아니라 *관문 시점*으로 구분**한다.
+> 셋 다 "무엇을 하기 직전에 통과시키는가"가 다르고, 그것이 이 예외들을 정당화하는 유일한 축이다.
 
 ---
 
@@ -253,6 +258,111 @@ op 의존성이 `optimize_iceberg_files → expire snapshots → remove_orphan_f
   다만 여기서는 그 구분을 **잡이 자동으로 해주지 않으므로 사람이 해야 한다** —
   부정 결과는 **관측 경로가 살아 있었음을 함께 확인**해야 유효하다([philosophy.md](philosophy.md) 원칙 7).
 
+### 5-3. Iceberg changelog 판독 관문 + 소스 적격성 진단 — 수동 관문 (2026-08-23 실측)
+
+```shell
+kubectl scale deploy/spark-connect --replicas=1
+kubectl port-forward svc/spark-connect 15002:15002   # 별도 터미널 (실인프라 필요)
+uv run scripts/iceberg_changelog_probe.py
+```
+
+**무엇을 방어하나.** Phase 3 스트리밍과 증분 조회가 전부 **Iceberg Spark 프로시저
+`create_changelog_view`** 위에 서는데([architectures/spark.md](architectures/spark.md)
+§changelog는 4.1이 주지 않는다), 이 프로시저의 **인자 계약·계보 판정·런타임 jar 버전**은
+`dbt compile`이나 `dg check`가 전혀 보지 않는 층이다. 그래서 changelog 경로를 건드리기 직전의
+관문으로 쓴다 — §5-1이 *의존성 상한 인상 직전*이라면 이쪽은 **changelog 경로 변경 직전**이다.
+
+**두 가지를 한 번에 한다(섞어 읽지 않는다).**
+
+| 부분 | 성격 | 종료 코드에 영향 |
+| --- | --- | --- |
+| **관문**(프로브) | 전용 네임스페이스 `chglog`에 알려진 변경 3건을 만들고 기대 변경분과 대조 | ✅ 있다 |
+| **진단**(기존 테이블) | 카탈로그의 실 테이블이 changelog·스트림 소스로 쓸 수 있는지 판정 | ❌ **없다**(읽기 전용 관측) |
+
+🔴 **진단표를 게이트로 읽지 않는다.** 소스를 *고르기 위한* 관측이고, 표가 `불가`를 찍어도
+종료 코드는 `0`이다. 두 역할을 한 스크립트에 담았으므로 통과 신호의 범위를 여기서 못 박는다
+(§5-1 B9의 "스모크가 *무엇의* 대리표본인지 적어라"와 같은 이유).
+
+#### 종료 코드
+
+| 종료 코드 | 의미 |
+| --- | --- |
+| `0` | **관문 통과** — changelog가 기대한 변경분을 낸다 |
+| `1` | **회귀** — 프로시저 인자 계약 변경 · 계보 판정 변경 · Iceberg 런타임 jar 불일치 중 하나 |
+| `2` | **판정 불가** — venv 부재·Spark Connect 미도달 등 사전 조건 미충족 |
+
+🔴 **`2`를 `1`로 읽으면 안 되는 이유**는 §5-1과 정확히 같다. `spark-connect`를 `--replicas=0`으로
+내려 둔 상태(=이 저장소의 **정상 상태**, 회수 규율)에서 돌리면 항상 도달 불가가 나는데, 이걸
+회귀로 읽으면 **회귀가 아닌 것을 회귀로 오진**하고 통과로 읽으면 **관측 경로가 죽은 채 통과**가 된다.
+🔴 이 관문은 **회수 규율과 구조적으로 충돌하므로 `2`가 기본 결과다** — 돌릴 때만 올리고
+끝나면 다시 내린다(2026-08-23 검증에서도 `replicas=1` → 검증 → **즉시 `0`으로 회수**했고,
+회수 후 노드 실사용이 [resource-sizing.md](resource-sizing.md)의 "회수 후 실측" **2250m(28%) /
+3140Mi(14%)** 로 복귀함을 확인했다).
+
+#### 🔴 게이트 자체를 일부러 위반시켜 확인했다 (2026-08-23)
+
+세 경로를 **각각 만들어** 돌렸다. 통과만 보고 닫지 않는다([philosophy.md](philosophy.md) 원칙 7).
+
+| 경로 | 위반 방법 | 관측된 종료 코드 |
+| --- | --- | --- |
+| 정상 | 그대로 실행 | **`0`** |
+| 사전 조건 미충족 | `SPARK_REMOTE=sc://localhost:1`(죽은 포트) | **`2`** |
+| 회귀 | 기대값 상수를 일부러 틀린 값으로 패치 | **`1`** — `got={'INSERT': 2} want={'INSERT': 99}` |
+
+📌 회귀 경로에서 **틀린 쪽이 기대값이었다는 점**이 중요하다. 실측값 `{'INSERT': 2}`는 그대로였고
+기대값만 흔들었으므로, 이 `1`은 **비교 로직이 실제로 살아 있음**을 보인다 — "실패가 났다"가 아니라
+"실패를 **탐지하는 경로**가 돈다"의 증거다.
+
+#### 실측 결과 — `create_changelog_view` 의미론 (Spark **3.5.9** · Iceberg **1.11.0**)
+
+프로브 테이블에 **append 3행 → append 2행 → update 1행**을 만든 뒤 창을 잡았다.
+
+| 창 / 옵션 | 결과 | 기대 |
+| --- | --- | --- |
+| append 창 `s1→s2` | `{INSERT: 2}` | 일치 |
+| 갱신 창 `s2→s3`, `identifier_columns` **없음** | `{DELETE: 1, INSERT: 1}` | 일치 |
+| 갱신 창 `s2→s3`, `identifier_columns => array('id')` | `{UPDATE_BEFORE: 1, UPDATE_AFTER: 1}` | 일치 |
+
+🔴 **`UPDATE`는 `append`가 아니라 `overwrite` 스냅샷을 남긴다**(프로브의 ops = `append, append,
+overwrite`). 이것이 Flink 스트리밍 읽기 제약이 실제로 물리는 지점이다
+([architectures/flink.md](architectures/flink.md) §급소).
+
+#### 🔴 창은 `committed_at`이 아니라 `parent_id`로 잡는다
+
+스크립트가 `.history`의 계보를 직접 걸어 창을 잡는 이유는 실측에서 나왔다 —
+**`.snapshots`를 `committed_at`으로 정렬한 인접 두 행이 부모-자식이라는 보장이 없다.**
+`poc.sample`의 인접 두 행(6→7)에 창을 잡자 `IllegalArgumentException: Starting snapshot
+(exclusive) … is not a parent ancestor of end snapshot`으로 죽었다.
+원인과 파급은 [architectures/spark.md](architectures/spark.md) §`createOrReplace`는 계보를 끊는다.
+
+#### 🔴 이 관문이 보증하지 않는 것
+
+- **Flink 스트리밍 읽기는 별개 축이다.** Spark `create_changelog_view`는 overwrite 스냅샷 테이블에서도
+  뷰 생성에 성공하지만(`poc.sample`에서 실측), **Flink 스트리밍 읽기는 append만** 본다.
+  ⇒ 이 게이트의 `0`은 **Flink 축에 아무 보증을 주지 않으며**, 그 축은 **Flink 잡으로만 닫힌다**
+  (2026-08-23 현재 `미검증`).
+- **진단표의 `flink_stream` 열은 소스 *후보*를 좁힐 뿐** 스트리밍이 실제로 도는지를 말하지 않는다.
+- **값 정합이 아니라 변경 종류·건수까지**다. 22모델의 값 정합은 여전히 미검증이다(§5-1 B9).
+
+#### 정리 검증 — 스크립트의 "삭제함" 출력을 믿지 않는다
+
+프로브는 전용 네임스페이스 `chglog`에 만들고 종료 시 지운다. 🔴 **삭제 여부는 스크립트 출력이 아니라
+카탈로그 Postgres에서 직접 확인**했다(2026-08-23) — `iceberg_tables`에 `poc.sample`·`poc.sample_flink`
+둘뿐이었고 `iceberg_namespace_properties`에 `chglog`가 없었다. 자기보고가 아니라 **다른 층의 관측**으로
+닫는다([conventions/agents.md](conventions/agents.md) §권한 매트릭스와 같은 구분).
+
+#### ⚠️ 접속 경로 드리프트 — 선언된 경로가 실제로는 쓰이지 않았다 (미결)
+
+이번 실행은 `.env`의 **`SPARK_REMOTE=sc://localhost:15002`(port-forward 폴백)** 로 했다.
+
+- `.env.example`이 정본으로 제시하는 것은 **gRPC TLS Ingress**
+  (`sc://spark-grpc.localtest.me:8443/;use_ssl=true`)이고, 그 경로가 요구하는 CA 파일
+  `~/.lakehouse-ca.crt`는 **존재하지 않았다**. Ingress 리소스 자체는 살아 있다
+  (`spark-connect-grpc`, HOSTS `spark-grpc.localtest.me`).
+- ⇒ **"선언돼 있다"와 "쓰이고 있다"가 갈렸다.** 폴백이 정상 경로처럼 굳어지면 TLS 경로는
+  검증 없이 낡아간다. 🔴 **이번에 고치지 않았고 `미결`로 남긴다** — 교정 대상이 이 문서 밖
+  (`.env.example`·CA 배포 절차)이다.
+
 ---
 
 ## 6. 분석 재현성 검증 — ★★☆☆☆
@@ -317,7 +427,8 @@ ruff check . && sqlfluff lint dagster/dockerfile.d/src/dbt_pipelines/
 uv run --project dagster/dockerfile.d/src --with mypy mypy dagster/dockerfile.d/src/src
 
 # 수동 관문 (실인프라 필요 — 상시 CI 아님)
-uv run scripts/spark_connect_smoke.py   # §5-1 의존성 상한 인상 직전
+uv run scripts/spark_connect_smoke.py       # §5-1 의존성 상한 인상 직전
+uv run scripts/iceberg_changelog_probe.py   # §5-3 changelog 경로 변경 직전
 ```
 
 ## 무엇을 테스트하고, 무엇을 안 하나
