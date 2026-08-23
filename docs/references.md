@@ -21,6 +21,8 @@
 | [ruff](https://docs.astral.sh/ruff/) | Python lint·format | [conventions/python.md](conventions/python.md) |
 | [sqlfluff](https://docs.sqlfluff.com/) | SQL lint·format (trino dialect) | [conventions/dbt.md](conventions/dbt.md) |
 | [uv](https://docs.astral.sh/uv/) | 의존성·가상환경 | [conventions/python.md](conventions/python.md) |
+| [Claude Code — 사용자 정의 subagent](https://code.claude.com/docs/ko/sub-agents) | 워커 프론트매터 규약(`tools`·`skills`·`disallowedTools`·`hooks`) | [skills.md](skills.md) · [conventions/agents.md](conventions/agents.md) |
+| [Claude Code — Agent Skills](https://code.claude.com/docs/ko/skills) | 스킬 구조·`SKILL.md`·호출 경로 | [skills.md](skills.md) |
 
 ## 플랫폼·프레임워크
 

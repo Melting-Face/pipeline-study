@@ -441,13 +441,45 @@ lock의 해시가 **무엇의 해시인지 모른다.** 두 스키마 각각에 
 | 경로 | 수단 | 현황 |
 | --- | --- | --- |
 | **프리로드** | 프론트매터 `skills:` — 기동 시 **`SKILL.md` 본문이 컨텍스트에 주입**된다 | `data-engineer` × `dagster-expert` **1건뿐** |
-| **텍스트 안내** | 지시문 §참고 스킬 표 — 워커가 필요할 때 `Read`로 `.claude/skills/<name>/SKILL.md`를 직접 읽는다 | 나머지 전부 |
+| **온디맨드** | `tools:`의 **`Skill`** — 워커가 필요할 때 호출해 로드한다 | **9종**(등재 스킬 ≥ 1) |
+| **미부여** | `tools:`에 `Skill` 없음 — 호출 자체가 막힌다 | **4종**(사유는 아래 두 갈래) |
+
+🔴 **`skills:`는 화이트리스트가 아니다.** 공식 문서 원문 —
+*"이 필드는 어떤 skills를 미리 로드할지 제어하며, **subagent가 액세스할 수 있는 skills를 제어하지 않습니다**.
+… 방지하려면 `tools` 목록에서 `Skill`을 생략하거나 `disallowedTools`에 추가합니다."*
+⇒ 접근을 막는 축은 **`tools:`/`disallowedTools`**이고, `skills:`는 **순수 프리로드**다.
+
+🔴 **도달 범위는 lock 등재분보다 넓다.** 워커가 실제로 보는 목록에는 `skills-lock.json` 밖의
+**하네스·플러그인 제공 스킬**이 함께 들어온다. 그중 **`update-config`는 `settings.json`의
+`permissions`·`hooks` 편집 절차**를 가르친다 — **통제 배선 자체를 겨냥한 문서**가 도달 범위 안에 있다.
+`loop`·`schedule`(반복 실행·크론)도 같은 축이다. 전부 **lock 밖·출처 미판정·`security` 미검토**다.
+
+⚠️ **목록은 워커마다 다르다.** 2026-08-24 실측에서 `security`(`inherit`)와 `data-qa`(`sonnet`)의
+목록이 갈렸다(`claude-in-chrome`·`artifact-*` 유무). **"전 워커 동일"로 적지 않는다** — 세려면 그 워커에서 센다.
+수치를 이 문서에 박지 않는 이유도 같다: 하네스·플러그인 구성이 바뀌면 낡는다.
+**남는 것은 구조적 사실 하나 — "lock보다 넓다".**
+
+🔴 **그래서 스킬 단위 강제를 별도 가드가 진다** — [`scripts/skill_gate_guard.py`](../scripts/skill_gate_guard.py)
+(`PreToolUse` matcher `Skill`). **워커 지시문의 §참고 스킬 표를 직접 파싱**해 표 밖을 `deny`하고,
+파싱 실패·표 부재·빈 표는 **fail-closed**다. 표를 가드에 복사하지 않는 이유는 **두 곳이 드리프트**하기 때문이다.
+⇒ **지시문 표가 집행 정본이고 §③은 파생 인덱스**다([`doc-sync.md`](doc-sync.md) 실무 규칙 2 —
+어긋나면 코드/설정이 사실이다). **정합 검사는 워커 → 문서 방향으로 돈다.**
+
+🔴 **순서가 규칙이다 — 제한 수단을 먼저 만들고 연다.** 이 가드는 사후 보강이 아니라
+**여는 조건**이었다(`security` 반려 → 가드 신설 → 재컨펌). *열고 나서 통제를 찾는 순서가 되면 안 된다.*
+
+🔴 **미부여 4종의 사유는 두 갈래이고 같이 세면 안 된다** —
+`researcher`·`tech-writer`·`archivist`는 **등재 0건**(쓸 것이 없다)이지만,
+**`skill-matcher`는 감사자**라 호출하면 그 본문이 컨텍스트에 주입돼 **감사 대상이 감사자를 오염**시킨다.
+전자는 "열어도 쓸 게 없다", 후자는 "열면 안 된다" — **같은 `미부여`가 다른 단위**다.
 
 - 🔴 **주입 단위는 스킬 디렉터리가 아니라 `SKILL.md` 한 파일이다**(2026-08-23 실측 — `dagster-integrations`를
   프리로드한 프로브가 도구 0회로 `SKILL.md` 본문은 원문 인용했고 `references/storage.md`는 `NOT-IN-CONTEXT`로 답했다).
   ⇒ **`Read`가 없는 워커에게 `references/` 경로를 적으면 죽은 참조다.** 프리로드 단서에는 주입 대상과 안내 대상을 갈라 적는다.
-- 🔴 **"워커에 `Skill` 도구가 없다"는 서술을 폐기한다**(2026-08-23 실측으로 반증). 정확한 진술은
-  **「현행 워커가 `tools:`에 `Skill`을 열거하지 않아 닫혀 있다」**이고, 그 상태를 **유지하는 것은 정책적 선택**이다.
+- 🔴 **"워커에 `Skill` 도구가 없다"는 서술을 폐기한다**(2026-08-23 실측으로 반증).
+  정확한 진술은 **「`tools:`에 `Skill`을 열거한 워커에서만 열린다」**이고, 어느 워커에 열지는 **정책적 선택**이다.
+  ⚠️ **아래 프로브는 전원 미열거 시점의 것**이다 — 지금은 9종이 열려 있다(위 표).
+  프로브가 보인 것은 **메커니즘**(무엇이 열고 닫는가)이지 현행 배선이 아니다.
   - **반증 근거**(전부 **런타임 응답 원문** — 자기보고 아님). `tools:` 미선언 프로브 3셀, 변인은
     `disallowedTools`의 `Skill` 포함 여부 하나뿐:
 
@@ -545,11 +577,11 @@ lock의 해시가 **무엇의 해시인지 모른다.** 두 스키마 각각에 
 
 | 워커 | 주 스킬 | 제약 |
 | --- | --- | --- |
-| `data-engineer` | `dagster-expert` · `dagster-integrations` · `using-dbt-for-analytics-engineering` · `running-dbt-commands` · `adding-dbt-unit-test` · `sql-optimization` · `dignified-python` | 범용 Python 스킬은 **프로젝트 컨벤션 우선**(특히 `dignified-python`의 ABC 서브클래싱 기본 권고 ↔ 이 저장소의 클래스화 지양). `adding-dbt-unit-test`는 **★4 경계**(신규) — 계획은 `data-qa`, 구현만 여기. `using-dbt`의 `working-with-dbt-mesh` 필수 경유는 **죽은 참조** |
+| `data-engineer` | `dagster-expert` · `dagster-integrations` · `using-dbt-for-analytics-engineering` · `running-dbt-commands` · `adding-dbt-unit-test` · `sql-optimization` · `dignified-python` | 범용 Python 스킬은 **프로젝트 컨벤션 우선**(특히 `dignified-python`의 ABC 서브클래싱 기본 권고 ↔ 이 저장소의 클래스화 지양). `adding-dbt-unit-test`는 **★4 경계**(신규) — 계획은 `data-qa`, 구현만 여기. `using-dbt`의 `working-with-dbt-mesh` 필수 경유는 **죽은 참조**. 🔴 `dagster-integrations`는 **업스트림에서 소멸**해 재설치 불가 — 🔒는 "고정됨"이 아니라 **"유일 사본"** 으로 읽는다(무결성 실패 시 복구 경로가 없다) |
 | `data-verifier` | `sql-optimization` | 🔴 **1종이 맞다** — 죽은 참조 2종 제거 후 대체 후보 3종(`adding-dbt-unit-test`·`running-dbt-commands`·`using-dbt`)을 적극 채점했으나 **전부 ★3**. 셋 다 "무엇을 **쓸지**"의 저작 스킬인데 이 워커는 **Trino 읽기 전용**이라 축1이 구조적으로 0이다. `duckdb` 강등(★2) 근거 보존 |
 | `data-qa` | `adding-dbt-unit-test`(핵심) · `using-dbt-for-analytics-engineering` · `running-dbt-commands` | dbt CLI는 `parse`·`ls`·`compile`만(`build`/`run` 금지). 🔴 **이 제약은 기계 강제가 아니라 순수 규율**이다 — `tools`에 명령어 제한이 없고 `hooks`도 없다(`analyst`와 대비) |
 | `devops-engineer` | `multi-stage-dockerfile` · `kubernetes-specialist`**(C)** · `spark-optimization`**(C)** · `terraform-style-guide`(A) | 🔴 **C등급 단서가 등재의 조건**이며 **패턴 기반으로 재작성**됐다(행번호 폐기 — 구 앵커 8개 중 6개가 이미 무효였다). `multi-stage-dockerfile`이 **`docker-expert`(죽은 참조) 대체**(★5). `terraform-style-guide`는 **★4 경계** — 유일 스택이 ⏸ 보류라 축4가 약하다. 🔴 **`terraform-test`·`terraform-stacks`는 미등재(각 ★3)** — 이전 판의 "A등급 3종 신규 등재"는 **채점으로 뒤집혔다**: 전자는 [`test.md`](test.md) 피라미드에 **Terraform 레이어가 정의된 적이 없고**(관행 부재), 후자는 **HCP Stacks 제품을 채택한 적이 없다**(제품 불일치). 두 "0건"의 **의미가 다르다**. `spark-engineer` 미등재(★1 — 축1·3 모두 0) |
-| `devops-verifier` | `kubernetes-specialist`**(C)** | **진단·해석까지만** — 스킬이 권하는 수정·재기동 실행 금지. 🔴 **C등급 단서**(패턴 기반): `base64 -d`로 시크릿 값을 뜨지 않는다, `\| sh`/`\| bash` 미실행. 🔴 **컨테이너 런타임 진단은 미충족 갭**이다 — `docker-expert` 제거 후 `multi-stage-dockerfile`은 **★3으로 승계 불가**(46행 빌드타임 저작 가이드라 로그·OOM 해석 콘텐츠가 없다). 이름이 비슷하다고 자동 승계시키지 않는다 |
+| `devops-verifier` | `kubernetes-specialist`**(C)** | **진단·해석까지만** — 스킬이 권하는 수정·재기동 실행 금지. 🔴 **C등급 단서**(패턴 기반): `base64 -d`로 시크릿 값을 뜨지 않는다, `\| sh`/`\| bash` 미실행. 🔴 **컨테이너 런타임 진단은 미충족 갭**이다 — `docker-expert` 제거 후 `multi-stage-dockerfile`은 **★3으로 승계 불가**(46행 빌드타임 저작 가이드라 로그·OOM 해석 콘텐츠가 없다). 이름이 비슷하다고 자동 승계시키지 않는다. 🔴 **이 갭의 재조사 트리거는 「막힌 기록 3회」**(Rule of Three) — 정본만으로 진단이 막힌 사례가 실제로 3회 쌓여야 `researcher` 릴레이를 연다. **막혔다고 느낀 것이 아니라 막힌 기록**이 기준이다 |
 | `devops-qa` | `multi-stage-dockerfile` · `kubernetes-specialist`**(C)** · `terraform-style-guide`(A) | 감사 기준은 **스킬이 아니라 정본** (아래 충돌 규칙). `terraform-style-guide`는 여기서 **★5**(감사는 스택 활동 여부와 무관하게 상시 코퍼스라 `devops-engineer`의 ★4와 갈린다). `terraform-test`·`terraform-stacks`·`spark-optimization` 미등재(각 ★3 — 감사자는 "한도가 선언돼 있는가"만 보면 되고 튜닝 심화는 초과 스펙). `helm-chart-scaffolding` 강등(★2) + **디스크에도 없음**(죽은 참조) |
 | `analyst` | `using-dbt-for-analytics-engineering`(초안만) · `sql-optimization` | **읽기 질의만** — `dbt build`/`run`·정의 파일 수정 금지, gold 모델은 **제안만**(쓰기는 `analyst_path_guard.py`가 **기계 차단**). `spark-optimization` 강등(★2 — 축2가 0: `write` 계열이 "테이블 생성·덮어쓰기 금지"와 정면 충돌). 🔴 **`dataviz` 제거**(2026-08-20) — 🌐 런타임 제공이라 `Read`조차 못 한다. `answering-natural-language-questions-with-dbt`·`duckdb`는 **죽은 참조로 제거**(2026-08-21) |
 | `researcher` | **없음** | 등재 가능 스킬 **0건**(2026-08-21 16:19 KST — 프로젝트 14종 전수 **재도출**. 인벤토리가 24→14로 바뀌었으므로 이전 결론의 인용이 아니다). 벤더 A등급 스킬을 "1차 출처 캐시"로 등재하는 방안을 검토했으나 **축1 탈락** — 이 워커는 저장소 조회·외부 조사만 하고 CLI를 조작하지 않는다. `fetching-dbt-docs` **죽은 참조 제거**(등급·캐비트 판단 근거는 지시문에 보존) |
