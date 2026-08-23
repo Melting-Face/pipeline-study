@@ -22,7 +22,7 @@
 | [`monitoring.md`](monitoring.md) | 관측·모니터링 | **관측 수단 등록 의무**("안 둔다"도 선언) · 계측 대상 없는 수집기 금지 · **관측 경로 생존 확인**(원칙 7 운영판) · 수치는 시각·분모·도구·**단위** 병기 |
 | [`terraform.md`](terraform.md) | IaC(도입) | 스택 단위 · 버전 고정 + lock 커밋 · `terraform fmt`(2-space 예외) |
 | [`timezone.md`](timezone.md) | 타임존 | **저장 UTC · 표시/스케줄 KST** · tz-aware 강제(ruff `DTZ`) |
-| [`agents.md`](agents.md) | 에이전트 오케스트레이션·기록관 | **2계층**(supervisor → worker — 2026-08-23 `director` 계층 폐기) · 계획·배정·판정은 **supervisor 직접** · **`security` 컨펌 = G1(계획)+G2(작업내용)+Δ(계획 밖)** · **`tech-writer`=문서 소유자**(`docs/**`·`README.md`, 발행 금지) · **`researcher` 조사 게이트**(`WebSearch` 통과+로깅 / `WebFetch`는 승인분만) · **에스컬레이션** · **archivist 전담 기록** · 권한 게이트 · 정합성 가드 hook |
+| [`agents.md`](agents.md) + [`agents/`](agents/) | 에이전트 오케스트레이션 | **2계층**(supervisor → worker) · 워커 편성 · 권한 · 게이트 · 저널 · 병렬 세션 |
 
 ## 읽는 순서
 

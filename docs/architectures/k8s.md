@@ -11,10 +11,12 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
 ## 이 프로젝트에서의 위치 — 🚧 채택·이행중(PoC 게이트)
 
 - **채택 방향**: 확장성/성능 한계 극복 + 학습·포트폴리오를 위해 **컴퓨트·데이터 서비스를 K8s로 이전**한다.
-  단, **Dagster는 호스트 PC**(컨트롤 플레인)에 남기고 클러스터를 **원격 컴퓨트**로 트리거한다(오케스트레이터↔컴퓨트 분리).
+  단, **Dagster는 호스트에** 남기고 클러스터를 **원격 컴퓨트**로 트리거한다
+  (오케스트레이터↔컴퓨트 분리).
   전면 이행은 **PoC 성공을 전제**로 단계적으로 진행한다. 전체 로드맵은 [../redesign.md](../redesign.md).
 - **로컬 배포판**: **kind on Podman(rootful)** + 로컬 레지스트리. 호스트 Dagster는 kubeconfig로 클러스터 API에 접근한다.
-- **핵심 컴포넌트**: **Spark Operator**(배치)·**Flink Operator**(스트림)로 `SparkApplication`·`FlinkDeployment`(CRD) 실행,
+- **핵심 컴포넌트**: **Spark Operator**(배치)·**Flink Operator**(스트림)로
+  `SparkApplication`·`FlinkDeployment`(CRD)를 실행하고,
   **CloudNativePG**(카탈로그 Postgres)로 `Cluster`(CRD) 관리,
   Redpanda·SeaweedFS·카탈로그 Postgres를 K8s에 배포한다(**Trino 제거**). Iceberg 테이블은 Spark·Flink가 공유한다.
   **웹 UI 진입점은 ingress-nginx**로 고정 URL화한다(`*.localtest.me:8080`).
@@ -57,8 +59,9 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
   Spark·Flink 오퍼레이터와 **같은 선언형 패러다임**으로 통일된다. 서비스는 오퍼레이터가 만드는
   `catalog-postgres-rw`/`-ro`/`-r`이다(접미사 없는 이름은 생기지 않는다).
   **메타 Postgres는 compose(호스트)에 남긴다** — Dagster가 호스트라 순환 의존을 피한다.
-- **Spark 실행**: Apache 공식 **Spark Kubernetes Operator**(GA 1.0.0, Kubeflow에서 이전)를 Helm으로 설치(`ns=spark-operator`),
-  Dagster 자산이 `PipesK8sClient`로 `SparkApplication`(CRD, `spark.apache.org/v1`)을 제출·폴링한다. 규칙은 [../conventions/k8s.md](../conventions/k8s.md) §9~11.
+- **Spark 실행**: Apache 공식 **Spark Kubernetes Operator**를 Helm으로 설치하고(`ns=spark-operator`),
+  Dagster 자산이 `PipesK8sClient`로 `SparkApplication`(CRD)을 제출·폴링한다.
+  규칙은 [../conventions/k8s.md](../conventions/k8s.md) §9~11.
 - **Dagster 위치 주의**: 본 프로젝트는 Dagster를 **호스트에 유지**한다. `dagster-k8s`의 `K8sRunLauncher`는
   Dagster를 **클러스터 내부에 배포**할 때 run을 파드로 실행하는 옵션으로, 본 토폴로지의 Spark 트리거 수단이
   아니다(후속 비교 과제, [../redesign.md](../redesign.md) Phase 4).

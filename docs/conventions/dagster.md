@@ -56,11 +56,11 @@ class MyDbtTranslator(DagsterDbtTranslator):   # ← 가급적 사용하지 않�
 > Dagster는 `@asset`/op의 `context` 파라미터를 **클래스 identity**로 검사한다.
 > future annotations를 켜면 어노테이션이 **문자열**이 되어 검사가 실패한다.
 
-- 증상: `DagsterInvalidDefinitionError: Cannot annotate context parameter ... must be annotated with AssetExecutionContext ...`
+- 증상: `DagsterInvalidDefinitionError: Cannot annotate context parameter …`
 - 규칙: **자산/op 정의가 있는 모듈**에서는 `from __future__ import annotations`를 쓰지 않는다.
   `context`는 임포트한 실제 클래스로 표기한다: `context: AssetExecutionContext` (또는 생략).
 - 공통 helper 등 **자산이 아닌** 모듈은 future annotations를 써도 무방하다.
-  (같은 맥락: `TC`(flake8-type-checking)도 Dagster introspection과 충돌해 보류 — `docs/conventions/python.md`)
+  같은 맥락으로 `TC` 룰도 Dagster introspection과 충돌해 켜지 않는다([python.md](python.md)).
 
 ## 각 에셋은 명시적으로 분리 정의한다
 

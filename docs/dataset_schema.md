@@ -208,7 +208,7 @@ Tier-1(원천 `source()` 직접 소비) → 중간(다른 실버를 `ref()`) →
 |------|---------------|--------------------|
 | `icustay_times` | icustays, chartevents | stay별 첫·마지막 HR(220045) 시각 → fuzzy intime/outtime |
 | `icustay_hourly` | icustays (+ `ref` icustay_times) | ICU 재실을 정시 격자로 전개 (hr, endtime) |
-| `vitalsign` | chartevents | 활력징후 와이드 피벗. HR **220045**, sbp_ni **220179**/dbp_ni **220180**/mbp_ni **220181**, resp_rate 220210/224690, spo2 220277, temp 223761(℉)·223762(℃), temperature_site 224642, glucose 225664/220621/226537 |
+| `vitalsign` | chartevents | 활력징후 와이드 피벗. HR·혈압·호흡수·SpO2·체온 itemid를 컬럼으로 편다. temp 223761(℉)·223762(℃), temperature_site 224642, glucose 225664/220621/226537 |
 | `ventilator_setting` | chartevents | 환기 세팅 피벗. fio2 223835, peep 220339/224700, mode 223849/229314, type 223848, rr_set 224688 등 |
 | `oxygen_delivery` | chartevents | 산소 공급 피벗. o2_flow 223834/227582, additional 227287, device 226732 |
 | `gcs` | chartevents | GCS 총점. motor **223901**, verbal **223900**, eyes **220739** |

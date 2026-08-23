@@ -155,8 +155,9 @@ flowchart TB
 > `seaweedfs`(`legacy-storage`·`legacy-sql`·`monitoring`)·`prometheus`(`monitoring`)는 **profile opt-in**이라
 > 해당 profile을 켜야 위 포트가 열린다.
 >
-> `dagster-webserver`·`dagster-daemon`·`trino`는 `postgres` 헬스체크 통과 후 기동된다(`depends_on: condition: service_healthy`).
-> webserver와 daemon은 같은 이미지·`dagster.yaml`을 쓰고 **Postgres 공유 storage**(run/event/schedule)로 상태를 협조한다. `trino`는 `seaweedfs`도 의존한다.
+> `dagster-webserver`·`dagster-daemon`·`trino`는 `postgres` 헬스체크 통과 후 기동된다.
+> webserver와 daemon은 같은 이미지·`dagster.yaml`을 쓰고
+> **Postgres 공유 storage**로 상태를 협조한다. `trino`는 `seaweedfs`도 의존한다.
 
 ## Dagster 프로세스 분리 (webserver / daemon)
 
@@ -282,8 +283,9 @@ flowchart LR
 
 ### 핵심 설계
 
-- **리소스로 관리**: S3는 `dagster-aws` `S3Resource`, Iceberg는 `dagster-iceberg`(IO 매니저 + `IcebergTableResource`). 연결 설정은 자산이 아니라 리소스에 둔다(관심사 분리).
-- **메타스토어 불필요**: dagster-iceberg가 Trino와 **동일한 Iceberg JDBC 카탈로그**(Postgres `iceberg_catalog`)를 재사용한다.
+- **리소스로 관리**: S3는 `dagster-aws` `S3Resource`, Iceberg는 `dagster-iceberg`.
+  연결 설정은 자산이 아니라 리소스에 둔다(관심사 분리).
+- **메타스토어 불필요**: dagster-iceberg가 **동일한 Iceberg JDBC 카탈로그**를 재사용한다.
 - **대용량 대응**: 3.3GB급 csv.gz는 IO 매니저(전량 메모리) 대신 `pyarrow` 청크 단위 `append`로 메모리 일정.
 - **멱등성**: 대용량 경로 `mode="replace"`(기본)는 기존 테이블 제거 후 재적재.
 - **에셋은 각각 명시적으로 정의**(팩토리/클래스 지양) — `CLAUDE.md` 컨벤션 준수.
@@ -305,8 +307,11 @@ def admissions(s3: S3Resource) -> pa.Table:
 
 컨테이너 `dg check defs`로 **정의 로드 검증 통과**(`All definitions loaded successfully`).
 - 빌드: python:3.13-slim에서 `dagster-iceberg==0.3.14`·`pyiceberg-0.11.1`·`pyarrow-24.0.0` 휠 정상 설치.
-- ⚠️ **자산 모듈에서 `from __future__ import annotations` 금지**: Dagster가 `context`를 클래스 identity로 검사하므로 future annotations(문자열화) 시 로드 실패. 상세 [`conventions/dagster.md`](../conventions/dagster.md).
-- 미검증(런타임): boto3 `StreamingBody`↔pyarrow 대용량 스트리밍, 실제 S3/Iceberg 적재 — postgres·seaweedfs 기동 후 머티리얼라이즈로 확인 필요.
+- ⚠️ **자산 모듈에서 `from __future__ import annotations` 금지** — Dagster가 `context`를
+  클래스 identity로 검사하므로 문자열화되면 로드에 실패한다.
+  상세 [`conventions/dagster.md`](../conventions/dagster.md).
+- 대용량 스트리밍 적재 경로는 **실제 머티리얼라이즈로만 확인된다** —
+  로드 검증(`dg check`)이 보는 층이 아니다.
 
 ## 실행 방법
 
