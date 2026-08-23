@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 # --- 규약 상한 (정본은 docs/conventions/general.md §문서 작성 규약) ---
@@ -62,6 +63,23 @@ URL_ONLY_RE = re.compile(r"^\s*[-*>|\s]*\[?[^]]*\]?\(?https?://\S+\)?\s*[|]?\s*$
 #      오탐이 있는 게이트는 읽는 사람이 통째로 무시하게 되므로 규칙보다 먼저 고친다.
 CODE_SPAN_RE = re.compile(r"`[^`]*`")
 MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\([^)]*\)")
+
+
+def width(text: str) -> int:
+    """문자열의 **표시 폭**(터미널 열 수)을 센다.
+
+    🔴 계측 단위 함정 — 같은 줄이 셋 다 다른 값을 낸다:
+        - `len(s)`          : **문자 수**. 한글 1  → 표시 폭의 약 절반으로 과소평가
+        - `awk length($0)`  : **바이트 수**. 한글 3 → 약 1.5배로 과대평가
+        - 이 함수           : **표시 폭**. 한글 2  → 가독성이 실제로 걸리는 단위
+
+    2026-08-24 실측: `docs/README.md`가 `len()` 기준으로 0건이었는데
+    120열을 넘는 줄이 12개 있었다. **값은 맞고 단위가 틀렸다** — 그래서
+    검산을 통과하며 남았다(philosophy.md §계측 단위).
+    """
+    return sum(
+        2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in text
+    )
 
 
 def main() -> int:
@@ -134,9 +152,10 @@ def main() -> int:
             if in_fence or URL_ONLY_RE.match(line):
                 continue
 
-            if len(line) > MAX_LINE_LENGTH:
+            line_width = width(line)
+            if line_width > MAX_LINE_LENGTH:
                 findings.append(
-                    f"{rel}:{lineno}: line-length {len(line)}자 "
+                    f"{rel}:{lineno}: line-length {line_width}열 "
                     f"(상한 {MAX_LINE_LENGTH})"
                 )
 
@@ -145,10 +164,10 @@ def main() -> int:
             if stripped.startswith("|") and not re.fullmatch(r"[|\s:-]+", stripped):
                 cells = [c.strip() for c in stripped.strip("|").split("|")]
                 findings.extend(
-                    f"{rel}:{lineno}: table-cell {len(cell)}자 "
+                    f"{rel}:{lineno}: table-cell {width(cell)}열 "
                     f"(상한 {MAX_TABLE_CELL_LENGTH}) — 서술은 본문으로 내린다"
                     for cell in cells
-                    if len(cell) > MAX_TABLE_CELL_LENGTH
+                    if width(cell) > MAX_TABLE_CELL_LENGTH
                 )
 
             # 괄호 중첩 — 코드 스팬과 링크 문법을 지운 뒤 깊이 2를 넘는지 본다.
