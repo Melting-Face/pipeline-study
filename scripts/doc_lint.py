@@ -64,6 +64,14 @@ URL_ONLY_RE = re.compile(r"^\s*[-*>|\s]*\[?[^]]*\]?\(?https?://\S+\)?\s*[|]?\s*$
 CODE_SPAN_RE = re.compile(r"`[^`]*`")
 MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\([^)]*\)")
 
+# 링크는 **표시 텍스트만** 남기고 접는다.
+#   독자가 보는 것은 `[텍스트](url)`이 아니라 `텍스트`다.
+#   🔴 URL을 길이에 세면 긴 주소 하나가 줄을 위반으로 만드는데,
+#      그건 줄바꿈으로 고쳐지지 않는다. `docs/security.md`는 GitHub
+#      Security Policy로 렌더돼 **절대 URL이 의도된 선택**이라 더욱 그렇다.
+#      고칠 수 없는 것을 위반이라 부르면 도구가 통째로 무시된다.
+LINK_TEXT_RE = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
+
 
 def width(text: str) -> int:
     """문자열의 **표시 폭**(터미널 열 수)을 센다.
@@ -152,16 +160,22 @@ def main() -> int:
             if in_fence or URL_ONLY_RE.match(line):
                 continue
 
-            line_width = width(line)
-            if line_width > MAX_LINE_LENGTH:
+            stripped = line.strip()
+            is_table_row = stripped.startswith("|")
+
+            # 줄 길이 — 🔴 표 행은 제외한다.
+            #   마크다운 표 행은 **줄바꿈이 불가능**하다. 길다고 지적해도 고칠 방법이
+            #   줄이는 것뿐인데 그건 아래 table-cell 규칙이 이미 본다. 두 규칙이 같은
+            #   대상을 이중으로 세면 "고칠 수 없는 위반"이 쌓여 도구 전체가 무시된다.
+            line_width = width(LINK_TEXT_RE.sub(r"\1", line))
+            if not is_table_row and line_width > MAX_LINE_LENGTH:
                 findings.append(
                     f"{rel}:{lineno}: line-length {line_width}열 "
                     f"(상한 {MAX_LINE_LENGTH})"
                 )
 
             # 표 셀 — 구분행(| --- |)은 건너뛴다.
-            stripped = line.strip()
-            if stripped.startswith("|") and not re.fullmatch(r"[|\s:-]+", stripped):
+            if is_table_row and not re.fullmatch(r"[|\s:-]+", stripped):
                 cells = [c.strip() for c in stripped.strip("|").split("|")]
                 findings.extend(
                     f"{rel}:{lineno}: table-cell {width(cell)}열 "
