@@ -121,6 +121,34 @@ repos:
         files: >-
           ^(notebooks|docs)/.*\.(csv|tsv|psv|parquet|feather|arrow|orc|avro|xlsx|xls|jsonl|ndjson|pkl|pickle|npy|npz|dta|sas7bdat|db|sqlite|duckdb)$
 
+  # 조사 게이트 런타임 상태 커밋 차단 (2026-08-23 신설).
+  # 🔴 `no-health-data-files`와 **같은 형태·다른 대상**이다: `.gitignore`가 1층이고
+  #    이 훅이 ⓐ `git add -f` ⓑ 이미 추적 중인 파일을 잡는 2층이다.
+  # 🔴 막는 이유는 비밀정보가 아니라 **관측 로그의 성격**이다 — 무엇을 언제 조회했는지가
+  #    영구 이력으로 남으면 질의문이 저장소에 박제된다. 감사에는 필요하지만
+  #    감사 주체는 `security`이고 그 시점은 G2 한 번이다(수명 = 세션).
+  # ⚠️ 한계: 로컬 훅이라 `--no-verify`로 건너뛸 수 있다 — 다만 **거기서 끝이 아니다.**
+  #    2026-08-23 서버측 CI(`.github/workflows/ci.yml` `lint` 잡)가 머지돼
+  #    `pre-commit run --all-files`를 **저장소 전체**에 다시 돌린다. 🔴 모집단이 다르다 —
+  #    로컬 훅은 **스테이징된 파일만**, CI는 **전체**를 본다. 로컬 초록을 서버 초록으로 읽지 마라.
+  #    ⇒ `--no-verify`는 **커밋을 통과시킬 뿐 push 이후를 통과시키지 못한다.**
+  # 🔴 이 문단 자체가 한 번 낡았다 — 신설 당시(같은 날 오전) *"실수 방지이지 봉쇄가 아니다"* 로
+  #    적었는데 몇 시간 뒤 CI가 머지되며 절반이 거짓이 됐다. **한계 서술에도 유효기간이 있다**:
+  #    보통은 "통과했다"를 과신하는 것이 위험한데, 여기서는 **한계 문구가 낡아 통제를 과소평가**했다.
+  # 근거: docs/conventions/agents.md §researcher 조사 프로토콜
+  - repo: local
+    hooks:
+      - id: no-research-state-files
+        name: 조사 게이트 런타임 상태 커밋 차단
+        language: fail
+        entry: >-
+          🔴 `.claude/.research/`는 조사 게이트의 런타임 상태다(승인 URL 목록·질의 로그).
+          세션 수명의 관측 기록이라 커밋하지 않는다 — 감사는 `security`가 G2에서 파일을 직접 읽는다.
+          승인 이력을 남겨야 하면 미션 저널($OBSIDIAN_VAULT)에 요약해 적어라.
+          정본 docs/conventions/agents.md §researcher 조사 프로토콜.
+        files: >-
+          ^\.claude/\.research/
+
   # 커밋 메시지 Conventional Commits 검사 (규칙은 루트 .gitlint)
   - repo: https://github.com/jorisroovers/gitlint
     rev: v0.19.1
