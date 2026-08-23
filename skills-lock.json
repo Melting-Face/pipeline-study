@@ -24,6 +24,12 @@
       "skillPath": "skills/dignified-python/skills/dignified-python/SKILL.md",
       "computedHash": "7ce4bc793bc67892758337f245daa2f65daa061692361f5744e681fb6236f7ed"
     },
+    "documentation": {
+      "source": "anthropics/knowledge-work-plugins",
+      "sourceType": "github",
+      "skillPath": "engineering/skills/documentation/SKILL.md",
+      "computedHash": "c24a1672a7edad51225859d6549d9a61892f704a4527a65ce3cddd913ca04550"
+    },
     "find-skills": {
       "source": "vercel-labs/skills",
       "sourceType": "github",
