@@ -130,9 +130,17 @@ jobs:
           uv run dbt deps --project-dir dbt_pipelines
           uv run dbt parse --project-dir dbt_pipelines --profiles-dir dbt_pipelines
 
-      # 이 게이트가 잡는 것: `@dg.definitions`를 @asset 모듈에 두면 모듈 스코프 자산이 **조용히
-      # 누락**되고, `@dbt_assets` 셀렉터를 `path:` 글롭으로 쓰면 모델이 **0개 수집**된다.
-      # 둘 다 예외 없이 지나가는 잠복 버그라 사람 눈으로는 안 잡힌다(CLAUDE.md §Dagster 컨벤션).
+      # 이 게이트가 잡는 것: **정의 로드를 실패시키는 변경**이다. 자산 키 중복으로 실측 확인했다
+      # (프로브 → `DagsterInvalidDefinitionError: Duplicate asset key: AssetKey(['icustays'])`,
+      #  실행 32621184901에서 이 스텝만 failure·mypy·dbt parse·lint·commit-msg는 통과).
+      # 🔴 로컬 pre-commit은 이 축을 **전혀 보지 않는다** — 같은 프로브가 우회 없이 그냥 커밋됐다.
+      #
+      # 🔴 **잡지 못하는 것을 함께 적는다**(초안이 여기를 과장했다). `@dg.definitions`를 @asset
+      #    모듈에 두어 모듈 스코프 자산이 **조용히 누락**되는 경우는 로드가 성공하므로 이 게이트가
+      #    통과시킨다 — 자산이 *적어지는* 것은 오류가 아니다. `@dbt_assets` 셀렉터를 `path:`
+      #    글롭으로 써서 모델이 0개 수집되는 경우도 같다. 그래서 CLAUDE.md는 "정의 추가 후
+      #    `dg check defs`로 **자산 수를 확인**한다"고 적는다 — 세는 주체는 여전히 사람이다.
+      #    (이 두 경우는 프로브로 확인하지 않았다 — 논리적 귀결이라 `미확인`으로 남긴다.)
       #
       # 🔴 DAGSTER_HOME을 **빈 디렉터리**로 돌리는 것이 핵심이다. 저장소의 dagster.yaml은
       #    run/event/schedule storage를 Postgres로 지정하므로, 그대로 두면 정의를 읽기도 전에
