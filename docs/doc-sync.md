@@ -7,6 +7,7 @@
 ## 단일 출처 원칙
 
 - 한 규칙의 **정본은 한 곳**에만 둔다. 다른 문서는 요약하고 정본을 링크한다.
+- 🔴 **`docs/`는 규칙을 담고, 진행 상태는 담지 않는다**(§실무 규칙 7 — 시제 축).
 - [`CLAUDE.md`](../CLAUDE.md)는 **핵심 컨벤션의 요약/인덱스**, 상세 배경·흐름은 `docs/`에 둔다.
 - 도구로 강제 가능한 규칙(lint·format)의 정본은 **도구 설정 파일**(repo 루트 `pyproject.toml`의
   `[tool.ruff.*]`·`[tool.sqlfluff.*]` 등)이다. 문서는 그 설정의 의도를 설명할 뿐 값을 중복 정의하지 않는다.
@@ -24,7 +25,9 @@
 | 관측·모니터링 | `docs/conventions/monitoring.md` | `docs/architectures/monitoring.md`(현행 실태·기술 결정) · `CLAUDE.md` 운영 섹션 · `docs/README.md` 목차 · `docs/security.md`(2.11 사고 예방·대응, 2.10 감사 로그)<br/>🔴 **규칙 정본과 실태 문서를 가른다** — 관측 *수단*의 작성법은 이미 소유자가 있다(compose healthcheck는 `docs/conventions/docker.md`, K8s probe는 `docs/conventions/k8s.md`, 로그 보존은 `docs/operations.md`, 자원 실측 수치는 `docs/resource-sizing.md`). 새 문서에 **다시 쓰지 말고 링크**한다. |
 | 보안·거버넌스 **정책** | `docs/security.md` | `CLAUDE.md` 운영 섹션 · `docs/references.md`(규제 출처) · `.claude/agents/security.md`(점검 항목) · `docs/README.md` 목차 |
 | 보안 **현행 실태**(비공개) | `$OBSIDIAN_VAULT/security/posture.md` | `docs/security.md`(정책 — 🔴 **한 벌로 갱신**: 한쪽만 고치면 정책이 실태를 앞질러 "다 됐다"로 읽힌다) |
+| 환경 세팅 **절차** | `docs/setup.md` | 루트 `README.md` §실행방법(빠른 시작만) · `docs/architectures/overview.md` §실행 방법(순서 요약)<br/>🔴 **명령을 세 곳에 중복 정의하지 않는다** — 뒤 둘은 요약 + 링크만 두고, 값이 갈리면 **설정 파일이 사실**이다(실무 규칙 2). |
 | 환경변수 추가 | `.env.example` | `compose.yml`(앵커) → 코드(`EnvVar`) → `docs/operations.md` 전파 체인 |
+| **진행 상태·미해결**(비공개) | `$OBSIDIAN_VAULT/status/`(`backlog.md`·`observations.md`·`_index.md`) | 해당 규칙 문서의 **「이 문서가 담지 않는 것」 선언**(볼트 경로 명시) · `docs/README.md`<br/>🔴 **볼트에 먼저 쓰고 `docs/`에서 지운다** — 반대 순서는 손실이 비가역이다. |
 | 데이터셋 스키마·피처 | `docs/dataset_schema.md` | 해당 `models/<dataset>/source.yml` · `schema.yml` |
 | 분석 규칙(gold·노트북·리포트) | `docs/conventions/analysis.md` | `CLAUDE.md` 분석 섹션 · `docs/conventions/dbt.md`(gold 레이어) · `docs/test.md`(grain 테스트) · `notebooks/README.md` |
 | 외부 공개(블로그·공유 자료) | `docs/conventions/publishing.md` | `CLAUDE.md` 운영 섹션 · `docs/README.md` 목차 · `docs/posts/README.md` · `.claude/agents/tech-writer.md`(포맷 프로파일·경계) · `docs/security.md`(반출 통제) |
@@ -56,6 +59,22 @@
    `worker_path_guard.py`의 `except` 축이 그렇다 — 프로브를 `except`에 올리지 않으면 `allow`가
    먼저 통과시켜 **두 분기가 갈리지 않고, 이 축은 원리상 관측되지 않는다.**
    (한시적으로 프로브 경로를 `except`에 올려 돌린 뒤 내렸다 — **내리는 것까지가 절차**다.)
+7. 🔴 **낡는 문장은 `docs/`에 두지 않는다 (시제 축).** 판정 테스트는 한 줄이다.
+
+   > **6개월 뒤 이 문장이 아무도 손대지 않아도 저절로 거짓이 될 수 있는가?**
+
+   예면 `$OBSIDIAN_VAULT/status/`로, 아니면 `docs/`에 둔다.
+   **규칙**(무시제)과 **근거**(과거완료·불변)는 남고, **상태**(현재진행)만 나간다.
+   근거를 상태로 오분류해 지우지 않는다 — 사고 기록의 *교훈*은 규칙의 근거이고,
+   볼트로 가는 것은 *전말과 수치*뿐이다.
+
+   이 규칙은 사후 대응이다. `conventions/general.md`에 오래 있던 *"CI는 아직 없다"* 가
+   `.github/workflows/ci.yml` 신설로 **아무도 손대지 않았는데 거짓이 됐고**, 같은 시기
+   pre-commit 훅 개수가 문서마다 17·19·20으로 갈렸다(실제 20).
+   ⇒ **낡은 문장이 규칙 옆에 있으면 규칙까지 신뢰를 잃는다.**
+
+   절차는 §변경 유형별 동기화 체인의 「진행 상태·미해결」 행을 따른다.
+   🔴 **볼트에 먼저 쓰고 `docs/`에서 지운다.**
 
 ## 참고
 
