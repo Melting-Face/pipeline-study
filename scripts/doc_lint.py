@@ -37,6 +37,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 import unicodedata
@@ -161,6 +162,70 @@ def check_links(repo_root: Path) -> list[str]:
     return findings
 
 
+def check_vault_refs(repo_root: Path) -> list[str] | None:
+    """`docs/`가 가리키는 볼트 파일·절이 실재하는지 본다.
+
+    볼트는 **저장소 밖**이라 `check_links`가 보지 못한다. 상태 서술을 볼트로 옮긴
+    뒤 `docs/`에는 볼트를 가리키는 참조만 남으므로, 이 축을 안 보면
+    **규칙 문서가 없는 곳을 가리키는 상태**가 조용히 생긴다.
+
+    🔴 **판정 방향을 뒤집는다 — 산문에서 §이름을 잘라내지 않는다.**
+    `§운영 정책 미설정 항목.` 처럼 절 이름 뒤에 마침표·조사·괄호가 붙는데
+    **어디까지가 이름인지 알려주는 경계가 없다**. 잘라내려 하면 꼬리가 딸려와
+    실재하는 절을 "없다"고 판정한다(실제로 그렇게 오탐이 났다).
+    그래서 **볼트의 제목 집합을 먼저 읽고, 인용문이 그 제목으로 시작하는지**를 본다.
+
+    `$OBSIDIAN_VAULT`가 없으면 `None`을 돌려 **건너뛴다** — 개인 환경 의존성을
+    게이트의 전제로 만들지 않는다. 🔴 호출부는 이 `None`을 **`0건`이 아니라
+    「검사 안 함」으로** 출력해야 한다(안 본 것과 통과한 것은 다르다).
+    """
+    vault_env = os.environ.get("OBSIDIAN_VAULT", "")
+    vault = Path(vault_env).expanduser() if vault_env else Path.home() / "obsidian"
+    if not vault.is_dir():
+        return None
+
+    # 볼트 파일별 제목 집합 — 번호 접두(`## 5. 문서 · 도구 체계`)는 떼고 담는다.
+    # 절은 **이름으로도 번호로도** 불린다(`§자원 실측 피크` · `§5에 있다`).
+    # 번호만 쓰는 참조가 실제로 3건 있어, 이름 집합만 보면 정상 참조가 위반이 된다.
+    headings: dict[Path, set[str]] = {}
+    numbers: dict[Path, set[str]] = {}
+    for f in sorted(vault.rglob("*.md")):
+        titles, nums = set(), set()
+        for m in re.finditer(
+            r"^#{1,6}\s+(.*)$", f.read_text(encoding="utf-8"), re.MULTILINE
+        ):
+            title = m.group(1).strip()
+            titles.add(title)
+            if num_m := re.match(r"(\d+(?:[-.]\d+)*)\.\s*(.*)", title):
+                nums.add(num_m.group(1))
+                titles.add(num_m.group(2))
+        headings[f], numbers[f] = titles, nums
+
+    findings: list[str] = []
+    ref_re = re.compile(r"\$OBSIDIAN_VAULT/([\w./-]+\.md)`?\s*(?:§\s*(.*))?")
+    for doc in sorted((repo_root / "docs").rglob("*.md")):
+        rel = doc.relative_to(repo_root)
+        for num, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
+            for m in ref_re.finditer(line):
+                target = vault / m.group(1)
+                if not target.is_file():
+                    findings.append(f"{rel}:{num}: dead-vault {m.group(1)} — 파일 없음")
+                    continue
+                tail = (m.group(2) or "").strip()
+                if not tail:
+                    continue
+                # 번호 참조는 뒤에 숫자가 안 이어질 때만 맞다(`§5`가 `§55`를 먹지 않게).
+                by_num = any(
+                    re.match(rf"{re.escape(n)}(?!\d)", tail) for n in numbers[target]
+                )
+                if by_num or any(tail.startswith(t) for t in headings[target] if t):
+                    continue
+                findings.append(
+                    f"{rel}:{num}: dead-vault-section {m.group(1)} §{tail[:30]}"
+                )
+    return findings
+
+
 def main() -> int:
     """대상 문서를 훑어 규약 위반을 출력하고, 위반이 있으면 종료코드 1을 낸다."""
     parser = argparse.ArgumentParser(description="마크다운 가독성 규약 검사")
@@ -179,7 +244,16 @@ def main() -> int:
         for finding in link_findings:
             print(finding)
         print(f"\n링크 위반 {len(link_findings)}건", file=sys.stderr)
-        return 1 if link_findings else 0
+
+        vault_findings = check_vault_refs(root)
+        if vault_findings is None:
+            # 🔴 "0건"으로 적지 않는다 — 안 본 것과 통과한 것은 다른 상태다.
+            print("볼트 참조: 검사 안 함 ($OBSIDIAN_VAULT 없음)", file=sys.stderr)
+            return 1 if link_findings else 0
+        for finding in vault_findings:
+            print(finding)
+        print(f"볼트 참조 위반 {len(vault_findings)}건", file=sys.stderr)
+        return 1 if link_findings or vault_findings else 0
 
     repo_root = Path(__file__).resolve().parent.parent
     targets = (

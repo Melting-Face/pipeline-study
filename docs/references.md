@@ -3,6 +3,11 @@
 이 프로젝트의 규칙·설계가 근거로 삼는 외부 표준과 문서를 모은다. 각 문서의 `참고` 섹션은
 여기의 항목을 링크한다(단일 출처 — [`doc-sync.md`](doc-sync.md)).
 
+🔴 **상태 컬럼은 마커까지다.** 버전·실증 내역·`미확인` 항목은 여기 적지 않는다 —
+표는 **인덱스**이지 진행 보고가 아니고, 그런 서술은 손대지 않아도 낡는다
+(시제 축 — [`doc-sync.md`](doc-sync.md) §실무 규칙). 상세는 각 참조 문서와
+`$OBSIDIAN_VAULT/status/`에 둔다.
+
 ## 코딩 철학·규칙
 
 | 표준 | 용도 | 참조 문서 |
@@ -40,8 +45,8 @@
 | 기술 | 상태 | 참조 문서 |
 | --- | --- | --- |
 | [Docker Compose](https://docs.docker.com/reference/compose-file/) | ✅ 채택(배포) | [architectures/docker.md](architectures/docker.md) · [conventions/docker.md](conventions/docker.md) |
-| [Apache Spark](https://spark.apache.org/docs/latest/) | 🚧 채택·이행중(현행 **3.5.9** · **4.1 상향은 결정만 됨 · 이행 전** — 2026-08-23) | [architectures/spark.md](architectures/spark.md) |
-| [Apache Flink](https://flink.apache.org/documentation/flink-stable/) | 🚧 채택·이행중(오퍼레이터 **기본 설치** · 배치 왕복 실증 2026-08-22 · ✅ **스트리밍 왕복 실증 2026-08-23** — 장수명 잡이 **초기 12행 + 증분 3행**을 처리, 삼중 증거(데이터 시차 · `engine-name=flink` · `flink.job-id` 일치)로 확인. 체크포인트 **79회 완료**(S3=SeaweedFS · RocksDB), 러너 **`flink-runner:0.3.0`**. 스트림 소스 **Iceberg bronze changelog로 이행 완료**, **Redpanda 미도입**은 기각이 아니라 **불필요해진 것**. 🔴 체크포인트 **복구 가능성은 `미확인`**) | [architectures/flink.md](architectures/flink.md) |
+| [Apache Spark](https://spark.apache.org/docs/latest/) | 🚧 채택·이행중 | [architectures/spark.md](architectures/spark.md) |
+| [Apache Flink](https://flink.apache.org/documentation/flink-stable/) | 🚧 채택·이행중 | [architectures/flink.md](architectures/flink.md) |
 | [Kubernetes](https://kubernetes.io/docs/home/) | 🚧 채택·이행중 | [architectures/k8s.md](architectures/k8s.md) · [conventions/k8s.md](conventions/k8s.md) |
 | [Helm](https://helm.sh/docs/) | 🔎 K8s 패키징 | [conventions/k8s.md](conventions/k8s.md) |
 | [Prometheus](https://prometheus.io/docs/introduction/overview/) | 🔎 미채택 | [architectures/monitoring.md](architectures/monitoring.md) · [conventions/monitoring.md](conventions/monitoring.md) |
