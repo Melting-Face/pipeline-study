@@ -112,12 +112,21 @@ models:
 """
 
 # 정리는 스모크가 만든 것만 지운다(전용 네임스페이스라 실데이터와 겹치지 않는다).
+#
+# 🔴 **`PURGE`가 없으면 카탈로그만 지워지고 S3 데이터 파일은 남는다.**
+#    2026-08-23 실측 — `PURGE` 없이 반복 실행한 결과 `s3://warehouse/smoke/`에
+#    parquet·metadata **85개(275.9 KiB)** 가 누적돼 있었다. 카탈로그에는 `smoke`가
+#    없으므로 `SHOW TABLES`로 확인하면 **"정리됐다"가 참으로 보인다** —
+#    참인 범위가 **카탈로그 축뿐**인데 전 범위로 읽히는 형태다.
+#    이 스크립트는 의존성 상한을 올릴 때마다 도는 관문이라 **돌 때마다 누적**된다.
+#    (같은 결함을 `scripts/iceberg_changelog_probe.py`에서 먼저 발견해 고쳤고,
+#     거기서 `PURGE` 추가 → 재실행 시 같은 prefix가 0개로 떨어지는 것을 확인했다.)
 CLEANUP_SNIPPET = """
 from pyspark.sql import SparkSession
 
 session = SparkSession.builder.remote({remote!r}).getOrCreate()
 for table in {tables!r}:
-    session.sql(f"DROP TABLE IF EXISTS iceberg.{schema}.{{table}}")
+    session.sql(f"DROP TABLE IF EXISTS iceberg.{schema}.{{table}} PURGE")
 session.sql("DROP NAMESPACE IF EXISTS iceberg.{schema}")
 print("cleanup-ok")
 """
