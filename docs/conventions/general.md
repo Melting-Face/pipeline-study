@@ -22,7 +22,8 @@
 | 대상 | 도구 | 설정 위치 | 게이트 |
 | --- | --- | --- | --- |
 | Python | [`ruff`](https://docs.astral.sh/ruff/) (lint + format) | 루트 `pyproject.toml` `[tool.ruff]` | pre-commit |
-| SQL | [`sqlfluff`](https://docs.sqlfluff.com/) | 루트 `pyproject.toml` `[tool.sqlfluff.*]` + `.sqlfluffignore` | pre-commit |
+| SQL | [`sqlfluff`](https://docs.sqlfluff.com/) | 루트 `pyproject.toml` + `.sqlfluffignore` | pre-commit |
+| 문서(Markdown) | [`scripts/doc_lint.py`](../../scripts/doc_lint.py) | 스크립트 상단 상수 | 수동 (§문서 작성 규약) |
 | 커밋 메시지 | [`gitlint`](https://jorisroovers.github.io/gitlint/) | `.gitlint` (루트) | pre-commit (`commit-msg`) |
 | YAML | [`yamllint`](https://yamllint.readthedocs.io/) | `.yamllint.yaml` (루트) | pre-commit |
 | Dockerfile | [`hadolint`](https://github.com/hadolint/hadolint) | `.hadolint.yaml` (루트) | pre-commit (로컬 바이너리) |
@@ -34,9 +35,10 @@
 
 커밋 전 포매터·린터를 통과시킨다. (`mypy`는 어노테이션이 아닌 **타입 정합성**을 검사)
 
-> 🔴 **서버측 게이트는 없다.** `.github/workflows/`에는 `release.yml`(태그 푸시 시 릴리스 생성)뿐이고
-> `push`·`pull_request` 트리거 워크플로가 없다. 즉 위 게이트는 **전부 로컬**이며
-> `git commit --no-verify` 한 번이나 훅 미설치 클론으로 전량 우회된다. CI 게이트 구성은 [test.md](../test.md) TODO.
+> **로컬 훅만으로는 강제되지 않는다** — `git commit --no-verify` 한 번이나 훅 미설치 클론으로
+> 전량 우회된다. 그래서 같은 검사를 **서버측에서 다시 돌린다**(`.github/workflows/ci.yml`).
+> 🔴 **두 층은 모집단이 다르다** — 로컬 훅은 **스테이징된 파일만**, CI는 `--all-files`로 **저장소 전체**를 본다.
+> "로컬에서 통과했다"를 "저장소가 깨끗하다"로 읽지 않는다.
 
 ### 실행 (pre-commit)
 
@@ -50,10 +52,13 @@ pre-commit install --install-hooks    # pre-commit + commit-msg 훅 설치
 pre-commit run --all-files            # 전체 수동 검사
 ```
 
-- **포함 훅**(2026-08-21 기준 17종): `ruff-check`·`ruff-format` · `sqlfluff-lint`·`sqlfluff-fix` ·
-  `yamllint` · `hadolint` · `shellcheck` · `gitleaks` · `nbstripout` · `gitlint`(commit-msg) ·
-  기본 위생 훅 6종(공백·EOF·머지충돌·대용량파일·toml/yaml/json 검사·개인키 탐지).
-- **미포함**: `mypy` — 의존성 환경이 필요해 격리 venv에서 마찰이 크다. 수동 실행:
+- **포함 훅의 정본은 [`.pre-commit-config.yaml`](../../.pre-commit-config.yaml)** 이다 —
+  🔴 **개수·목록을 여기 옮겨 적지 않는다**(과거 문서마다 값이 갈렸다). 계열은
+  포매터·린터(`ruff`·`sqlfluff`·`yamllint`·`hadolint`·`shellcheck`) · 시크릿·데이터 반출 차단
+  (`gitleaks`·`nbstripout`·로컬 `no-*-files` 훅) · 커밋 메시지(`gitlint`, commit-msg 스테이지) ·
+  기본 위생 훅이다.
+- **미포함**: `mypy` — 의존성 환경이 필요해 격리 venv에서 마찰이 크다. 로컬은 수동 실행이고,
+  **CI(`defs` 잡)가 서버측에서 돌린다**:
   `uv run --project dagster/dockerfile.d/src --with mypy mypy dagster/dockerfile.d/src/src`
 
 **`hadolint`만 로컬 바이너리를 쓴다.** 업스트림 `hadolint-docker` 훅은 `docker` CLI를 요구하는데
@@ -65,7 +70,7 @@ pre-commit run --all-files            # 전체 수동 검사
 
 ```bash
 ruff check . && ruff format .        # Python
-sqlfluff lint dagster/dockerfile.d/src/dbt_pipelines/   # SQL — 🔴 repo 루트에서 실행할 것
+sqlfluff lint dagster/dockerfile.d/src/dbt_pipelines/   # SQL — repo 루트에서 실행할 것
 yamllint .                           # YAML
 hadolint <Dockerfile>                # Dockerfile
 shellcheck scripts/*.sh              # 셸
@@ -82,7 +87,7 @@ uv run --project dagster/dockerfile.d/src --with mypy mypy dagster/dockerfile.d/
 
 - `pyproject.toml`을 지원하는 도구(`ruff`·`sqlfluff`·`mypy`)의 설정은 **repo 루트 `pyproject.toml`**에 모은다.
   pre-commit이 repo 루트에서 실행되므로 설정도 루트에 둬 단일 출처를 맞춘다.
-  (CI는 아직 없다 — 위 §게이트 주의 참고.)
+  CI도 같은 이유로 **repo 루트에서** `pre-commit run --all-files`를 돌린다.
   - `ruff`·`sqlfluff`는 대상 파일에서 상위로 올라가며 설정을 탐색해 루트 설정을 자동으로 잡는다.
   - `mypy`는 상위 탐색을 하지 않고 **CWD의 설정만** 읽으므로 반드시 repo 루트에서 실행한다.
 - 패키징(`[project]`·`[build-system]`)과 Dagster `dg` 설정은 빌드 컨텍스트인
@@ -165,6 +170,56 @@ git push origin v0.1.0
 ```
 
 > 워크플로우는 **`main`(기본 브랜치)에 있어야** 태그 이벤트로 동작한다.
+
+## 문서 작성 규약
+
+`README.md`·`docs/**`·`CLAUDE.md`는 **AI와 사람이 함께 읽는다.** 두 독자는 같은 이유로 막힌다 —
+사람은 가로 스크롤을 하게 되고, AI는 구조 없는 텍스트 덩어리를 받는다.
+
+### 정량 상한
+
+검사는 [`scripts/doc_lint.py`](../../scripts/doc_lint.py)가 한다.
+상한의 정본은 그 스크립트 상단 상수이고, 아래는 **왜 그 값인지**다.
+
+| 항목 | 상한 | 이유 |
+| --- | --- | --- |
+| 한 줄 | 120자 | 가로 스크롤 없이 읽힌다 |
+| 표 셀 | 200자 | 표는 **대조용**이다. 서술이 들어가면 표가 아니다 |
+| 강조 마커 | 문서당 5개 | 강조는 **희소성으로만** 작동한다 |
+| 문서 | 500줄 | 넘으면 주제별로 나눈다 |
+| 괄호 중첩 | 금지 | 한 문장에 한 생각 |
+
+```bash
+uv run scripts/doc_lint.py                 # 저장소 전체
+uv run scripts/doc_lint.py --summary       # 파일별 위반 수(진척 측정)
+uv run scripts/doc_lint.py docs/setup.md   # 특정 파일
+```
+
+### 서술 규칙
+
+- **한 문장에 한 생각.** 규칙·근거·반례·예외를 한 문장에 겹치지 않는다.
+  규칙을 먼저 쓰고, 근거는 다음 문장에 둔다.
+- **표에는 대조되는 것만** 넣는다. 문단이 되면 본문으로 내린다.
+- **긴 문서에는 소제목을 촘촘히** 둔다. 스캔이 안 되면 길이보다 구조가 문제다.
+
+### 시제 축 — 규칙과 상태를 가른다
+
+🔴 **`docs/`는 규칙을 담고 진행 상태는 담지 않는다.** 판정 테스트는 한 줄이다.
+
+> **6개월 뒤 이 문장이 아무도 손대지 않아도 저절로 거짓이 될 수 있는가?**
+
+| 분류 | 시제 | 목적지 |
+| --- | --- | --- |
+| **규칙** | 무시제 — "~한다" | `docs/` |
+| **근거** | 과거완료 — "그래서 이 규칙이다" | `docs/`, 규칙 옆에 짧게 |
+| **상태** | 현재진행 — "아직 ~않다 / 미해소 / 실측 피크" | `$OBSIDIAN_VAULT/status/` |
+
+근거를 상태로 오분류해 지우지 않는다. 이 저장소는 실패·번복 이력을 남기는 것이 정책이고,
+사고 기록의 **교훈은 규칙의 근거**다. 볼트로 가는 것은 **전말과 수치**뿐이다.
+
+이 규약을 어긴 실례가 있다. 이 문서에 오래 적혀 있던 *"CI는 아직 없다"* 는
+`.github/workflows/ci.yml`이 생기면서 **저절로 거짓이 됐고**, 훅 개수는 문서마다 17·19·20으로 갈렸다.
+상세는 [`../doc-sync.md`](../doc-sync.md) §동기화 체인.
 
 ## 비밀정보 (Secrets)
 
