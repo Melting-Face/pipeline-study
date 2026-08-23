@@ -1,6 +1,4 @@
-"""룰셋 차단 확인용 일회성 프로브 — 확인 후 PR째로 폐기한다.
+"""룰셋 차단 확인용 일회성 프로브 — 대조군(위반 제거본).
 
-아래 import는 쓰이지 않는다 → ruff F401 → `lint` 잡 실패 → required check 실패.
+미사용 import를 걷어냈다 → ruff 통과 → required check 통과 → 상태가 뒤집혀야 한다.
 """
-
-import os
