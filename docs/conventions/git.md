@@ -44,7 +44,7 @@
     참조하지 않으며, 루트 `pyproject.toml`은 `[project]`가 없는 **도구 설정 전용**이라 루트 락에는
     잠기는 의존성이 0개다. "락 파일이니 커밋" 규칙을 기계적으로 적용하지 않는다.
   - **`.claude/settings.json`** — 프로젝트 공유 권한 게이트·hook 배선
-    ([agents.md §권한 게이트](agents.md#권한-게이트-permissions--기계-강제층)). 같은 `.claude/` 아래여도
+    ([agents/permissions.md §통제 5층](agents/permissions.md#통제-5층)). 같은 `.claude/` 아래여도
     `settings.local.json`과 정책이 **반대**이므로 글롭으로 묶지 않는다.
 
 ## 6. AI 보조 세션에서의 git (Claude Code)
