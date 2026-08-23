@@ -47,7 +47,7 @@
 
 ### 도구 (tooling)
 
-- [Claude Code 스킬](skills.md) — Agent Skills 카탈로그: **잠긴 스킬**(skills-lock.json)과 **작업 유형별 매핑**(dbt·Spark·K8s·CI 등), 사용 규칙(프로젝트 컨벤션 우선). 🔴 스킬은 **세 축으로 갈린다** — 🔒 lock 등재 / ⚙️ **디스크 설치·lock 밖** / 🌐 **런타임 제공(디스크에 없음)**. 워커에는 `Skill` 도구가 없어 ⚙️는 `Read`로 쓸 수 있지만 🌐는 파일이 없어 **워커 지시문에 적으면 죽은 참조**다
+- [Claude Code 스킬](skills.md) — Agent Skills 카탈로그: **잠긴 스킬**(skills-lock.json)과 **작업 유형별 매핑**(dbt·Spark·K8s·CI 등), 사용 규칙(프로젝트 컨벤션 우선). 🔴 스킬은 **세 축으로 갈린다** — 🔒 lock 등재 / ⚙️ **디스크 설치·lock 밖** / 🌐 **런타임 제공(디스크에 없음)**. 워커에 `Skill`을 물리지 않으므로(**정책** — `Skill`은 기본 집합에 있다) ⚙️는 `Read`로 쓸 수 있지만 🌐는 파일이 없어 **워커 지시문에 적으면 죽은 참조**다
 
 ### 코딩 규칙 (conventions)
 
