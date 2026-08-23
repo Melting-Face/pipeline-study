@@ -60,8 +60,11 @@ DEFAULT_TARGETS = ("CLAUDE.md", "README.md", "docs", "notebooks/README.md")
 LINK_SCAN_DIRS = ("docs", ".claude/agents", ".claude/commands", "notebooks")
 LINK_SCAN_FILES = ("README.md", "CLAUDE.md")
 
-# `.claude/skills/`는 **외부에서 설치한 벤더 콘텐츠**라 검사하지 않는다.
+# `.claude/skills/`는 **외부에서 설치한 벤더 콘텐츠**라 링크 검사에서 뺀다.
 #   우리가 고칠 수 없고, 코드 예시의 제네릭 `[T](x: T)`가 링크로 오인된다.
+#   🔴 **제외는 「검사 안 함」이지 「안전함」이 아니다** — 그 디렉터리에는
+#      lock 밖 스킬이 실재하고 출처·검토를 거치지 않은 것이 섞여 있다.
+#      그 축은 별도 통제(`skill_gate_guard.py`)가 본다.
 EXCLUDE_PARTS = ("dbt_packages", "target", ".venv", "node_modules")
 
 FENCE_RE = re.compile(r"^\s*(```|~~~)")

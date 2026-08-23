@@ -80,7 +80,7 @@ dg.EnvVar("KEY") / os.environ["KEY"]  (코드에서 참조)
   미지정 시 공용 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`로 **폴백**해 compose 단독 구성이 보존된다.
   위 카탈로그 키와 같은 이유로 **`compose.yml`에 넣지 않는다**(의도된 예외 — 값을 바꿔야 하는 쪽은
   호스트 실행 + K8s 조합뿐이다).
-  - 🔴 **엔드포인트와 자격증명은 한 쌍으로 바꾼다.** 엔드포인트만 K8s(`localhost:18333`)로 돌리고
+  - **엔드포인트와 자격증명은 한 쌍으로 바꾼다.** 엔드포인트만 K8s(`localhost:18333`)로 돌리고
     키를 공용 `AWS_*`로 두면 **부분 성공**이 난다 — 카탈로그 나열(`list_tables`)은 Postgres만 보므로
     성공하고, `load_table`이 `metadata.json`을 S3에서 읽는 순간 `ACCESS_DENIED during HeadObject`로 죽는다
     (2026-08-19 실측). 값 자체가 다르다(k8s Secret `lakehouse-creds`). **접속 대상을 바꾸는 값은 한 벌로 묶어 바꾼다.**
@@ -91,21 +91,29 @@ dg.EnvVar("KEY") / os.environ["KEY"]  (코드에서 참조)
   in-cluster 서비스(카탈로그 Postgres·SeaweedFS·Spark Connect)에 **port-forward가 필요**하므로
   `.env` 기본값은 `localhost:<로컬포트>`를 가리킨다. 클러스터 안에서 도는 워크로드는
   매니페스트가 서비스명(`catalog-postgres-rw`·`seaweedfs`)을 직접 주입한다.
-  - 🔴 **카탈로그 PG의 서비스명에는 접미사가 붙는다** — CloudNativePG가 `<cluster>-rw`(쓰기)·`-ro`(읽기 전용)·
+  - **카탈로그 PG의 서비스명에는 접미사가 붙는다** — CloudNativePG가 `<cluster>-rw`(쓰기)·`-ro`(읽기 전용)·
     `-r`(전체)를 만들고 `<cluster>` 이름의 서비스는 **만들지 않는다**. 오퍼레이터 이전 시 `catalog-postgres`를
     그대로 두면 DNS가 안 풀려 죽는다. 계정 시크릿도 `lakehouse-creds`(S3 전용)에서 분리해
     **`catalog-pg-app`**(basic-auth, 키 `username`/`password`)이 in-cluster 단일 출처다.
 
 ## 2. 운영 정책 (보존·만료)
 
-> 아래 항목은 **미설정** 상태다. 팀(개인) 논의 후 결정하고 이 표를 갱신한다.
+무엇을 얼마나 보관하고 언제 지울지를 정한다.
 
-| 항목 | 현재 동작 | 상태 | 비고 |
-| --- | --- | --- | --- |
-| Iceberg 유지보수(컴팩션·만료·orphan) | `iceberg_maintenance_job`이 **매주 일요일 03:00 KST**에 대용량 3테이블을 **컴팩션(Spark `rewrite_data_files`) → 스냅샷 만료(pyiceberg, `SNAPSHOT_RETENTION_DAYS` 기본 7일) → orphan 정리(Spark `remove_orphan_files`, `ORPHAN_RETENTION_DAYS` 기본 7일)** 순서로 처리(순서 강제)([`defs/maintenance.py`](../dagster/dockerfile.d/src/src/dagster_project/defs/maintenance.py)) | **부분 구현** | 보존기간(기본 7일)·컴팩션 임계값(기본 100MB)·대상 테이블 범위는 **확정 필요**([security.md §4-1](security.md)) |
-| SeaweedFS(`s3://warehouse`) 용량 | 수명주기 정책 없음 | **논의 필요** | compute-log·중간 산출물 정리 정책 미설정 |
-| Docker 컨테이너 로그 유지 | `max-size: 10m` × `max-file: 20` → 컨테이너당 **최대 200MB** | 설정됨 | [conventions/docker.md](conventions/docker.md) §1-1. 시간 기반 순환은 미설정 |
-| Claude Code 세션 로그(개인 환경) | `~/.claude/settings.json`의 `cleanupPeriodDays: 14` | 설정됨·**실효 확인**(2026-08-20) | 아래 §2-1. 저장소가 아니라 **개인 홈**이라 커밋 대상이 아니다 |
+| 항목 | 어떻게 도는가 |
+| --- | --- |
+| Iceberg 유지보수 | `iceberg_maintenance_job`이 주 1회 **컴팩션 → 스냅샷 만료 → orphan 정리** 순서로 처리한다 |
+| SeaweedFS 용량 | 수명주기 정책 없음 |
+| Docker 컨테이너 로그 | `max-size` × `max-file`로 컨테이너당 상한을 건다 |
+| Claude Code 세션 로그 | `~/.claude/settings.json`의 `cleanupPeriodDays` |
+
+🔴 **순서 강제가 이 잡의 설계다** — 컴팩션이 새 파일을 쓰고 만료가 옛 스냅샷을 끊은 **뒤에야**
+orphan 정리가 안전하다. 순서를 바꾸면 살아 있는 파일을 지운다.
+🔴 **다만 순서 강제와 실패 전파가 같은 배선에 묶여 있다** — 첫 op이 실패하면 뒤가 전부 중단된다
+([`test.md`](test.md) §5-2).
+
+📌 **각 항목의 현재 설정 상태와 남은 결정은 저장소 밖에 있다** —
+`$OBSIDIAN_VAULT/status/observations.md` §운영 정책 미설정 항목.
 
 ### 2-1. 로컬 세션 로그 정리 (`cleanupPeriodDays`)
 
@@ -113,7 +121,7 @@ AI 세션 로그는 `~/.claude/projects/<프로젝트-경로-슬러그>/`에 `<s
 서브에이전트 로그는 그 아래 `<session-id>/subagents/`에 붙는다. 2026-08-20 실측 시 이 저장소 몫만
 **74MB·103파일**이었다.
 
-🔴 **통째로 지우지 않는다 — 같은 디렉터리에 영구 메모리가 산다.**
+**통째로 지우지 않는다 — 같은 디렉터리에 영구 메모리가 산다.**
 
 ```
 ~/.claude/projects/<프로젝트>/
@@ -130,8 +138,8 @@ AI 세션 로그는 `~/.claude/projects/<프로젝트-경로-슬러그>/`에 `<s
 | --- | --- |
 | 설정 키 | `~/.claude/settings.json`의 `cleanupPeriodDays`(기본 **30**, 이 환경은 **14**) |
 | 실행 시점 | 세션 기동마다가 아니라 **주기적**. 마지막 실행은 `~/.claude/.last-cleanup`(ISO8601, UTC) |
-| 🔴 실행 조건 | **대화형 기동에서만 돈다.** 헤드리스 `claude -p`는 3회 기동해도 마커가 갱신되지 않았다 |
-| 🔴 보존 단위 | **파일이 아니라 세션(부모)**. `subagents/` 하위 로그는 **부모의 수명을 따른다** |
+| 실행 조건 | **대화형 기동에서만 돈다.** 헤드리스 `claude -p`는 3회 기동해도 마커가 갱신되지 않았다 |
+| 보존 단위 | **파일이 아니라 세션(부모)**. `subagents/` 하위 로그는 **부모의 수명을 따른다** |
 
 **판정 명령** — 값이 아니라 **단위**를 맞춰야 한다:
 
@@ -143,7 +151,7 @@ find ~/.claude/projects -maxdepth 2 -name '*.jsonl' -mtime +14 | wc -l
 find ~/.claude/projects -name '*.jsonl' -mtime +14 | wc -l
 ```
 
-🔴 **설정을 넣은 것과 정리가 도는 것은 다른 축이다.** 값을 바꿨으면 **대화형 세션을 한 번 띄운 뒤**
+**설정을 넣은 것과 정리가 도는 것은 다른 축이다.** 값을 바꿨으면 **대화형 세션을 한 번 띄운 뒤**
 위 명령으로 확인한다. 실측 결과 기준선 9개 중 8개가 삭제되고 109MB → 104MB로 줄었으며,
 대조군인 `memory/` 8개는 무손상이었다. 남은 1개는 미삭제가 아니라 **위 재귀 명령이 세션이 아니라
 파일을 세고 있었기 때문**이다([philosophy.md](philosophy.md) §계측 단위).
@@ -157,7 +165,7 @@ find ~/.claude/projects -name '*.jsonl' -mtime +14 | wc -l
 > [architectures/trino.md](architectures/trino.md)). 실행에는 **Spark Connect 접속**이 필요하다:
 > 호스트에서 돌릴 때는 `kubectl port-forward svc/spark-connect 15002:15002`, 주소는 `SPARK_REMOTE`.
 >
-> 🔴 `remove_orphan_files`는 warehouse를 **Hadoop FileSystem으로 나열**하므로 Spark Connect 서버에
+> `remove_orphan_files`는 warehouse를 **Hadoop FileSystem으로 나열**하므로 Spark Connect 서버에
 > `spark.hadoop.fs.s3*` 설정이 있어야 한다(Iceberg S3FileIO로 대체 불가 — 카탈로그가 *모르는* 파일을
 > 찾는 게 목적이다). 없으면 `No FileSystem for scheme "s3"`로 죽는다([conventions/k8s.md](conventions/k8s.md)).
 >
@@ -176,7 +184,8 @@ find ~/.claude/projects -name '*.jsonl' -mtime +14 | wc -l
 
 `scripts/token_cost_report.py` — 실행: `uv run scripts/token_cost_report.py`
 
-- 원천: `~/.claude/projects/<프로젝트-경로-슬러그>/` JSONL 트랜스크립트의 `message.usage`(§2-1과 같은 로그 트리를 읽는다).
+- 원천: `~/.claude/projects/<슬러그>/`의 JSONL 트랜스크립트에 담긴 `message.usage`.
+  §2-1과 같은 로그 트리를 읽는다.
 - **4개 토큰 축을 따로 센다** — `input_tokens`(미캐시 입력) / `output_tokens`(출력) /
   `cache_creation_input_tokens`(캐시 쓰기) / `cache_read_input_tokens`(캐시 읽기). 넷은 단가가
   전부 달라 합산하면 비용을 읽을 수 없다.
@@ -184,59 +193,21 @@ find ~/.claude/projects -name '*.jsonl' -mtime +14 | wc -l
 - 🔴 `--project`는 `=`로 붙여 쓴다(`--project=-Users-jin-foo`). 슬러그가 `-`로 시작해 띄우면
   argparse가 옵션으로 오인한다.
 
-### 실측 결과 (이 프로젝트, 161파일 = 메인 48 / 서브에이전트 113)
+### 무엇을 읽는가
 
-| 축 | 비용 USD | 비중 |
-| --- | ---: | ---: |
-| 캐시 읽기 | 670.67 | 62.5% |
-| 캐시 쓰기 | 241.32 | 22.5% |
-| 출력 | 160.23 | 14.9% |
-| 미캐시 입력 | 0.12 | 0.0% |
-| 합계 | 1,072.33 | 100% |
+📌 **실측값은 저장소 밖에 있다** — `$OBSIDIAN_VAULT/status/observations.md` §토큰 비용 계측.
+관측 시각·모집단이 그쪽에 병기돼 있다. 세션이 계속 쌓이므로 **재실행하면 값이 달라진다.**
 
-- 총 1,409M 토큰. 메인 세션 89.8% / 서브에이전트 10.2%.
-- 다른 프로젝트 2곳 합계는 $5.08 — **비용의 99.5%가 이 저장소**다.
-- 비용 구조는 사실상 `요청 수 × 컨텍스트 크기`다.
-- 🔴 이 값은 **API 정가 환산 추정**이며 실제 청구액이 아니다.
+읽을 때 지킬 것 셋:
 
-### 세션 기저 프롬프트 (매 요청이 지고 가는 크기)
+- 🔴 **절편을 반드시 함께 읽는다.** 회귀 기울기만 보면 그 값이 **총량인지 한계인지** 갈리지 않는다.
+  기울기는 **1바이트 늘 때의 증분**이고 총량은 절편을 더해야 나온다.
+- 🔴 **백분율은 관측 시점의 바이트와 함께 적는다.** 같은 회귀라도 분모가 바뀌면 비중이 바뀐다 —
+  값이 달라진 것과 값이 틀린 것은 다르다.
+- **관측 이력을 덮어쓰지 않고 나란히 둔다.** 지우면 "무엇이 달라졌는지"가 사라진다.
 
-- 실측 62k~68k 토큰. 세션이 길어지면 요청당 컨텍스트가 341k까지 커지고, 그러면 **같은 요청 1건이
-  5배 비싸진다**(약 $0.033 → $0.17).
-- 기저의 구성을 회귀로 추정했다(세션 시작 시점의 `CLAUDE.md` 바이트 vs 기저 토큰).
-  🔴 **아래는 값을 덮어쓴 것이 아니라 관측 2회를 나란히 둔 것이다** — 이력을 지우면 "무엇이
-  달라졌는지"가 사라진다([philosophy.md](philosophy.md) 원칙 7).
-
-  | 관측 | 표본 | 기울기 | 절편 | R² | `CLAUDE.md` 바이트 | 기여 토큰 | 기저 대비 |
-  | --- | --- | --- | --- | --- | --- | --- | --- |
-  | 2026-08-21 스냅샷 | 세션 47개 | 0.521 토큰/바이트 | 34,206 | 0.92 | 62,706 | 32,672 | 약 48% |
-  | 2026-08-23 재현 (HEAD `3a6bcc0`) | 세션 54개 | **0.5301 토큰/바이트** | **34,131** | **0.926** | **50,585** | **26,813** | **44.0%** |
-
-  - 회귀식은 **`기저토큰 = 0.5301 × CLAUDE.md바이트 + 34,131`**, 예측 기저는 **60,944 토큰**이다.
-  - 🔴 **절편 34,131을 반드시 함께 읽는다.** 이게 없으면 *"기울기 × 총바이트"* 가 **총량인지 한계인지**
-    갈리지 않는다. 실제로 2026-08-23 재측정 때 **단위 오독(원칙 7 §계측 단위)을 의심**했으나,
-    회귀를 다시 돌려 **오경보**임이 확인됐다 — 기울기는 처음부터 **한계값**(1바이트 늘 때의 증분)이었고
-    총량은 절편을 더해야 나온다. 다음 사람이 같은 의심을 반복하지 않도록 경위를 남긴다.
-  - 🔴 **"48%"와 "44.0%"는 값이 틀린 게 아니라 분모가 다르다** — 같은 회귀를 62,706 B 시점에 적용하면
-    **49.3%**, 50,585 B 시점에 적용하면 **44.0%** 다. `CLAUDE.md`가 줄어서 비중이 내려간 것이지
-    이전 값이 오류였던 것이 아니다. **백분율은 반드시 관측 시점의 바이트와 함께 적는다.**
-  - 🔴 **기준은 HEAD `3a6bcc0`** 이다. 같은 시각 워킹트리는 병렬 세션 편집분 때문에 **51,100 바이트**로
-    515 B 더 컸다(그 편집은 이후 `8f3f316`으로 커밋됐다). **기준을 명시하지 않으면 재현되지 않는다.**
-  - **파생 상수: `CLAUDE.md` 1,000바이트 삭감 = 요청당 기저 −530 토큰.** 감축 계획을 세울 때 이 값을 쓴다.
-  - 관측법: 세션 로그 첫 요청의 `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`를
-    기저로 잡고, 그 시점 바이트는 `git rev-list -1 --before <그 시각> HEAD -- CLAUDE.md`로 뽑는다.
-  - 🔴 같은 기간 워커·스킬 목록도 함께 커졌으므로 이 기울기는 **과대 추정**일 수 있다.
-    `CLAUDE.md` 단독 기여는 25k~33k 범위로 읽는다.
-
-### 계측에서 밟은 함정 2건 (둘 다 "값은 맞는데 단위가 어긋남")
-
-1. 서브에이전트 로그는 `<세션UUID>/subagents/` 아래에 따로 있다. 최상위 `*.jsonl`만 집계하면
-   `isSidechain:true`가 0건이라 "서브에이전트 비용 없음"으로 오독된다.
-2. 세션 귀속을 `path.parent.name`으로 잡으면 서브가 전부 `subagents` 한 행으로 뭉친다.
-   **총액은 맞고 세션별 표만 거짓**이라 검산을 통과하며 남는다.
-
-§2-1의 "재귀 탐색이 파일을 세어 세션 단위 정책과 어긋난" 사례와 같은 계열이다
-([philosophy.md](philosophy.md) §계측 단위).
+⚠️ **기여도 추정에는 교란 요인이 있다** — 같은 기간에 워커·스킬 목록도 함께 커졌으므로
+회귀 기울기는 **과대 추정**일 수 있다. 단독 기여는 범위로 읽는다.
 
 ### 계측 단위
 
