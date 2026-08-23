@@ -7,195 +7,105 @@ MIMIC-IV·eICU 중환자 데이터를 **Dagster + dbt + Iceberg 레이크하우�
 
 | 축 | 하는 일 | 규칙 정본 |
 | --- | --- | --- |
-| **파이프라인** | S3 → Iceberg 적재, dbt 실버 피처(22모델), 오케스트레이션 | [`conventions/dagster.md`](docs/conventions/dagster.md) · [`conventions/dbt.md`](docs/conventions/dbt.md) |
-| **분석** | gold 지표·코호트, 노트북 탐색, 리포트 | [`conventions/analysis.md`](docs/conventions/analysis.md) |
+| **파이프라인** | S3 → Iceberg 적재, dbt 실버 피처, 오케스트레이션 | [dagster](docs/conventions/dagster.md) · [dbt](docs/conventions/dbt.md) |
+| **분석** | gold 지표·코호트, 노트북 탐색, 리포트 | [analysis](docs/conventions/analysis.md) |
 
-> **현재 이행 중**: 단일 호스트 Docker Compose → **호스트 Dagster + 로컬 Kubernetes(컴퓨트·스토리지)**.
-> 로드맵·단계별 게이트는 [`docs/redesign.md`](docs/redesign.md).
+> 단일 호스트 Docker Compose에서 **호스트 Dagster + 로컬 Kubernetes**로 이행 중이다.
+> 로드맵과 단계별 게이트는 [`docs/redesign.md`](docs/redesign.md).
 
 ## 문서 (docs)
 
-아키텍처와 코딩 규칙은 [`docs/`](docs/README.md)에 정리되어 있다.
-이 프로젝트에서 정한 **규칙·결정·작업 패턴은 최대한 문서로 남기며**, `CLAUDE.md`·`docs/`·`README.md`를 함께 갱신해 단일 출처(single source of truth)를 유지한다.
+아키텍처와 코딩 규칙은 [`docs/`](docs/README.md)에 있다.
+규칙·결정·작업 패턴은 최대한 문서로 남기고, `CLAUDE.md`·`docs/`·`README.md`를
+함께 갱신해 단일 출처를 유지한다.
 
-- [코딩 철학](docs/philosophy.md)
-- [재설계 로드맵](docs/redesign.md) — 이행 단계와 성공 게이트
-- [전체 아키텍처 / 데이터 흐름](docs/architectures/overview.md)
-- [리소스 산정](docs/resource-sizing.md)
-- [분석 컨벤션](docs/conventions/analysis.md) — gold 모델 / 노트북 / 리포트 3층과 결론의 재현 경로
-- [에이전트 오케스트레이션·기록관](docs/conventions/agents.md) — 서브에이전트 계층·권한·저널 규약 (아래 §AI 에이전트 구조)
-- 코딩 규칙: [공통](docs/conventions/general.md) · [Python](docs/conventions/python.md) · [Dagster](docs/conventions/dagster.md) · [dbt](docs/conventions/dbt.md) · [Kubernetes](docs/conventions/k8s.md)
+- [환경 세팅](docs/setup.md) — **처음 여기서 시작한다**
+- [코딩 철학](docs/philosophy.md) · [재설계 로드맵](docs/redesign.md)
+- [전체 아키텍처 / 데이터 흐름](docs/architectures/overview.md) · [리소스 산정](docs/resource-sizing.md)
+- [분석 컨벤션](docs/conventions/analysis.md) — gold 모델 / 노트북 / 리포트 3층
+- [에이전트 오케스트레이션](docs/conventions/agents.md) — 아래 §AI 에이전트 구조
+- 코딩 규칙 — [공통](docs/conventions/general.md) · [Python](docs/conventions/python.md) ·
+  [Dagster](docs/conventions/dagster.md) · [dbt](docs/conventions/dbt.md) · [K8s](docs/conventions/k8s.md)
 
 ## 구성 요소
 
-| 계층 | 현재 위치 | 비고 |
+| 계층 | 어디서 도나 | 무엇으로 |
 | --- | --- | --- |
-| 오케스트레이션 | **호스트** — Dagster webserver·daemon | 메타 스토리지는 compose `postgres` |
-| 배치 컴퓨트 | **K8s** — Apache Spark Operator → `SparkApplication` | 러너 이미지 `spark-runner:0.5.0`(Iceberg **1.11.0**·S3A·Spark Connect) |
-| SQL 엔드포인트 | **K8s** — Spark Connect 서버 | dbt-spark가 `spark.remote`로 접속(Phase 1). 🔴 평시 `--replicas=0`이라 **쓰기 전에 1로 올린다**(§2-1) |
-| 스트림 컴퓨트 | **K8s** — Flink Operator → `FlinkDeployment` | 오퍼레이터는 **기본 설치**(`INSTALL_FLINK=false`로 제외). 러너 이미지 `flink-runner:0.2.0`(Iceberg). 세션 클러스터는 **검증 후 내린다** |
-| 테이블 포맷 | Iceberg (JDBC 카탈로그 = **CloudNativePG** `catalog-postgres`, 접속은 `-rw` 서비스) | Spark·Flink가 **동일 카탈로그 공유**(카탈로그명 `iceberg`로 통일) |
-| 오브젝트 스토어 | SeaweedFS (S3 호환, path-style) | Iceberg 웨어하우스 |
-| UI 진입점 | **K8s** — ingress-nginx (`*.localtest.me:8080`) | HTTP UI만 Ingress, 데이터 접속은 `port-forward`(§2-1) |
-| 변환 | dbt — `dbt-trino`(현행) → `dbt-spark`(이행 중) | 모델 22개(`models/mimic_iv/`), 방언은 내장·dispatch 매크로로 흡수(`macros/cross_engine.sql`) |
-| 분석 | **호스트** — Jupyter Lab(:8889) → Spark Connect / dbt gold 모델 | 탐색=`notebooks/`, 지표=gold(**현재 0개**), 결론=`docs/analyses/`(미생성). 규칙 [`conventions/analysis.md`](docs/conventions/analysis.md) |
+| 오케스트레이션 | 호스트 | Dagster webserver·daemon (메타 스토리지는 compose `postgres`) |
+| 배치 컴퓨트 | K8s | Apache Spark Operator → `SparkApplication` |
+| SQL 엔드포인트 | K8s | Spark Connect 서버 — dbt-spark가 `spark.remote`로 붙는다 |
+| 스트림 컴퓨트 | K8s | Flink Operator → `FlinkDeployment` |
+| 테이블 포맷 | — | Iceberg. JDBC 카탈로그는 CloudNativePG `catalog-postgres` |
+| 오브젝트 스토어 | K8s | SeaweedFS — S3 호환, path-style |
+| UI 진입점 | K8s | ingress-nginx `*.localtest.me:8080` |
+| 변환 | 호스트 | dbt — `dbt-trino`에서 `dbt-spark`로 이행 중 |
+| 분석 | 호스트 | Jupyter Lab `:8889` → Spark Connect |
+
+몇 가지 전제가 이 표에 안 보인다.
+
+- **Spark·Flink는 같은 Iceberg 카탈로그를 공유**한다. 카탈로그 이름은 전 엔진 `iceberg`로 통일한다 —
+  다르면 같은 DB를 봐도 서로의 테이블이 안 보인다.
+- **HTTP UI와 gRPC만 Ingress로 나간다.** JDBC·S3는 `port-forward`를 쓴다.
+- **상주 컴퓨트는 평시 내려가 있다.** Spark Connect는 `--replicas=0`이 기본이다.
+- 러너 이미지 태그와 버전의 사실은 문서가 아니라 `k8s/**/*.yaml`의 `image:` 값이다.
 
 ## 실행방법
 
-### 1. 환경변수
-
-[`.env.example`](.env.example)을 `.env`로 복사해 값을 채운다(커밋 금지).
-키가 컨테이너/호스트에서 갈리는 이유는 [`docs/operations.md`](docs/operations.md) §1-2 참고.
+**절차 정본은 [`docs/setup.md`](docs/setup.md)** 다 — 사전 요구 도구, 단계별 전제, 접속 경로,
+그리고 조용히 틀리는 함정들이 거기 있다. 아래는 **이미 세팅된 환경을 다시 올리는 최단 경로**다.
 
 ```shell
-cp .env.example .env
+cp .env.example .env                       # 최초 1회 — 값 채우는 법은 docs/setup.md §2
+
+./scripts/k8s-up.sh                        # kind 클러스터 + 레지스트리 + ingress-nginx
+./scripts/k8s-operators.sh                 # Spark · Flink · CloudNativePG
+./scripts/k8s-poc-storage.sh               # SeaweedFS + Iceberg 카탈로그
+
+podman compose up -d postgres              # Dagster 메타 스토리지
+cd dagster/dockerfile.d/src
+export DAGSTER_HOME="$PWD"                 # 미지정 시 임시 sqlite로 빠져 런이 UI에 안 남는다
+uv run dg dev                              # http://localhost:3000
 ```
 
-### 2. 로컬 Kubernetes(컴퓨트·스토리지) 기동
+정리는 `./scripts/k8s-down.sh`(podman machine은 기본 보존).
 
-**kind on Podman**(rootful 머신 필수) + 로컬 레지스트리 `localhost:5001`.
-설정 단일 출처는 [`scripts/k8s-env.sh`](scripts/k8s-env.sh).
+> 🔴 **이 환경에는 `docker` 바이너리가 없다** — 컨테이너 런타임은 **podman**이고 compose는
+> `podman compose`로 돈다. 문서의 `docker compose ...`는 전부 그렇게 읽는다.
+>
+> 🔴 **상주 컴퓨트는 쓰기 직전에 올리고 끝난 자리에서 내린다** — Spark Connect는 평시
+> `--replicas=0`이라 15002 포트포워드 실패는 고장이 아니라 **회수된 상태**다([`docs/setup.md`](docs/setup.md) §3-2).
 
-```shell
-./scripts/k8s-up.sh                       # podman machine + kind 클러스터 + 레지스트리
-./scripts/k8s-operators.sh                # Spark + Flink + CloudNativePG (Flink 제외는 INSTALL_FLINK=false)
-./scripts/k8s-poc-storage.sh              # SeaweedFS + Iceberg 카탈로그 Postgres(CNPG Cluster)
-./scripts/k8s-down.sh                     # 정리
-```
-
-> VM은 **8 CPU / 22888 MiB**(≈22.35 GiB)를 가져간다. 예산·배분과 **호스트 쪽 여유**는
-> [`docs/resource-sizing.md`](docs/resource-sizing.md) — 🔴 호스트 32 GiB 기준으로 **실질 여유가 거의 없다.**
-
-### 2-0. 컴퓨트 기동·회수 (검증 후 반드시 내린다)
+### 컴퓨트 기동·회수 (검증 후 반드시 내린다)
 
 상주 컴퓨트는 **켜둔 채 잊으면 예산을 계속 갉아먹는다**(과거 13시간 유출 전례 —
 [`docs/conventions/k8s.md`](docs/conventions/k8s.md) §9-3). 쓰기 직전에 올리고 **끝난 자리에서 내린다.**
 
 ```shell
-# Spark Connect (dbt·노트북용) — 평시 0, 쓸 때만 1
-kubectl scale deploy/spark-connect --replicas=1
-kubectl scale deploy/spark-connect --replicas=0     # 회수
+kubectl scale deploy/spark-connect --replicas=1           # Spark Connect — 평시 0
+kubectl scale deploy/spark-connect --replicas=0           # 회수
 
-# Flink 세션 클러스터 — 잡이 없어도 JM이 1 CPU/2Gi를 상주 점유한다
-kubectl apply  -f k8s/flink/flinkdeployment-session.yaml
-kubectl delete -f k8s/flink/flinkdeployment-session.yaml   # 회수
+kubectl apply  -f k8s/flink/flinkdeployment-session.yaml  # Flink 세션 — JM이 상주 점유한다
+kubectl delete -f k8s/flink/flinkdeployment-session.yaml  # 회수
 ```
 
-> 회수가 끝나면 상주는 **2250m(28%) / 3140Mi(14%)** 로 돌아온다(2026-08-22 실측, 분모는 노드 Allocatable).
-> Spark·Flink **동시 기동은 허용**되며 실측 피크는 **84% / 52%** 다 — 단
-> `spark.executor.instances` ≤ 1을 지킨다(2개면 97%).
+Spark·Flink **동시 기동은 허용**되며, 지켜야 할 경계는 `spark.executor.instances` ≤ 1이다.
 
-### 2-1. Web UI 접근 (port-forward 불필요)
+### 접속 경로 · 러너 이미지 · dbt 타깃
 
-`k8s-up.sh`가 ingress-nginx까지 설치하므로 브라우저에서 바로 열린다.
-(`localtest.me`는 공개 DNS가 127.0.0.1로 응답 — `/etc/hosts` 수정 불필요)
+Web UI(Ingress)·`port-forward` 주소표, 러너 이미지 빌드, dbt 타깃별 전제는
+**[`docs/setup.md`](docs/setup.md)** §3-1 · §4 · §8에 있다.
 
-| URL | 대상 |
-| --- | --- |
-| http://flink.localtest.me:8080 | Flink Web UI (JobManager) — **세션 클러스터가 떠 있을 때만** 응답(§2-0) |
-| http://spark.localtest.me:8080 | Spark Web UI (Connect 서버, 쿼리 이력 누적) — `--replicas=1`일 때만 |
-
-**Spark Connect(gRPC)도 Ingress로 나간다** — `sc://spark-grpc.localtest.me:8443/;use_ssl=true`.
-자체서명 CA를 클라이언트에 물려야 하며(`GRPC_DEFAULT_SSL_ROOTS_FILE_PATH`), 방법은
-[`docs/conventions/k8s.md`](docs/conventions/k8s.md) §10 §gRPC. **카탈로그 Postgres·SeaweedFS는
-여전히 `port-forward`** 를 쓴다(JDBC·S3는 HTTP/2가 아니라 이 경로로 못 낸다).
-
-```shell
-kubectl port-forward svc/catalog-postgres-rw 15432:5432   # Iceberg JDBC 카탈로그(CNPG 쓰기 서비스)
-kubectl port-forward svc/seaweedfs           18333:8333   # S3 API
-kubectl port-forward svc/spark-connect       15002:15002  # dbt(spark_connect 타깃)
-```
-
-> 🔴 **15002는 `spark-connect` 파드가 있어야 붙는다** — 평시 `--replicas=0`이므로 먼저 §2-0으로 1로 올린다.
-> 내려간 상태에서는 `port-forward`가 실패하며, 이건 고장이 아니라 **회수된 상태**다.
->
-> 🔴 **15432는 클라이언트 접속이 끝날 때마다 죽는다 — 호스트 부하 탓이 아니다.**
-> 3/3 결정론적으로 재현되며 swap이 0일 때도 끊긴다(원인: Postgres 경로가 FIN이 아닌 **RST**로 끊고
-> kubectl이 이를 터널 전체의 치명 오류로 취급). **같은 조건에서 15002·18333은 생존**한다.
-> ⇒ **15432가 죽은 것을 "호스트 메모리 압박"의 근거로 삼지 마라**(그 지표는 무효다 —
-> [`docs/resource-sizing.md`](docs/resource-sizing.md) §(D)). 자동 재기동하되 **시각을 남긴다.**
->
-> ```shell
-> until kubectl port-forward svc/catalog-postgres-rw 15432:5432; do
->     echo "$(date '+%F %T') 15432 재기동" >> /tmp/pf-15432.log
->     sleep 1
-> done
-> ```
-
-### 2-2. 컴퓨트 러너 이미지 빌드 (최초 1회 / Dockerfile 변경 시)
-
-Spark·Flink 워크로드는 Iceberg·S3A 의존을 구운 **전용 이미지**로 돈다. 로컬 레지스트리에 직접 push하면
-클러스터가 같은 이름으로 받는다(`kind load` 불필요). 태그·매니페스트 갱신 규칙은
-[`docs/conventions/k8s.md`](docs/conventions/k8s.md) §10.
-
-```shell
-podman build -f k8s/spark/Dockerfile.spark-runner -t localhost:5001/spark-runner:0.5.0 k8s/spark
-podman push --tls-verify=false localhost:5001/spark-runner:0.5.0
-
-podman build -f k8s/flink/Dockerfile.flink-runner -t localhost:5001/flink-runner:0.2.0 k8s/flink
-podman push --tls-verify=false localhost:5001/flink-runner:0.2.0
-```
-
-> 태그를 올렸으면 이를 참조하는 매니페스트(`k8s/spark/*.yaml`·`k8s/flink/*.yaml`)도 **함께** 올린다.
-> 한쪽만 올리면 구 이미지가 계속 돈다.
-
-### 3. Dagster (호스트)
-
-Dagster는 **클러스터 밖 호스트**에서 돌며 K8s를 원격 컴퓨트로 트리거한다
-([`docs/conventions/k8s.md`](docs/conventions/k8s.md) §8).
-
-```shell
-podman compose up -d postgres             # 메타 스토리지만 기동 (127.0.0.1 바인딩)
-
-cd dagster/dockerfile.d/src
-export DAGSTER_HOME="$PWD"                # dagster.yaml이 있는 디렉터리
-uv run dg dev                             # http://localhost:3000
-```
-
-> 🔴 **이 환경에는 `docker` 바이너리가 없다** — 컨테이너 런타임은 **podman 5.8.2**이고 compose는
-> `podman compose`(외부 provider `docker-compose` v5.1.3 경유)로 돈다. 문서의 `docker compose ...`는
-> 전부 `podman compose ...`로 읽는다.
->
-> 컨테이너로 통째 띄우려면 `podman compose up -d --build`(webserver·daemon 분리 기동).
-> 이 경우 Dagster가 클러스터를 트리거하는 경로는 별도 배선이 필요하다.
->
-> **Dagster 실사용 RSS는 856.8 MiB**(8프로세스, 2026-08-22 실측)다 — VM이 22.35 GiB를 가져간 뒤
-> 호스트 여유가 빠듯하므로 [`docs/resource-sizing.md`](docs/resource-sizing.md) §(D)를 함께 본다.
-
-### 4. 노트북 (호스트, 옵션)
-
-ad-hoc 탐색은 **Jupyter Lab**으로 한다. Dagster와 **같은 venv**를 쓰므로 커널 하나로
-Spark Connect·pyiceberg에 붙고 `dagster_project.common.*`를 그대로 import할 수 있다.
-
-```shell
-kubectl scale deploy/spark-connect --replicas=1      # 평시 0이라 먼저 올린다 (§2-0)
-kubectl port-forward svc/spark-connect 15002:15002   # 별도 터미널
-
-cd dagster/dockerfile.d/src
-uv run --group notebook jupyter lab --port 8889 --notebook-dir ../../../notebooks
-```
-
-> **8889를 쓰는 이유**: 기본 포트 8888은 compose SeaweedFS filer UI가 게시한다.
-> 스타터 노트북·주의사항은 [`notebooks/README.md`](notebooks/README.md),
-> **작성 규칙(재현성·정의 배치·수치 인용)** 은 [`docs/conventions/analysis.md`](docs/conventions/analysis.md).
-> SQL 엔진은 **Spark SQL**이다 — Trino는 재설계에서 제거 대상이라 기본 기동에서 빠졌다.
-
-### 5. 모델 추가
+### 모델 추가
 
 dbt 모델은 `dbt_pipelines/models/<dataset>/`에 `.sql`을 추가하면 자동 반영된다.
 각 데이터셋 subproject가 **`@dbt_assets(select="fqn:<dataset>")`** 로 자기 모델만 소유한다
 (`path:` 셀렉터는 cwd 글롭이라 정의 로드 시 모델이 수집되지 않는다 — [`docs/conventions/dbt.md`](docs/conventions/dbt.md)).
 
-**접속 타깃은 `DBT_TARGET`으로 고른다** — `profiles.yml`이
-`target: "{{ env_var('DBT_TARGET', 'spark_connect') }}"` 이므로 **기본값은 `spark_connect`** 다.
-
-| 값 | 접속 대상 | 용도 |
-| --- | --- | --- |
-| *(미설정)* = `spark_connect` | K8s Spark Connect(:15002) | 평시 기본 |
-| `DBT_TARGET=dev` | Trino | **값 대조**(엔진 간 결과 비교) |
+접속 타깃은 `DBT_TARGET`으로 고르며 **기본값은 `spark_connect`** 다. 타깃별 전제는
+[`docs/setup.md`](docs/setup.md) §8.
 
 ```shell
-kubectl scale deploy/spark-connect --replicas=1          # §2-0 — 먼저 올린다
+kubectl scale deploy/spark-connect --replicas=1          # 먼저 올린다
 kubectl port-forward svc/spark-connect 15002:15002       # 별도 터미널
 
 dbt build                                                # spark_connect (기본)
@@ -205,6 +115,12 @@ DBT_TARGET=dev dbt build                                 # Trino로 값 대조
 > 🔴 **같은 SQL이 엔진에 따라 값이 갈린 사례가 있다**(`dbt.datediff` — Spark는 경과시간 `ceil`,
 > Trino는 경계 교차). 그래서 Trino 타깃은 제거 대상이면서도 **값 대조의 정본**으로 남아 있다.
 > 수치를 문서·리포트에 옮길 때는 **산출 엔진을 병기**한다([`docs/conventions/dbt.md`](docs/conventions/dbt.md)).
+
+### 노트북 (옵션)
+
+ad-hoc 탐색은 Dagster와 **같은 venv**의 Jupyter Lab(**포트 8889**)으로 한다 —
+실행법은 [`docs/setup.md`](docs/setup.md) §7, 작성 규칙은
+[`notebooks/README.md`](notebooks/README.md)와 [`docs/conventions/analysis.md`](docs/conventions/analysis.md).
 
 ## AI 에이전트 구조 (Claude Code)
 

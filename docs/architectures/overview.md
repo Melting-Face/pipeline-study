@@ -310,20 +310,20 @@ def admissions(s3: S3Resource) -> pa.Table:
 
 ## 실행 방법
 
-🔴 **절차의 정본은 루트 [`README.md`](../../README.md) §실행방법**이다. 여기서는 순서만 요약하고
+🔴 **절차의 정본은 [`../setup.md`](../setup.md)** 다. 여기서는 순서만 요약하고
 명령을 중복 정의하지 않는다(단일 출처 — [`../doc-sync.md`](../doc-sync.md)).
 
-재설계 이후 기동은 **"전체 스택 `compose up`" 하나가 아니라 세 단계**다.
+재설계 이후 기동은 **"전체 스택 `compose up`" 하나가 아니라 네 단계**다.
 
 1. **`.env` 작성** — `.env.example` 복사([`../operations.md`](../operations.md) §1-2)
 2. **로컬 K8s 기동**(컴퓨트·스토리지) — `scripts/k8s-up.sh` → `k8s-operators.sh` → `k8s-poc-storage.sh`
-3. **compose는 메타 Postgres만** — `docker compose up -d postgres`
+3. **compose는 메타 Postgres만** — `podman compose up -d postgres`
 4. **Dagster는 호스트에서** — `DAGSTER_HOME` 지정 후 `uv run dg dev` → http://localhost:3000
 
-> 컨테이너로 통째 띄우는 `docker compose up -d --build`(webserver·daemon 분리)도 남아 있으나,
+> 컨테이너로 통째 띄우는 `podman compose up -d --build`(webserver·daemon 분리)도 남아 있으나,
 > 이 경우 Dagster가 클러스터를 트리거하는 경로는 별도 배선이 필요하다.
 > `trino`·`seaweedfs`·`prometheus`는 **profile opt-in**이라 기본 `up`에 포함되지 않는다
-> (예: `docker compose --profile legacy-sql up -d trino`).
+> (예: `podman compose --profile legacy-sql up -d trino`).
 
 dbt 모델 추가는 스캐폴딩이 필요 없다 — `models/<dataset>/`에 `.sql`을 넣으면 데이터셋 subproject의
 `@dbt_assets(select="fqn:<dataset>")`가 자동 반영한다.
