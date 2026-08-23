@@ -77,8 +77,9 @@
   1. **공개 노출면** — Security List `/32` 화이트리스트가 **현재** 공인 IP와 맞는지(보류 중 바뀌었을
      가능성이 높다), 호스트 iptables의 **kubelet 10250 소스 무제한**이 그대로인지
      ([security.md §2.6](../security.md) — SL이 앞단 방어라 SL이 느슨해지면 즉시 노출된다).
-  2. **무인증 UI 재현 여부** — 로컬 kind에서 **Flink Web UI가 Ingress 무인증 + jar 제출 개방**으로
-     드러났다([security.md §2-1 보강](../security.md), 2026-08-22). 🔴 **같은 매니페스트를 공인 IP
+  2. **관리 UI 인증 재현 여부** — 로컬 kind에서 **관리 UI를 Ingress로 낼 때 인증이 전제되지 않는**
+     사례가 확인됐다(2026-08-22 — 대상·상태는 비공개 posture 기록 `$OBSIDIAN_VAULT/security/posture.md` §2).
+     🔴 **같은 매니페스트를 공인 IP
      노드에 올리면 그대로 인터넷 노출이 된다** — 로컬에서 "내부망이라 괜찮다"고 넘긴 판정은
      OCI에서 성립하지 않는다. 보류 이후 클러스터에 **추가된 워크로드 전체**가 대상이다.
   3. **크리덴셜 유입 경로** — 회수한 `kubeconfig-oci`·ephemeral 공인 IP·엔드포인트가 문서·저널·

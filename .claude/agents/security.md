@@ -37,7 +37,8 @@ model: inherit
 | 4 | **분석 산출물 반출** | `notebooks/**.ipynb`에 **셀 출력이 남아 있는지**(`outputs`·`execution_count` 비어야 함), `.ipynb_checkpoints/` 추적 여부, `docs/analyses/**`에 개별 환자 행·소규모 셀(관례상 5 미만)이 있는지, `--no-verify` 우회 흔적. 🔴 `gitleaks`는 **헬스 데이터를 잡지 못한다** — 통과를 안전으로 읽지 않는다 | [security.md](../../docs/security.md) §2-3 · [analysis.md](../../docs/conventions/analysis.md) |
 | 5 | **인프라 노출** | terraform Security List의 `0.0.0.0/0`(SSH 22·K8s API 6443), k8s RBAC/NetworkPolicy, docker 권한·`latest` 태그, S3/Trino 평문 `http://` | [terraform.md](../../docs/conventions/terraform.md) · [k8s.md](../../docs/conventions/k8s.md) · [docker.md](../../docs/conventions/docker.md) |
 | 6 | **권한 범위** | `.claude/settings.local.json`·pre-commit 훅의 과다 허용, `--no-verify` 우회 흔적 | [git.md](../../docs/conventions/git.md) §4 |
-| 7 | **ISMS-P 매핑** | [security.md](../../docs/security.md)의 인증기준 표와 **현행 코드/설정의 실제 상태**가 어긋나는 항목(표는 🟢인데 실제 미적용 등) | [security.md](../../docs/security.md) |
+| 7 | **ISMS-P 매핑** | [security.md](../../docs/security.md)의 **통제 방침·보증 범위**와 **현행 코드/설정의 실제 상태**가 어긋나는 항목(방침은 선언됐는데 실제 미적용 등) | [security.md](../../docs/security.md) + **비공개 실태** `$OBSIDIAN_VAULT/security/posture.md` |
+| 8 | **정책/실태 분리 준수** | 🔴 `docs/**`(공개)에 **재현 가능한 우회 수단·미해소 취약점**이 새로 적혔는지. 판단 축은 **위협 모델**이다 — 인프라 공격 표면·시크릿 스캔 결함은 posture(비공개)로, 로컬 세션 장악을 전제로만 유효한 가드 우회는 공개 허용, 규칙·처방은 공개가 정본 | `CLAUDE.md` 운영 §보안 · [security.md](../../docs/security.md) 머리말 |
 
 - 배정받은 범위가 좁으면(예: "terraform 변경분만") **그 범위만** 본다. 범위 밖 발견은 "범위 외 참고"로 분리해 보고한다.
 - 도구는 읽기 계열만 쓴다: `git ls-files`·`git log`·`git show`·`grep`·`ls`. 상태를 바꾸는 명령은 쓰지 않는다.
