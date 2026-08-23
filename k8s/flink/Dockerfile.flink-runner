@@ -1,5 +1,5 @@
 # Flink + Iceberg 러너 이미지 (Spark 러너와 같은 Iceberg 카탈로그를 공유)
-# 빌드: podman build -f k8s/flink/Dockerfile.flink-runner -t localhost:5001/flink-runner:0.2.0 k8s/flink
+# 빌드: podman build -f k8s/flink/Dockerfile.flink-runner -t localhost:5001/flink-runner:0.3.0 k8s/flink
 #
 # 버전 짝맞춤(추측 금지 — 2026-08-18 Maven Central 실측):
 #   - `iceberg-flink-runtime-<flinkMinor>` 아티팩트는 **2.1까지만 존재**한다(2.2는 404).
@@ -7,7 +7,7 @@
 #     **Iceberg가 못 따라오면 의미가 없다** — 엔진 최신판이 아니라 짝이 맞는 조합을 고른다.
 #   - Iceberg는 **1.11.0**(iceberg-flink-runtime-2.1의 유일한 버전).
 #   - S3 접근은 Spark와 동일하게 **Iceberg S3FileIO(AWS SDK v2 = iceberg-aws-bundle)** 를 쓴다.
-#     체크포인트를 S3에 두려면 별도로 `flink-s3-fs-hadoop` **플러그인**이 필요하다(Phase 3).
+#     체크포인트용 S3는 별개 계층이라 `flink-s3-fs-hadoop` **플러그인**을 따로 넣는다(아래, Phase A-2에서 해소).
 FROM flink:2.1.3-java17
 
 ARG ICEBERG_VERSION=1.11.0
@@ -30,5 +30,26 @@ RUN set -eux; \
     curl -fLO "https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client-api/${HADOOP_VERSION}/hadoop-client-api-${HADOOP_VERSION}.jar"; \
     curl -fLO "https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client-runtime/${HADOOP_VERSION}/hadoop-client-runtime-${HADOOP_VERSION}.jar"; \
     chown -R flink:flink /opt/flink/lib
+
+# 체크포인트/세이브포인트용 S3 파일시스템(`s3://` 스킴) — **네트워크 다운로드가 없다.**
+# 베이스 이미지 `flink:2.1.3-java17`의 /opt/flink/opt/에 flink-s3-fs-hadoop-2.1.3.jar가 이미 있고
+# (2026-08-23 이미지 실측), Flink는 opt/의 jar를 **자동으로 올리지 않으므로** 옮겨야 한다.
+#
+# 🔴 lib/가 아니라 **plugins/<name>/** 이어야 한다 — 이 jar는 클래스를 relocate하지 않고
+#   `org/apache/hadoop/fs/s3a/*` + AWS SDK **v1**(`com/amazonaws/*` 3887개, SDK v2 0개)을 그대로 품는다.
+#   lib/에 두면 같은 클래스로더에서 hadoop-client-api/runtime 3.3.4·iceberg-aws-bundle(SDK v2)와 충돌한다.
+#   plugins/ 하위는 Flink가 **격리 클래스로더**로 올려 그 충돌이 생기지 않는다(Flink 플러그인 규약).
+#
+# 버전 핀은 **글롭**이다(`-*.jar`). ⓐ글롭 ⓑ`ARG FLINK_VERSION=2.1.3` 중 ⓐ를 고른 이유:
+#   이 jar는 베이스 이미지가 **자기 버전으로** 넣는 것이라 진짜 핀은 `FROM` 태그 하나뿐이다.
+#   ARG로 다시 적으면 핀이 두 곳이 되어 한쪽만 올렸을 때 **빌드가 조용히 깨진다**
+#   (이 저장소가 `ICEBERG_VERSION` ×2로 이미 겪은 실패 모드).
+#   글롭이 안 맞으면 `set -e` + `cp` 실패로 빌드가 죽지만, **"복사됐다"를 값으로 확인**해 두려고
+#   `test -n`을 붙인다(성공 신호를 의심한다 — philosophy.md 원칙 7).
+RUN set -eux; \
+    mkdir -p /opt/flink/plugins/s3-fs-hadoop; \
+    cp /opt/flink/opt/flink-s3-fs-hadoop-*.jar /opt/flink/plugins/s3-fs-hadoop/; \
+    test -n "$(ls -A /opt/flink/plugins/s3-fs-hadoop)"; \
+    chown -R flink:flink /opt/flink/plugins/s3-fs-hadoop
 
 USER flink

@@ -1,0 +1,113 @@
+# ConfigMap — Flink SQL **스트리밍** 잡 (Iceberg 스트리밍 읽기 → Iceberg 싱크)
+#
+# 목적: Flink가 Iceberg 테이블을 **끝나지 않는 소스**로 읽어 다시 Iceberg에 쓰는 것을 실증한다.
+#   배치(iceberg-batch-job.yaml)는 "한 번 읽고 끝"이었다 — 여기서는 소스에 새 스냅샷이 생기면
+#   잡이 **살아 있는 채로** 따라 붙는지가 검증 대상이다(docs/conventions/k8s.md §9-2 "소스·싱크·상태").
+#
+# 🔴 이 파일에는 **비밀값이 없다.** 값은 전부 `${VAR}` 플레이스홀더이며, 이름은
+#   `flinkdeployment-session.yaml`의 podTemplate이 Secret→env로 넣는 것과 동일하다.
+#   확장은 **파드 안에서** 한다(호스트로 크리덴셜을 가져오지 않는다):
+#
+#     kubectl exec -n default <jm-pod> -- sh -c '
+#       umask 077
+#       envsubst < /opt/flink/sql-stream/01-catalog.sql > /tmp/01-catalog.sql
+#       chmod 600 /tmp/01-catalog.sql
+#       /opt/flink/bin/sql-client.sh --history /tmp/flink-sql-history \
+#         -i /tmp/01-catalog.sql -f /opt/flink/sql-stream/02-stream-job.sql
+#       rc=$?; rm -f /tmp/01-catalog.sql /tmp/flink-sql-history; exit $rc
+#     '
+#
+#   `envsubst`는 러너 이미지에 존재한다(/usr/bin/envsubst, 2026-08-21 실측).
+#   🔴 `--history`를 **버릴 경로로 지정**하고 렌더 산출물과 함께 지우는 것은 k8s.md §9-2 예외 조건 3이다 —
+#   지정하지 않으면 `/opt/flink/.flink-sql-history`에 평문이 남는다(2026-08-22 실측, 5라인 유출).
+#   `rm`은 sql-client 실패 시에도 돌아야 하므로 `&&`가 아니라 `;`로 잇는다.
+#
+# 🔴 **마운트 경로가 배치와 다르다** — 이 ConfigMap은 `/opt/flink/sql-stream`에 붙는다.
+#   배치(`/opt/flink/sql`)와 같은 경로에 겹쳐 마운트하면 뒤엣것이 앞엣것을 통째로 가린다.
+#
+# 🔴 **ConfigMap이 먼저 존재해야 파드가 뜬다** — `flinkdeployment-session.yaml`이 이 이름을
+#   volume으로 참조하므로, 없으면 JM 파드가 `CreateContainerConfigError`로 기동하지 않는다.
+#   ⇒ apply 순서는 **이 파일(+iceberg-batch-job.yaml) → FlinkDeployment**로 고정이다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: iceberg-stream-job
+    namespace: default
+    labels:
+        app: flink-session
+data:
+    # --- init 파일(-i): 카탈로그 등록. 🔴 크리덴셜 플레이스홀더를 포함한다 ---
+    #
+    # 🔴 이 블록은 `iceberg-batch-job.yaml`의 `01-catalog.sql`과 **글자 그대로 같은 중복**이다.
+    #   ConfigMap 둘은 서로 독립적으로 마운트되므로 공유할 수단이 없다(볼륨 하나에 합치면
+    #   배치/스트림 중 하나만 쓸 때도 다른 쪽까지 딸려 온다).
+    #   ⇒ **한쪽을 고치면 반드시 다른 쪽도 고친다.** 사본이 2개뿐이라 Rule of Three 미달로
+    #   추출(공용 ConfigMap·Kustomize)은 하지 않는다 — 대신 이 주석이 결합을 대신 붙든다.
+    01-catalog.sql: |
+        -- Iceberg JDBC 카탈로그. 이름은 전 엔진 공통 `iceberg`여야 한다 —
+        -- JDBC 카탈로그는 catalog_name으로 레지스트리를 분할해, 이름이 다르면
+        -- 같은 DB를 봐도 서로의 테이블이 보이지 않는다(k8s.md §11).
+        --
+        -- S3 키는 여기에 쓰지 않는다: S3FileIO(AWS SDK v2)가 기본 자격증명 체인을 타므로
+        -- 파드 env(AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY)만으로 충분하다.
+        CREATE CATALOG `iceberg` WITH (
+            'type' = 'iceberg',
+            'catalog-impl' = 'org.apache.iceberg.jdbc.JdbcCatalog',
+            'uri' = '${ICEBERG_JDBC_URI}',
+            'jdbc.user' = '${PG_USER}',
+            'jdbc.password' = '${PG_PASSWORD}',
+            'warehouse' = '${ICEBERG_WAREHOUSE}',
+            'io-impl' = 'org.apache.iceberg.aws.s3.S3FileIO',
+            's3.endpoint' = '${S3_ENDPOINT}',
+            's3.path-style-access' = 'true'
+        );
+
+    # --- 잡 파일(-f): 크리덴셜 0. 출력을 그대로 관측해도 안전하다 ---
+    02-stream-job.sql: |
+        -- 스트리밍이 기본값이지만, 배치 잡과 나란히 두는 파일이라 **명시**한다.
+        SET 'execution.runtime-mode' = 'streaming';
+
+        -- 🔴 `table.dml-sync`는 **켜지 않는다.** 배치 잡(iceberg-batch-job.yaml)은 완료를 봐야 해서
+        --   `'true'`였지만, 스트리밍 INSERT는 **끝나지 않으므로** 동기 실행하면 sql-client가 영영
+        --   반환하지 않고 kubectl exec 세션이 물린다. 여기서는 async(기본값)로 두어 잡 ID만 받고 빠진다.
+        --   ⇒ 배치 파일을 복사해 만들 때 **가장 실수하기 쉬운 한 줄**이다. 없는 것이 정상이다.
+
+        -- 저장은 UTC(docs/conventions/timezone.md). 세션 타임존을 못 박아야
+        -- 아래 CAST 결과가 실행 환경의 JVM 기본 타임존에 흔들리지 않는다.
+        SET 'table.local-time-zone' = 'UTC';
+
+        -- 네임스페이스는 이미 존재한다(2026-08-21 카탈로그 실측). 멱등 생성만 걸어둔다.
+        CREATE DATABASE IF NOT EXISTS `iceberg`.`poc`;
+
+        -- ① 싱크 생성. 소스 `poc.sample_flink`의 스키마는 (id INT, name STRING, src STRING)이고,
+        --    거기에 **처리 시각**을 한 컬럼 더 붙인다 — 스트리밍이 "나중에" 처리했음을 데이터로
+        --    보여주는 증거다(로그가 아니라 테이블에서 판별한다). Flink SQL의 INSERT INTO는
+        --    테이블을 자동 생성하지 않으므로 CREATE가 선행돼야 한다.
+        CREATE TABLE IF NOT EXISTS `iceberg`.`poc`.`sample_stream` (
+            id INT,
+            name STRING,
+            src STRING,
+            ingested_at TIMESTAMP(3)
+        );
+
+        -- ② 스트리밍 읽기 → Iceberg 싱크.
+        --
+        --    `starting-strategy` = TABLE_SCAN_THEN_INCREMENTAL 인 이유:
+        --      기존 12행을 **먼저 전부 훑고** 그 뒤 증분(새 스냅샷)을 따라간다.
+        --      기본값 INCREMENTAL_FROM_LATEST_SNAPSHOT을 쓰면 기존 12행이 안 나와,
+        --      "아무것도 안 나오는 것"과 "아직 안 온 것"을 구분할 수 없다.
+        --      ⇒ 검증 기대값이 **"처음 12행 + 이후 새로 넣은 N행"** 으로 명확해진다.
+        --    `monitor-interval` = 5s: 소스 스냅샷 폴링 주기. 체크포인트(10s)보다 짧게 두어
+        --      "커밋이 안 된 것"과 "아직 못 본 것"이 겹치지 않게 한다.
+        --
+        --    🔴 Iceberg 싱크는 **체크포인트가 완료돼야 커밋**한다. 즉 INSERT를 제출해도
+        --    첫 체크포인트(약 10s) 전에는 `sample_stream`에 행이 보이지 않는다 —
+        --    이것은 실패가 아니라 정상이다. 조회는 최소 10초 이상 기다린 뒤에 한다.
+        INSERT INTO `iceberg`.`poc`.`sample_stream`
+        SELECT id, name, src, CAST(CURRENT_TIMESTAMP AS TIMESTAMP(3)) AS ingested_at
+        FROM `iceberg`.`poc`.`sample_flink`
+            /*+ OPTIONS(
+                'streaming' = 'true',
+                'monitor-interval' = '5s',
+                'starting-strategy' = 'TABLE_SCAN_THEN_INCREMENTAL'
+            ) */;

@@ -16,7 +16,7 @@ metadata:
     name: flink-session
     namespace: default
 spec:
-    image: localhost:5001/flink-runner:0.2.0
+    image: localhost:5001/flink-runner:0.3.0
     imagePullPolicy: Always
     flinkVersion: v2_1
     serviceAccount: flink
@@ -30,6 +30,40 @@ spec:
     flinkConfiguration:
         # TM 1개 × 2슬롯 (docs/resource-sizing.md "STREAM(일시)" 배분)
         taskmanager.numberOfTaskSlots: "2"
+
+        # ── 체크포인트/상태 (Phase A-2 스트리밍) ──────────────────────────────
+        # 10s인 이유: 시연 창이 수 분이라 그 안에 체크포인트가 **여러 번 돌아 관측 가능**해야 한다.
+        #   더 길면 회수 전에 한 번도 안 돌아 "설정했는데 증거가 없는" 상태가 되고,
+        #   더 짧으면 12행짜리 PoC 대비 오버헤드만 커진다. 운영값이 아니라 **관측용 값**이다.
+        execution.checkpointing.interval: "10s"
+        execution.checkpointing.mode: "EXACTLY_ONCE"
+        state.backend.type: "rocksdb"
+        # 🔴 디렉터리 키는 Flink 2.x **정본 이름**을 쓴다.
+        #   `state.checkpoints.dir`·`state.savepoints.dir`도 2.1.3에서 아직 동작하지만
+        #   **deprecated 별칭**이다(2026-08-23 CheckpointingOptions 상수풀 실측 —
+        #   primary=`execution.checkpointing.dir`, 별칭=`state.checkpoints.dir`·`state.backend.fs.checkpointdir`).
+        execution.checkpointing.dir: "s3://warehouse/flink-checkpoints"
+        execution.checkpointing.savepoint-dir: "s3://warehouse/flink-savepoints"
+        # 🔴 storage를 명시하지 않으면 기본이 **JobManager 메모리**다 — dir만 주면 메타데이터만 S3로 나가고
+        #   실제 상태는 JM 메모리에 남을 수 있다. "경로는 살아 있는데 볼 것이 없다"를 막으려고 못 박는다.
+        execution.checkpointing.storage: "filesystem"
+
+        # ── 체크포인트 경로용 S3 (Iceberg S3FileIO와 다른 계층) ────────────────
+        # Flink의 `s3.*`는 flink-s3-fs-hadoop이 `fs.s3a.*`로 미러링한다
+        # (S3FileSystemFactory 실측: 미러 접두어 `s3.`·`s3a.`·`fs.s3a.` → `fs.s3a.`).
+        s3.endpoint: "http://seaweedfs:8333"
+        s3.path.style.access: "true"
+        # 🔴 `s3.access-key`/`s3.secret-key`가 없는 것은 **빠뜨린 게 아니라 의도**다.
+        #   파드에 AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY가 Secret→env로 이미 들어가고(아래 podTemplate),
+        #   S3A 기본 자격증명 체인의 EnvironmentVariableCredentialsProvider가 그것을 집어간다.
+        #   매니페스트에 키를 적으면 평문 커밋이 된다(conventions/k8s.md §4 — 크리덴셜은 Secret→env).
+        # 🔴 미확인 — 체크섬: flink-s3-fs-hadoop-2.1.3.jar를 열어보면 `com/amazonaws/*` 3887개,
+        #   `software/amazon/awssdk/*` **0개** ⇒ 번들 SDK는 **v1**, Hadoop은 3.3.4(2026-08-23 실측).
+        #   SeaweedFS의 aws-chunked 결함은 **SDK v2 기본 동작**이라 이 경로에는 해당하지 않을 것으로 보인다
+        #   (docs/architectures/spark.md §SeaweedFS 체크섬 결함). 단 파드의
+        #   AWS_REQUEST_CHECKSUM_CALCULATION은 v1이 **모르는 변수라 무시**되므로 "덮어서 안전"이 아니라
+        #   "애초에 무관"이다 — 즉 안전 근거는 SDK 버전 하나뿐이다.
+        #   ⇒ 체크포인트 파일이 실제로 온전한지는 **실행으로 확인해야 한다**(현재 미확인).
     podTemplate:
         spec:
             containers:
@@ -74,18 +108,28 @@ spec:
                       - name: S3_SECRET_KEY
                         valueFrom:
                             secretKeyRef: {name: lakehouse-creds, key: s3-secret-key}
-                  # Flink SQL 배치 잡 파일(k8s/flink/iceberg-batch-job.yaml).
-                  # 🔴 이 마운트는 참조 대상 ConfigMap이 **먼저 존재해야** 한다 —
-                  #   없으면 파드가 CreateContainerConfigError로 뜨지 않는다.
-                  #   그래서 ConfigMap을 만든 뒤에야 이 블록을 넣었다(2026-08-21).
+                  # Flink SQL 잡 파일(배치=k8s/flink/iceberg-batch-job.yaml,
+                  #                    스트림=k8s/flink/iceberg-stream-job.yaml).
+                  # 🔴 이 마운트는 참조 대상 ConfigMap이 **둘 다 먼저 존재해야** 한다 —
+                  #   하나라도 없으면 파드가 CreateContainerConfigError로 뜨지 않는다.
+                  #   그래서 ConfigMap을 만든 뒤에야 이 블록을 넣었다(배치 2026-08-21, 스트림 2026-08-23).
+                  #   ⇒ apply 순서는 **ConfigMap 2종 → FlinkDeployment**로 고정이다.
+                  # 마운트 경로를 나눈 이유: 한 경로에 ConfigMap 2개를 겹쳐 마운트하면 뒤엣것이 앞엣것을
+                  #   가린다(파일 단위 병합이 아니다). 배치=/opt/flink/sql, 스트림=/opt/flink/sql-stream.
                   volumeMounts:
                       - name: iceberg-batch-job
                         mountPath: /opt/flink/sql
+                        readOnly: true
+                      - name: iceberg-stream-job
+                        mountPath: /opt/flink/sql-stream
                         readOnly: true
             volumes:
                 - name: iceberg-batch-job
                   configMap:
                       name: iceberg-batch-job
+                - name: iceberg-stream-job
+                  configMap:
+                      name: iceberg-stream-job
     jobManager:
         resource:
             memory: "2048m"
