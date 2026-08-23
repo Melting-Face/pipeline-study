@@ -1,0 +1,146 @@
+name: ci
+
+# 서버측 품질 게이트 (2026-08-23 신설).
+#
+# 왜 필요한가: 이전까지 모든 게이트가 **로컬 pre-commit 전용**이었다 — 훅 19개·가드 스크립트
+# 6종·permissions 124규칙이 전부 개발자 머신에만 살아서 `git commit --no-verify` 한 번이나
+# `pre-commit install`을 안 한 클론이면 **전부 우회**됐다(.pre-commit-config.yaml §한계 자백).
+# 로컬 훅은 "실수 방지"이고 이 워크플로가 "봉쇄"다.
+#
+# 설계 원칙:
+#   1. 🔴 **인프라에 붙는 명령은 넣지 않는다.** 게이트가 클러스터 가용성에 묶이면 커밋이 막힌다 —
+#      이 저장소는 sqlfluff `templater = "dbt"`가 Spark Connect에 접속하는 바람에 22개 모델이
+#      오래 무검사로 남은 전례가 있다(pyproject.toml §templater). 여기 있는 스텝은 전부
+#      **파일만 읽는다**. `dbt build`·`terraform plan`·spark_connect_smoke는 수동 관문으로 남긴다.
+#   2. 🔴 **크리덴셜은 명백히 가짜만 쓴다**(`ci-dummy`). 정의 로드는 문자열만 읽고 접속하지
+#      않으므로 진짜 값이 필요 없다. secrets를 넣는 순간 원칙 1이 깨진다.
+#   3. **규칙의 단일 출처는 저장소 설정 파일**이다(pyproject.toml·.gitlint·.pre-commit-config.yaml).
+#      이 워크플로는 '무엇을 언제 실행할지'만 정하고 규칙을 재선언하지 않는다.
+#   4. **terraform은 여기 없다** — `.tf`는 최근 50커밋 중 변경 0건(마지막 2026-08-17, OCI ⏸보류)이라
+#      계측 대상이 없다. "계측 대상 없이 수집기를 두지 않는다"(CLAUDE.md §관측·모니터링).
+#      재개 시 `paths: [terraform/**]` 필터를 건 별도 워크플로로 무장한다.
+#
+# 로컬 사전 검증(2026-08-23, HEAD a7cdf59): pre-commit 18훅 통과 / mypy 23파일 0오류(스텁 포함) /
+# dbt parse env 0개로 통과 / dg check defs 통과 / gitlint 위반 1건 실발동(CT1).
+# 🔴 **ubuntu-latest에서의 재현은 첫 PR이 검증한다** — 로컬 통과를 CI 통과로 읽지 않는다.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# 같은 ref에 새 푸시가 오면 진행 중인 검사를 취소한다(러너 낭비 방지).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: 린트·포맷·시크릿 (pre-commit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12" # src 프로젝트 requires-python = ">=3.10,<3.15", 로컬 venv와 일치
+
+      # hadolint 훅(id: hadolint)은 `language: system`이라 **로컬 바이너리**를 부른다.
+      # 업스트림 `hadolint-docker`는 docker CLI를 요구하는데 개발 머신이 podman이라 이 훅을 쓴다.
+      # 🔴 버전은 .pre-commit-config.yaml의 `rev`에서 뽑는다 — 여기 숫자를 박으면 두 곳이 갈린다.
+      - name: hadolint 설치 (rev와 동일 버전)
+        run: |
+          ver=$(grep -A1 'hadolint/hadolint' .pre-commit-config.yaml | grep 'rev:' | awk '{print $2}')
+          echo "hadolint ${ver} 설치"
+          sudo curl -fsSL -o /usr/local/bin/hadolint \
+            "https://github.com/hadolint/hadolint/releases/download/${ver}/hadolint-Linux-x86_64"
+          sudo chmod +x /usr/local/bin/hadolint
+          hadolint --version
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - run: python -m pip install --upgrade pre-commit
+
+      # 🔴 repo 루트에서 실행한다 — sqlfluff `library_path`(sqlfluff_libs)가 CWD 기준이다.
+      # --show-diff-on-failure: 수정형 훅(ruff-format·sqlfluff-fix 등)이 무엇을 바꾸려 했는지 보여준다.
+      - run: pre-commit run --all-files --show-diff-on-failure
+
+  commit-msg:
+    name: 커밋 메시지 (Conventional Commits)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 커밋 범위 비교에 전체 이력이 필요하다
+
+      - uses: astral-sh/setup-uv@v5
+
+      # gitlint는 commit-msg 스테이지 훅이라 `pre-commit run --all-files`가 **건너뛴다**.
+      # 규칙 정본은 루트 .gitlint(contrib-title-conventional-commits).
+      # 🔴 실행 파일은 `gitlint-core`가 제공한다 — `uvx gitlint`는 실행 파일을 못 찾는다.
+      - name: PR 커밋 전수 검사
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          uvx --from gitlint-core gitlint --commits "origin/${{ github.base_ref }}..HEAD"
+
+  defs:
+    name: 타입·정의 로드 (mypy · dg check defs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # --frozen: uv.lock과 pyproject.toml이 어긋나면 실패한다(락 드리프트 게이트를 겸한다).
+      - name: 의존성 설치
+        working-directory: dagster/dockerfile.d/src
+        run: uv sync --group dev --frozen
+
+      # 🔴 repo 루트에서 실행한다 — [tool.mypy] 설정이 **루트** pyproject.toml에 있다
+      #    (`disallow_untyped_defs = true`). src에서 돌리면 설정을 못 읽는다.
+      # types-PyYAML은 `--with`로 붙인다 — .pre-commit-config.yaml §미포함이 적어둔
+      # 수동 명령과 같은 형태이고, uv.lock을 건드리지 않는다.
+      - name: mypy
+        run: uv run --project dagster/dockerfile.d/src --with types-PyYAML mypy dagster/dockerfile.d/src/src
+
+      # dg check defs는 manifest.json을 요구한다 — `prepare_if_dev()`는 비-dev에서 no-op이라
+      # 여기서 미리 만들어야 한다(common/dbt.py §manifest가 명시).
+      # dbt_packages/는 미커밋이라 deps 선행. 버전은 커밋된 package-lock.yml이 고정한다.
+      # 🔴 parse는 접속하지 않는다 — 기본 타깃 spark_connect가 쓰는 SPARK_REMOTE에 기본값이 있고
+      #    dbt는 선택된 타깃만 렌더한다(2026-08-23 실측: 환경변수 0개로 통과).
+      - name: dbt deps + parse (manifest 생성)
+        working-directory: dagster/dockerfile.d/src
+        run: |
+          uv run dbt deps --project-dir dbt_pipelines
+          uv run dbt parse --project-dir dbt_pipelines --profiles-dir dbt_pipelines
+
+      # 이 게이트가 잡는 것: `@dg.definitions`를 @asset 모듈에 두면 모듈 스코프 자산이 **조용히
+      # 누락**되고, `@dbt_assets` 셀렉터를 `path:` 글롭으로 쓰면 모델이 **0개 수집**된다.
+      # 둘 다 예외 없이 지나가는 잠복 버그라 사람 눈으로는 안 잡힌다(CLAUDE.md §Dagster 컨벤션).
+      #
+      # 🔴 DAGSTER_HOME을 **빈 디렉터리**로 돌리는 것이 핵심이다. 저장소의 dagster.yaml은
+      #    run/event/schedule storage를 Postgres로 지정하므로, 그대로 두면 정의를 읽기도 전에
+      #    인스턴스 로드에서 실제 접속을 시도해 `DagsterPostgresException`으로 죽는다
+      #    (2026-08-23 실측). 비우면 기본 로컬 스토리지로 폴백한다.
+      # 🔴 아래 크리덴셜은 **전부 가짜다.** common/constants.py가 `os.environ[...]`로 폴백해
+      #    미설정 시 KeyError를 내므로 값이 "있기만" 하면 된다 — 접속에는 쓰이지 않는다.
+      - name: dg check defs
+        working-directory: dagster/dockerfile.d/src
+        env:
+          DAGSTER_HOME: ${{ runner.temp }}/dagster-home
+          POSTGRES_USER: ci-dummy
+          POSTGRES_PASSWORD: ci-dummy
+          AWS_ACCESS_KEY_ID: ci-dummy
+          AWS_SECRET_ACCESS_KEY: ci-dummy
+        run: |
+          mkdir -p "$DAGSTER_HOME"
+          uv run dg check defs
