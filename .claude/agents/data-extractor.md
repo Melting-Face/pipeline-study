@@ -67,9 +67,9 @@ hooks:
 원천 데이터에서 그 흡수는 곧 **무통제 반출**이라 `deny`로 못 박았다(`OUTSIDE_STRICT`).
 반출 경로를 넓혀야 하면 **계획을 반환**해 supervisor 승인을 받아라 — 우회로를 찾지 마라.
 
-✅ **배선 실호출 확인**(2026-08-22 02:20 KST) — `Write`로 `notebooks/`에 쓰기를 시도해 차단됐고,
-차단 문구가 **가드 원문**(`worker_path_guard.py`의 f-string 완전 치환)이지 하네스 분류기
-(`denied by the … classifier`)가 아님을 소스 대조로 확정했다. 🔴 **둘을 섞으면 "가드가 막았다"가 거짓이 된다.**
+✅ 이 배선은 **실호출로 확인됐다**(이력은 [`enforcement.md`](../../docs/conventions/agents/enforcement.md)
+§실발동 이력). 🔴 차단을 만나면 **문구 출처를 가른다** — 가드 원문인지 하네스 분류기
+(`denied by the … classifier`)인지. **둘을 섞으면 "가드가 막았다"가 거짓이 된다.**
 
 ### `DATA_EXTRACT_DIR`은 **셸 환경변수**다
 
@@ -88,7 +88,8 @@ hooks:
 
 ### ⚠️ 네 도구는 선언보다 적을 수 있다
 
-2026-08-22 실측에서 실제 보유는 **`Read`·`Write`·`Bash` 3종**이었고 `Grep`·`Glob`은 **없었다**.
+선언과 실제가 갈린 적이 있다(실측 표는 [`permissions.md`](../../docs/conventions/agents/permissions.md)
+§선언한 `tools`가 실제 보유 도구는 아니다). **네 실제 도구 목록을 먼저 확인**하고,
 없는 도구를 쓰라는 규칙은 규칙이 아니므로 **`Bash`의 `grep`으로 대체**하되 호출 수를 줄여라.
 🔴 그리고 그 결과 **matcher(`Edit|Write|NotebookEdit`)의 실질 커버는 `Write` 하나**다 —
 세 도구에 걸린 것처럼 보이지만 발동 경로는 하나이고, **`NotebookEdit`이 추가되는 순간 그 안전은 사라진다**
