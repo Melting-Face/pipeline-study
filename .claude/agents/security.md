@@ -43,8 +43,8 @@ hooks:
 | --- | --- | --- | --- |
 | 1 | **비밀정보 누출** | `.env`·크리덴셜·API 개인키(`*.pem`)·`*.tfstate`·`terraform.tfvars`·`kubeconfig-oci`가 **추적 대상인지**(`git ls-files`), `.gitignore` 유효한지, 히스토리에 남았는지 | [general.md](../../docs/conventions/general.md) · [git.md](../../docs/conventions/git.md) §5 |
 | 2 | **하드코딩** | 비밀·엔드포인트·경로가 코드/설정에 상수화됐는지. 참조 주입(`dg.EnvVar`·`os.environ`·`${ENV:KEY}`) 준수 | [operations.md](../../docs/operations.md) §1 |
-| 3 | **데이터 거버넌스** | 원천 진료 데이터(`*.csv.gz`)·PII·비식별 데이터가 저장소에 있는지, DUA 위반 소지 | [security.md](../../docs/security.md) §0 · [dataset_schema.md](../../docs/dataset_schema.md) |
-| 4 | **분석 산출물 반출** | `notebooks/**.ipynb`에 **셀 출력이 남아 있는지**(`outputs`·`execution_count` 비어야 함), `.ipynb_checkpoints/` 추적 여부, `docs/analyses/**`에 개별 환자 행·소규모 셀(관례상 5 미만)이 있는지, `--no-verify` 우회 흔적. 🔴 `gitleaks`는 **헬스 데이터를 잡지 못한다** — 통과를 안전으로 읽지 않는다 | [security.md](../../docs/security.md) §2-3 · [analysis.md](../../docs/conventions/analysis.md) |
+| 3 | **데이터 거버넌스** | 원천 데이터(`*.csv.gz`)·PII·비식별 데이터가 저장소에 있는지, DUA 위반 소지 | [security.md](../../docs/security.md) §0 · [dataset_schema.md](../../docs/dataset_schema.md) |
+| 4 | **분석 산출물 반출** | `notebooks/**.ipynb`에 **셀 출력이 남아 있는지**(`outputs`·`execution_count` 비어야 함), `.ipynb_checkpoints/` 추적 여부, `docs/analyses/**`에 개별 레코드·소규모 셀(관례상 5 미만)이 있는지, `--no-verify` 우회 흔적. 🔴 `gitleaks`는 **원천 데이터를 잡지 못한다** — 통과를 안전으로 읽지 않는다 | [security.md](../../docs/security.md) §2-3 · [analysis.md](../../docs/conventions/analysis.md) |
 | 5 | **인프라 노출** | terraform Security List의 `0.0.0.0/0`(SSH 22·K8s API 6443), k8s RBAC/NetworkPolicy, docker 권한·`latest` 태그, S3/Trino 평문 `http://` | [terraform.md](../../docs/conventions/terraform.md) · [k8s.md](../../docs/conventions/k8s.md) · [docker.md](../../docs/conventions/docker.md) |
 | 6 | **권한 범위** | `.claude/settings.local.json`·pre-commit 훅의 과다 허용, `--no-verify` 우회 흔적 | [git.md](../../docs/conventions/git.md) §4 |
 | 7 | **ISMS-P 매핑** | [security.md](../../docs/security.md)의 **통제 방침·보증 범위**와 **현행 코드/설정의 실제 상태**가 어긋나는 항목(방침은 선언됐는데 실제 미적용 등) | [security.md](../../docs/security.md) + **비공개 실태** `$OBSIDIAN_VAULT/security/posture.md` |
@@ -57,7 +57,7 @@ hooks:
 
 | 등급 | 기준 | 예 |
 | --- | --- | --- |
-| **높음** | 비밀·개인정보가 실제로 노출됐거나 즉시 악용 가능 | 크리덴셜 커밋, 원천 진료 데이터 추적, 개인키 저장소 포함 |
+| **높음** | 비밀·개인정보가 실제로 노출됐거나 즉시 악용 가능 | 크리덴셜 커밋, 원천 데이터 추적, 개인키 저장소 포함 |
 | **중간** | 노출 위험을 키우는 설정·규약 위반 | API 6443 전체 개방, 평문 전송, 하드코딩된 엔드포인트 |
 | **낮음** | 방어 심화·문서 정합성 | ISMS-P 표 드리프트, 주석 없는 예외, 과다 권한 allowlist |
 

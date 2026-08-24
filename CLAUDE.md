@@ -1,7 +1,7 @@
 # 프로젝트 CLAUDE.md (pipeline-study)
 
-> 이 저장소는 **파이프라인(수단) + 분석(목적)** 두 축이다. 중환자 데이터를 레이크하우스로
-> 적재·변환하는 것은 **임상 질문(SOFA → Sepsis-3 등)에 답하기 위한 준비**이며,
+> 이 저장소는 **파이프라인(수단) + 분석(목적)** 두 축이다. 도메인이 다른 여러 데이터셋을
+> 같은 레이크하우스 패턴으로 적재·변환하는 것은 **데이터셋별 질문에 답하기 위한 준비**이며,
 > 답을 내는 규칙은 [`docs/conventions/analysis.md`](docs/conventions/analysis.md)가 정본이다.
 
 ## 문서화 원칙
@@ -147,8 +147,8 @@
 - **결론에 쓰는 수치는 gold/dbt 모델을 경유**한다(임시 SQL 결과를 리포트에 옮기지 않는다).
   코호트는 **attrition**(제외 조건별 행 수 감소)을, 결측·이상치는 처리 방법을 남긴다.
   🔴 **수치에는 산출 엔진을 병기**한다 — 같은 SQL이 엔진에 따라 값이 갈린 사례가 있다(`dbt.datediff`).
-- **재식별 금지·소규모 셀 마스킹**(관례상 5 미만)을 지킨다. `.ipynb` 셀 출력은 `nbstripout`으로
-  제거되며 **`--no-verify` 우회 금지**([`docs/security.md`](docs/security.md)).
+- **DUA·개인정보·가명정보가 걸린 데이터셋**은 재식별 금지·소규모 셀 마스킹(5 미만)을 지킨다.
+  `.ipynb` 셀 출력은 `nbstripout`으로 제거되며 **`--no-verify` 우회 금지**([`docs/security.md`](docs/security.md)).
 
 ## 테스트 컨벤션
 
@@ -455,8 +455,8 @@
   상세 [`docs/operations.md`](docs/operations.md) §토큰 비용 계측.
 - **리소스 산정**: `max_concurrent_runs`↔daemon `memory` 결합(CoW OOM), Trino 3파일 메모리 제약.
   상세 [`docs/resource-sizing.md`](docs/resource-sizing.md).
-- **보안·데이터 거버넌스**: 원천 진료 데이터·`.env`·크리덴셜은 **저장소 커밋 금지**(비식별 연구
-  데이터셋 + DUA). ISMS-P 인증기준(101)·의료데이터 보안 규제와 **통제 방침·보증 범위** 매핑은
+- **보안·데이터 거버넌스**: 원천 데이터·`.env`·크리덴셜은 **무조건 커밋 금지**. 그 밖의 통제 강도는
+  **데이터셋에 걸린다**(DUA·재배포 제한 **또는** 개인정보·가명정보 포함 여부). ISMS-P·규제 **매핑**은
   [`docs/security.md`](docs/security.md).
   🔴 **정책(공개)과 실태(비공개)를 가른다**(2026-08-23) — `docs/security.md`는 **정책만** 담고
   **현행 실태·미비점·미해소는 `$OBSIDIAN_VAULT/security/posture.md`**(저장소 밖·PRIVATE)에 둔다.

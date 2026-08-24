@@ -36,7 +36,7 @@
 - **커밋 금지**(비밀·상태·아티팩트):
   - `.env`·크리덴셜([general.md](general.md#비밀정보-secrets)),
   - Terraform `*.tfstate`·`terraform.tfvars`·API 개인키·`kubeconfig-oci`([terraform.md](terraform.md)),
-  - 원천 진료 데이터([../security.md](../security.md)).
+  - 원천 데이터([../security.md](../security.md)).
   - `.gitignore`로 강제하고, 예시는 `*.example`만 커밋한다.
   - **`.claude/settings.local.json`** — 세션 중 승인한 `allow` 누적(개인 설정).
 - **커밋 대상**(재현성): 락 파일 — `.terraform.lock.hcl`·`skills-lock.json`.
