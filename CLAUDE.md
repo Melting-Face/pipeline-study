@@ -7,7 +7,8 @@
 ## 문서화 원칙
 
 - 이 프로젝트에서 정한 **규칙·결정·작업 패턴은 최대한 문서로 남긴다**.
-- 규칙을 새로 정하거나 바꾸면 `CLAUDE.md`·`docs/`·`README.md`를 **함께 갱신**해 단일 출처(single source of truth)를 유지한다.
+- 규칙을 새로 정하거나 바꾸면 `CLAUDE.md`·`docs/`·`README.md`를 **함께 갱신**해
+  단일 출처(single source of truth)를 유지한다.
 - `CLAUDE.md`는 핵심 컨벤션의 **요약/인덱스**, 상세 배경·흐름은 `docs/`에 둔다.
 - 문서는 한국어로 작성하고, 코드 식별자·명령어·경로는 원문 그대로 표기한다.
 
@@ -18,7 +19,8 @@
 - type: `feat`·`fix`·`docs`·`style`·`refactor`·`perf`·`test`·`build`·`ci`·`chore`·`revert`.
 - gitlint `contrib-title-conventional-commits`로 강제. 상세·매핑은 [`docs/conventions/general.md`](docs/conventions/general.md).
 - **git 워크플로**(브랜치 전략·논리적 커밋 단위·병렬 세션 **git worktree**·AI 세션 git 규칙)는
-  [`docs/conventions/git.md`](docs/conventions/git.md). 커밋·푸시는 **사용자 요청 시에만**, 락 파일(`.terraform.lock.hcl`·`skills-lock.json`)은 커밋.
+  [`docs/conventions/git.md`](docs/conventions/git.md). 커밋·푸시는 **사용자 요청 시에만**,
+  락 파일(`.terraform.lock.hcl`·`skills-lock.json`)은 커밋.
 
 ## 코딩 철학
 
@@ -51,8 +53,10 @@
 - 실행형 유틸리티(`scripts/`)는 **호이스팅은 적용**(선언은 상단·진입은 하단), **캡슐화·함수화는 최소화**한다
   → 클래스 없이, 보조 함수로 쪼개지 않고 **하나의 `main()`** 에서 위→아래로 실행한다.
 - 이유: **가독성 / Locality of Behaviour** — 스크립트는 재사용 단위가 아니라 **실행 순서 = 읽는 순서**가 명확할 때 최선.
-  단, **Rule of Three(3회 이상 반복)** 는 유효하며, 라이브러리·에셋 코드(`common/`·`defs/`)에는 적용하지 않는다(관심사 분리·명시적 함수 유지).
-- 외부 의존성은 **PEP 723 인라인 메타데이터**로 선언하고 `uv run <script>.py`로 실행한다. `scripts/**`는 ruff **C901 면제**.
+  단, **Rule of Three(3회 이상 반복)** 는 유효하며, 라이브러리·에셋 코드(`common/`·`defs/`)에는
+  적용하지 않는다(관심사 분리·명시적 함수 유지).
+- 외부 의존성은 **PEP 723 인라인 메타데이터**로 선언하고 `uv run <script>.py`로 실행한다.
+  `scripts/**`는 ruff **C901 면제**.
 
 ## Dagster 코딩 컨벤션
 
@@ -89,16 +93,21 @@
     - `constants.py` — 데이터셋 전용 `NAMESPACE`·`GROUP_NAME`·`SOURCE_BASE`
     - `assets.py` — 테이블별 **명시적 `@asset`**(bronze 적재; 모듈 스코프라 자동 수집)
     - `dbt_assets.py` — 데이터셋 dbt 모델 소유(`@dbt_assets(select="fqn:<dataset>", project=dbt_project)`)
-  - `defs/resources.py` — 공유 리소스(S3·dbt·IO 매니저·테이블 바인딩)를 `@dg.definitions`로 제공. Iceberg 카탈로그 설정(`IcebergCatalogConfig`)은 별도 빌더 없이 **각 리소스에 인라인**해 한 파일에서 전체를 파악한다(적은 파일로 파악).
+  - `defs/resources.py` — 공유 리소스(S3·dbt·IO 매니저·테이블 바인딩)를 `@dg.definitions`로 제공.
+    Iceberg 카탈로그 설정(`IcebergCatalogConfig`)은 별도 빌더 없이 **각 리소스에 인라인**해
+    한 파일에서 전체를 파악한다(적은 파일로 파악).
   - `defs/automation.py` — 잡·스케줄(모듈 스코프 객체라 자동 수집)
 - **wiring은 최상위 `definitions.py` 한 곳**에서 `defs = load_defs(dagster_project.defs)`로
   자동발견 결과를 **단일 `Definitions`**로 합친다(중간 definitions 레이어 없음, 모듈 스코프 `Definitions` 1개).
 
 ### S3 → Iceberg 적재 (리소스 기반, 2경로)
 
-- S3/Iceberg 연결은 **Dagster 리소스로 관리**한다: `dagster-aws` `S3Resource` + `dagster-iceberg`(IO 매니저·`IcebergTableResource`). 연결을 자산이 아닌 리소스에 둔다.
+- S3/Iceberg 연결은 **Dagster 리소스로 관리**한다: `dagster-aws` `S3Resource` +
+  `dagster-iceberg`(IO 매니저·`IcebergTableResource`). 연결을 자산이 아닌 리소스에 둔다.
 - **일반(부하 없는) 파일**: 자산이 `pa.Table` 반환 → **dagster-iceberg IO 매니저**가 자동 create+적재.
-- **대용량 파일(예: 3.3GB)**: boto3 스트리밍 + **청크 append**(`load_heavy_csv_gz_to_iceberg`, IO 매니저 미사용 — 전량 메모리 적재 금지). 대상 테이블용 `IcebergTableResource`는 `defs/resources.py`에 추가한다.
+- **대용량 파일(예: 3.3GB)**: boto3 스트리밍 + **청크 append**(`load_heavy_csv_gz_to_iceberg`,
+  IO 매니저 미사용 — 전량 메모리 적재 금지). 대상 테이블용 `IcebergTableResource`는
+  `defs/resources.py`에 추가한다.
 - **메타스토어를 두지 않는다**: Trino와 동일한 Iceberg JDBC 카탈로그를 재사용한다.
 - **dbt 미생성 테이블(=Dagster 적재분)은 dbt `source()`로 참조**한다. source는 데이터셋별
   `models/<dataset>/source.yml`에 두고 `meta.dagster.asset_key`로 Dagster 자산키와 매핑해 lineage를
@@ -214,7 +223,8 @@
   **카탈로그 Postgres는 CloudNativePG(CNPG)** 가 관리한다(`Cluster` CR — 구 `Deployment`+`emptyDir`는
   재기동만으로 카탈로그가 소멸했다). 🔴 서비스명에 **`-rw`/`-ro`/`-r` 접미사**가 붙고 접미사 없는 이름은 없다.
   🔴 **비밀번호 회전은 Secret·DB 롤·`.env`·워크로드 재기동을 한 벌로** 한다 — 한쪽만 바꾸면
-  **성공한 것처럼 보이는데 안 바뀐 상태**가 된다(§12에 해소 내역). **메타 Postgres(Dagster)는 compose에 남긴다**(순환 의존 회피).
+  **성공한 것처럼 보이는데 안 바뀐 상태**가 된다(§12에 해소 내역).
+  **메타 Postgres(Dagster)는 compose에 남긴다**(순환 의존 회피).
   **SeaweedFS는 오퍼레이터 미채택**(상주 +500m/+1Gi인데 이미 PVC라 급소가 아니다).
   엔진 버전은 **최신이 아니라 Iceberg가 지원하는 짝**으로 고정한다(예: `iceberg-flink-runtime`이 2.1까지라 Flink는 2.1).
   Spark Connect는 유일한 상주 컴퓨트라 미사용 시 `--replicas=0`으로 내린다.
@@ -341,7 +351,8 @@
   문서 편집은 git이 되돌리고 **최종 관문은 커밋 `ask` 1회**다. **전원이 매번 위반하는 규칙은 규칙이 아니다** —
   쓰기 범위 35파일 중 23파일이 게이트라 규칙 변경과 오탈자 교정이 구분 없이 올라오고 있었다.
   남은 정본 게이트는 **실행 규칙·통제 배선**뿐이다(`CLAUDE.md`·`.claude/agents/**`·`settings.json`·
-  `*_guard.py`·`skills-lock.json`·`compose.yml`). 독자는 둘 — `docs/posts/**`는 **모르는 사람**, 나머지는 **아는 사람**이 읽는다.
+  `*_guard.py`·`skills-lock.json`·`compose.yml`). 독자는 둘 —
+  `docs/posts/**`는 **모르는 사람**, 나머지는 **아는 사람**이 읽는다.
   🔴 **매체는 축이 아니다**(지시문 **포맷 프로파일**로 흡수). 🔴 **발행(업로드)은 어느 워커도 하지 않는다** —
   외부 발신은 비가역이고 마지막 게이트는 **사람**이 갖는다. **공개는 커밋보다 강한 기준**이다
   (내부 경로·버킷명·소규모 셀 <5·DUA 재배포 제한) — [`docs/conventions/publishing.md`](docs/conventions/publishing.md).
@@ -361,11 +372,13 @@
   게이트 탈락은 채점 없이 제외하되 **단서로 무해화 가능하면 통과**로 본다.
   🔴 **게이트 축과 채점 축을 섞지 않는다** — 같은 축에 거부권과 점수를 동시에 주면 기본값이 이미 ★3이 돼
   **축이 실질 절반으로 작동**한다. 🔴 **출처 신뢰성도 별점 축이 아니라 별개 게이트**다(`security` 판정) —
-  섞으면 "★5인데 출처 불명"을 못 잡는다. 🔴 **축을 재가중하면 구 판정을 재사용하지 않는다**(재채점은 `skill-matcher` 소관).
+  섞으면 "★5인데 출처 불명"을 못 잡는다.
+  🔴 **축을 재가중하면 구 판정을 재사용하지 않는다**(재채점은 `skill-matcher` 소관).
   🔴 **워커에 물린 스킬은 ⚙️(디스크 설치)와 🌐(런타임 제공)를 가른다** — 워커에 `Skill`을 안 물리므로
   ⚙️는 `Read`로 쓰지만 🌐는 **파일이 없어 `Read`도 불가**라 지시문에 적으면 죽은 참조다.
 
-  **③ 강제 수단과 그 한계** — **프론트매터는 `model`·`disallowedTools`까지 명시**한다 — `model`은 **생략 시 기본값이 `inherit`**라
+  **③ 강제 수단과 그 한계** — **프론트매터는 `model`·`disallowedTools`까지 명시**한다 —
+  `model`은 **생략 시 기본값이 `inherit`**라
   전원이 최상위 모델로 돌아 비용 제어가 사라진다. 판정·기록 워커(`*-verifier`·`*-qa`·`archivist`·`skill-matcher`)는
   **`sonnet`**, 결정을 만드는 쪽(`*-engineer`·`analyst`·`security`)은 **`inherit`**.
   판정자 6종은 `disallowedTools: Write, Edit, NotebookEdit`으로 **미부여(난이도) → 거부(강제)** 로 올린다.
@@ -377,11 +390,13 @@
   🔴 **워커별 경로 범위는 `permissions`로 못 건다**(세션 전역) — **에이전트 정의 내 `hooks`만이 유일한 수단**이고
   강제 범위는 **`Write`/`Edit`/`NotebookEdit` 도구 경로뿐**이다. `disallowedTools`가 `Write`를 **먼저 제거**하는
   워커(`researcher`)는 hook에 도달조차 않으니 그 층은 심층 방어로만 읽는다.
-  🔴 **`hooks`를 고쳤으면 새 세션에서 재대조**한 뒤 "막힌다"고 쓴다 — 단 **적용 대상은 「배선」(matcher·`command`)뿐**이고
+  🔴 **`hooks`를 고쳤으면 새 세션에서 재대조**한 뒤 "막힌다"고 쓴다 —
+  단 **적용 대상은 「배선」(matcher·`command`)뿐**이고
   **가드 스크립트 본문은 매 호출 즉시 반영**된다(로직 수정은 즉시, 프론트매터 수정만 새 세션).
   🔴 프론트매터 `command`는 `settings.json`과 **인용 규칙이 다르다**(정본 `"$CLAUDE_PROJECT_DIR/scripts/….py"`) —
   틀리면 **에러 없이 조용히 통과**한다. 배선을 바꾸면 **실발동 확인을 다시 돌린다**.
-  🔴 **hook 결정값은 `allow`·`deny`·`ask`·`defer` 넷뿐**이고, 어긋나면 출력 전체가 거부된 채 도구가 진행한다(**fail-open**).
+  🔴 **hook 결정값은 `allow`·`deny`·`ask`·`defer` 넷뿐**이고,
+  어긋나면 출력 전체가 거부된 채 도구가 진행한다(**fail-open**).
   🔴 **auto 모드에서 `ask`는 분류기가 흡수**하며 흡수 여부는 **도구 축**에 따라 갈린다 — `Bash`는 실제 위험 호출이면
   발동하지만 **파일 도구는 경로 민감도와 무관하게 흡수**된다. ⇒ 급소는 "경로가 민감한가"가 아니라
   **"어느 도구인가"**이고, **파일 경로 경계는 `deny`여야 확실히 막힌다**. `ask`가 있다는 사실을 "반드시 멈춘다"로
