@@ -1,14 +1,18 @@
 # PIPELINE STUDY
 
-MIMIC-IV·eICU 중환자 데이터를 **Dagster + dbt + Iceberg 레이크하우스**로 적재·변환하고,
-그 위에서 **SOFA → Sepsis-3 같은 임상 질문에 답하는** 학습·포트폴리오 프로젝트다.
+성격이 다른 여러 도메인의 데이터셋을 **하나의 레이크하우스 패턴**(Dagster + dbt + Iceberg)으로
+적재·변환·분석하며, 그 패턴이 도메인을 갈아끼워도 성립하는지 검증하는 학습·포트폴리오다.
 
-**파이프라인은 수단, 분석이 목적**이다. 두 축이 다음처럼 나뉜다.
+**파이프라인은 수단, 분석이 목적**이다. 데이터셋마다 답할 질문이 다르고, 파이프라인은
+그 질문에 닿기 위한 **공통 수단**이다. 두 축이 다음처럼 나뉜다.
 
 | 축 | 하는 일 | 규칙 정본 |
 | --- | --- | --- |
 | **파이프라인** | S3 → Iceberg 적재, dbt 실버 피처, 오케스트레이션 | [dagster](docs/conventions/dagster.md) · [dbt](docs/conventions/dbt.md) |
 | **분석** | gold 지표·코호트, 노트북 탐색, 리포트 | [analysis](docs/conventions/analysis.md) |
+
+현재 적재된 데이터셋과 각각의 질문은 [`docs/dataset_schema.md`](docs/dataset_schema.md)에 있다.
+데이터셋을 추가하는 것은 새 축을 만드는 일이 아니라 **같은 패턴에 입력을 하나 더 붙이는 일**이다.
 
 > 단일 호스트 Docker Compose에서 **호스트 Dagster + 로컬 Kubernetes**로 이행 중이다.
 > 로드맵과 단계별 게이트는 [`docs/redesign.md`](docs/redesign.md).

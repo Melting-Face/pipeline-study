@@ -79,7 +79,10 @@ dagster/dockerfile.d/src/src/tests/                 # 에셋 pytest
 - 배정 범위가 좁으면(예: "mimic_iv 실버 모델만") **그 범위만** 감사한다. 범위 밖은 "범위 외 참고"로 분리한다.
 - **감사하지 않는 것**: 서드파티 패키지 내부(`dbt_packages/`), 외부 시스템 동작, 원천 데이터의 임상적 타당성.
 
-## 실버 피처 테스트 체계 (SOFA → Sepsis-3)
+## 현행 데이터셋 부록 — MIMIC-IV 실버 피처 테스트 체계(SOFA → Sepsis-3)
+
+아래는 **지금 적재된 데이터셋에만** 해당한다 — 항목이 MIMIC-IV 고유 상수에 묶여 있다.
+데이터셋이 늘면 **그 데이터셋의 부록을 따로 만든다.**
 
 정본은 [`dataset_schema.md`](../../docs/dataset_schema.md) §실버 피처 파이프라인(22개 모델,
 Tier-1 `source()` → 중간 `ref()` → 최종 `sofa`·`sepsis3`)과 [`test.md`](../../docs/test.md) §2(단위 테스트).

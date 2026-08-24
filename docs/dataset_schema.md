@@ -1,10 +1,12 @@
 # 데이터셋 원천 스키마 · 피처 레퍼런스
 
-이 문서는 본 저장소가 실제로 적재·변환하는 **MIMIC-IV / eICU bronze 원천 테이블**과 그 위에 얹은
-**SOFA → Sepsis-3 실버(dbt) 파이프라인**의 스키마·피처 레퍼런스다. 원천은 Iceberg 테이블 포맷으로
-저장되며(네임스페이스 `mimiciv` / `eicu`), Dagster `defs/<dataset>` 서브프로젝트가 S3의 `csv.gz`를
-읽어 적재한다. dbt는 이 적재분을 `source()`로 참조(생성이 아님)해 실버 개념 테이블을 만든다.
+이 문서는 **현재 적재된 데이터셋**의 bronze 원천 테이블과 그 위에 얹은 실버(dbt) 파이프라인의
+스키마·피처 레퍼런스다. 지금 실려 있는 것은 **MIMIC-IV / eICU**이고, 그 위의 분석 질문은
+**SOFA → Sepsis-3**다. 원천은 Iceberg 테이블 포맷으로 저장되며(네임스페이스 `mimiciv` / `eicu`),
+Dagster `defs/<dataset>` 서브프로젝트가 S3의 `csv.gz`를 읽어 적재한다. dbt는 이 적재분을
+`source()`로 참조(생성이 아님)해 실버 개념 테이블을 만든다.
 여기 기술한 컬럼·itemid는 모두 `source.yml`·실버 `.sql`·`schema.yml`에서 **직접 확인된 것만** 담았다.
+데이터셋을 추가할 때는 이 문서에 `## <dataset> 원천 테이블` 절을 덧붙인다 — 다른 문서를 고칠 일이 아니다.
 
 > 저장은 UTC, 표시·스케줄은 KST. 저장/조인 흐름·컨테이너 구성은 [architectures/overview.md](architectures/overview.md),
 > source/ref·메달리온 태깅 규칙은 [conventions/dbt.md](conventions/dbt.md) 참고.

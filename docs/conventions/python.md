@@ -72,7 +72,7 @@ indent-style = "space"
 | `PD`·`NPY` | pandas·numpy 안티패턴(해당 라이브러리 사용 시) |
 | `N` | pep8-naming(클래스·함수·변수 네이밍) |
 | `FURB` | refurb — 최신 Python 관용 표현 |
-| `PERF` | perflint — 성능 안티패턴(대용량 의료 데이터 처리) |
+| `PERF` | perflint — 성능 안티패턴(대용량 데이터 처리) |
 | `PT` | flake8-pytest-style — pytest 스타일 통일 |
 | `TRY` | tryceratops — 예외 처리 패턴 |
 | `G`·`LOG` | 로깅 포맷·사용 규칙(f-string 로깅 금지 → 지연 포매팅) |
