@@ -20,9 +20,11 @@
 
 [duckdb — analyst 전용. 🔴 다른 워커로 확대하지 않는 것이 승인 조건]
 🔴 :312-338 COPY…TO / integration.md write_csv·write_parquet 등 로컬 파일 내보내기를 하지 않는다 —
-   .gitignore가 덮는 것은 notebooks/**·docs/analyses/** 안의 *.csv·*.parquet 등 확장자 목록까지다
-   (**/*.duckdb만 전역). 두 층을 다 통과해 git add -A에 딸려 가는 것은 *.json이다 —
-   *.ndjson과 docs/ 그 밖 경로의 *.csv는 gitignore 밖이지만 no-health-data-files 훅이 잡는다.
+   차단은 두 층이고 **각각 다른 축에서 뚫린다**: .gitignore는 notebooks/**·docs/analyses/** 안의
+   확장자 목록까지(**/*.duckdb만 전역), no-health-data-files 훅은 ^(notebooks|docs)/ 안의 확장자 목록까지다.
+   두 층을 다 통과하는 것은 ⓐ 분석 경로 안의 *.json ⓑ notebooks/·docs/ **밖의 모든 데이터 파일**이다.
+   🔴 COPY TO 'out.csv'는 상대경로라 **저장소 루트**에 떨어져 ⓑ에 해당한다 — 경로를 안 적는 것이
+   가장 위험한 형태다. 이 워커는 Bash를 갖고 경로 가드 matcher는 Edit|Write|NotebookEdit뿐이다.
 🔴 integration.md:298-362(email·phone을 행 단위로 필터·출력)을 따르지 않는다 — 비식별 데이터+DUA다.
    결측·품질 점검은 집계 수치로만 낸다. top_k·이상치 필터는 셀이 5 미만으로 떨어지기 쉽다(마스킹 선행).
 🔴 조회 엔진은 Trino/Spark다. duckdb는 로컬 파일 탐색 보조까지이고 결론 수치는 gold/dbt 경유.

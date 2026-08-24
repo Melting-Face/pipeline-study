@@ -158,7 +158,7 @@ C등급 금지 요건(*"실행 파일 포함"*)이 **불성립**하고, 인젝�
 | **S-1** | `shellcheck-configuration` | **High** | `:217-232`가 **`.git/hooks/pre-commit`을 직접 덮어쓰라**고 안내한다. 그 파일은 프레임워크 생성물이라 덮어쓰면 **`gitleaks`·`nbstripout`이 동시에 사라지는데 git은 에러를 내지 않는다** |
 | **G-1** | `github-actions-templates` | **High** | `:153 kubectl apply -f k8s/`가 `on: push:[main]` 아래 있다. 저장소에 **`k8s/`가 실재**해 병합만으로 클러스터에 반영되고 **사람 게이트가 0**이다 |
 | **K-1** | `spark-optimization` | **High** | `write.mode("overwrite")`×4 + `saveAsTable`. Spark는 **Flink·Trino·Dagster와 같은 Iceberg 카탈로그를 공유**해 공유 테이블을 파괴·치환한다 |
-| D-1·D-2 | `duckdb` | Medium | 행 단위 **로컬 파일 내보내기**(무시 규칙은 분석 경로의 `*.csv`/`*.parquet`까지다 — `*.json`·그 밖 경로는 안 덮인다) · **email·phone 직접 식별자**를 행 단위로 다루는 절차 |
+| D-1·D-2 | `duckdb` | Medium | 행 단위 **로컬 파일 내보내기** — 차단은 **확장자 ∧ 경로 두 축**이고 `notebooks/`·`docs/` **밖은 통째로 밖**이다 · **email·phone 직접 식별자**를 행 단위로 다루는 절차 |
 | E-1·E-2 | `docker-expert` | Medium | **"Stopping here" 작업 중단 유도**(인계 대상 4종 전부 미설치) · 검증 절차가 전 명령에 `2>/dev/null` + `&& echo "successful"`을 달아 **실패를 성공처럼 보이게 한다** |
 
 **G-1은 스킬 하나가 아니라 통제 공백이다 — 상신됨(결정 대기).**

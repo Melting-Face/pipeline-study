@@ -142,6 +142,13 @@ repos:
   #    잡으며 **차단 사유를 사람에게 말해준다**(gitignore는 "왜 안 올라가지"가 된다).
   # ⚠️ 한계: 모든 게이트가 로컬 pre-commit뿐이라 `--no-verify`·훅 미설치 클론으로
   #    우회된다(서버측 CI 게이트 0개 — docs/security.md). **실수 방지이지 봉쇄가 아니다.**
+  # 🔴 **차단 범위는 확장자 ∧ 경로 두 축**이다 — `^(notebooks|docs)/` **밖**은 통째로 밖이라
+  #    저장소 루트의 `out.csv`나 `dbt_pipelines/*.parquet`는 이 훅도 `.gitignore`도 안 잡는다.
+  #    duckdb `COPY TO 'out.csv'` 같은 **상대경로 내보내기가 루트에 떨어지는 것**이 그 형태다.
+  # 🔴 **이 훅을 프로브할 때 `pre-commit run --files <경로>`의 결과를 그대로 읽지 마라** —
+  #    경로가 **실재하지 않으면** 정규식과 무관하게 `(no files to check) Skipped` + exit 0이 난다.
+  #    `&& echo 통과` 식으로 판정하면 **모든 셀이 통과로 나온다**(2026-08-24 실제로 그렇게 오판했다).
+  #    파일을 실제로 만들고, `Skipped`를 **통과가 아니라 별도 분기**로 세라.
   # 근거: docs/security.md §반출 경로(3. 데이터 반출)
   - repo: local
     hooks:
