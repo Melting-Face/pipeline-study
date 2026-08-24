@@ -4,7 +4,7 @@
 > **등재의 조건**이다 — 단서 없이 등재된 스킬은 게이트를 통과한 것이 아니다.
 > 출처 등급과 통제 방침은 [`sourcing.md`](sourcing.md), 배선은 [`wiring.md`](wiring.md).
 
-## 🔴 C등급 5종 단서 (등재의 **조건** — 2026-08-21 `security`)
+## C등급 5종 단서 (등재의 **조건** — 2026-08-21 `security`)
 
 ```
 [docker-expert — devops-engineer·verifier·qa 공통]
@@ -61,7 +61,7 @@
 🔴 `.collect()`로 전량 수집하지 않는다 — 이 저장소는 전량 메모리 적재를 금지한다.
 ```
 
-## 🔴 `helm-chart-scaffolding` 단서 (등재의 **조건** — 2026-08-21 `security`)
+## `helm-chart-scaffolding` 단서 (등재의 **조건** — 2026-08-21 `security`)
 
 ```
 🔴 `scripts/validate-chart.sh` 실행 금지 — :108이 `helm install`(비가역 목록, 이 워커는 계획만 반환)을
@@ -78,14 +78,14 @@
 🔴 `k8s-manifest-generator`·`gitops-workflow`(SKILL.md:559-560)는 미설치 죽은 참조다.
 ```
 
-- 🔴 **H-1의 급소는 결과가 아니라 구조**다 — 현 helm 버전에서 실제 설치는 일어나지 않지만,
+- **H-1의 급소는 결과가 아니라 구조**다 — 현 helm 버전에서 실제 설치는 일어나지 않지만,
   *"검증 스크립트"라는 이름 뒤에 게이트 없는 비가역 명령이 의미론이 바뀐 플래그 하나에 의지해* 들어 있다.
   **`deny` 패턴은 선두 앵커**라 스크립트 안의 명령을 매처가 **원리상 보지 못한다**(하네스가 보는 것은 파일명 한 토큰).
 - ✅ **확인함**: 셸 인젝션 0건 · 네트워크 다운로드 0건 · 비밀 하드코딩 0건 · 저장소 오염 경로 0건.
   보안 기본값 권고(`runAsNonRoot`·`drop: ALL`·`seccompProfile`)는 **정본과 같은 방향**이고 스크립트가 이를 감사한다.
 
 ✅ **별건 해소 — 권한 규칙 갭**(`security` O-3): 2026-08-21 `ask` 규칙 **10종 추가**.
-🔴 **갭은 helm보다 넓었다** — `CLAUDE.md`가 *"`ask`로 못 박는다"* 고 명시한 비가역 작업 중
+**갭은 helm보다 넓었다** — `CLAUDE.md`가 *"`ask`로 못 박는다"* 고 명시한 비가역 작업 중
 **`kubectl apply`·`terraform apply`·`terraform destroy`에는 규칙이 아예 없었다**(감사로 발견).
 `git push`·`DROP`·`.env` 등은 있었으므로, **선언 목록과 구현 목록을 대조한 적이 없었던 것**이다.
 
@@ -93,7 +93,7 @@
 `*helm dependency update*`·`*kubectl apply*`·`*kubectl delete*`·`*terraform apply*`·`*terraform destroy*`.
 전부 **앞뒤 `*`로 두른다** — `Bash(helm install*)` 형태는 선두 앵커라 `bash -c '…'`·`cd chart && helm …`를 놓친다.
 
-## 🔴 `ask` 규칙은 auto 모드에서 **검증할 수 없다** (2026-08-21 실측)
+## `ask` 규칙은 auto 모드에서 **검증할 수 없다** (2026-08-21 실측)
 
 규약대로 변형 3개로 재위반했는데 **전부 통과**했고, 원인을 가르는 데 실험 설계가 한 번 틀렸다.
 
@@ -101,9 +101,9 @@
 | --- | --- | --- | --- |
 | 1 | `helm install --help` | 신규 `ask` | **통과** |
 | 2 (대조) | `git commit --help` | **기존** `ask`(세션 시작 전부터 존재) | **통과** |
-| 3 (판별) | `helm install --help` | **임시 `deny`** | 🔴 **차단** |
-| 4 | `bash -c 'helm install --help'` | 임시 `deny` | 🔴 **차단** |
-| 5 | `cd /tmp && helm install --help` | 임시 `deny` | 🔴 **차단** |
+| 3 (판별) | `helm install --help` | **임시 `deny`** | **차단** |
+| 4 | `bash -c 'helm install --help'` | 임시 `deny` | **차단** |
+| 5 | `cd /tmp && helm install --help` | 임시 `deny` | **차단** |
 | 6 (과차단) | `helm version --short` | — | ✅ 통과 |
 
 - **셀 2가 결정적이었다** — 기존 규칙도 통과했으므로
@@ -124,7 +124,7 @@
 | --- | --- | --- |
 | **`Bash` + 실제 위험 호출** | `git push origin main` → **프롬프트 떴음** ✅ | `ask`는 **죽은 규칙이 아니다**. 진짜 위험한 호출은 올라온다 |
 | **`Bash` + 무해 호출** | `helm install --help`·`git commit --help` → 흡수 | 내 프로브가 여기 속했다 |
-| 🔴 **파일 도구(`Edit`/`Write`)** | `docs/conventions/**`·`.claude/agents/**`·**`.env.*`** 쓰기 → **3/3 안 뜸** | **경로 민감도와 무관하게 흡수**된다 |
+| **파일 도구(`Edit`/`Write`)** | `docs/conventions/**`·`.claude/agents/**`·**`.env.*`** 쓰기 → **3/3 안 뜸** | **경로 민감도와 무관하게 흡수**된다 |
 
 - 🔴 **급소는 "경로가 민감한가"가 아니라 "어느 도구인가"다.** `.env` 계열조차 흡수됐다.
   → **파일 경로 경계를 확실히 막으려면 `ask`가 아니라 `deny`여야 한다.**
