@@ -292,7 +292,22 @@ def main() -> int:
             )
 
         # 강조 개수 — 문서당 1건. 개수 자체가 아니라 초과 여부를 센다.
-        marker_count = sum(line.count(EMPHASIS_MARKER) for line in lines)
+        # 🔴 **펜스 안은 세지 않는다** — 위 docstring §검사에서 빼는 것이 선언한
+        #    그대로다(선언만 있고 구현이 없어 펜스 안을 함께 세고 있었다).
+        #    펜스 안은 워커 지시문에 복사되는 **단서 원문**·설정 예시라 이 문서에서
+        #    줄일 수 없고, 고칠 수 없는 것을 위반이라 부르면 도구가 통째로 무시된다
+        #    (URL 줄을 빼는 것과 같은 이유).
+        # 🔴 아래 본 루프와 **별도 패스**다 — 본 루프는 줄 단위 위반을 `lineno`와 함께
+        #    내지만 이 규칙은 문서당 1건이라 집계가 먼저 끝나야 한다. 펜스 판정은
+        #    같은 `FENCE_RE`를 쓰므로 두 패스가 갈리지 않는다.
+        marker_count = 0
+        counting_fence = False
+        for line in lines:
+            if FENCE_RE.match(line):
+                counting_fence = not counting_fence
+                continue
+            if not counting_fence:
+                marker_count += line.count(EMPHASIS_MARKER)
         if marker_count > MAX_EMPHASIS_MARKERS:
             findings.append(
                 f"{rel}: emphasis {EMPHASIS_MARKER} {marker_count}개 "
