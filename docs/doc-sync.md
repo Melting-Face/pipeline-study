@@ -31,8 +31,14 @@
 | 데이터셋 스키마·피처 | `docs/dataset_schema.md` | 해당 `models/<dataset>/source.yml` · `schema.yml` |
 | 분석 규칙(gold·노트북·리포트) | `docs/conventions/analysis.md` | `CLAUDE.md` 분석 섹션 · `docs/conventions/dbt.md`(gold 레이어) · `docs/test.md`(grain 테스트) · `notebooks/README.md` |
 | 외부 공개(블로그·공유 자료) | `docs/conventions/publishing.md` | `CLAUDE.md` 운영 섹션 · `docs/README.md` 목차 · `docs/posts/README.md` · `.claude/agents/tech-writer.md`(포맷 프로파일·경계) · `docs/security.md`(반출 통제) |
-| Claude Code 스킬 | `docs/skills.md` | `skills-lock.json` · `.claude/agents/*.md` 프론트매터 · `CLAUDE.md` · `docs/conventions/agents/permissions.md` |
+| Claude Code 스킬 | `docs/skills.md`(허브) + `docs/skills/**` | `skills-lock.json` · `.claude/agents/*.md` 프론트매터 · `CLAUDE.md` · `docs/conventions/agents/permissions.md` |
 | 에이전트 오케스트레이션 | `docs/conventions/agents.md` + `agents/**` | `CLAUDE.md` · `docs/README.md` · `.claude/agents/**` · 관련 가드 스크립트 (아래 §가드 배선 체인) |
+
+🔴 **산문 §참조는 기계가 보지 않는다 — 이 축은 규율이다.** `doc_lint --links`는 마크다운
+링크와 앵커까지 보고, `skill_wiring_check`는 표 두 벌을 대조한다. 그러나
+*"`docs/skills.md` §③"* 처럼 **산문에 적은 절 이름**은 어느 검사기도 대조하지 않는다.
+문서를 쪼개거나 절을 옮길 때는 **`grep -rn '§<이름>'`으로 전수 육안 확인**한다 —
+링크가 초록이어도 그 §가 다른 파일로 갔으면 참조는 죽어 있다.
 
 ### 가드 배선 체인
 
