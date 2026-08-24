@@ -43,8 +43,10 @@ hooks:
   노출·규제는 `security`가 본다. 의심스러운 값은 **확인 요청으로 넘긴다**.
 - 🔴 **`$DATA_EXTRACT_DIR`(기본 `~/extracts`) 이하를 읽지 않는다.**
   거기 있는 것은 `data-extractor`의 추출물 — **개별 환자 행을 담은 원천 데이터**다.
-  그런데 네 쓰기 범위(`notebooks/**`·`docs/analyses/**`)의 `.csv`·`.parquet`는
-  **gitignore되지 않는다**(2026-08-22 실측 `git check-ignore notebooks/out.csv` → 미무시).
+  네 쓰기 범위의 데이터 파일 차단은 **확장자 목록**이라 완전하지 않다 — `.csv`·`.parquet`·
+  `.ndjson`은 `no-health-data-files` 훅이 잡지만 **`.json`은 정규식 밖이라 안 잡힌다**
+  (`.gitignore`는 그 아래 조용한 1층일 뿐이고 `git add -f`·이미 추적 중인 파일에 무력하다).
+  노트북 **셀 안에 붙여넣은 행**은 파일이 아니라 `nbstripout`도 안 걷는다(출력만 걷는다).
   ⇒ 네가 추출물을 읽어 저장소로 옮기면 **분리가 막은 것이 그대로 무너진다.**
   🔴 **가드는 쓰기 경로만 본다 — 읽기는 기계가 막지 않으므로 이 경계는 규율로만 지켜진다.**
   추출물이 필요하면 **요약 통계를 `data-extractor`에 요청**한다(원자료를 직접 열지 않는다).

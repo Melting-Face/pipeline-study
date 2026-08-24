@@ -631,7 +631,9 @@ lock의 해시가 **무엇의 해시인지 모른다.** 두 스키마 각각에 
 
 [duckdb — analyst 전용. 🔴 다른 워커로 확대하지 않는 것이 승인 조건]
 🔴 :312-338 COPY…TO / integration.md write_csv·write_parquet 등 로컬 파일 내보내기를 하지 않는다 —
-   .gitignore는 **/*.duckdb만 덮고 *.csv·*.parquet·*.json은 안 덮어 git add -A에 딸려 간다.
+   .gitignore가 덮는 것은 notebooks/**·docs/analyses/** 안의 *.csv·*.parquet 등 확장자 목록까지다
+   (**/*.duckdb만 전역). 두 층을 다 통과해 git add -A에 딸려 가는 것은 *.json이다 —
+   *.ndjson과 docs/ 그 밖 경로의 *.csv는 gitignore 밖이지만 no-health-data-files 훅이 잡는다.
 🔴 integration.md:298-362(email·phone을 행 단위로 필터·출력)을 따르지 않는다 — 비식별 데이터+DUA다.
    결측·품질 점검은 집계 수치로만 낸다. top_k·이상치 필터는 셀이 5 미만으로 떨어지기 쉽다(마스킹 선행).
 🔴 조회 엔진은 Trino/Spark다. duckdb는 로컬 파일 탐색 보조까지이고 결론 수치는 gold/dbt 경유.
@@ -912,7 +914,7 @@ C등급 금지 요건(*"실행 파일 포함"*)이 **불성립**하고, 인젝�
 | **S-1** | `shellcheck-configuration` | **High** | `:217-232`가 **`.git/hooks/pre-commit`을 직접 덮어쓰라**고 안내한다. 이 저장소의 그 파일은 pre-commit 프레임워크 생성물이고 **`gitleaks`·`nbstripout`이 걸려 있다** → 덮어쓰면 **비밀 스캔과 노트북 셀 출력 제거가 동시에 사라지는데 git은 에러를 내지 않는다** |
 | **G-1** | `github-actions-templates` | **High** | `:153 kubectl apply -f k8s/`가 `on: push:[main]` 아래 있다. 저장소에 **`k8s/`가 실재**해 병합만으로 클러스터에 반영되고 **사람 게이트가 0**이다 |
 | **K-1** | `spark-optimization` | **High** | `write.mode("overwrite")`×4 + `saveAsTable`. Spark는 **Flink·Trino·Dagster와 같은 Iceberg 카탈로그를 공유**해 공유 테이블을 파괴·치환한다 |
-| D-1·D-2 | `duckdb` | Medium | 행 단위 **로컬 파일 내보내기**(`.gitignore`가 `*.csv`/`*.parquet`를 안 덮는다) · **email·phone 직접 식별자**를 행 단위로 다루는 절차 |
+| D-1·D-2 | `duckdb` | Medium | 행 단위 **로컬 파일 내보내기**(무시 규칙은 분석 경로의 `*.csv`/`*.parquet`까지다 — `*.json`·그 밖 경로는 안 덮인다) · **email·phone 직접 식별자**를 행 단위로 다루는 절차 |
 | E-1·E-2 | `docker-expert` | Medium | **"Stopping here" 작업 중단 유도**(인계 대상 4종 전부 미설치) · 검증 절차가 전 명령에 `2>/dev/null` + `&& echo "successful"`을 달아 **실패를 성공처럼 보이게 한다** |
 
 🔴 **G-1은 스킬 하나가 아니라 통제 공백이다 — 상신됨(결정 대기).**

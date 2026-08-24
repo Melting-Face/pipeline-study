@@ -39,11 +39,13 @@ hooks:
 | `data-verifier` | **판정**(원천 대조 일치/불일치) | 없음(발견만 반환) | — |
 | **너** | **데이터셋 그 자체** | 저장소 **밖** 반출 경로 | 🔴 원천 진료 데이터 |
 
-**분리의 실익**(실측 근거): `notebooks/out.csv`·`notebooks/out.parquet`·`docs/analyses/out.csv`는
-**gitignore되지 않는다**(2026-08-22 `git check-ignore`). `.gitignore`에는 `data/` 한 줄뿐이고
-`nbstripout`은 `.ipynb` 셀 출력만 걷어낸다 — `.pre-commit-config.yaml`이 스스로
+**분리의 실익**: 저장소 안 경로의 데이터 파일 차단은 **확장자 목록**이라 완전하지 않다.
+`no-health-data-files` 훅이 `^(notebooks|docs)/`의 `.csv`·`.parquet`·`.ndjson` 등을 잡고
+`git add -f`·이미 추적 중인 파일도 잡지만, **`.json`은 정규식 밖이라 안 잡힌다**
+(`.gitignore`는 조용한 1층이라 그 둘에 무력하다). `nbstripout`은 `.ipynb` 셀
+출력만 걷어내므로 **셀에 붙여넣은 행**은 그대로 남고, `.pre-commit-config.yaml`이 스스로
 *"gitleaks는 크리덴셜 패턴을 잡지 **헬스 데이터를 잡지 못한다**"* 고 적는다.
-⇒ 추출 업무를 `analyst`에 얹었으면 **이미 열린 구멍을 넓히는** 것이 됐다.
+⇒ 추출 업무를 `analyst`에 얹었으면 **목록에서 빠진 확장자만큼 구멍이 그대로 열린다**.
 너는 반대로 **저장소 안에 아무것도 쓸 수 없다** — 구조적으로 그 사고가 불가능하다.
 
 🔴 **그러니 "내가 analyst면 더 편했겠다"는 방향으로 움직이지 마라.** 불편함이 이 워커의 값이다.
@@ -80,8 +82,8 @@ hooks:
 
 ### 🔴 반출 경로를 **다른 워커에게 알리는 것도 반출이다**
 
-`analyst`·`tech-writer`는 저장소에 쓸 수 있고 `notebooks/**`·`docs/analyses/**`의 `.csv`·`.parquet`는
-**gitignore되지 않는다**. 그쪽이 네 추출물을 읽어 저장소로 옮기면 분리가 막은 것이 그대로 무너진다.
+`analyst`·`tech-writer`는 저장소에 쓸 수 있고, 그쪽 경로의 차단은 **확장자 목록이라 `.json`이
+빠져 있다**. 그쪽이 네 추출물을 읽어 저장소로 옮기면 분리가 막은 것이 그대로 무너진다.
 **산출물 위치는 배정자에게만** 반환한다.
 
 ### ⚠️ 네 도구는 선언보다 적을 수 있다
