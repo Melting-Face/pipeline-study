@@ -98,6 +98,40 @@ repos:
     hooks:
       - id: nbstripout
 
+  # 문서 링크·앵커·볼트 참조 검사 (2026-08-24 신설).
+  # 🔴 이 저장소 **최초의 「스크립트를 실행하는」 로컬 훅**이다. 아래 local 훅 2종은
+  #    `language: fail`이라 경로 패턴에 걸리면 무조건 실패시킬 뿐 아무것도 실행하지 않는다.
+  # 🔴 `uv run`을 쓰지 않는다 — CI `lint` 잡에 **uv가 없다**(`setup-uv`는 `commit-msg`·
+  #    `defs` 잡에만 있다). `entry: uv run …`으로 걸면 **로컬만 통과하고 CI에서 죽는다**.
+  #    `doc_lint.py`는 PEP 723 `dependencies = []`라 격리 env가 살 것이 없으므로
+  #    `language: system` + 호스트 `python3`을 쓴다. 대가: 호스트가 3.10 미만이면
+  #    `SyntaxError`로 죽는다 — **조용한 통과가 아니라 fail-loud**라 받아들인다.
+  # 🔴 `pass_filenames: false` — `--links`는 `args.paths`를 **읽지도 않는다**(main이 조기
+  #    반환). 넘기면 조용히 무시돼 "스테이징분만 본다"는 오해만 남는다. 스코프는 스크립트
+  #    상수(`LINK_SCAN_DIRS`)가 갖고 훅은 **언제 도느냐만** 정한다 — 경로 목록을 두 벌 두면
+  #    모집단이 갈린다(이 저장소가 반복해 데인 함정).
+  # 🔴 `always_run: true` — **링크는 `.md`를 안 건드려도 깨진다**(`scripts/*.py` rename 등).
+  #    `files:` 필터를 걸면 그 커밋에 `.md`가 없을 때 훅이 아예 안 돈다. 비용 0.45초.
+  #    ✅ 2026-08-24 실증(대조군 → 실험군, 변인 하나): 깨끗한 트리 + 비-md 스테이징 → Passed /
+  #    `git mv scripts/journal_guard.py …_x.py` 스테이징(md 0건) → `dead-link` 2건·exit 1.
+  # ⚠️ **이 훅이 보는 것은 작업 트리가 아니라 「HEAD + 스테이징분」이다** — pre-commit이
+  #    미스테이지 변경을 stash 한 뒤 훅을 돌리기 때문이다. 커밋 게이트로는 이게 맞지만,
+  #    **미스테이지 상태로 깨 둔 링크는 이 훅이 못 본다**(첫 프로브가 여기 걸려 "통과"로
+  #    오판했다). 손으로 확인할 때는 `python3 scripts/doc_lint.py --links`를 직접 돌려라 —
+  #    그쪽은 작업 트리를 본다. 🔴 **두 경로가 세는 모집단이 다르다.**
+  # ⚠️ **한계: 볼트 축은 CI에서 「검사 안 함」이다** — `$OBSIDIAN_VAULT`가 러너에 없다.
+  #    `doc_lint.py`가 "0건"과 "검사 안 함"을 구분해 출력하니 그 줄을 읽어라.
+  #    **CI 초록을 「볼트 참조 정상」으로 읽지 마라.**
+  # 근거: docs/conventions/general.md §문서 작성 규약
+  - repo: local
+    hooks:
+      - id: doc-links
+        name: 문서 링크·앵커·볼트 참조 검사
+        language: system
+        entry: python3 scripts/doc_lint.py --links
+        pass_filenames: false
+        always_run: true
+
   # 원천 진료 데이터 **파일** 커밋 차단 (2026-08-22 신설).
   # 🔴 nbstripout은 `.ipynb` 셀 출력만 걷어낸다 — 같은 디렉터리에 `.csv`/`.parquet`를
   #    쓰면 그대로 커밋 대상이었다(실측: `git check-ignore notebooks/out.csv` → 미무시).
@@ -148,6 +182,28 @@ repos:
           정본 docs/conventions/agents.md §researcher 조사 프로토콜.
         files: >-
           ^\.claude/\.research/
+
+  # 스킬-워커 배선 정합 검사 (2026-08-24 신설).
+  # 🔴 위 `doc-links`와 **같은 형태·다른 대상**이다. 검사 방향은 **워커 → 문서**:
+  #    각 `.claude/agents/*.md`의 §참고 스킬 표가 **집행 정본**이고 `docs/skills.md` §③은
+  #    파생 인덱스다(런타임에 §③은 워커 컨텍스트에 없다).
+  # 🔴 `scripts/skill_gate_guard.py`와 **다른 물건**이다 — 저쪽은 `Skill` 도구 호출을
+  #    가로채는 **런타임 차단**(fail-closed `deny`), 이쪽은 **커밋 전 정합**(exit 1)이다.
+  #    한쪽이 초록이라고 다른 쪽이 초록인 것이 아니다.
+  # 🔴 `pass_filenames: false` — 이 검사는 **두 집합의 대조**라 한쪽 파일만 받아서는
+  #    판정이 성립하지 않는다. `files:`는 **트리거일 뿐 스코프가 아니다**(스코프는
+  #    스크립트가 글롭한다) — 그래서 목록이 두 벌이 되지 않는다.
+  # ⚠️ `.claude/skills/`는 gitignore라 스테이징되지 않는다 ⇒ 디스크 설치분만 바뀌면
+  #    이 훅은 안 돈다. 실재성(R6)은 커밋 축이 아니라 **감사 축**(`skill-matcher`)에서도 본다.
+  # 근거: docs/skills.md §③ · docs/doc-sync.md
+  - repo: local
+    hooks:
+      - id: skill-wiring
+        name: 워커 지시문 ↔ skills.md §③ 배선 정합
+        language: system
+        entry: python3 scripts/skill_wiring_check.py
+        pass_filenames: false
+        files: '^(\.claude/agents/.*\.md|docs/skills\.md|docs/skills/.*\.md|skills-lock\.json)$'
 
   # 커밋 메시지 Conventional Commits 검사 (규칙은 루트 .gitlint)
   - repo: https://github.com/jorisroovers/gitlint
