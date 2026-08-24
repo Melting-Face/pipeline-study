@@ -207,6 +207,27 @@ repos:
         files: '^(\.claude/agents/.*\.md|docs/skills\.md|docs/skills/.*\.md|skills-lock\.json)$'
         stages: [pre-commit]
 
+  # 문서 가독성 규약 검사 (2026-08-24 신설 — 위반 0건이 된 뒤에 건다).
+  # 🔴 **초록인 시점에만 건다.** 이 훅은 위 두 훅보다 늦게 등록됐다 — 신설 당시 위반이
+  #    50건이라, 먼저 걸었으면 그 뒤 **모든 문서 커밋이 막혔을** 것이다.
+  #    line-length 26 · table-cell 19 · emphasis 6 · file-length 1을 전부 해소한 뒤 등록한다.
+  # 🔴 `pass_filenames: false` — 파일명을 넘기면 스코프가 **스테이징분**이 되어 스크립트의
+  #    `DEFAULT_TARGETS`와 갈린다. 그러면 아래 `files:`가 그 상수의 **두 번째 사본**이 되고,
+  #    넓히면 `.claude/agents/**`가 대상이 돼 지금 전부 위반이다. 스코프는 상수 한 곳에 둔다.
+  # ⚠️ **모집단을 오해하지 마라** — 이 훅이 초록이어도 그것은 `DEFAULT_TARGETS`
+  #    (`CLAUDE.md`·`README.md`·`docs/`·`notebooks/README.md`)가 초록이라는 뜻이다.
+  #    **`.claude/agents/**`는 대상이 아니다**(현재도 위반이 다수 있다).
+  # 근거: docs/conventions/general.md §문서 작성 규약
+  - repo: local
+    hooks:
+      - id: doc-lint
+        name: 문서 가독성 규약 (줄 길이·표 셀·강조·문서 길이)
+        language: system
+        entry: python3 scripts/doc_lint.py
+        pass_filenames: false
+        files: '\.md$'
+        stages: [pre-commit]
+
   # 커밋 메시지 Conventional Commits 검사 (규칙은 루트 .gitlint)
   - repo: https://github.com/jorisroovers/gitlint
     rev: v0.19.1
