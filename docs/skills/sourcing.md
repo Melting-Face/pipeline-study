@@ -155,7 +155,7 @@ C등급 금지 요건(*"실행 파일 포함"*)이 **불성립**하고, 인젝�
 
 | # | 스킬 | 심각도 | 급소 |
 | --- | --- | --- | --- |
-| **S-1** | `shellcheck-configuration` | **High** | `:217-232`가 **`.git/hooks/pre-commit`을 직접 덮어쓰라**고 안내한다. 이 저장소의 그 파일은 pre-commit 프레임워크 생성물이고 **`gitleaks`·`nbstripout`이 걸려 있다** → 덮어쓰면 **비밀 스캔과 노트북 셀 출력 제거가 동시에 사라지는데 git은 에러를 내지 않는다** |
+| **S-1** | `shellcheck-configuration` | **High** | `:217-232`가 **`.git/hooks/pre-commit`을 직접 덮어쓰라**고 안내한다. 그 파일은 프레임워크 생성물이라 덮어쓰면 **`gitleaks`·`nbstripout`이 동시에 사라지는데 git은 에러를 내지 않는다** |
 | **G-1** | `github-actions-templates` | **High** | `:153 kubectl apply -f k8s/`가 `on: push:[main]` 아래 있다. 저장소에 **`k8s/`가 실재**해 병합만으로 클러스터에 반영되고 **사람 게이트가 0**이다 |
 | **K-1** | `spark-optimization` | **High** | `write.mode("overwrite")`×4 + `saveAsTable`. Spark는 **Flink·Trino·Dagster와 같은 Iceberg 카탈로그를 공유**해 공유 테이블을 파괴·치환한다 |
 | D-1·D-2 | `duckdb` | Medium | 행 단위 **로컬 파일 내보내기**(무시 규칙은 분석 경로의 `*.csv`/`*.parquet`까지다 — `*.json`·그 밖 경로는 안 덮인다) · **email·phone 직접 식별자**를 행 단위로 다루는 절차 |

@@ -256,7 +256,7 @@ lock의 해시가 **무엇의 해시인지 모른다.** 두 스키마 각각에 
 | **B** | `github/awesome-copilot` | **2** | `sql-optimization` · `multi-stage-dockerfile` | 🔒 | — |
 | **B** | `vercel-labs/skills` | **1** | `find-skills` | 🔒 | ✅ 본문 검토 완료(2026-08-22) — 실행 파일 0건·문서로서 무해. **`computedHash`는 blob 경로라 로컬 재현 불가**(위 §무결성 고정) · 어느 워커에도 **미등재**(★0) |
 | **C** | `wshobson/agents` | **4** | `github-actions-templates`·**`helm-chart-scaffolding`**·`shellcheck-configuration`·`spark-optimization` | 일부 🔒 | **미검토** |
-| **C** | `jeffallan/claude-skills` | **2** | `kubernetes-specialist`·`spark-engineer` | 🔒 | `kubernetes-specialist` ✅ 검토 완료(단서 표) / **`spark-engineer` 재검토 필요** — 2026-08-21 "0건" 철회(§미스캔 범주). **등급을 스킬 단위로 매기듯 검토 상태도 스킬 단위다** — 같은 출처라고 한 칸에 묶어 읽으면 철회된 쪽이 승인된 쪽에 업혀 간다 |
+| **C** | `jeffallan/claude-skills` | **2** | `kubernetes-specialist`·`spark-engineer` | 🔒 | `kubernetes-specialist` ✅ 검토 완료 / **`spark-engineer` 재검토 필요**(2026-08-21 "0건" 철회). **검토 상태도 등급처럼 스킬 단위다** — 같은 출처라고 묶어 읽으면 철회된 쪽이 업혀 간다 |
 | **C** | `sickn33/antigravity-awesome-skills` | **1** | `docker-expert` | ⚙️ | **미검토** |
 | **C** | `silvainfm/claude-skills` | **1** | `duckdb` | ⚙️ | **미검토** |
 | **C** | `obra/superpowers` | **1** | `brainstorming` | 🔒 | **미검토 · 실행 파일 4종** |
