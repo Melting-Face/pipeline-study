@@ -59,6 +59,25 @@
 **인자형 `disallowedTools`(`Agent(archivist)` 같은)는 세부 필터가 아니라 도구 전체를 제거할 수 있다.**
 **통제를 좁히는 변경일수록 실호출로 확인한다.**
 
+### 선언한 `tools`가 실제 보유 도구는 아니다
+
+위 표는 **선언값**이다. 워커에게 실제로 지급된 목록은 실측에서 갈렸다.
+
+| 관측 | 워커 | 선언 | 실제 보유 |
+| --- | --- | --- | --- |
+| 2026-08-19 | `data-engineer` | `Read, Write, Edit, Bash, Grep, Glob` | `Read`·`Write`·`Edit`·`Bash` (4) |
+| 2026-08-19 | `data-qa` | `Read, Grep, Glob, Bash` | `Read`·`Bash` (2) |
+| 2026-08-22 | `data-extractor` | `Read, Write, Bash, Grep, Glob` | `Read`·`Write`·`Bash` (3) |
+
+두 가지가 따라온다.
+
+- **없는 도구를 쓰라는 규칙은 규칙이 아니다.** 지시문에 도구를 지목할 때는 대체 경로를
+  함께 적는다(`Grep` 부재 시 `Bash`의 `grep`).
+- ⚠️ **`Edit|Write|NotebookEdit` matcher의 실질 커버가 선언보다 좁아진다.**
+  `data-extractor`는 `Write` 하나뿐이라 세 도구에 걸린 것처럼 보여도 **발동 경로는 하나**다.
+  거기에 `NotebookEdit`이 추가되는 순간 그 안전은 사라진다(`notebook_path` 키 이름이 갈린다).
+- 그래서 **세려면 그 워커에서 센다** — 선언 목록을 세어 「도구 N종」이라 쓰지 않는다.
+
 ### `skills:`는 화이트리스트가 아니다
 
 `skills:`는 **해당 스킬 본문을 미리 주입**할 뿐이고, **어떤 스킬에 접근할 수 있는지는 통제하지 않는다.**
