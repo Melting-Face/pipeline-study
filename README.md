@@ -161,7 +161,7 @@ flowchart TB
         SEC["security · 반출 · 규제 컨펌 게이트<br/>계획 1회 · 작업내용 1회 · 델타 조건부"]
         ARC["archivist · 저널 기록 전담"]
         SKM["skill-matcher · 스킬 배선 감사"]
-        TW["tech-writer · 쓰기 O<br/>docs/** · README.md · 발행 금지<br/>except: security.md · skills.md"]
+        TW["tech-writer · 쓰기 O<br/>docs/** · README.md · 발행 금지<br/>except: security.md · skills.md · skills/**"]
     end
     JR[("미션 저널<br/>$OBSIDIAN_VAULT/agents/날짜/NN-미션.md")]
 

@@ -131,6 +131,7 @@ repos:
         entry: python3 scripts/doc_lint.py --links
         pass_filenames: false
         always_run: true
+        stages: [pre-commit]
 
   # 원천 진료 데이터 **파일** 커밋 차단 (2026-08-22 신설).
   # 🔴 nbstripout은 `.ipynb` 셀 출력만 걷어낸다 — 같은 디렉터리에 `.csv`/`.parquet`를
@@ -204,6 +205,7 @@ repos:
         entry: python3 scripts/skill_wiring_check.py
         pass_filenames: false
         files: '^(\.claude/agents/.*\.md|docs/skills\.md|docs/skills/.*\.md|skills-lock\.json)$'
+        stages: [pre-commit]
 
   # 커밋 메시지 Conventional Commits 검사 (규칙은 루트 .gitlint)
   - repo: https://github.com/jorisroovers/gitlint

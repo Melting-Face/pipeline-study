@@ -74,7 +74,11 @@
 | [환경변수·운영 정책](operations.md) | `.env`→compose→`EnvVar` 전파 체인, 보존 정책, 토큰 비용 계측 |
 | [리소스 산정](resource-sizing.md) | 호스트 자원에 따른 서비스 옵션 조정 |
 | [보안·데이터 거버넌스 **정책**](security.md) | ISMS-P·의료데이터 규제 매핑, 통제 방침과 보증 범위 |
-| [Claude Code 스킬](skills.md) | Agent Skills 카탈로그와 통제 규칙 |
+| [Claude Code 스킬](skills.md) | Agent Skills 카탈로그와 통제 규칙 (허브) |
+| ↳ [출처 등급·통제](skills/sourcing.md) | A~D 등급 정의·C등급 통제·lock 관리의 **정본** |
+| ↳ [C등급 단서](skills/caveats.md) | 등재의 **조건**이 되는 단서 원문 |
+| ↳ [배선 메커니즘](skills/wiring.md) | `tools:`/`disallowedTools`/`skills:` 프로브·프리로드 자격 |
+| ↳ [인벤토리 실측](skills/inventory.md) | lock 3벌·해시 재계산·출처 실측 스냅샷 |
 
 > **보안 실태는 이 저장소에 없다.** 저장소가 공개이고 이 경로가 GitHub Security Policy 페이지의
 > 탐색 대상(`.github/` → 루트 → `docs/`)이라, 미비점 목록이 첫 화면이 될 수 있다.

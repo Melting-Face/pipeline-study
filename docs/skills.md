@@ -174,7 +174,7 @@
 | B-3 | Medium | **미고지 텔레메트리 비콘** — `server.cjs:106,249` `primeradiant.com` 이미지를 **모든 화면**에 삽입. `SUPERPOWERS_DISABLE_TELEMETRY`로 꺼지는 것이 성격을 규정한다(로고가 아니라 **트래킹 픽셀**). ✅ `no-referrer`로 **세션 키는 새지 않는다**. 남는 것은 "브레인스토밍 중"이 제3자에 관측되고 **기본이 켜짐**이라는 점 |
 | B-4 | Medium | **`BRAINSTORM_OPEN_CMD` → `child_process.exec`** — env 값이 셸에 그대로. `JSON.stringify(url)`은 큰따옴표라 `$(…)`·백틱이 **전개된다**. ✅ 대조: 다른 경로는 `execFile`(셸 없음)로 하딩돼 있어 **이 한 갈래만 의도적으로 열림** |
 | B-6 | Medium | **세션 토큰을 매 턴 대화로 옮기라고 지시**(`visual-companion.md:116`) → 이 저장소는 대화를 **저널로 옮겨 적는다**. `kubernetes-specialist`의 `base64 -d` 단서와 동일 계열 |
-| B-8 | Medium | **`.agents/`·`.claude/skills/`가 무시도 추적도 안 됨** — 외부 코드 1,432행이 `??` 상태. `git add -A` 한 번이면 커밋된다 |
+| B-8 | Medium | **`.agents/`·`.claude/skills/`가 무시도 추적도 안 됨** — 외부 코드 1,432행이 `??` 상태. `git add -A` 한 번이면 커밋된다. **미결 #1이 열려 있는 동안 계속 노출** |
 | B-9 | Medium | `--project-dir` 세션 산출물을 **의도적으로 안 지운다**(`/tmp`만 삭제). 정리 트리거 주체 부재 — "검증용 컴퓨트가 13시간 샜다"와 같은 형태 |
 | B-11 | Low | 후속 4종 **전부 미설치**인데 `SKILL.md:231`이 *"Do NOT invoke any other skill"* 이라 **막다른 길** |
 
@@ -203,6 +203,11 @@
 | 후속 `writing-plans`·`elements-of-style`·`frontend-design`·`mcp-builder` | **4종 전부 미설치** | 🔴 **죽은 참조** — "invoke"가 불가능 |
 | `--host 0.0.0.0` · `BRAINSTORM_OPEN_CMD`→`child_process.exec` · 외부 이미지 `primeradiant.com` | 노출·외부 발신은 **사람 게이트** | ⚠️ 기본값(`127.0.0.1`) 밖으로 나가지 않는다 |
 | HARD-GATE(구현 전 사람 승인) | 원칙 7·사람 게이트 | ✅ **정합** — 이 부분은 정본과 같은 방향 |
+
+- 🔴 **워커에 물리려면 프론트매터 `skills:` 프리로드뿐인데, 그것은 `security` 미검토분을
+  상시 컨텍스트에 앉히는 것**이라 검토 전에는 하지 않는다(§③ 프리로드 조건).
+  ⚠️ 구판은 여기에 *"워커에 `Skill` 도구가 없다"* 를 근거로 함께 들었으나 그 전제는 폐기됐다
+  (지금 9종에 열려 있다 — [`skills/wiring.md`](skills/wiring.md)). **결론은 살아남고 근거 하나가 빠졌다.**
 
 ## ③ 전문 워커별 참고 스킬 (`.claude/agents/`)
 
