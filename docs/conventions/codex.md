@@ -48,8 +48,9 @@ OpenAI는 Claude Code의 지침·설정·스킬·hook·슬래시 명령·subagen
 | `gpt-5.6-luna`, `medium` | `archivist`, `skill-matcher` | 반복적 기록·인벤토리 작업의 효율 우선 |
 
 판정·감사 워커는 `sandbox_mode = "read-only"`다. 구현 워커는
-`workspace-write`를 사용하고 역할별 `apply_patch` 경계 hook을 추가한다. 서브에이전트는
-각자 토큰을 사용하므로 독립된 읽기 작업 또는 명확히 분리된 역할에만 사용한다.
+`workspace-write`를 사용하고 프로젝트 `PreToolUse` hook이 `transcript_path`에서 활성 역할을
+식별해 `apply_patch` 경계를 적용한다. 서브에이전트는 각자 토큰을 사용하므로 독립된 읽기
+작업 또는 명확히 분리된 역할에만 사용한다.
 [OpenAI Docs — Subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents)
 
 ## 권한 계층
@@ -74,6 +75,9 @@ Codex와 Claude는 `SessionStart`, `PreToolUse`, `PostToolUse`, `Stop` 같은 �
 
 - Codex의 `apply_patch`는 `tool_input.command`에 patch 전문을 전달한다. 경로 가드는
   `*** Add/Update/Delete File:` 헤더를 파싱한다.
+- 워커 경로 가드는 각 워커 TOML의 인라인 hook이 아니라 `.codex/hooks.json`에 한 번
+  배선한다. 서브에이전트 transcript의 `thread_source = "subagent"`와 워커 어댑터 표식을
+  함께 확인하므로 메인 세션의 patch에는 역할 경계를 잘못 적용하지 않는다.
 - Codex `PreToolUse`는 `deny`와 `additionalContext`를 사용한다. Claude 구성에서 쓰던
   대화형 `ask`를 그대로 반환하면 Codex가 hook 실패로 처리하고 도구를 계속 실행한다.
 - 확정적으로 금지할 HTTP mutation과 `.env`·Terraform state 쓰기는 `deny`한다.
@@ -84,7 +88,9 @@ Codex와 Claude는 `SessionStart`, `PreToolUse`, `PostToolUse`, `Stop` 같은 �
   지침과 메인 에이전트 재검토가 담당한다.
 
 프로젝트 hook은 처음 또는 변경 후 자동 신뢰되지 않는다. 새 Codex 세션에서 `/hooks`로
-내용과 해시를 검토하고 신뢰해야 실행된다. [OpenAI Docs — Hooks](https://learn.chatgpt.com/docs/hooks)
+`.codex/hooks.json`의 현재 정의를 검토하고 신뢰해야 실행된다. 검토된 일회성 자동화 시험은
+`--dangerously-bypass-hook-trust`를 사용할 수 있지만 일상 실행 기본값으로 저장하지 않는다.
+[OpenAI Docs — Hooks](https://learn.chatgpt.com/docs/hooks)
 
 ## 스킬 관리
 
@@ -102,7 +108,8 @@ disclosure 방식을 사용한다. [OpenAI Docs — Build skills](https://learn.
 
 1. 저장소를 trusted project로 연다. 프로젝트 `.codex` 설정은 신뢰된 저장소에서만
    활성화된다.
-2. 새 세션에서 `/hooks`를 열어 `.codex/hooks.json`과 스크립트 해시를 검토·신뢰한다.
+2. 새 세션에서 `/hooks`를 열어 `.codex/hooks.json`의 프로젝트 hook 정의와 참조 스크립트를
+   검토한 뒤 현재 정의를 신뢰한다.
 3. Codex에 활성 지침 출처와 커스텀 에이전트 목록을 요약하게 한다.
 4. `/agent`로 실행 중인 워커와 완료 결과를 확인한다.
 5. 외부 저널 또는 추출 경로 쓰기가 필요하면 정확한 경로와 목적에 대해서만 별도
@@ -128,6 +135,8 @@ disclosure 방식을 사용한다. [OpenAI Docs — Build skills](https://learn.
 4. `.codex/hooks/*.py`를 `ruff check`와 `py_compile`로 검사한다.
 5. `codex execpolicy check`로 각 `.rules`의 `prompt`·`forbidden` 대조군을 확인한다.
 6. `policy_guard.py`에 허용·거부 합성 payload를 각각 넣어 결과가 갈리는지 확인한다.
-7. `worker_path_guard.py`에 허용·거부 patch를 각각 넣어 역할 경계가 실제로 갈리는지
-   확인한다.
+7. `worker_path_guard.py`에 메인·서브에이전트 transcript와 허용·거부 patch를 조합해
+   역할 추론과 경계 판정이 실제로 갈리는지 확인한다.
 8. 새 Codex 세션에서 프로젝트 지침·13개 워커·16개 스킬이 발견되는지 확인한다.
+9. hook을 신뢰한 새 세션 또는 검토된 일회성 자동화 세션에서 쓰기 워커가 경계 밖 파일을
+   만들도록 시도하고, `PreToolUse` 거부와 파일 부재를 모두 확인한다.

@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 BOUNDARIES = {
@@ -29,6 +30,8 @@ BOUNDARIES = {
         "except": ("docs/security.md", "docs/skills.md", "docs/skills/"),
     },
 }
+
+WORKER_MARKERS = {worker: f".claude/agents/{worker}.md" for worker in BOUNDARIES}
 
 OUTSIDE_ALLOW = {
     "archivist": (os.environ.get("OBSIDIAN_VAULT") or str(Path.home() / "obsidian"),),
@@ -61,6 +64,71 @@ def extract_paths(command: str) -> list[str]:
     )
     paths.extend(re.findall(r"^\*\*\* Move to: (.+)$", command, re.MULTILINE))
     return [path.strip() for path in paths if path.strip()]
+
+
+def transcript_events(raw_path: str) -> Iterator[dict[str, object]]:
+    """부분 기록 중인 transcript에서 읽을 수 있는 JSON 이벤트를 순회한다."""
+    try:
+        with Path(raw_path).open(encoding="utf-8") as transcript:
+            for line in transcript:
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(event, dict):
+                    yield event
+    except OSError:
+        return
+
+
+def is_subagent_meta(event: dict[str, object]) -> bool:
+    """서브에이전트 세션 메타 이벤트인지 확인한다."""
+    meta = event.get("payload")
+    return (
+        event.get("type") == "session_meta"
+        and isinstance(meta, dict)
+        and meta.get("thread_source") == "subagent"
+    )
+
+
+def developer_texts(event: dict[str, object]) -> list[str]:
+    """개발자 메시지 이벤트의 텍스트 조각을 반환한다."""
+    message = event.get("payload")
+    if not isinstance(message, dict):
+        return []
+    if message.get("type") != "message" or message.get("role") != "developer":
+        return []
+    content = message.get("content")
+    if not isinstance(content, list):
+        return []
+    return [
+        item["text"]
+        for item in content
+        if isinstance(item, dict) and isinstance(item.get("text"), str)
+    ]
+
+
+def infer_worker(payload: dict[str, object]) -> str | None:
+    """서브에이전트 transcript에서 활성 워커를 식별한다."""
+    raw_path = payload.get("transcript_path")
+    if not isinstance(raw_path, str) or not raw_path:
+        return None
+
+    events = transcript_events(raw_path)
+    first_event = next(events, None)
+    if first_event is None or not is_subagent_meta(first_event):
+        return None
+
+    for event in events:
+        developer_text = "\n".join(developer_texts(event))
+        matches = [
+            worker
+            for worker, marker in WORKER_MARKERS.items()
+            if marker in developer_text
+        ]
+        if len(matches) == 1:
+            return matches[0]
+    return None
 
 
 def matches_prefix(path: str, prefix: str) -> bool:
@@ -111,15 +179,17 @@ def denied_reason(worker: str, raw_path: str, root: Path) -> str | None:
 
 def main() -> None:
     """선택된 워커의 모든 patch 경로를 검사한다."""
-    worker = sys.argv[1] if len(sys.argv) > 1 else ""
-    if worker not in BOUNDARIES:
-        emit_deny(f"정의되지 않은 Codex 워커 경계다: `{worker}`.")
-        return
-
     try:
         payload = json.load(sys.stdin)
     except (json.JSONDecodeError, ValueError):
         emit_deny("워커 경계 가드가 hook 입력을 읽지 못했다(fail-closed).")
+        return
+
+    worker = sys.argv[1] if len(sys.argv) > 1 else infer_worker(payload)
+    if worker is None:
+        return
+    if worker not in BOUNDARIES:
+        emit_deny(f"정의되지 않은 Codex 워커 경계다: `{worker}`.")
         return
 
     command = str((payload.get("tool_input") or {}).get("command") or "")

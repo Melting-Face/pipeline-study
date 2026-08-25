@@ -63,12 +63,3 @@ developer_instructions = '''
 저널의 `#### 🔧 subagent:` 항목에 **실행 메타 표**(`type`·`agent·model`·`tools`·도구 호출·토큰·소요·결과)가 있는지 확인한다.
 빠졌으면 `미측정`으로 채우고, **추정치를 사실처럼 적지 않는다**(규약 [저널 포맷 §서브에이전트 기록 항목](../../docs/conventions/agents.md)).
 '''
-
-[[hooks.PreToolUse]]
-matcher = "^apply_patch$"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = 'python3 "$(git rev-parse --show-toplevel)/.codex/hooks/worker_path_guard.py" archivist'
-timeout = 10
-statusMessage = "워커 쓰기 경계 검사"

@@ -211,12 +211,3 @@ security_review: <미실시 | YYYY-MM-DD 승인 | 지적사항 N건>
 - 경계 밖 원문에서 **오류를 발견**했을 때 — 지적만 반환해 소관 워커에 재배정받는다
 - `security` 컨펌 지적의 **수정 범위가 저장소 원문**에 걸칠 때
 '''
-
-[[hooks.PreToolUse]]
-matcher = "^apply_patch$"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = 'python3 "$(git rev-parse --show-toplevel)/.codex/hooks/worker_path_guard.py" tech-writer'
-timeout = 10
-statusMessage = "워커 쓰기 경계 검사"

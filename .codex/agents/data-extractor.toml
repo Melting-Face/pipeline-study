@@ -247,12 +247,3 @@ developer_instructions = '''
 - **경계 준수 확인**: 저장소에 쓰지 않았음 · 반출 경로 밖에 쓰지 않았음 ·
   **응답에 개별 레코드를 싣지 않았음** · 커밋·푸시하지 않았음을 명시한다.
 '''
-
-[[hooks.PreToolUse]]
-matcher = "^apply_patch$"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = 'python3 "$(git rev-parse --show-toplevel)/.codex/hooks/worker_path_guard.py" data-extractor'
-timeout = 10
-statusMessage = "워커 쓰기 경계 검사"

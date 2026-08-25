@@ -120,12 +120,3 @@ developer_instructions = '''
   **제3주체의 비승인 변경**(병렬 세션·외부 요인이 대상을 바꿈) · 범위 확대
 - 반환에는 **상황·실측 근거·선택지·권고안**을 함께 낸다(추정 금지). 막힌 채 침묵하지 않는다.
 '''
-
-[[hooks.PreToolUse]]
-matcher = "^apply_patch$"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = 'python3 "$(git rev-parse --show-toplevel)/.codex/hooks/worker_path_guard.py" data-engineer'
-timeout = 10
-statusMessage = "워커 쓰기 경계 검사"
