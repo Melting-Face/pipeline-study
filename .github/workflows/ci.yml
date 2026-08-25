@@ -42,9 +42,9 @@ jobs:
     name: 린트·포맷·시크릿 (pre-commit)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12" # src 프로젝트 requires-python = ">=3.10,<3.15", 로컬 venv와 일치
 
@@ -60,7 +60,7 @@ jobs:
           sudo chmod +x /usr/local/bin/hadolint
           hadolint --version
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
@@ -76,11 +76,11 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # 커밋 범위 비교에 전체 이력이 필요하다
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10.0.1
 
       # gitlint는 commit-msg 스테이지 훅이라 `pre-commit run --all-files`가 **건너뛴다**.
       # 규칙 정본은 루트 .gitlint(contrib-title-conventional-commits).
@@ -94,9 +94,9 @@ jobs:
     name: 타입·정의 로드 (mypy · dg check defs)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
 
