@@ -50,6 +50,7 @@
 | [Kubernetes](conventions/k8s.md) | 워크로드·requests/limits·probe·RBAC·Operator·Ingress |
 | [Terraform/IaC](conventions/terraform.md) | 스택 구조·버전 고정·state 커밋 금지 |
 | [에이전트 오케스트레이션](conventions/agents.md) | AI 세션 2계층·권한·게이트·저널 |
+| [Codex 에이전트 구성](conventions/codex.md) | Claude와 분리된 Codex 지침·워커·권한·hook·스킬 운영 |
 
 ## 데이터셋 · 분석
 
@@ -74,7 +75,7 @@
 | [환경변수·운영 정책](operations.md) | `.env`→compose→`EnvVar` 전파 체인, 보존 정책, 토큰 비용 계측 |
 | [리소스 산정](resource-sizing.md) | 호스트 자원에 따른 서비스 옵션 조정 |
 | [보안·데이터 거버넌스 **정책**](security.md) | ISMS-P·의료데이터 규제 매핑, 통제 방침과 보증 범위 |
-| [Claude Code 스킬](skills.md) | Agent Skills 카탈로그와 통제 규칙 (허브) |
+| [Agent Skills](skills.md) | Claude/Codex 공용 스킬 카탈로그와 통제 규칙 (허브) |
 | ↳ [출처 등급·통제](skills/sourcing.md) | A~D 등급 정의·C등급 통제·lock 관리의 **정본** |
 | ↳ [C등급 단서](skills/caveats.md) | 등재의 **조건**이 되는 단서 원문 |
 | ↳ [배선 메커니즘](skills/wiring.md) | `tools:`/`disallowedTools`/`skills:` 프로브·프리로드 자격 |
@@ -97,7 +98,7 @@
 ## 문서 작성·유지 규칙
 
 - 규칙·결정·작업 패턴은 최대한 문서로 남긴다. 문서는 한국어로 쓰고 식별자·명령어·경로는 원문 그대로.
-- 규칙을 바꿀 때는 `CLAUDE.md`·`docs/`·`README.md`를 **함께 갱신**해 단일 출처를 유지한다.
+- 공통 규칙을 바꿀 때는 `AGENTS.md`·`CLAUDE.md`·`docs/`·`README.md`를 **함께 갱신**해 단일 출처를 유지한다.
 - 정량 상한과 시제 축은 [공통 규칙](conventions/general.md) §문서 작성 규약이 정본이다.
 
 상세 인덱스:

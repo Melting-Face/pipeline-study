@@ -1,0 +1,113 @@
+# Codex가 샌드박스 밖에서 실행하려는 명령의 프로젝트 승인 정책이다.
+
+prefix_rule(
+    pattern = ["git", ["commit", "push"]],
+    decision = "prompt",
+    justification = "커밋과 푸시는 사용자 명시 요청이 있을 때만 실행한다.",
+    match = ["git commit -m docs: 설명", "git push origin main"],
+)
+
+prefix_rule(
+    pattern = ["gh", ["api", "pr", "issue", "gist", "release"]],
+    decision = "prompt",
+    justification = "GitHub 외부 상태 변경은 사용자 확인이 필요하다.",
+    match = ["gh pr create --title 제목", "gh issue create --title 제목"],
+)
+
+prefix_rule(
+    pattern = ["docker", "compose", "down"],
+    decision = "prompt",
+    justification = "컨테이너 중단과 볼륨 삭제 가능성을 확인한다.",
+    match = ["docker compose down -v", "docker compose down --volumes"],
+)
+
+prefix_rule(
+    pattern = ["podman", "compose", "down"],
+    decision = "prompt",
+    justification = "컨테이너 중단과 볼륨 삭제 가능성을 확인한다.",
+    match = ["podman compose down -v"],
+)
+
+prefix_rule(
+    pattern = ["docker-compose", "down"],
+    decision = "prompt",
+    justification = "컨테이너 중단과 볼륨 삭제 가능성을 확인한다.",
+    match = ["docker-compose down -v"],
+)
+
+prefix_rule(
+    pattern = ["scripts/k8s-down.sh"],
+    decision = "prompt",
+    justification = "로컬 클러스터 제거는 사용자 확인이 필요하다.",
+    match = ["scripts/k8s-down.sh"],
+)
+
+prefix_rule(
+    pattern = ["kubectl", ["apply", "delete"]],
+    decision = "prompt",
+    justification = "Kubernetes 실제 상태 변경은 사용자 확인이 필요하다.",
+    match = ["kubectl apply -f k8s", "kubectl delete -f k8s/app.yaml"],
+)
+
+prefix_rule(
+    pattern = ["terraform", ["apply", "destroy"]],
+    decision = "prompt",
+    justification = "Terraform 실제 인프라 변경은 사용자 확인이 필요하다.",
+    match = ["terraform apply", "terraform destroy -auto-approve"],
+)
+
+prefix_rule(
+    pattern = ["helm", ["install", "upgrade", "uninstall", "delete", "rollback"]],
+    decision = "prompt",
+    justification = "Helm 릴리스 상태 변경은 사용자 확인이 필요하다.",
+    match = ["helm install app chart", "helm upgrade app chart"],
+)
+
+prefix_rule(
+    pattern = ["dbt", ["seed", "run-operation"]],
+    decision = "prompt",
+    justification = "데이터 생성·유지보수 작업은 비용과 변경 범위를 확인한다.",
+    match = ["dbt seed", "dbt run-operation remove_orphan_files"],
+)
+
+prefix_rule(
+    pattern = ["dg", "asset", "wipe"],
+    decision = "prompt",
+    justification = "Dagster 자산 상태 삭제는 사용자 확인이 필요하다.",
+    match = ["dg asset wipe"],
+)
+
+prefix_rule(
+    pattern = [["npm", "pnpm", "yarn", "bun"], ["install", "add"]],
+    decision = "prompt",
+    justification = "프로젝트 의존성 변경은 사용자 확인이 필요하다.",
+    match = ["npm install package", "pnpm add package"],
+)
+
+prefix_rule(
+    pattern = [["pip", "pip3", "pipx", "brew", "cargo", "go", "gem"], "install"],
+    decision = "prompt",
+    justification = "로컬 또는 프로젝트 도구 설치는 사용자 확인이 필요하다.",
+    match = ["pip install package", "brew install package"],
+)
+
+prefix_rule(
+    pattern = [["scp", "rsync"]],
+    decision = "prompt",
+    justification = "외부 파일 전송은 데이터 반출 여부를 확인한다.",
+    match = ["scp report.md host:/tmp", "rsync -av data host:/tmp"],
+)
+
+prefix_rule(
+    pattern = ["curl", ["-X", "--request"], ["POST", "PUT", "PATCH", "DELETE"]],
+    decision = "forbidden",
+    justification = "HTTP mutation은 Codex가 직접 실행하지 않는다. 승인된 전용 도구나 수동 절차를 사용한다.",
+    match = ["curl -X POST https://example.com", "curl --request DELETE https://example.com"],
+)
+
+prefix_rule(
+    pattern = ["wget", ["--post-data", "--post-file", "--method"]],
+    decision = "forbidden",
+    justification = "wget mutation·업로드는 Codex가 직접 실행하지 않는다.",
+    match = ["wget --post-data payload https://example.com"],
+)

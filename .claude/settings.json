@@ -48,6 +48,8 @@
       "Edit(skills-lock.json)",
       "Edit(.claude/agents/**)",
       "Edit(CLAUDE.md)",
+      "Edit(.codex/**)",
+      "Edit(AGENTS.md)",
       "Edit(scripts/*_guard.py)",
       "Edit(scripts/**/*_guard.py)",
       "Edit(**/.claude/skills/**)",

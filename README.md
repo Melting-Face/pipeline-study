@@ -20,14 +20,15 @@
 ## 문서 (docs)
 
 아키텍처와 코딩 규칙은 [`docs/`](docs/README.md)에 있다.
-규칙·결정·작업 패턴은 최대한 문서로 남기고, `CLAUDE.md`·`docs/`·`README.md`를
-함께 갱신해 단일 출처를 유지한다.
+규칙·결정·작업 패턴은 최대한 문서로 남기고, 공통 규칙은 `AGENTS.md`·`CLAUDE.md`·
+`docs/`·`README.md`를 함께 갱신해 단일 출처를 유지한다.
 
 - [환경 세팅](docs/setup.md) — **처음 여기서 시작한다**
 - [코딩 철학](docs/philosophy.md) · [재설계 로드맵](docs/redesign.md)
 - [전체 아키텍처 / 데이터 흐름](docs/architectures/overview.md) · [리소스 산정](docs/resource-sizing.md)
 - [분석 컨벤션](docs/conventions/analysis.md) — gold 모델 / 노트북 / 리포트 3층
 - [에이전트 오케스트레이션](docs/conventions/agents.md) — 아래 §AI 에이전트 구조
+- [Codex 에이전트 구성](docs/conventions/codex.md) — Claude와 분리된 지침·워커·권한·hook·스킬
 - 코딩 규칙 — [공통](docs/conventions/general.md) · [Python](docs/conventions/python.md) ·
   [Dagster](docs/conventions/dagster.md) · [dbt](docs/conventions/dbt.md) · [K8s](docs/conventions/k8s.md)
 
@@ -126,14 +127,18 @@ ad-hoc 탐색은 Dagster와 **같은 venv**의 Jupyter Lab(**포트 8889**)으�
 실행법은 [`docs/setup.md`](docs/setup.md) §7, 작성 규칙은
 [`notebooks/README.md`](notebooks/README.md)와 [`docs/conventions/analysis.md`](docs/conventions/analysis.md).
 
-## AI 에이전트 구조 (Claude Code)
+## AI 에이전트 구조 (Claude Code / Codex)
 
 이 저장소는 작업 자체도 규약화한다 — **전문 서브에이전트에 역할·권한을 나눠 배정**하고,
 "누가 무엇을 왜 했는가"를 기록관 저널에 남긴다. 규칙 정본은
-[`docs/conventions/agents.md`](docs/conventions/agents.md), 요약은 `CLAUDE.md` 운영 섹션에 있다.
+[`docs/conventions/agents.md`](docs/conventions/agents.md)다. Claude 요약은 `CLAUDE.md`,
+Codex 요약은 `AGENTS.md`, 런타임 차이는
+[`docs/conventions/codex.md`](docs/conventions/codex.md)에 있다.
 
 > **아래 두 그림은 축약본이다.** 워커 목록·권한·게이트의 **정본은
 > [`docs/conventions/agents.md`](docs/conventions/agents.md) §구조도**이고, 갈리면 그쪽이 사실이다.
+> 그림의 `model=inherit`·`model=sonnet` 표기는 Claude 기본값이다. Codex 모델 매핑은
+> [`docs/conventions/codex.md`](docs/conventions/codex.md) §워커와 모델을 따른다.
 
 ### 구조 — 누가 누구를 배정하는가
 

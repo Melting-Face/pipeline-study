@@ -9,6 +9,9 @@
 - 이 프로젝트에서 정한 **규칙·결정·작업 패턴은 최대한 문서로 남긴다**.
 - 규칙을 새로 정하거나 바꾸면 `CLAUDE.md`·`docs/`·`README.md`를 **함께 갱신**해
   단일 출처(single source of truth)를 유지한다.
+- Codex는 `AGENTS.md`·`.codex/**`를 별도 정본으로 사용한다. 공통 프로젝트 규칙은
+  양쪽 요약을 동기화하되, 런타임 고유 설정은 상대 설정에 복제하지 않는다
+  ([`docs/conventions/codex.md`](docs/conventions/codex.md)).
 - `CLAUDE.md`는 핵심 컨벤션의 **요약/인덱스**, 상세 배경·흐름은 `docs/`에 둔다.
 - 문서는 한국어로 작성하고, 코드 식별자·명령어·경로는 원문 그대로 표기한다.
 

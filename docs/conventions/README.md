@@ -3,7 +3,8 @@
 이 프로젝트의 **규칙 정본**이 모여 있는 디렉터리다. 규칙은 두 축으로 나뉜다 —
 **파이프라인**(적재·변환 정의: `dagster.md`·`dbt.md`)과 **분석**(해석·결론: `analysis.md`).
 각 규칙의 정본은 **여기 한 곳**이며,
-[`CLAUDE.md`](../../CLAUDE.md)는 요약/인덱스, [`docs/README.md`](../README.md)는 전체 문서 목차다.
+[`AGENTS.md`](../../AGENTS.md)와 [`CLAUDE.md`](../../CLAUDE.md)는 런타임별 요약/인덱스,
+[`docs/README.md`](../README.md)는 전체 문서 목차다.
 규칙을 바꿀 때의 동기화 체인은 [`doc-sync.md`](../doc-sync.md)를 따른다.
 
 ## 목차
@@ -23,6 +24,7 @@
 | [`terraform.md`](terraform.md) | IaC(도입) | 스택 단위 · 버전 고정 + lock 커밋 · `terraform fmt`(2-space 예외) |
 | [`timezone.md`](timezone.md) | 타임존 | **저장 UTC · 표시/스케줄 KST** · tz-aware 강제(ruff `DTZ`) |
 | [`agents.md`](agents.md) + [`agents/`](agents/) | 에이전트 오케스트레이션 | **2계층**(supervisor → worker) · 워커 편성 · 권한 · 게이트 · 저널 · 병렬 세션 |
+| [`codex.md`](codex.md) | Codex 런타임 구성 | Claude와 분리된 `AGENTS.md` · subagents · sandbox · rules · hooks · skills |
 
 ## 읽는 순서
 

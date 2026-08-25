@@ -1,5 +1,9 @@
 # 에이전트 오케스트레이션 규약 (agents)
 
+> 역할 개념은 Claude Code와 Codex가 공유하지만, 이 문서의 프론트매터·도구명·hook
+> 실측은 Claude Code 기준이다. Codex의 별도 설정과 런타임 차이는
+> [`codex.md`](codex.md)를 따른다.
+
 AI 세션의 작업을 **2계층(supervisor → worker)** 으로 나누고, "누가 무엇을 왜 했는가"를
 **기록관 저널**에 남기는 규약이다. 이 문서가 **인덱스**이고 규칙은 아래 문서들이 갖는다.
 요약은 [`CLAUDE.md`](../../CLAUDE.md) 운영 섹션에 있다.

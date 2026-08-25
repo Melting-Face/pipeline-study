@@ -52,14 +52,26 @@ MAX_FILE_LINES = 500
 EMPHASIS_MARKER = "🔴"
 
 # 기본 검사 대상 — 사람과 AI가 함께 읽는 문서만. 벤더·생성물은 제외한다.
-DEFAULT_TARGETS = ("CLAUDE.md", "README.md", "docs", "notebooks/README.md")
+DEFAULT_TARGETS = (
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "docs",
+    "notebooks/README.md",
+)
 
 # 링크 검사는 **저장소 전역 1회**로 돈다.
 #   🔴 분업하면 경계에 사각이 생긴다 — 2026-08-24 실측에서 두 관측자가 각자
 #      `.claude/agents/**`(221건)와 `docs/**`를 검사해 **둘 다 0건**을 보고했는데
 #      합집합에는 깨진 링크가 2건 있었다. 값이 아니라 **모집단**이 문제였다.
-LINK_SCAN_DIRS = ("docs", ".claude/agents", ".claude/commands", "notebooks")
-LINK_SCAN_FILES = ("README.md", "CLAUDE.md")
+LINK_SCAN_DIRS = (
+    "docs",
+    ".claude/agents",
+    ".claude/commands",
+    ".codex/agents",
+    "notebooks",
+)
+LINK_SCAN_FILES = ("README.md", "AGENTS.md", "CLAUDE.md")
 
 # `.claude/skills/`는 **외부에서 설치한 벤더 콘텐츠**라 링크 검사에서 뺀다.
 #   우리가 고칠 수 없고, 코드 예시의 제네릭 `[T](x: T)`가 링크로 오인된다.

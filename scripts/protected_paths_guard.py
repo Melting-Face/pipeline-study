@@ -138,7 +138,9 @@ GLOB_TO_RE = (
 #    함께 판단한다. 이번 건은 그래도 수용했다 — 완화의 근거가 "문서는 가역이고
 #    최종 관문은 커밋"이라 `Bash` 축에도 같은 논거가 적용되기 때문이다.
 CANON_PATTERNS = (
+    "AGENTS.md",
     "CLAUDE.md",
+    ".codex/**",
     ".claude/agents/**",
     "scripts/*_guard.py",
     "scripts/**/*_guard.py",

@@ -1,0 +1,15 @@
+# Codex 프로젝트 설정. 개인 모델·알림 설정은 ~/.codex/config.toml에 둔다.
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+project_doc_max_bytes = 32768
+
+[features]
+hooks = true
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 3
+interrupt_message = true
+
+[sandbox_workspace_write]
+network_access = false

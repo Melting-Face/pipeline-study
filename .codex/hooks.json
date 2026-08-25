@@ -1,0 +1,44 @@
+{
+  "description": "pipeline-study Codex 전용 수명주기 가드",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/session_start.py\"",
+            "statusMessage": "저널 번호·열린 미션 확인",
+            "timeout": 10,
+            "additionalContextLimit": 5000
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$|^apply_patch$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/policy_guard.py\"",
+            "statusMessage": "비가역 작업·보호 경로 검사",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/stop_guard.py\"",
+            "statusMessage": "저널 기록 누락 점검",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
