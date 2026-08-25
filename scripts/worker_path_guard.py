@@ -146,8 +146,17 @@ BOUNDARIES = {
 #    반대로 **여기 추가하면 그 워커 정의의 `hooks`도 함께 잇는다**(§배선 감사).
 
 # 저장소 **밖**에서 예외로 허용할 절대경로 접두어. 미지정 워커는 사용자 확인(`ask`).
+# archivist는 Claude 전용 저널·템플릿과 공유 MOC만 쓴다. 볼트 전체를 열면
+# Codex 기록이나 보안 posture까지 수정할 수 있어 런타임 분리가 권한 분리가 되지 않는다.
+OBSIDIAN_ROOT = Path(
+    os.environ.get("OBSIDIAN_VAULT") or str(Path.home() / "obsidian")
+).expanduser()
 OUTSIDE_ALLOW = {
-    "archivist": (os.environ.get("OBSIDIAN_VAULT") or str(Path.home() / "obsidian"),),
+    "archivist": (
+        str(OBSIDIAN_ROOT / "agents" / "claude-code"),
+        str(OBSIDIAN_ROOT / "agents" / "_MOC.md"),
+        str(OBSIDIAN_ROOT / "agents" / "_TEMPLATE.md"),
+    ),
     # 🔴 추출물은 **원천 진료 데이터**다(DUA·재식별 금지 — docs/security.md).
     #    저장소 밖 단 한 곳으로만 나간다(그 밖은 아래 `OUTSIDE_STRICT`가 막는다).
     #    `archivist`와 형태는 같되 성격이 반대다 — 저쪽은 기록을 **남기려고**

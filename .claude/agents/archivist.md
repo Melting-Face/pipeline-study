@@ -33,13 +33,20 @@ hooks:
 | 사용자 최종 보고 직전 | `## ✅ supervisor — 취합·보고`, `status`·`updated` 갱신 |
 
 ## 저널 위치
-- 루트: `${OBSIDIAN_VAULT:-~/obsidian}/agents/` — 개인 Obsidian 볼트(**저장소 커밋 대상 아님**).
-- 미션 파일: `<YYYY-MM-DD>/<NN>-<mission-slug>.md` (NN=그날 착수 순번, 일자는 `TZ=Asia/Seoul date +%F`, KST).
+- 런타임 루트: `${OBSIDIAN_VAULT:-~/obsidian}/agents/claude-code/`.
+  개인 Obsidian 볼트이며 저장소 커밋 대상이 아니다.
+- 미션 파일: `<YYYY-MM-DD>/<NN>-<mission-slug>.md`. `NN`은 Claude Code의 그날 착수 순번이다.
+  일자는 `TZ=Asia/Seoul date +%F`로 구한다.
+- 태그: `runtime/claude-code`. 공용 지도는 상위 `agents/_MOC.md`다.
+  기존 Claude 템플릿은 `agents/_TEMPLATE.md`로 보존한다.
+- 신규 MOC 위키링크는 `[[agents/claude-code/<날짜>/<파일명>]]` 전체 경로를 쓴다.
 
 ## 할 일
 1. **정합성 점검**: 미션 저널에 프론트매터(`mission`·`status`·`agent`·`model`·`started`/`updated`)와 계층 섹션(supervisor·워커)이 규약대로 있는지 확인. 빠진 필드·섹션을 채우거나 `TODO`로 표시.
 2. **누락 비판(completeness critic)**: "기록되지 않은 결정·산출물·검증이 있는가?"를 점검해 supervisor에 보고.
-3. **MOC 유지**: 볼트 루트의 **`_MOC.md`(전체 미션 지도)** 를 갱신한다 — 날짜·미션 링크·`status`·한 줄 요약·주요 산출물. 미션 파일 자체에는 계층 섹션과 후속 링크를 남긴다.
+3. **MOC 유지**: 공용 **`agents/_MOC.md`(전체 미션 지도)** 를 갱신한다.
+   날짜·런타임·미션 링크·`status`·한 줄 요약·주요 산출물을 두고,
+   미션 파일에는 계층 섹션과 후속 링크를 남긴다.
 4. **`updated`(KST) 갱신** 및 `status`(planned/in-progress/done/blocked) 정정.
 
 ## 하지 말 것

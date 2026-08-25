@@ -26,6 +26,7 @@ def main() -> None:
 
     env = os.environ.copy()
     env["CLAUDE_PROJECT_DIR"] = str(root)
+    env["JOURNAL_RUNTIME"] = "codex"
     result = subprocess.run(  # noqa: S603 - 저장소 내부의 고정 가드만 실행한다.
         [sys.executable, str(guard), "stop"],
         cwd=root,

@@ -29,7 +29,7 @@ Codex 설정 경로를 보호하기 위한 링크·보호 규칙만 Claude 설�
 | hook | `settings.json`의 `hooks` | `.codex/hooks.json` + `.codex/hooks/*.py` |
 | 명령 정책 | `permissions.allow/ask/deny` | sandbox + `.codex/rules/*.rules` + hook |
 | 스킬 | `.claude/skills` | `.agents/skills` |
-| 수동 저널 명령 | `.claude/commands/journal.md` | 현행 `AGENTS.md` 절차 + Stop hook |
+| 저널 | `agents/claude-code/<날짜>/` + `/journal` | `agents/codex/<날짜>/` + Stop 보정 |
 
 OpenAI는 Claude Code의 지침·설정·스킬·hook·슬래시 명령·subagent를 Codex로
 가져오는 `/import`를 제공한다. 이 저장소는 이미 세밀한 경로 가드와 데이터 거버넌스
@@ -86,6 +86,12 @@ Codex와 Claude는 `SessionStart`, `PreToolUse`, `PostToolUse`, `Stop` 같은 �
 - hosted `WebSearch`는 로컬 function-tool hook 경로를 지나지 않으므로 Claude의
   `research_gate_guard.py`를 그대로 연결할 수 없다. 검색 질의 비노출은 `researcher`
   지침과 메인 에이전트 재검토가 담당한다.
+- Codex `SessionStart`는 세션별 HEAD·`git status --porcelain`·Git diff 해시를
+  `.codex/.claims/journals/`에 저장한다. 원문 diff는 저장하지 않는다. `Stop`에서 기준점이
+  달라졌는데 현재 `session_id`의
+  `agents/codex/<KST 날짜>/` 저널이 없거나 마감되지 않았으면 `decision: block`으로 한 번만
+  이어서 기록하게 한다. 두 번째 Stop은 경고만 반환해 반복을 막는다.
+- 저널 본문은 원천 데이터·비밀값을 복사하지 않고 관측된 결정·경로·검증만 요약한다.
 
 프로젝트 hook은 처음 또는 변경 후 자동 신뢰되지 않는다. 새 Codex 세션에서 `/hooks`로
 `.codex/hooks.json`의 현재 정의를 검토하고 신뢰해야 실행된다. 검토된 일회성 자동화 시험은

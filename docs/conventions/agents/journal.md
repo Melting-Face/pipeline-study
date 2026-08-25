@@ -23,17 +23,23 @@
 
 ```
 $OBSIDIAN_VAULT/agents/            # 저널 루트
-  _TEMPLATE.md                     # 재사용 저널 템플릿
+  _TEMPLATE.md                     # 기존 Claude Code 저널 템플릿
+  _TEMPLATE.codex.md               # Codex 저널 템플릿
   _MOC.md                          # 전체 미션 지도(Map of Content) — 기록관이 유지
-  <YYYY-MM-DD>/                    # 작업일자(KST) 폴더
+  <YYYY-MM-DD>/                    # 기존 Claude 이력 — 이동하지 않는 읽기 호환 영역
     <NN>-<mission-slug>.md         # 미션당 1파일. NN = 그날의 착수 순번
-    <NN>-<mission-slug>/           # (예외) 병렬 subagent가 많은 미션만 액터 분리
+  claude-code/<YYYY-MM-DD>/        # 신규 Claude Code 저널
+    <NN>-<mission-slug>.md
+  codex/<YYYY-MM-DD>/              # 신규 Codex 저널
+    <NN>-<mission-slug>.md
 ```
 
-- 파일명 앞 `NN`은 그날 미션을 **착수한 순서**다. 파일 목록만 봐도 **작업 순서**가 드러나고
-  정렬이 시간순이 된다. 날짜 폴더가 바뀌면 `01`부터 다시 시작한다.
+- 파일명 앞 `NN`은 **런타임별로** 그날 미션을 착수한 순서다. 날짜 폴더가 바뀌면 각 런타임이
+  `01`부터 다시 시작한다. 기존 `agents/<YYYY-MM-DD>/`는 링크 손상을 피하려 이동하지 않으며,
+  신규 기록에 사용하지 않는다.
 - 순번은 **파일명에만** 붙인다. 프론트매터 `mission:`·`tags:`의 슬러그는 **번호 없이** 유지한다.
-- 위키링크는 파일명 그대로 쓴다 — `[[01-agent-journal-trigger]]`.
+- 기존 이력의 위키링크는 파일명 그대로 보존한다. 신규 기록은 동명 노트의 모호성을 막기 위해
+  볼트 기준 전체 경로를 쓴다 — `[[agents/codex/2026-08-26/01-runtime-journal-separation]]`.
 - **착수 시각의 판정 기준은 본문 §상호작용 로그의 첫 이벤트**다. 프론트매터 `started`는 실제로
   *파일 생성* 시각이라 동시 착수한 세션 간 변별력이 없다.
 - 넘버링은 문서 규약만으로 지킬 수 없다 — 병렬 세션은 서로의 컨텍스트를 보지 못한다.
@@ -43,7 +49,8 @@ $OBSIDIAN_VAULT/agents/            # 저널 루트
 
 ## 포맷
 
-원본 템플릿은 `$OBSIDIAN_VAULT/agents/_TEMPLATE.md`. 새 미션은 이를 복사해 채운다.
+Claude Code는 기존 `$OBSIDIAN_VAULT/agents/_TEMPLATE.md`를 보존해 사용하고,
+Codex는 `_TEMPLATE.codex.md`를 사용한다. 새 미션은 현재 런타임의 템플릿을 복사해 채운다.
 
 ### 프론트매터(YAML)
 
@@ -59,7 +66,7 @@ workers: []              # 배정된 워커 목록(`subagent_type`)
 session: <ref>           # 이 저널을 쓴 세션의 ref (= session_id 앞 6자리)
 session_id: <uuid>       # 전체 세션 UUID — ref 6자리가 겹칠 때의 판별자
 peers: []                # 이 미션에서 소통한 피어 세션 — ["<name> [<ref>]", ...]
-tags: [agent/mission, mission/<mission-slug>]
+tags: [agent/mission, runtime/<runtime>, mission/<mission-slug>]
 started: <YYYY-MM-DDThh:mm+09:00>    # KST
 updated: <YYYY-MM-DDThh:mm+09:00>    # KST
 ---
@@ -67,6 +74,8 @@ updated: <YYYY-MM-DDThh:mm+09:00>    # KST
 
 - **`agent`(실행 런타임)** 와 **`model`(모델 ID)** 을 반드시 남긴다 — 어떤 도구·모델이 한 일인지
   추적·재현·비교하기 위함. 값은 **supervisor(세션 주체)** 기준이다.
+- `runtime/<runtime>` 태그와 저장 경로의 런타임은 일치해야 한다. Claude Code는
+  `runtime/claude-code`, Codex는 `runtime/codex`를 쓴다.
 - 워커가 다른 도구·모델로 돌면 각 섹션에 `agent·model`을 개별 표기한다.
 - **`session`·`session_id`·`peers`는 병렬 세션 시대의 필수 항목이다.** 하루에 여러 세션이 각자
   저널을 쓰므로 **어느 세션이 쓴 기록인지**가 없으면 나중에 주체를 되짚을 수 없다.
@@ -153,7 +162,7 @@ updated: <YYYY-MM-DDThh:mm+09:00>    # KST
 
 | 체크포인트 | 동작 | 기록 |
 | --- | --- | --- |
-| **미션 개시** | 템플릿 복사 → 저널 생성, `status: in-progress`·`started` 기입 | supervisor (즉시성 필요) |
+| **미션 개시** | 런타임 템플릿 복사 → 저널 생성, `status: in-progress`·`started` 기입 | supervisor (즉시성 필요) |
 | **계층 전환** | §상호작용 로그에 오간 사실 append | archivist |
 | **워커 반환 수령 직후** | 반환값을 계층 섹션에 옮겨 적기 + **실행 메타** 표 | archivist |
 | **security 컨펌 전후** | 컨펌 요청과 판정을 근거와 함께 | archivist |
@@ -178,7 +187,8 @@ updated: <YYYY-MM-DDThh:mm+09:00>    # KST
 
 - **`mission-slug`** 는 영문 kebab-case. 같은 날 같은 미션이 이어지면 **같은 파일에 append**한다.
 - **수동 트리거**: `/journal` 슬래시 커맨드로 언제든 현재 세션을 기록·갱신한다.
-  자동 기록이 누락됐을 때의 **보정 수단**이자, 사용자가 명시적으로 기록을 요구하는 통로다.
+  Claude Code 자동 기록이 누락됐을 때의 **보정 수단**이다. Codex는 중요 작업 후 `Stop` hook이
+  현재 세션 저널이 없거나 마감되지 않았으면 한 번 대화를 이어 `archivist` 기록을 요구한다.
 - **볼트 경로 설정**: `$OBSIDIAN_VAULT`는 **셸 환경변수**로 둔다 —
   `~/.zshenv`에 `export OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-$HOME/obsidian}"`.
   `$HOME` 기준이라 절대경로 하드코딩이 없고, 셸·스크립트·AI 세션이 **한 곳**에서 값을 받는다.

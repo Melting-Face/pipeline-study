@@ -10,7 +10,7 @@
 
 | 가드 | 막는 것 | 배선처 |
 | --- | --- | --- |
-| [`journal_guard.py`](../../../scripts/journal_guard.py) | 저널 `NN` 넘버링 경합 · 규약 위반 생성 · 기록 누락 | `settings.json` |
+| [`journal_guard.py`](../../../scripts/journal_guard.py) | 런타임별 저널 `NN` 경합 · 규약 위반 생성 · 기록 누락 | Claude `settings.json` + Codex `hooks.json` |
 | [`protected_paths_guard.py`](../../../scripts/protected_paths_guard.py) | 보호 경로의 `Bash` 우회 쓰기 | `settings.json` |
 | [`session_sync_guard.py`](../../../scripts/session_sync_guard.py) | 세션 간 중복 작업 · 워킹트리 전역 git | `settings.json` |
 | [`analyst_path_guard.py`](../../../scripts/analyst_path_guard.py) | `analyst` 경로 경계 | **`analyst.md` 프론트매터** |
@@ -41,9 +41,9 @@
 
 | 이벤트 | 서브커맨드 | 하는 일 | 실패 시 |
 | --- | --- | --- | --- |
-| `SessionStart` | `session-start` | 오늘의 다음 `NN`·기존 저널·최근 7일 열린 미션을 컨텍스트 주입 | 주입 없음 |
-| `PreToolUse`(`Write`) | `pre-write` | 볼트 저널 **신규 생성**만 검사 — `NN` 중복·파일명·날짜 폴더 위반이면 차단 | 통과 |
-| `Stop` | `stop` | 저장소 변경이 있는데 오늘자 저널 부재·`updated` 미갱신이면 경고 | 경고 없음 |
+| `SessionStart` | `session-start` | 런타임별 다음 `NN`·열린 미션을 주입하고 Codex는 세션 Git 기준점을 저장 | 주입·기준점 없음 |
+| `PreToolUse`(`Write`) | `pre-write` | 신규 저널의 런타임 경로·`NN`·파일명·날짜 폴더 위반을 차단 | 통과 |
+| `Stop` | `stop` | 변경 세션의 오늘자 저널 부재·`updated` 미갱신을 보정 요청 | 경고 없음 |
 | `PreToolUse`(`Bash`) | — | 보호 경로 + 쓰기 신호 동시 감지 시 `ask` | 통과 |
 | `PreToolUse`(`Agent`) | `agent-pre` | 같은 작업을 다른 세션이 실행 중이면 `ask`, 완료했으면 결과 요약 주입 | 통과 |
 | `PostToolUse`(`Agent`) | `agent-post` | 내 claim을 `done`으로 바꾸고 결과 요약을 남긴다 | 기록 없음 |
@@ -52,9 +52,13 @@
 | `PreToolUse`(`Bash`) | `bash-pre` | 워킹트리 전역 git 명령을 다른 세션이 살아 있을 때 실행하면 `ask` | 통과 |
 | `SessionEnd` | `session-end` | 내 리스·실행 중 claim·생존 신호를 회수(완료 claim은 보존) | TTL이 회수 |
 
-- **차단은 `PreToolUse`만** 한다. `Stop`의 exit 2는 "정지를 막고 대화를 계속"이라 경고에 부적합하므로
-  `Stop`은 exit 0 + JSON `systemMessage`로 알린다.
+- Claude `Stop`은 exit 0 + JSON `systemMessage` 경고다. Codex는 SessionStart의 HEAD·상태·
+  변경 해시와 Stop 시점을 비교하고, 기록이 없으면 `decision: block`으로 **한 번만** 대화를 이어
+  `archivist` 보정을 요청한다. 두 번째 Stop(`stop_hook_active: true`)은 `systemMessage`만 반환해
+  무한 반복을 막는다.
 - **기존 저널 수정·`_` 접두 파일·볼트 밖 경로는 검사하지 않는다** — 가드는 넘버링에만 관여한다.
+- 신규 경로는 `agents/claude-code/<날짜>/`와 `agents/codex/<날짜>/`다. 기존
+  `agents/<날짜>/` 이력은 읽기 호환만 유지한다.
 - `$OBSIDIAN_VAULT`가 없는 환경에서는 **조용히 통과**한다 —
   가드가 개인 환경 의존성을 세션의 전제조건으로 만들면 안 된다.
 

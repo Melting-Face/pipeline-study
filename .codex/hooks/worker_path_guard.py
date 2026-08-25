@@ -33,8 +33,17 @@ BOUNDARIES = {
 
 WORKER_MARKERS = {worker: f".claude/agents/{worker}.md" for worker in BOUNDARIES}
 
+OBSIDIAN_ROOT = Path(
+    os.environ.get("OBSIDIAN_VAULT") or str(Path.home() / "obsidian")
+).expanduser()
+
+# Codex archivist는 자기 런타임 저널·템플릿과 공유 MOC만 쓴다.
 OUTSIDE_ALLOW = {
-    "archivist": (os.environ.get("OBSIDIAN_VAULT") or str(Path.home() / "obsidian"),),
+    "archivist": (
+        str(OBSIDIAN_ROOT / "agents" / "codex"),
+        str(OBSIDIAN_ROOT / "agents" / "_MOC.md"),
+        str(OBSIDIAN_ROOT / "agents" / "_TEMPLATE.codex.md"),
+    ),
     "data-extractor": (
         os.environ.get("DATA_EXTRACT_DIR") or str(Path.home() / "extracts"),
     ),

@@ -8,11 +8,13 @@
 왜 이 스크립트인가:
     플랜 모드의 계획 파일은 하네스가 `~/.claude/plans/<랜덤슬러그>.md`에
     **경로와 이름을 정해서** 만든다. 우리가 바꿀 수 없고, 슬러그가 무작위라
-    나중에 어떤 미션의 계획인지 알아볼 수 없다. 저널(`agents/<날짜>/<NN>-<slug>.md`)
+    나중에 어떤 미션의 계획인지 알아볼 수 없다. 저널
+    (`agents/claude-code/<날짜>/<NN>-<slug>.md`)
     은 볼트에 쌓이는데 그 근거가 된 **계획서만 홈 디렉터리에 흩어져 남는** 셈이다.
 
-    그래서 저널과 **같은 NN·같은 슬러그**로 `plans/<날짜>/<NN>-<slug>.md`에 복사한다.
-    이름이 짝을 이루므로 Obsidian에서 `[[<NN>-<slug>]]` 상호링크가 그대로 걸린다.
+    그래서 Claude 저널과 **같은 NN·같은 슬러그**로
+    `plans/claude-code/<날짜>/<NN>-<slug>.md`에 복사한다.
+    런타임별 동명 파일을 구분하도록 저널 링크에는 볼트 기준 전체 경로를 쓴다.
 
     🔴 미션 이름의 정본은 **저널**이다. 이 스크립트는 이름을 짓지 않고
     **저널에서 읽어 따라간다** — 계획서가 저널보다 먼저 생기는 경우가 흔해서
@@ -46,9 +48,11 @@ from pathlib import Path
 # 하네스가 계획 파일을 만드는 고정 위치. 프로젝트가 아니라 **홈** 아래다.
 PLAN_SOURCE_DIR = Path.home() / ".claude" / "plans"
 
-# 볼트 안 두 뿌리. `agents/`는 저널(정본), `plans/`는 이 스크립트가 만드는 미러.
-JOURNAL_SUBDIR = "agents"
-PLAN_SUBDIR = "plans"
+# 새 기록은 런타임별 경로로 분리한다. 기존 `agents/<날짜>/`는 읽기 호환만
+# 유지하며 새 계획 미러는 항상 `plans/claude-code/`에 쓴다.
+JOURNAL_SUBDIR = Path("agents") / "claude-code"
+LEGACY_JOURNAL_SUBDIR = Path("agents")
+PLAN_SUBDIR = Path("plans") / "claude-code"
 
 # 저널 파일명 규약 `<NN>-<mission-slug>.md`. journal_guard.py와 같은 형태를 본다.
 JOURNAL_NAME_RE = re.compile(r"^(\d{2})-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$")
@@ -122,10 +126,13 @@ def classify(target: Path) -> tuple[str, str] | None:
     if target.parent == PLAN_SOURCE_DIR:
         return ("plan", str(target))
 
-    # 저널 파일 — `<볼트>/agents/<YYYY-MM-DD>/<NN>-<slug>.md` 2단 구조.
-    journal_root = vault_root() / JOURNAL_SUBDIR
+    # 저널 파일 — 신규 Claude 경로와 기존 역사 경로를 모두 읽는다.
+    journal_roots = {
+        vault_root() / JOURNAL_SUBDIR,
+        vault_root() / LEGACY_JOURNAL_SUBDIR,
+    }
     day_dir = target.parent
-    if day_dir.parent != journal_root or not DAY_DIR_RE.match(day_dir.name):
+    if day_dir.parent not in journal_roots or not DAY_DIR_RE.match(day_dir.name):
         return None
     if not JOURNAL_NAME_RE.match(target.name):
         return None
@@ -142,8 +149,10 @@ def compose(source_text: str, journal_rel: str) -> str:
     matched = JOURNAL_NAME_RE.match(f"{name}.md")
     slug = matched.group(2) if matched else name
     stamp = datetime.now(tz=KST).strftime("%Y-%m-%dT%H:%M+09:00")
+    journal_link = f"agents/claude-code/{day}/{name}"
     backlink = (
-        f"> 🔗 미션 저널: [[{name}]] · 이 파일은 **미러**다(원본은 하네스 관리)\n\n"
+        f"> 🔗 미션 저널: [[{journal_link}]] · "
+        "이 파일은 **미러**다(원본은 하네스 관리)\n\n"
     )
 
     if source_text.startswith("---"):
@@ -154,9 +163,9 @@ def compose(source_text: str, journal_rel: str) -> str:
         f"mission: {slug}\n"
         f"date: {day}\n"
         "kind: plan\n"
-        f'journal: "[[{name}]]"\n'
+        f'journal: "[[{journal_link}]]"\n'
         f"mirrored: {stamp}\n"
-        f"tags: [agent/plan, mission/{slug}]\n"
+        f"tags: [agent/plan, runtime/claude-code, mission/{slug}]\n"
         "---\n\n"
     )
     return front + backlink + source_text

@@ -168,7 +168,7 @@ flowchart TB
         SKM["skill-matcher · 스킬 배선 감사"]
         TW["tech-writer · 쓰기 O<br/>docs/** · README.md · 발행 금지<br/>except: security.md · skills.md · skills/**"]
     end
-    JR[("미션 저널<br/>$OBSIDIAN_VAULT/agents/날짜/NN-미션.md")]
+    JR[("미션 저널<br/>$OBSIDIAN_VAULT/agents/런타임/날짜/NN-미션.md")]
 
     U <-->|"요청 ⇅ 보고 · 비가역 승인"| SUP
     SUP <-.->|"자문 질의 ⇅ 계획 · 게이트 설계"| DIR
@@ -249,7 +249,7 @@ flowchart LR
 
 | 가드 | 배선 | 막는 것 |
 | --- | --- | --- |
-| [`journal_guard.py`](scripts/journal_guard.py) | `SessionStart` · `PreToolUse(Write)` · `Stop` | 저널 `NN` 넘버링 경합 · 규약 위반 생성 · 기록 누락 경고 |
+| [`journal_guard.py`](scripts/journal_guard.py) | `SessionStart` · `PreToolUse(Write)` · `Stop` | 런타임별 저널 경합 · 규약 위반 생성 · Codex 기록 누락 1회 보정 |
 | [`session_sync_guard.py`](scripts/session_sync_guard.py) | `PreToolUse(Bash·Agent·Edit\|Write\|NotebookEdit)` | 병렬 세션의 중복 작업 · 워킹트리 전역 git 명령 |
 | [`protected_paths_guard.py`](scripts/protected_paths_guard.py) | `PreToolUse(Bash)` | 보호 경로(`.env`·lock 등) 우회 수정 |
 | [`worker_path_guard.py`](scripts/worker_path_guard.py) | 각 워커 프론트매터 `hooks` | 워커별 쓰기 경로 이탈(`allow`/`deny`/`except`) + 가드 스크립트 자기보호 |

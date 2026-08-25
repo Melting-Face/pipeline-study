@@ -3,7 +3,7 @@
 # requires-python = ">=3.10"
 # dependencies = []
 # ///
-"""저널 정합성 가드 — Claude Code hook 진입점(SessionStart·PreToolUse·Stop).
+"""저널 정합성 가드 — Claude Code·Codex hook 진입점.
 
 왜 이 스크립트인가:
     저널 파일명 `NN-<mission>.md`의 NN은 "그날 착수 순번"인데, 각 세션이 저마다
@@ -15,15 +15,16 @@
     서브커맨드는 hook 이벤트와 1:1 대응한다:
       session-start : 다음 NN·미완 미션을 stdout으로 컨텍스트 주입(exit 0)
       pre-write     : 볼트 저널 신규 생성 시 NN 중복·파일명 규칙 위반을 차단
-      stop          : 저장소 변경이 있는데 오늘자 저널이 없으면 사용자에게 경고
+      stop          : 현재 세션 변경에 대응하는 오늘자 저널이 없으면 보정 요청
 
     실패해도 작업을 막지 않는다(fail-open). 볼트가 없는 환경(다른 머신·CI)에서는
     조용히 통과한다 — 가드가 개인 환경 의존성을 세션의 전제조건으로 만들면 안 된다.
 
-사용: Claude Code `settings.json`의 hooks에서 호출한다.
+사용: Claude Code·Codex의 lifecycle hook에서 호출한다.
     uv run --script scripts/journal_guard.py <session-start|pre-write|stop>
 """
 
+import hashlib
 import json
 import os
 import re
@@ -50,12 +51,37 @@ OPEN_STATUSES = ("planned", "in-progress", "blocked")
 # session-start가 훑는 과거 폴더 수 (열린 미션 상기용 — 전체 스캔은 과하다)
 RECENT_DAYS = 7
 
+# 새 저널은 런타임별 경로와 태그를 사용한다. 기존 `agents/<날짜>/` 저널은
+# 역사 기록으로 보존하며 신규 번호 발급에는 섞지 않는다.
+RUNTIME_DIRS = {
+    "claude-code": "claude-code",
+    "codex": "codex",
+}
 
-def resolve_journal_root() -> Path | None:
-    """볼트의 `agents/` 경로. 볼트 미설정·부재면 None(가드 비활성)."""
+
+def resolve_runtime() -> str:
+    """명시된 런타임을 우선하고, 없으면 실행 환경에서 판별한다."""
+    configured = os.environ.get("JOURNAL_RUNTIME", "")
+    if configured in RUNTIME_DIRS:
+        return configured
+    if os.environ.get("CODEX_SESSION_ID") or os.environ.get("CODEX_THREAD_ID"):
+        return "codex"
+    return "claude-code"
+
+
+def resolve_agents_root() -> Path | None:
+    """볼트의 공용 `agents/` 경로. 볼트 부재면 None을 반환한다."""
     vault = os.environ.get("OBSIDIAN_VAULT") or "~/obsidian"
     root = Path(vault).expanduser() / "agents"
     return root if root.is_dir() else None
+
+
+def resolve_journal_root() -> Path | None:
+    """현재 런타임의 신규 저널 루트. 공용 볼트 부재면 None을 반환한다."""
+    agents_root = resolve_agents_root()
+    if agents_root is None:
+        return None
+    return agents_root / RUNTIME_DIRS[resolve_runtime()]
 
 
 def scan_numbers(day_dir: Path) -> list[tuple[int, str]]:
@@ -89,6 +115,147 @@ def read_frontmatter(path: Path) -> dict[str, str]:
     return data
 
 
+def resolve_project_root(payload: dict[str, object]) -> Path | None:
+    """Hook cwd에서 Git 프로젝트 루트를 찾는다."""
+    raw_cwd = payload.get("cwd")
+    cwd = Path(raw_cwd if isinstance(raw_cwd, str) and raw_cwd else os.getcwd())
+    root = Path(os.environ.get("CLAUDE_PROJECT_DIR") or cwd).resolve()
+    while root.parent != root and not (root / ".git").exists():
+        root = root.parent
+    return root if (root / ".git").exists() else None
+
+
+def resolve_session_id(payload: dict[str, object]) -> str:
+    """Hook 입력과 런타임 환경에서 현재 세션 ID를 찾는다."""
+    raw_session_id = payload.get("session_id")
+    if isinstance(raw_session_id, str) and raw_session_id:
+        return raw_session_id
+    codex_session_id = os.environ.get("CODEX_SESSION_ID")
+    claude_session_id = os.environ.get("CLAUDE_SESSION_ID")
+    return codex_session_id or claude_session_id or ""
+
+
+def run_git(root: Path, *args: str) -> str | None:
+    """Git 읽기 명령을 실행하고 실패하면 None을 반환한다."""
+    git_bin = shutil.which("git")
+    if git_bin is None:
+        return None
+    result = subprocess.run(  # noqa: S603
+        [git_bin, "-C", str(root), *args],
+        capture_output=True,
+        text=True,
+        errors="replace",
+        timeout=5,
+        check=False,
+    )
+    return result.stdout if result.returncode == 0 else None
+
+
+def git_change_fingerprint(root: Path) -> str | None:
+    """변경 내용을 저장하지 않고 추적 diff와 미추적 파일 상태를 해시한다."""
+    git_bin = shutil.which("git")
+    if git_bin is None:
+        return None
+    diff = subprocess.run(  # noqa: S603
+        [git_bin, "-C", str(root), "diff", "--no-ext-diff", "--binary", "HEAD"],
+        capture_output=True,
+        timeout=5,
+        check=False,
+    )
+    untracked = run_git(root, "ls-files", "--others", "--exclude-standard", "-z")
+    if diff.returncode != 0 or untracked is None:
+        return None
+
+    digest = hashlib.sha256(diff.stdout)
+    for raw_path in sorted(path for path in untracked.split("\0") if path):
+        path = root / raw_path
+        try:
+            stat = path.lstat()
+        except OSError:
+            continue
+        metadata = f"{raw_path}\0{stat.st_size}\0{stat.st_mtime_ns}\0"
+        digest.update(metadata.encode("utf-8", errors="surrogateescape"))
+    return digest.hexdigest()
+
+
+def current_repo_state(root: Path) -> dict[str, str] | None:
+    """콘텐츠를 보관하지 않고 HEAD와 작업 트리 상태를 수집한다."""
+    head = run_git(root, "rev-parse", "HEAD")
+    status = run_git(root, "status", "--porcelain")
+    fingerprint = git_change_fingerprint(root)
+    if head is None or status is None or fingerprint is None:
+        return None
+    return {
+        "head": head.strip(),
+        "status": status.strip(),
+        "fingerprint": fingerprint,
+    }
+
+
+def baseline_path(root: Path, session_id: str) -> Path | None:
+    """Codex 세션별 Git 기준점 경로를 반환한다."""
+    if not session_id:
+        return None
+    ref = re.sub(r"[^A-Za-z0-9]", "", session_id)[:12]
+    if not ref:
+        return None
+    return root / ".codex" / ".claims" / "journals" / f"{ref}.json"
+
+
+def save_codex_baseline(payload: dict[str, object]) -> None:
+    """첫 SessionStart의 Git 상태를 저장하고 resume에서는 덮어쓰지 않는다."""
+    if resolve_runtime() != "codex":
+        return
+    root = resolve_project_root(payload)
+    session_id = resolve_session_id(payload)
+    if root is None:
+        return
+    path = baseline_path(root, session_id)
+    if path is None or path.exists():
+        return
+    state = current_repo_state(root)
+    if state is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+    except OSError:
+        pass  # 기준점 기록 실패가 세션 시작을 막지 않는다
+
+
+def codex_session_changed(payload: dict[str, object]) -> bool:
+    """SessionStart 기준점과 현재 Git 상태가 달라졌는지 판정한다."""
+    root = resolve_project_root(payload)
+    session_id = resolve_session_id(payload)
+    if root is None:
+        return False
+    current = current_repo_state(root)
+    path = baseline_path(root, session_id)
+    if current is None:
+        return False
+    if path is None or not path.is_file():
+        # 이 기능 도입 전에 시작한 세션은 현재 변경이 있을 때만 보수적으로 요구한다.
+        return bool(current["status"])
+    try:
+        baseline = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return bool(current["status"])
+    return baseline != current
+
+
+def current_session_journals(day_dir: Path, session_id: str) -> list[Path]:
+    """오늘 저널 중 현재 세션 ID가 일치하는 파일을 반환한다."""
+    if not session_id:
+        return []
+    return [
+        day_dir / name
+        for _, name in scan_numbers(day_dir)
+        if read_frontmatter(day_dir / name).get("session_id") == session_id
+    ]
+
+
 def deny(reason: str) -> NoReturn:
     """PreToolUse 차단 응답. 공식 스펙상 강제 정책은 exit 0 + JSON이 권장 형태다."""
     print(
@@ -109,6 +276,12 @@ def deny(reason: str) -> NoReturn:
 def main() -> None:
     """서브커맨드를 hook 이벤트로 분기해 실행한다."""
     command = sys.argv[1] if len(sys.argv) > 1 else ""
+    try:
+        loaded_payload = json.load(sys.stdin)
+    except (json.JSONDecodeError, ValueError):
+        loaded_payload = {}
+    payload = loaded_payload if isinstance(loaded_payload, dict) else {}
+
     root = resolve_journal_root()
     if root is None:
         sys.exit(0)  # 볼트 없는 환경 — 조용히 통과
@@ -119,6 +292,7 @@ def main() -> None:
     # ── session-start: 다음 번호와 미완 미션을 컨텍스트로 주입 ──────────────────
     # 세션이 시작하자마자 번호를 알면 `ls`로 세는 경합 자체가 사라진다.
     if command == "session-start":
+        save_codex_baseline(payload)
         numbers = scan_numbers(today_dir)
         next_nn = f"{(max(n for n, _ in numbers) + 1) if numbers else 1:02d}"
 
@@ -133,6 +307,7 @@ def main() -> None:
                     open_missions.append(f"{day_dir.name}/{name[:-3]} ({status})")
 
         print(f"[저널 가드] 볼트 {root}")
+        print(f"- 런타임: `{resolve_runtime()}` · 태그: `runtime/{resolve_runtime()}`")
         print(
             f"- 오늘({today}) 다음 미션 번호: **{next_nn}** → "
             f"`{today_dir}/{next_nn}-<mission-slug>.md`"
@@ -151,18 +326,19 @@ def main() -> None:
 
     # ── pre-write: 저널 신규 생성의 넘버링·파일명 규약 강제 ────────────────────
     if command == "pre-write":
-        try:
-            payload = json.load(sys.stdin)
-        except (json.JSONDecodeError, ValueError):
-            sys.exit(0)
-
-        raw_path = (payload.get("tool_input") or {}).get("file_path") or ""
+        raw_tool_input = payload.get("tool_input")
+        tool_input = raw_tool_input if isinstance(raw_tool_input, dict) else {}
+        raw_path = tool_input.get("file_path") or ""
         if not raw_path:
             sys.exit(0)
         target = Path(raw_path)
 
+        agents_root = resolve_agents_root()
+        if agents_root is None:
+            sys.exit(0)
+
         try:
-            relative = target.resolve().relative_to(root.resolve())
+            relative = target.resolve().relative_to(agents_root.resolve())
         except ValueError:
             sys.exit(0)  # 볼트 저널 밖 — 가드 대상 아님
 
@@ -170,13 +346,15 @@ def main() -> None:
             sys.exit(0)  # 기존 저널 갱신은 넘버링과 무관
         if target.name.startswith(EXEMPT_PREFIX):
             sys.exit(0)  # `_MOC`·`_TEMPLATE` 등 볼트 관리 파일
-        if len(relative.parts) != 2:
+        runtime_dir = RUNTIME_DIRS[resolve_runtime()]
+        if len(relative.parts) != 3 or relative.parts[0] != runtime_dir:
             deny(
-                "저널은 `agents/<YYYY-MM-DD>/<NN>-<mission-slug>.md` 2단 구조여야 "
-                f"한다. 받은 경로: {relative}"
+                "신규 저널은 런타임별 "
+                f"`agents/{runtime_dir}/<YYYY-MM-DD>/<NN>-<mission-slug>.md` "
+                f"구조여야 한다. 받은 경로: {relative}"
             )
 
-        day_name = relative.parts[0]
+        day_name = relative.parts[1]
         if not DAY_DIR_RE.match(day_name):
             deny(f"날짜 폴더명이 `YYYY-MM-DD`가 아니다: `{day_name}`")
 
@@ -205,61 +383,54 @@ def main() -> None:
             )
         sys.exit(0)
 
-    # ── stop: 저장소를 건드렸는데 오늘자 저널이 없으면 경고 ────────────────────
-    # exit 2는 "정지를 막고 대화를 계속"이라 경고 용도로 부적합하다 → systemMessage.
+    # ── stop: 현재 세션 변경에 대응하는 저널이 없으면 보정을 요청 ───────────────
     if command == "stop":
-        try:
-            payload = json.load(sys.stdin)
-        except (json.JSONDecodeError, ValueError):
-            payload = {}
-        cwd = payload.get("cwd") or os.getcwd()
-
-        git_bin = shutil.which("git")
-        if git_bin is None:
+        runtime = resolve_runtime()
+        project_root = resolve_project_root(payload)
+        if project_root is None:
             sys.exit(0)
 
-        probe = subprocess.run(  # noqa: S603
-            [git_bin, "-C", cwd, "status", "--porcelain"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        if probe.returncode != 0:
-            sys.exit(0)  # git 저장소가 아님
-
-        commits = subprocess.run(  # noqa: S603
-            [git_bin, "-C", cwd, "log", "--since=midnight", "--oneline"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        touched = bool(probe.stdout.strip()) or bool(commits.stdout.strip())
+        if runtime == "codex":
+            touched = codex_session_changed(payload)
+        else:
+            status = run_git(project_root, "status", "--porcelain")
+            commits = run_git(project_root, "log", "--since=midnight", "--oneline")
+            touched = bool((status or "").strip()) or bool((commits or "").strip())
         if not touched:
             sys.exit(0)
 
-        numbers = scan_numbers(today_dir)
-        if not numbers:
+        session_id = resolve_session_id(payload)
+        journals = (
+            current_session_journals(today_dir, session_id)
+            if runtime == "codex"
+            else [today_dir / name for _, name in scan_numbers(today_dir)]
+        )
+        if not journals:
             message = (
-                f"⚠️ 저널 미개설 — 오늘 저장소 변경이 있는데 `{today_dir}`에 "
-                "미션 저널이 없습니다. `/journal`로 보정하세요."
+                f"⚠️ {runtime} 저널 미개설 — 이 세션에서 저장소 변경이 있었지만 "
+                f"`{today_dir}`에 현재 세션 미션 저널이 없습니다. "
+                "`archivist`로 저널과 `agents/_MOC.md`를 한 벌로 기록하세요."
             )
         else:
             stale = [
-                name[:-3]
-                for _, name in numbers
-                if not read_frontmatter(today_dir / name)
-                .get("updated", "")
-                .startswith(today)
+                path.stem
+                for path in journals
+                if read_frontmatter(path).get("status") not in {"done", "blocked"}
+                or not read_frontmatter(path).get("updated", "").startswith(today)
             ]
             if not stale:
                 sys.exit(0)
             message = (
-                f"⚠️ 저널 `updated` 미갱신 — {', '.join(stale)} "
-                "(규약 ④: 사용자 최종 보고 직전 status·updated 갱신)"
+                f"⚠️ {runtime} 저널 마감 미완료 — {', '.join(stale)} "
+                "(사용자 최종 보고 직전 status·updated와 `_MOC.md`를 갱신하세요.)"
             )
-        print(json.dumps({"systemMessage": message}, ensure_ascii=False))
+
+        if runtime == "codex" and payload.get("stop_hook_active") is not True:
+            response = {"decision": "block", "reason": message}
+            print(json.dumps(response, ensure_ascii=False))
+        else:
+            # 두 번째 Stop에서는 반복 루프를 만들지 않고 경고만 남긴다.
+            print(json.dumps({"systemMessage": message}, ensure_ascii=False))
         sys.exit(0)
 
     print(f"알 수 없는 서브커맨드: {command!r}", file=sys.stderr)

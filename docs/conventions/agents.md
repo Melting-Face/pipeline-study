@@ -58,7 +58,7 @@ flowchart TB
     end
 
     WEB(["외부 웹"])
-    JR[("저널<br/>agents/날짜/NN-미션.md")]
+    JR[("저널<br/>agents/런타임/날짜/NN-미션.md")]
     HOOK{{"hook 가드<br/>저널 NN · 워커 경로 · 세션 동기화"}}
     GATE{{"조사 게이트<br/>승인 목록 밖 WebFetch = deny"}}
 

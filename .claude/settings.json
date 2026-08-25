@@ -145,7 +145,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/journal_guard.py session-start",
+            "command": "JOURNAL_RUNTIME=claude-code \"$CLAUDE_PROJECT_DIR\"/scripts/journal_guard.py session-start",
             "statusMessage": "저널 번호·열린 미션 확인",
             "timeout": 10
           }
@@ -158,7 +158,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/journal_guard.py pre-write",
+            "command": "JOURNAL_RUNTIME=claude-code \"$CLAUDE_PROJECT_DIR\"/scripts/journal_guard.py pre-write",
             "statusMessage": "저널 넘버링 규약 검사",
             "timeout": 10
           }
@@ -257,7 +257,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/journal_guard.py stop",
+            "command": "JOURNAL_RUNTIME=claude-code \"$CLAUDE_PROJECT_DIR\"/scripts/journal_guard.py stop",
             "statusMessage": "저널 기록 누락 점검",
             "timeout": 10
           },
