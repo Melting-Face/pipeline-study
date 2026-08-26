@@ -170,9 +170,10 @@ kubectl port-forward svc/spark-connect       15002:15002  # Spark Connect 폴백
 ### 3-2. 컴퓨트 기동·회수
 
 상주 컴퓨트는 **켜둔 채 잊으면 예산을 계속 갉아먹는다.** 쓰기 직전에 올리고 **끝난 자리에서 내린다.**
+Spark Connect의 `scale` 명령은 §4에서 러너 이미지를 push하고 매니페스트를 최초 적용한 뒤부터 쓸 수 있다.
 
 ```shell
-# Spark Connect (dbt·노트북용) — 평시 0, 쓸 때만 1
+# Spark Connect (dbt·노트북용) — §4의 최초 배포 완료 후, 평시 0에서 쓸 때만 1
 kubectl scale deploy/spark-connect --replicas=1
 kubectl scale deploy/spark-connect --replicas=0
 
@@ -184,7 +185,7 @@ kubectl delete -f k8s/flink/flinkdeployment-session.yaml
 Spark·Flink **동시 기동은 허용**되며, 지켜야 할 경계는 `spark.executor.instances` ≤ 1이다.
 근거·실측은 [`conventions/k8s.md`](conventions/k8s.md) §9-3.
 
-## 4. 러너 이미지 (최초 1회 / Dockerfile 변경 시)
+## 4. 러너 이미지와 Spark Connect 리소스 (최초 1회 / 이미지·매니페스트 변경 시)
 
 Spark·Flink 워크로드는 Iceberg·S3A 의존을 구운 **전용 이미지**로 돈다.
 로컬 레지스트리에 직접 push하면 클러스터가 같은 이름으로 받는다(`kind load` 불필요).
@@ -195,7 +196,14 @@ podman push --tls-verify=false localhost:5001/spark-runner:0.5.0
 
 podman build -f k8s/flink/Dockerfile.flink-runner -t localhost:5001/flink-runner:0.3.0 k8s/flink
 podman push --tls-verify=false localhost:5001/flink-runner:0.3.0
+
+# 최초 1회: Spark Connect Deployment·Service·Ingress·Certificate 생성
+kubectl apply -f k8s/spark/spark-connect-server.yaml
+kubectl scale deploy/spark-connect --replicas=0  # 평시 자원 회수
 ```
+
+`spark-connect-server.yaml`을 바꾼 뒤에도 같은 `kubectl apply`로 선언을 갱신한다. 최초 적용 직후
+`Deployment`가 존재해야 이후 §3-2와 §7의 `kubectl scale` 명령이 동작한다.
 
 > 🔴 **태그와 매니페스트는 한 벌로 올린다.** 태그만 올리고 `k8s/spark/*.yaml`·`k8s/flink/*.yaml`을
 > 그대로 두면 구 이미지가 계속 돈다. **현재 태그의 사실은 매니페스트의 `image:` 값**이다 —
