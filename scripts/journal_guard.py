@@ -51,11 +51,11 @@ OPEN_STATUSES = ("planned", "in-progress", "blocked")
 # session-start가 훑는 과거 폴더 수 (열린 미션 상기용 — 전체 스캔은 과하다)
 RECENT_DAYS = 7
 
-# 새 저널은 런타임별 경로와 태그를 사용한다. 기존 `agents/<날짜>/` 저널은
-# 역사 기록으로 보존하며 신규 번호 발급에는 섞지 않는다.
+# Claude Code는 런타임 하위 경로를 유지하고, Codex는 사용자가 직접 탐색하기 쉬운
+# `agents/<날짜>/` 경로를 쓴다. 런타임 출처는 frontmatter 태그로 구분한다.
 RUNTIME_DIRS = {
     "claude-code": "claude-code",
-    "codex": "codex",
+    "codex": "",
 }
 
 
@@ -81,7 +81,8 @@ def resolve_journal_root() -> Path | None:
     agents_root = resolve_agents_root()
     if agents_root is None:
         return None
-    return agents_root / RUNTIME_DIRS[resolve_runtime()]
+    runtime_dir = RUNTIME_DIRS[resolve_runtime()]
+    return agents_root / runtime_dir if runtime_dir else agents_root
 
 
 def scan_numbers(day_dir: Path) -> list[tuple[int, str]]:
@@ -347,14 +348,18 @@ def main() -> None:
         if target.name.startswith(EXEMPT_PREFIX):
             sys.exit(0)  # `_MOC`·`_TEMPLATE` 등 볼트 관리 파일
         runtime_dir = RUNTIME_DIRS[resolve_runtime()]
-        if len(relative.parts) != 3 or relative.parts[0] != runtime_dir:
-            deny(
-                "신규 저널은 런타임별 "
-                f"`agents/{runtime_dir}/<YYYY-MM-DD>/<NN>-<mission-slug>.md` "
-                f"구조여야 한다. 받은 경로: {relative}"
+        expected_depth = 3 if runtime_dir else 2
+        is_runtime_root = not runtime_dir or relative.parts[0] == runtime_dir
+        if len(relative.parts) != expected_depth or not is_runtime_root:
+            path_pattern = (
+                f"agents/{runtime_dir}/<YYYY-MM-DD>/<NN>-<mission-slug>.md"
+                if runtime_dir
+                else "agents/<YYYY-MM-DD>/<NN>-<mission-slug>.md"
             )
+            deny(f"신규 저널은 `{path_pattern}` 구조여야 한다. 받은 경로: {relative}")
 
-        day_name = relative.parts[1]
+        day_index = 1 if runtime_dir else 0
+        day_name = relative.parts[day_index]
         if not DAY_DIR_RE.match(day_name):
             deny(f"날짜 폴더명이 `YYYY-MM-DD`가 아니다: `{day_name}`")
 

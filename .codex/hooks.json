@@ -30,6 +30,12 @@
             "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/worker_path_guard.py\"",
             "statusMessage": "워커 쓰기 경계 검사",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/journal_pre_write.py\"",
+            "statusMessage": "Codex 저널 날짜·번호 검사",
+            "timeout": 10
           }
         ]
       }

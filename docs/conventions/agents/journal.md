@@ -26,20 +26,18 @@ $OBSIDIAN_VAULT/agents/            # 저널 루트
   _TEMPLATE.md                     # 기존 Claude Code 저널 템플릿
   _TEMPLATE.codex.md               # Codex 저널 템플릿
   _MOC.md                          # 전체 미션 지도(Map of Content) — 기록관이 유지
-  <YYYY-MM-DD>/                    # 기존 Claude 이력 — 이동하지 않는 읽기 호환 영역
-    <NN>-<mission-slug>.md         # 미션당 1파일. NN = 그날의 착수 순번
+  <YYYY-MM-DD>/                    # Codex 신규 저널 + 기존 날짜별 이력
+    <NN>-<mission-slug>.md         # 미션당 1파일. NN = 이 폴더의 착수 순번
   claude-code/<YYYY-MM-DD>/        # 신규 Claude Code 저널
-    <NN>-<mission-slug>.md
-  codex/<YYYY-MM-DD>/              # 신규 Codex 저널
     <NN>-<mission-slug>.md
 ```
 
-- 파일명 앞 `NN`은 **런타임별로** 그날 미션을 착수한 순서다. 날짜 폴더가 바뀌면 각 런타임이
-  `01`부터 다시 시작한다. 기존 `agents/<YYYY-MM-DD>/`는 링크 손상을 피하려 이동하지 않으며,
-  신규 기록에 사용하지 않는다.
+- 파일명 앞 `NN`은 **선택된 날짜 폴더에서** 미션을 착수한 순서다. 날짜 폴더가 바뀌면
+  `01`부터 다시 시작한다. Codex는 `agents/<YYYY-MM-DD>/`의 기존 이력 뒤에서 다음 번호를
+  발급하고, Claude Code는 `agents/claude-code/<YYYY-MM-DD>/`에서 별도로 발급한다.
 - 순번은 **파일명에만** 붙인다. 프론트매터 `mission:`·`tags:`의 슬러그는 **번호 없이** 유지한다.
 - 기존 이력의 위키링크는 파일명 그대로 보존한다. 신규 기록은 동명 노트의 모호성을 막기 위해
-  볼트 기준 전체 경로를 쓴다 — `[[agents/codex/2026-08-26/01-runtime-journal-separation]]`.
+  볼트 기준 전체 경로를 쓴다 — `[[agents/2026-08-26/01-runtime-journal-separation]]`.
 - **착수 시각의 판정 기준은 본문 §상호작용 로그의 첫 이벤트**다. 프론트매터 `started`는 실제로
   *파일 생성* 시각이라 동시 착수한 세션 간 변별력이 없다.
 - 넘버링은 문서 규약만으로 지킬 수 없다 — 병렬 세션은 서로의 컨텍스트를 보지 못한다.
@@ -74,7 +72,7 @@ updated: <YYYY-MM-DDThh:mm+09:00>    # KST
 
 - **`agent`(실행 런타임)** 와 **`model`(모델 ID)** 을 반드시 남긴다 — 어떤 도구·모델이 한 일인지
   추적·재현·비교하기 위함. 값은 **supervisor(세션 주체)** 기준이다.
-- `runtime/<runtime>` 태그와 저장 경로의 런타임은 일치해야 한다. Claude Code는
+- 저장 경로와 별개로 실행 출처는 `runtime/<runtime>` 태그에 남긴다. Claude Code는
   `runtime/claude-code`, Codex는 `runtime/codex`를 쓴다.
 - 워커가 다른 도구·모델로 돌면 각 섹션에 `agent·model`을 개별 표기한다.
 - **`session`·`session_id`·`peers`는 병렬 세션 시대의 필수 항목이다.** 하루에 여러 세션이 각자

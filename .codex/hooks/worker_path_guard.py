@@ -36,11 +36,13 @@ WORKER_MARKERS = {worker: f".claude/agents/{worker}.md" for worker in BOUNDARIES
 OBSIDIAN_ROOT = Path(
     os.environ.get("OBSIDIAN_VAULT") or str(Path.home() / "obsidian")
 ).expanduser()
+DAY_DIR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+JOURNAL_NAME_RE = re.compile(r"^(\d{2})-[a-z0-9][a-z0-9-]*\.md$")
 
-# Codex archivist는 자기 런타임 저널·템플릿과 공유 MOC만 쓴다.
+# Codex archivist의 날짜 저널은 아래 전용 판정으로 허용한다. `agents/` 전체를
+# 접두어로 열면 Claude 이력과 다른 관리 파일까지 수정할 수 있어 허용하지 않는다.
 OUTSIDE_ALLOW = {
     "archivist": (
-        str(OBSIDIAN_ROOT / "agents" / "codex"),
         str(OBSIDIAN_ROOT / "agents" / "_MOC.md"),
         str(OBSIDIAN_ROOT / "agents" / "_TEMPLATE.codex.md"),
     ),
@@ -48,6 +50,48 @@ OUTSIDE_ALLOW = {
         os.environ.get("DATA_EXTRACT_DIR") or str(Path.home() / "extracts"),
     ),
 }
+
+
+def is_codex_journal_path(target: Path) -> bool:
+    """Codex archivist의 `agents/<날짜>/<파일>.md` 경로인지 판정한다."""
+    agents_root = (OBSIDIAN_ROOT / "agents").resolve()
+    try:
+        relative = target.relative_to(agents_root)
+    except ValueError:
+        return False
+    if len(relative.parts) != 2 or DAY_DIR_RE.fullmatch(relative.parts[0]) is None:
+        return False
+
+    matched = JOURNAL_NAME_RE.fullmatch(relative.name)
+    if matched is None:
+        return False
+    if target.exists():
+        return read_journal_agent(target) == "codex"
+
+    numbers = [
+        int(existing.group(1))
+        for path in target.parent.glob("*.md")
+        if (existing := JOURNAL_NAME_RE.fullmatch(path.name)) is not None
+    ]
+    expected = max(numbers, default=0) + 1
+    return int(matched.group(1)) == expected
+
+
+def read_journal_agent(path: Path) -> str:
+    """기존 저널 frontmatter의 agent 값을 반환한다."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    if not lines or lines[0].strip() != "---":
+        return ""
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        key, separator, value = line.partition(":")
+        if separator and key.strip() == "agent":
+            return value.split("#")[0].strip().strip("\"'")
+    return ""
 
 
 def emit_deny(reason: str) -> None:
@@ -158,6 +202,8 @@ def denied_reason(worker: str, raw_path: str, root: Path) -> str | None:
     try:
         relative = target.relative_to(root).as_posix()
     except ValueError:
+        if worker == "archivist" and is_codex_journal_path(target):
+            return None
         allowed_roots = [
             Path(path).expanduser().resolve() for path in OUTSIDE_ALLOW.get(worker, ())
         ]

@@ -57,8 +57,11 @@
   `archivist` 보정을 요청한다. 두 번째 Stop(`stop_hook_active: true`)은 `systemMessage`만 반환해
   무한 반복을 막는다.
 - **기존 저널 수정·`_` 접두 파일·볼트 밖 경로는 검사하지 않는다** — 가드는 넘버링에만 관여한다.
-- 신규 경로는 `agents/claude-code/<날짜>/`와 `agents/codex/<날짜>/`다. 기존
-  `agents/<날짜>/` 이력은 읽기 호환만 유지한다.
+- Codex는 `apply_patch` 입력을 `.codex/hooks/journal_pre_write.py`가 `pre-write` 형식으로
+  변환한다. Codex archivist 경계는 기존 날짜 저널의 `agent: codex`까지 확인해 Claude 이력
+  수정을 막는다.
+- 신규 경로는 Claude Code의 `agents/claude-code/<날짜>/`와 Codex의
+  `agents/<날짜>/`다. Codex는 기존 날짜별 이력과 같은 폴더에서 다음 `NN`을 발급한다.
 - `$OBSIDIAN_VAULT`가 없는 환경에서는 **조용히 통과**한다 —
   가드가 개인 환경 의존성을 세션의 전제조건으로 만들면 안 된다.
 

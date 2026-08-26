@@ -1,4 +1,4 @@
-"""Claude Code·Codex 공용 저널 가드의 런타임 분리와 Stop 보정을 검증한다."""
+"""Claude Code·Codex 공용 저널 가드의 경로와 Stop 보정을 검증한다."""
 
 import json
 import os
@@ -16,6 +16,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 GUARD = PROJECT_ROOT / "scripts" / "journal_guard.py"
 CLAUDE_PATH_GUARD = PROJECT_ROOT / "scripts" / "worker_path_guard.py"
 CODEX_PATH_GUARD = PROJECT_ROOT / ".codex" / "hooks" / "worker_path_guard.py"
+CODEX_PRE_WRITE_GUARD = PROJECT_ROOT / ".codex" / "hooks" / "journal_pre_write.py"
+CODEX_HOOKS = PROJECT_ROOT / ".codex" / "hooks.json"
 KST = timezone(timedelta(hours=9))
 
 
@@ -94,24 +96,83 @@ class JournalGuardTest(unittest.TestCase):
             text=True,
         )
 
-    def test_pre_write_enforces_runtime_namespace(self) -> None:
-        """Codex 신규 저널은 Codex 날짜 경로만 허용한다."""
+    def _run_codex_pre_write_guard(
+        self, target: Path
+    ) -> subprocess.CompletedProcess[str]:
+        """Codex apply_patch 어댑터에 신규 파일 경로를 전달한다."""
+        payload = {"tool_input": {"command": f"*** Add File: {target}\n"}}
+        return subprocess.run(  # noqa: S603
+            [sys.executable, str(CODEX_PRE_WRITE_GUARD)],
+            input=json.dumps(payload),
+            env=self.environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_pre_write_enforces_codex_date_path(self) -> None:
+        """Codex 신규 저널은 공용 agents 아래 날짜 경로만 허용한다."""
         today = datetime.now(tz=KST).strftime("%Y-%m-%d")
-        valid = self.vault / "agents" / "codex" / today / "01-valid.md"
-        legacy = self.vault / "agents" / today / "01-legacy.md"
+        valid = self.vault / "agents" / today / "01-valid.md"
+        namespaced = self.vault / "agents" / "codex" / today / "01-invalid.md"
 
         valid_result = self._run_guard(
             "pre-write", {"tool_input": {"file_path": str(valid)}}
         )
-        legacy_result = self._run_guard(
-            "pre-write", {"tool_input": {"file_path": str(legacy)}}
+        namespaced_result = self._run_guard(
+            "pre-write", {"tool_input": {"file_path": str(namespaced)}}
         )
 
         assert valid_result.returncode == 0
         assert valid_result.stdout == ""
-        denial = json.loads(legacy_result.stdout)
+        denial = json.loads(namespaced_result.stdout)
         assert denial["hookSpecificOutput"]["permissionDecision"] == "deny"
-        assert "agents/codex" in legacy_result.stdout
+        assert "agents/<YYYY-MM-DD>" in namespaced_result.stdout
+
+    def test_codex_numbering_continues_existing_date_folder(self) -> None:
+        """Codex는 기존 날짜 폴더의 마지막 번호 다음을 사용한다."""
+        today = datetime.now(tz=KST).strftime("%Y-%m-%d")
+        day_dir = self.vault / "agents" / today
+        day_dir.mkdir(parents=True)
+        (day_dir / "01-existing.md").write_text("# 기존 기록\n", encoding="utf-8")
+
+        valid = day_dir / "02-valid.md"
+        duplicate = day_dir / "01-duplicate.md"
+        valid_result = self._run_guard(
+            "pre-write", {"tool_input": {"file_path": str(valid)}}
+        )
+        duplicate_result = self._run_guard(
+            "pre-write", {"tool_input": {"file_path": str(duplicate)}}
+        )
+
+        assert valid_result.stdout == ""
+        denial = json.loads(duplicate_result.stdout)
+        assert denial["hookSpecificOutput"]["permissionDecision"] == "deny"
+        assert "02" in duplicate_result.stdout
+
+    def test_codex_apply_patch_adapter_is_wired_and_enforces_path(self) -> None:
+        """Codex apply_patch hook은 신규 저널의 날짜 경로를 실제 검사한다."""
+        today = datetime.now(tz=KST).strftime("%Y-%m-%d")
+        valid = self.vault / "agents" / today / "01-valid.md"
+        old_path = self.vault / "agents" / "codex" / today / "01-invalid.md"
+
+        valid_result = self._run_codex_pre_write_guard(valid)
+        old_path_result = self._run_codex_pre_write_guard(old_path)
+        hooks = json.loads(CODEX_HOOKS.read_text(encoding="utf-8"))
+        commands = [
+            hook["command"]
+            for group in hooks["hooks"]["PreToolUse"]
+            for hook in group["hooks"]
+        ]
+
+        assert valid_result.stdout == ""
+        assert (
+            json.loads(old_path_result.stdout)["hookSpecificOutput"][
+                "permissionDecision"
+            ]
+            == "deny"
+        )
+        assert any("journal_pre_write.py" in command for command in commands)
 
     def test_codex_stop_blocks_once_until_journal_is_closed(self) -> None:
         """변경 세션은 미기록 시 한 번만 이어지고 마감 저널이 있으면 통과한다."""
@@ -121,6 +182,8 @@ class JournalGuardTest(unittest.TestCase):
 
         assert start.returncode == 0
         assert "runtime/codex" in start.stdout
+        assert f"agents/{datetime.now(tz=KST).strftime('%Y-%m-%d')}" in start.stdout
+        assert "agents/codex" not in start.stdout
         assert unchanged.stdout == ""
 
         (self.repository / "changed.txt").write_text("변경\n", encoding="utf-8")
@@ -134,7 +197,7 @@ class JournalGuardTest(unittest.TestCase):
         assert "decision" not in second_output
 
         today = datetime.now(tz=KST).strftime("%Y-%m-%d")
-        journal = self.vault / "agents" / "codex" / today / "01-closed.md"
+        journal = self.vault / "agents" / today / "01-closed.md"
         journal.parent.mkdir(parents=True)
         journal.write_text(
             "---\n"
@@ -170,10 +233,16 @@ class JournalGuardTest(unittest.TestCase):
         expected = "[[agents/claude-code/2026-08-26/01-runtime-separation]]"
         assert expected in mirrored
 
-    def test_archivist_write_boundaries_are_runtime_specific(self) -> None:
-        """각 archivist는 자기 런타임 경로만 무승인으로 쓸 수 있다."""
-        codex_path = self.vault / "agents" / "codex" / "2026-08-26" / "01-a.md"
+    def test_archivist_write_boundaries_follow_runtime_paths(self) -> None:
+        """각 archivist는 현재 런타임의 저널 경로만 무승인으로 쓸 수 있다."""
+        codex_path = self.vault / "agents" / "2026-08-26" / "01-a.md"
+        old_codex_path = self.vault / "agents" / "codex" / "2026-08-26" / "01-a.md"
         claude_path = self.vault / "agents" / "claude-code" / "2026-08-26" / "01-a.md"
+        legacy_claude_path = self.vault / "agents" / "2026-08-25" / "01-claude.md"
+        legacy_claude_path.parent.mkdir(parents=True)
+        legacy_claude_path.write_text(
+            "---\nagent: claude-code\n---\n", encoding="utf-8"
+        )
 
         codex_allowed = self._run_path_guard(
             CODEX_PATH_GUARD,
@@ -182,11 +251,25 @@ class JournalGuardTest(unittest.TestCase):
                 "tool_input": {"command": f"*** Add File: {codex_path}\n"},
             },
         )
+        old_codex_denied = self._run_path_guard(
+            CODEX_PATH_GUARD,
+            {
+                "cwd": str(self.repository),
+                "tool_input": {"command": f"*** Add File: {old_codex_path}\n"},
+            },
+        )
         codex_denied = self._run_path_guard(
             CODEX_PATH_GUARD,
             {
                 "cwd": str(self.repository),
                 "tool_input": {"command": f"*** Add File: {claude_path}\n"},
+            },
+        )
+        legacy_claude_denied = self._run_path_guard(
+            CODEX_PATH_GUARD,
+            {
+                "cwd": str(self.repository),
+                "tool_input": {"command": f"*** Update File: {legacy_claude_path}\n"},
             },
         )
         claude_allowed = self._run_path_guard(
@@ -200,7 +283,19 @@ class JournalGuardTest(unittest.TestCase):
 
         assert codex_allowed.stdout == ""
         assert (
+            json.loads(old_codex_denied.stdout)["hookSpecificOutput"][
+                "permissionDecision"
+            ]
+            == "deny"
+        )
+        assert (
             json.loads(codex_denied.stdout)["hookSpecificOutput"]["permissionDecision"]
+            == "deny"
+        )
+        assert (
+            json.loads(legacy_claude_denied.stdout)["hookSpecificOutput"][
+                "permissionDecision"
+            ]
             == "deny"
         )
         assert claude_allowed.stdout == ""

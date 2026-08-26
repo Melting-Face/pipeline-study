@@ -95,7 +95,7 @@
 - `.ipynb` 출력과 체크포인트는 검증 직후 제거한다.
 - 추출물은 `$DATA_EXTRACT_DIR` 밖에 쓰지 않고, 저널은 `$OBSIDIAN_VAULT`에만 쓴다.
 - 중요 작업(저장소 수정·위임·결정·비가역)은 사용자 최종 보고 전에 `archivist`로
-  `$OBSIDIAN_VAULT/agents/codex/<KST 날짜>/<NN>-<mission>.md`와 공용
+  `$OBSIDIAN_VAULT/agents/<KST 날짜>/<NN>-<mission>.md`와 공용
   `agents/_MOC.md`를 함께 갱신한다. 태그는 `runtime/codex`다.
 - 외부 검색 질의에는 내부 데이터·테이블 값·비밀정보를 넣지 않는다.
 

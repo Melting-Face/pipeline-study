@@ -48,8 +48,8 @@ from pathlib import Path
 # 하네스가 계획 파일을 만드는 고정 위치. 프로젝트가 아니라 **홈** 아래다.
 PLAN_SOURCE_DIR = Path.home() / ".claude" / "plans"
 
-# 새 기록은 런타임별 경로로 분리한다. 기존 `agents/<날짜>/`는 읽기 호환만
-# 유지하며 새 계획 미러는 항상 `plans/claude-code/`에 쓴다.
+# Claude Code 저널과 계획 미러는 런타임별 경로를 유지한다. Codex가 사용하는
+# `agents/<날짜>/`도 백링크 대조를 위한 호환 경로로 읽는다.
 JOURNAL_SUBDIR = Path("agents") / "claude-code"
 LEGACY_JOURNAL_SUBDIR = Path("agents")
 PLAN_SUBDIR = Path("plans") / "claude-code"
