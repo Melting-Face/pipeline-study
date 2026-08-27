@@ -34,11 +34,14 @@ Terraform의 리소스 모델은 create/read/update가 기본이라 같은 실�
 
 ⇒ 그래서 **destroy가 무엇을 파괴하는가**로 층을 가른다.
 
-| 스택 | 내용 | `destroy` 시 | 현재 |
+| 스택 | 내용 | `destroy` 시 | 방침 |
 | --- | --- | --- | --- |
 | **A. cluster** | podman machine · kind · 로컬 레지스트리 · ingress-nginx | 10G 유실 | 셸 유지 |
 | **B. data** | SeaweedFS · CNPG Cluster · Secret · 버킷 | 10G 유실 | 셸 유지 |
-| **C. platform** | 오퍼레이터 5종 · 로컬 CA · 워크로드 RBAC · Dagster | 안전(재생성 가능) | **Terraform** |
+| **C. platform** | 오퍼레이터 5종 · 로컬 CA · 워크로드 RBAC · Dagster | 안전(재생성 가능) | **Terraform으로 이행**(미구현) |
+
+⚠️ **현재 구현된 것은 없다.** 이 문서는 설계와 스파이크 실측이며, 스택 C는 아직 만들지 않았다 —
+지금 도는 것은 전부 `scripts/k8s-*.sh`다. 진행 상태를 이 문서에서 읽지 않는다.
 
 C만 옮겨도 목적 둘이 **데이터 위험 없이** 충족된다. A는 클러스터를 재생성해야 할 일이
 자연히 생기는 시점에 합류시킨다 — 그때는 재생성이 비용이 아니라 **이미 치를 값**이기 때문이다.
@@ -73,8 +76,8 @@ terraform/lakehouse-platform/
 └── outputs.tf
 ```
 
-`scripts/k8s-operators.sh`는 사라지고 `terraform apply`가 그 자리를 대신한다.
-`k8s-dagster.sh`는 **이미지 빌드·push만** 남는다.
+이행이 끝나면 `scripts/k8s-operators.sh`는 사라지고 `terraform apply`가 그 자리를 대신한다.
+`k8s-dagster.sh`에는 **이미지 빌드·push만** 남는다.
 
 ## 운영 메모
 
