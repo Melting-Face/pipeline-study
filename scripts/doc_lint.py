@@ -52,12 +52,18 @@ MAX_FILE_LINES = 500
 EMPHASIS_MARKER = "🔴"
 
 # 기본 검사 대상 — 사람과 AI가 함께 읽는 문서만. 벤더·생성물은 제외한다.
+#   🔴 `wiki/`는 **저장소 밖으로 나가는 원본**이라 반드시 여기 있어야 한다.
+#      GitHub 위키는 별도 저장소(`<repo>.wiki.git`)라 pre-commit 훅이 안 돈다.
+#      위키를 다루는 방식(`wiki/` 원본 + CI 단방향 미러)의 **전제**가
+#      "커밋 게이트를 상속한다"인데, 대상이 **명시 열거**라
+#      여기 없으면 그 상속은 허구가 된다.
 DEFAULT_TARGETS = (
     "AGENTS.md",
     "CLAUDE.md",
     "README.md",
     "docs",
     "notebooks/README.md",
+    "wiki",
 )
 
 # 링크 검사는 **저장소 전역 1회**로 돈다.
@@ -70,6 +76,12 @@ LINK_SCAN_DIRS = (
     ".claude/commands",
     ".codex/agents",
     "notebooks",
+    # 🔴 `wiki/`의 링크는 **두 곳에서 다른 형태로 해석된다** — 저장소에서는 `.md`가
+    #    붙은 실파일이고, 미러 단계에서 접미어가 제거돼 위키 페이지가 된다.
+    #    여기서 검사하는 것은 **저장소 쪽 형태**뿐이다: `.md` 대상이 실재하는가.
+    #    미러 후 위키에서 실제로 링크가 걸리는지는 이 검사기의 관측 범위 **밖**이다
+    #    (그 축은 `.github/workflows/wiki.yml` 실행 후 사람이 본다).
+    "wiki",
 )
 LINK_SCAN_FILES = ("README.md", "AGENTS.md", "CLAUDE.md")
 
