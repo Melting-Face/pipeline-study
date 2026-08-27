@@ -103,20 +103,57 @@ C를 "안전하게 destroy 가능"으로 두려면 **오퍼레이터 uninstall�
 CNPG 차트가 CRD를 함께 제거하면 `Cluster` CR이 사라지고 **B의 PVC가 따라간다.**
 선언으로 닫지 말고 **일부러 `destroy`를 돌려 PVC가 살아남는지 확인**한다.
 
-### 인수(import)의 성공 판정은 "에러 없음"이 아니라 "diff 0"이다
+### `helm_release` 인수는 `0 to change`에 도달하지 못한다
 
-기존 자원을 `terraform import`로 state에 넣은 뒤 **`plan`이 `0 to change`여야** 인수가 끝난 것이다.
-diff가 뜨면 HCL이 실제 설치 값과 어긋난 것이고, 모르고 apply하면 **오퍼레이터가 재설치된다.**
-가장 위험한 것은 Flink Operator다 — `scripts/k8s-operators.sh`가 `--set` 8종을 주는데,
-그 값이 HCL에 그대로 옮겨지지 않으면 차트 기본값(`resources: {}`)으로 되돌아가
-[resource-sizing.md](../resource-sizing.md)의 배분표가 **처음부터 거짓**이 된다.
+🔴 **이 문서 초판이 "`plan`이 `0 to change`여야 인수가 끝난 것"이라 적은 것은 틀렸다**
+(2026-08-28 실측). helm은 릴리스에 **병합된 값만** 저장하고 *어느 저장소에서 받았는지*와
+*값이 `--set`으로 왔는지 `--values`로 왔는지*는 저장하지 않는다. 그래서 import 직후
+`repository`·`set`·`values`가 **항상 diff로 남는다** — HCL이 틀려서가 아니라 복원 불가능한
+설정 전용 속성이기 때문이다. 세 릴리스 모두 같은 형태였다.
 
-### `conventions/terraform.md` §3의 게이트는 아직 집행 수단이 없다
+**그래서 판정 기준은 둘로 나뉜다.**
 
-규약은 `terraform fmt -check -recursive` → `terraform validate`를 커밋 전 게이트로 요구하지만
-`.pre-commit-config.yaml`에 **terraform 훅이 하나도 없다**(2026-08-27 확인). 즉 기존
-`terraform/oci-k3s/`도 **한 번도 검사받은 적이 없다.** 훅을 넣을 때는 그 스택이 먼저 통과하는지
-확인한다 — 새 스택만 보고 넣으면 기존 스택이 커밋을 막는다.
+1. **기능 속성에 diff가 없을 것** — `chart`·`version`·`namespace`·`name`. 여기가 움직이면
+   진짜로 어긋난 것이다.
+2. **렌더 결과가 같을 것** — `helm get manifest <r> -n <ns>`(현재)와
+   `helm template …`(제안)을 비교한다. Terraform의 `values` diff는 `metadata`를 통째로
+   `known after apply`로 그리느라 **판정에 쓸 수 없다** — 현재 값이 제거되는 것처럼 보인다.
+
+⚠️ **`create_namespace = true`를 먼저 걷어내야 이 판정이 가능하다.** import는 이 플래그를
+state에 기록하지 않으므로 `true`면 인수 직후 항상 update-in-place가 계획되고, 그 여파로
+**metadata 전체가 `known after apply`로 덮여 진짜 diff가 묻힌다.**
+네임스페이스를 셸이 이미 만들었다면 `false`가 사실에 맞다.
+
+실측 대조 결과(2026-08-28) — 셋 다 **기능적으로 동일**했다:
+CNPG는 EOF 빈 줄 1개, Flink는 후행 빈 줄 2개, Spark은 `helm.sh/hook: test` Pod만 차이였다
+(`helm template`은 test 훅을 렌더하지만 릴리스 매니페스트에는 들어가지 않는다).
+그 뒤 `apply` 1회로 정합을 맞췄고 **파드 재시작 0**(이름·재시작 횟수·생성시각 불변),
+helm revision만 1씩 올랐다. 이후 `plan`은 `No changes`다.
+
+**정합을 맞추는 `apply`를 생략하면 안 된다** — diff를 방치하면 `plan`이 영구히
+`3 to change`를 보여주고 **진짜 drift가 그 잡음에 묻힌다**(이 이행의 주목적이 무력화된다).
+
+가장 위험한 것은 Flink Operator다 — `--set` 8종에 더해 `--values`도 쓰는데, 그 값 파일에
+**공급망 통제**(`user.artifacts.allowed-schemes`에서 https 제거)가 들어 있다. 빠뜨리면
+차트 기본값으로 되돌아가 [resource-sizing.md](../resource-sizing.md) 배분표가 거짓이 되고
+**런타임 외부 jar fetch 경로가 조용히 열린다.**
+
+### 게이트는 `fmt`와 `validate`를 **다른 자리에** 둔다
+
+규약(`conventions/terraform.md` §3)은 둘을 함께 커밋 전 게이트로 요구했으나 집행 수단이
+없었고(2026-08-27까지 terraform 훅 0개 — `terraform/oci-k3s/`는 한 번도 검사받은 적이 없다),
+넣으려 보니 **같은 자리에 둘 수 없었다.**
+
+- **`fmt` → pre-commit.** 네트워크가 필요 없다.
+- **`validate` → CI 잡.** `validate`는 `init`이 선행돼야 하는데 `.terraform/providers`는
+  gitignore라 저장소에 없다. 훅에서 `init`을 돌리면 **커밋이 프로바이더 레지스트리
+  가용성에 묶인다** — `sqlfluff`의 `templater = "dbt"`에서 이미 겪은 함정이다.
+  2026-08-28 실측: worktree에서 `validate`가
+  `no package for oracle/oci 6.37.0 cached in .terraform/providers`로 실패했다.
+- **`plan`은 어디에도 두지 않는다.** 위 §불통 시 `plan` 참조.
+
+CI 잡은 `terraform/*/`를 순회해 스택이 늘어도 자동으로 집고, **0건이면 통과가 아니라 실패**로
+떨어뜨린다(디렉터리 구조가 바뀌었을 때 잡이 조용히 무의미해지는 것을 막는다).
 
 ### 프로바이더 실측 (2026-08-27)
 
