@@ -27,6 +27,7 @@
 | [Docker/Compose](architectures/docker.md) | 현행 채택 |
 | [Spark](architectures/spark.md) · [Flink](architectures/flink.md) | 재설계 컴퓨트 |
 | [Kubernetes](architectures/k8s.md) | 로컬 K8s 플랫폼 (kind on Podman) |
+| [Terraform](architectures/terraform.md) | IaC — 로컬 K8s 플랫폼 이행, 폭발반경 기준 스택 분할 |
 | [OCI + Terraform + k3s](architectures/oci.md) | 클라우드 이행 경로 |
 | [Trino](architectures/trino.md) | 현행까지 채택, 재설계로 제거 |
 | [모니터링·관측](architectures/monitoring.md) | Grafana·Loki·Robusta 등을 **지금 쓰지 않는 이유** |
