@@ -118,8 +118,27 @@ diff가 뜨면 HCL이 실제 설치 값과 어긋난 것이고, 모르고 apply�
 **`kubectl`이 그 파일로 실패한다는 것은 확인했지만, Terraform이 그 파일을 읽는다는 것은
 확인한 적이 없다.** 도구 A로 검증한 조건을 도구 B에 그대로 적용한 셈이다.
 
-⇒ 이 축은 `미확인`으로 남긴다. 우회(`terraform plan -refresh=false`)가 있어 설계를 막지 않는다.
-확정하려면 **kubeconfig를 조작하지 말고 노드를 실제로 정지**시켜야 한다(변인이 하나로 준다).
+⇒ 그래서 **노드를 실제로 정지시켜 다시 쟀다**(변인이 하나로 준다). 결과는 아래.
+
+### 불통 시 `plan`은 실패한다 — 우회는 절반만 듣는다
+
+2026-08-27 실측(`podman stop lakehouse-control-plane` 후). 조용히 오도하지 **않는다** —
+`Planning failed`로 시끄럽게 죽는다. 다만 실패 지점이 **둘**이고 성질이 다르다.
+
+| 축 | 증상 | `-refresh=false` |
+| --- | --- | --- |
+| state에 있는 리소스의 refresh | `Get .../namespaces/...: connection refused` | ✅ 사라진다 |
+| **`kubernetes_manifest`의 GVK 해석** | `Invalid configuration for API client` — `Get .../apis` | ❌ **그대로 남는다** |
+
+🔴 **이 문서가 앞서 적었던 "우회가 있어 설계를 막지 않는다"는 틀렸다.**
+`kubernetes_manifest`는 refresh와 무관하게 `/apis`로 GVK를 해석해야 하므로,
+**YAML을 `yamldecode`로 적용하는 이 설계에서는 `plan` 자체가 라이브 클러스터를 요구한다.**
+
+실무상 치명적이지는 않다 — 죽은 클러스터에는 어차피 `apply`할 수 없다. 그러나 다음 둘이 따라온다.
+
+- **CI에서 `plan`을 드라이런 게이트로 쓸 수 없다**(클러스터 없는 러너에서 돈다).
+  문법·포맷 게이트는 `terraform fmt -check` + `validate`까지이고, 그 둘은 클러스터 없이 돈다.
+- 클러스터가 내려간 상태에서 "선언이 뭐였더라"를 `plan`으로 확인할 수 없다. `terraform show`로 본다.
 
 ### `scripts/worktree-new.sh`는 기존 브랜치를 붙이지 못한다
 
