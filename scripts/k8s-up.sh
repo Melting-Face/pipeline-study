@@ -52,21 +52,43 @@ else
 fi
 
 # 2) 로컬 레지스트리 컨테이너 (127.0.0.1:5001)
-if [ "$(podman inspect -f '{{.State.Running}}' "${REGISTRY_NAME}" 2>/dev/null || echo false)" != "true" ]; then
+# 🔴 상태는 **셋**이다 — 실행중 / 중지(컨테이너는 존재) / 부재.
+#    이분법(`Running != true` → `podman run`)으로 보면 중지 상태에서
+#    `the container name "kind-registry" is already in use`로 죽는다(2026-08-27 실측).
+#    머신을 재부팅하면 `--restart=always`가 있어도 중지 상태로 남을 수 있어 흔한 경로다.
+if [ "$(podman inspect -f '{{.State.Running}}' "${REGISTRY_NAME}" 2>/dev/null || echo absent)" = "true" ]; then
+    log "로컬 레지스트리 실행중: ${REGISTRY_NAME}"
+elif podman container exists "${REGISTRY_NAME}"; then
+    log "로컬 레지스트리 재시작: ${REGISTRY_NAME} → 127.0.0.1:${REGISTRY_PORT}"
+    podman start "${REGISTRY_NAME}"
+else
     log "로컬 레지스트리 기동: ${REGISTRY_NAME} → 127.0.0.1:${REGISTRY_PORT}"
     podman run -d --restart=always \
         -p "127.0.0.1:${REGISTRY_PORT}:5000" \
         --name "${REGISTRY_NAME}" "${REGISTRY_IMAGE}"
-else
-    log "로컬 레지스트리 실행중: ${REGISTRY_NAME}"
 fi
 
 # 3) kind 클러스터 생성
+# 🔴 여기도 상태가 **셋**이다(§2 레지스트리와 같은 축) — 없음 / 있고 도는 중 / **있는데 중지**.
+#    `kind get clusters`는 노드 컨테이너가 멈춰 있어도 이름을 그대로 보여준다. 그래서
+#    "존재하면 통과"로 두면 다음 단계의 `podman exec`가 죽는다(2026-08-27 실측: 노드가
+#    exit 137로 남아 있었다 — VM 재부팅·OOM이면 흔한 경로다).
 if ! kind get clusters | grep -qx "${CLUSTER_NAME}"; then
     log "kind 클러스터 생성: ${CLUSTER_NAME} (provider=podman)"
     kind create cluster --name "${CLUSTER_NAME}" --config "${REPO_ROOT}/k8s/kind-cluster.yaml"
 else
-    log "kind 클러스터 존재: ${CLUSTER_NAME}"
+    log "kind 클러스터 존재: ${CLUSTER_NAME} — 중지된 노드가 있으면 기동한다"
+    for node in $(kind get nodes --name "${CLUSTER_NAME}"); do
+        if [ "$(podman inspect -f '{{.State.Running}}' "${node}" 2>/dev/null || echo absent)" != "true" ]; then
+            log "노드 재시작: ${node}"
+            podman start "${node}"
+        fi
+    done
+    # 노드가 방금 떴다면 API 서버가 아직 안 받는다 — 응답할 때까지 기다린다.
+    for _ in $(seq 1 60); do
+        kubectl --context "kind-${CLUSTER_NAME}" get --raw='/readyz' >/dev/null 2>&1 && break
+        sleep 5
+    done
 fi
 
 # 4) 각 노드에 레지스트리 hosts.toml 주입 (localhost:5001 → kind-registry:5000)

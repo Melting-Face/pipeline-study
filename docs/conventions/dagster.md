@@ -252,11 +252,63 @@ dbt_all_schedule = ScheduleDefinition(
 ## 실행
 
 ```bash
-dg dev        # 로컬 ad-hoc 개발 (webserver+daemon+code 일체형, http://localhost:3000)
+./scripts/k8s-dagster.sh                    # 정본 — in-cluster 배포 (http://dagster.localtest.me:8080)
+dg dev                                      # 개발 루프 대안 (일체형, http://localhost:3000)
 ```
 
-> 컨테이너 스택(`compose.yml`)은 `dg dev` 대신 **`dagster-webserver` + `dagster-daemon`** 으로
-> 분리해 기동한다(운영 토폴로지). 상세 [`../architectures/overview.md`](../architectures/overview.md#dagster-프로세스-분리-webserver--daemon).
+> `dg dev`는 webserver·daemon·code server가 **한 프로세스**라 개발 중 재로드가 빠르지만,
+> 메타 DB(CNPG)와 S3에 **port-forward가 전제**다. 정본 토폴로지는 아래 §K8s in-cluster 배포.
+
+## K8s in-cluster 배포
+
+Dagster는 2026-08-27부터 **kind 클러스터 안**에서 돈다(구 "호스트 유지" 규약 폐기 —
+[k8s.md](k8s.md) §8). 선언은 `k8s/dagster/` 3파일, 배포는 `scripts/k8s-dagster.sh`.
+
+### 토폴로지
+
+| 파드 | 역할 | SA 토큰 | probe |
+| --- | --- | --- | --- |
+| `dagster-webserver` | UI·GraphQL (Ingress `dagster.localtest.me`) | **미마운트** | startup/readiness/liveness — `httpGet /server_info` |
+| `dagster-daemon` | 스케줄·센서·런큐 + **run 실행** | 마운트(Spark 제출용) | startup/liveness — `dagster-daemon liveness-check` |
+
+- run launcher는 **`DefaultRunLauncher`** — run은 daemon 파드 안의 서브프로세스로 돈다.
+  그래서 daemon의 `limits.memory`가 곧 run의 상한이고, `max_concurrent_runs`와 **강결합**이다.
+- 코드 서버는 **임베디드**(전용 gRPC 파드 없음). 대가로 UI의 "Terminate run"이 크로스 파드로 닿지 않는다 —
+  compose(별개 컨테이너)에도 있던 결함이라 in-cluster의 신규 회귀는 아니다.
+- 둘 다 `strategy: Recreate`다. 🔴 **daemon이 2개 겹치면 하트비트 중복·스케줄 이중 발화**가 나므로
+  RollingUpdate의 교체 창을 허용하지 않는다.
+- `run_monitoring`은 켜지 않는다 — `DefaultRunLauncher`가 `supports_check_run_worker_health`를
+  지원하지 않는다. **부재가 결정이고**, 그 대가로 daemon 재시작 시 진행 중 run이 고아가 된다.
+
+### env 매핑 — `POSTGRES_*`와 `ICEBERG_CATALOG_*`는 다른 DB다
+
+in-cluster에서 이 둘이 **처음으로 갈린다**. 앞은 메타 DB(`dagster`), 뒤는 Iceberg 카탈로그(`iceberg`)이고
+**같은 CNPG 서버의 다른 DB·다른 롤·다른 시크릿**이다.
+
+`common/constants.py`가 `ICEBERG_CATALOG_USER` 미지정 시 `POSTGRES_USER`로 **폴백**하므로,
+빠뜨리면 `dagster` 계정으로 `iceberg` DB에 붙는다 — **접속은 성공하고 테이블 접근에서 거부**된다.
+부분 성공이라 오진하기 쉽다. ⇒ in-cluster에서 `ICEBERG_CATALOG_*`는 선택이 아니라 **필수**다.
+
+값의 정본은 `k8s/dagster/dagster-deploy.yaml`의 ConfigMap이고, 호스트 실행분은 `.env`다.
+in-cluster는 port-forward 주소 대신 서비스 DNS를 쓴다 —
+`catalog-postgres-rw:5432` · `seaweedfs:8333` · `sc://spark-connect:15002`(평문 gRPC).
+
+### 이미지
+
+- 하나의 이미지를 compose와 K8s가 공유한다(`dagster/dockerfile.d/`). 태그는 **구체 버전 고정**이고
+  올릴 때는 매니페스트의 `image:`를 **같은 커밋에서** 올린다(`k8s-dagster.sh`가 적용 전에 대조한다).
+- 베이스는 **Python 3.12**다. `pyspark[connect]`가 `numpy<2`를 요구하는데 numpy 1.26.x에는
+  cp313 휠이 없어 3.13에서는 소스 빌드로 떨어지고 `-slim`에 컴파일러가 없어 빌드가 실패한다.
+- `pip install -e .`이지 `-e ".[dev]"`가 아니다 — 상세는 [docker.md](docker.md) §2.
+- `.dockerignore` 패턴은 **빌드 컨텍스트 루트 기준**이라 `src/` 접두어가 필요하다.
+  🔴 빠뜨리면 조용히 통과한다 — 실제로 `src/.venv`(1.2GB)가 이미지에 들어가 있었다(3.64GB → 1.37GB).
+
+### 관측
+
+- step 로그는 **`S3ComputeLogManager`** 로 SeaweedFS `dagster-logs` 버킷에 올린다.
+  기본값(Local)이면 webserver와 daemon이 디스크를 공유하지 않아 **UI에서 영영 안 보인다**.
+- 메트릭 엔드포인트는 두지 않는다(Dagster OSS에 `/metrics`가 없고 수집기도 없다).
+- `telemetry`는 껐다 — DUA 환경에서 무엇이 나가는지 확인하지 않은 외부 발신은 통제로 볼 수 없다.
 
 ## 참고
 

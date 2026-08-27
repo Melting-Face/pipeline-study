@@ -86,6 +86,15 @@ FLINK_OPERATOR_CHART_VERSION="${FLINK_OPERATOR_CHART_VERSION:-1.15.0}"
 # (클러스터가 k8s v1.36이라 2024년대 1.16.x는 검증 범위 밖).
 CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-v1.21.1}"
 
+# --- Dagster (in-cluster) ---
+# 🔴 태그를 올리면 k8s/dagster/dagster-deploy.yaml의 `image:` 3곳(init 2 + 본 컨테이너 2)을
+#    **같은 커밋에서** 올린다. 매니페스트가 정본이고 여기는 빌드·push 명령용이다.
+#    이미지 참조처 전수 확인: grep -rn 'image: localhost:5001' k8s/
+DAGSTER_IMAGE_NAME="${DAGSTER_IMAGE_NAME:-dagster}"
+DAGSTER_IMAGE_TAG="${DAGSTER_IMAGE_TAG:-0.1.0}"
+# UI 고정 URL의 호스트명. 포트는 INGRESS_HTTP_PORT(kind extraPortMappings)를 따른다.
+DAGSTER_INGRESS_HOST="${DAGSTER_INGRESS_HOST:-dagster.localtest.me}"
+
 # kind Podman provider(experimental) — rootful 머신 필요
 export KIND_EXPERIMENTAL_PROVIDER=podman
 

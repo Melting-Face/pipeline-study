@@ -19,7 +19,8 @@
 | [`analysis.md`](analysis.md) | 분석(gold·노트북·리포트) | **3층 분리**(gold/노트북/리포트) · 결론 수치는 모델 경유 · 셀 출력 커밋 금지 |
 | [`publishing.md`](publishing.md) | 외부 공개(블로그·공유자료) | **공개는 커밋보다 강한 기준** · 소규모 셀(<5) 마스킹 · **발행은 사람이** · `security` 컨펌 게이트 |
 | [`docker.md`](docker.md) | Compose·Dockerfile | YAML 앵커 · `latest` 금지 · healthcheck + `depends_on` · `profiles` |
-| [`k8s.md`](k8s.md) | Kubernetes(이행) | kind on Podman · requests/probe · 로컬 레지스트리 |
+| [`k8s.md`](k8s.md) | Kubernetes(이행) | kind on Podman · requests/probe · 로컬 레지스트리 · in-cluster Dagster |
+| [`k8s/cnpg.md`](k8s/cnpg.md) | CNPG Postgres | 카탈로그·메타 DB · 선언 롤 · 백업 · PVC 제약 |
 | [`monitoring.md`](monitoring.md) | 관측·모니터링 | **관측 수단 등록 의무**("안 둔다"도 선언) · 계측 대상 없는 수집기 금지 · **관측 경로 생존 확인**(원칙 7 운영판) · 수치는 시각·분모·도구·**단위** 병기 |
 | [`terraform.md`](terraform.md) | IaC(도입) | 스택 단위 · 버전 고정 + lock 커밋 · `terraform fmt`(2-space 예외) |
 | [`timezone.md`](timezone.md) | 타임존 | **저장 UTC · 표시/스케줄 KST** · tz-aware 강제(ruff `DTZ`) |

@@ -1,10 +1,45 @@
-.trunk/
-.venv/
-logs/
-minio/
+# 🔴 패턴은 **빌드 컨텍스트 루트(`dagster/dockerfile.d/`) 기준**이다. 코드는 전부 `src/`
+# 아래에 있으므로 `src/` 접두어가 없는 디렉터리 패턴은 **아무것도 매칭하지 않는다**.
+#
+# 2026-08-27 실측 — 이전 판본의 `.trunk/`·`.venv/`·`logs/`·`minio/` 4개는 컨텍스트 루트에
+# 그런 경로가 없어 **전부 죽은 규칙**이었다. 그 결과 `src/.venv`(1.2GB, macOS 바이너리)가
+# 그대로 이미지에 들어가 3.64GB가 됐고, `dg`가 컨테이너 안에서 그 venv를 프로젝트 venv로
+# 인식해 경고를 냈다. 규칙이 "있다"는 것과 "매칭된다"는 것은 다른 축이다.
+#
+# ⚠️ 여기를 고칠 때는 `du -sh` 또는 이미지 크기로 **효과를 확인**한다 —
+#    잘못된 패턴은 에러를 내지 않고 조용히 통과한다.
+
+# 가상환경 — 호스트(macOS/arm64) 바이너리라 리눅스 이미지에서 쓸 수도 없다
+src/.venv/
+
+# 호스트 실행이 남긴 런타임 산출물
+# 🔴 storage/ 는 run의 compute log·아티팩트라 **원천 데이터 조각이 이미지에 굳는다**.
+# 🔴 .telemetry/ 는 호스트 텔레메트리 식별자를 박아 모든 파드가 같은 ID를 쓰게 만든다.
+src/storage/
+src/logs/
+src/.telemetry/
+src/.dg/
+
+# 🔴 dbt 산출물. 안 빼면 호스트 산출물이 먼저 COPY되고 그 위를 `dbt deps && dbt parse`가
+# 덮는데, **겹치지 않는 파일은 그대로 살아남아** 이미지가 비결정적이 된다.
+src/dbt_pipelines/target/
+src/dbt_pipelines/dbt_packages/
+src/dbt_pipelines/logs/
+
+# 테스트·캐시·락은 런타임에 불필요
+src/tests/
+src/uv.lock
+src/.mypy_cache/
+src/.ruff_cache/
+
+# 린터 작업 디렉터리·구 스토리지 (레포 어디에 있든)
+**/.trunk/
+**/minio/
+**/__pycache__/
 
 **/*.log
 **/*.duckdb
 
-.env
-.user.yml
+# 🔴 크리덴셜은 어느 깊이에 있든 뺀다
+**/.env
+**/.user.yml

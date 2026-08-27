@@ -1,0 +1,344 @@
+# Dagster in-cluster 배포 — webserver(UI/GraphQL) + daemon(스케줄·센서·런큐)
+#
+# 이 저장소는 오랫동안 "Dagster는 호스트 유지"였다(구 conventions/k8s.md §8). 그 전제에서는
+# 호스트 Dagster가 클러스터에 닿기 위해 port-forward 2개(Spark Connect 15002 · SeaweedFS 18333)와
+# TLS Ingress + 로컬 CA 신뢰 주입을 써야 했다. in-cluster로 오면 그 우회가 전부
+# **서비스 DNS 직결**로 대체된다 — 아래 ConfigMap의 값들이 그 대체 결과다.
+#
+# run launcher는 `DefaultRunLauncher`를 유지한다 → run은 **daemon 파드 안의 서브프로세스**로 돈다.
+#   run마다 Pod를 띄우는 `K8sRunLauncher`는 후속 과제다(예산·배선이 함께 커진다).
+#
+# ── 관측 경로 선언 (docs/conventions/monitoring.md §1) ───────────────────────────
+# probe   : webserver = startup/readiness/liveness 3종(HTTP GET /server_info)
+#           daemon    = startup/liveness 2종(`dagster-daemon liveness-check`)
+#           daemon readiness는 **두지 않는다** — Service 뒤에 있지 않아 "트래픽 수용 준비"라는
+#           개념이 성립하지 않는다. 빠뜨린 것이 아니라 없는 축이다.
+# 로그    : stdout/stderr → `kubectl logs`. 회전은 kubelet 기본값을 따르며 compose의
+#           json-file 10m×20 정책과 **다르다**(축이 다르므로 맞추지 않는다).
+#           run의 step 로그는 S3ComputeLogManager로 SeaweedFS `dagster-logs` 버킷에 올린다
+#           (기본 Local이면 webserver·daemon이 디스크를 공유하지 않아 UI에서 영영 안 보인다).
+# 메트릭  : **두지 않는다.** Dagster OSS는 /metrics를 내지 않고 클러스터에 수집기도 없다
+#           (계측 대상 없이 수집기를 두지 않는다는 monitoring.md §2와 같은 축).
+#           자산 단위 관측은 머티리얼라이즈 메타데이터가 담당한다.
+# run_monitoring : **켜지 않는다.** DefaultRunLauncher는 `supports_check_run_worker_health`가
+#           False라 켜면 NotImplementedError다. 결과: **daemon 파드가 재시작하면 진행 중이던 run이
+#           STARTED 상태로 고아가 된다.** 이것이 K8sRunLauncher 후속 과제의 첫 근거다.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: dagster-env
+    namespace: default
+data:
+    TZ: "Asia/Seoul"
+    # ── 메타 스토리지(run·event log·schedule) — dagster DB / dagster 롤 ──
+    POSTGRES_HOST: "catalog-postgres-rw"
+    POSTGRES_PORT: "5432"
+    POSTGRES_DB: "dagster"
+    # ── Iceberg JDBC 카탈로그(pyiceberg 경로) — iceberg DB / iceberg 롤 ──
+    # 🔴 위 POSTGRES_* 와 **같은 서버의 다른 DB·다른 롤**이다. common/constants.py가
+    #   ICEBERG_CATALOG_USER 미지정 시 POSTGRES_USER로 폴백하므로, 아래 계정을 빠뜨리면
+    #   dagster 계정으로 iceberg DB에 붙어 **접속은 되고 테이블 접근에서 거부**된다.
+    ICEBERG_CATALOG_HOST: "catalog-postgres-rw"
+    ICEBERG_CATALOG_PORT: "5432"
+    ICEBERG_CATALOG_DB: "iceberg"
+    ICEBERG_WAREHOUSE: "s3://warehouse"
+    ICEBERG_VERSION: "1.11.0"
+    # dbt-spark(JVM) 경로가 쓰는 JDBC URI. 위 pyiceberg 경로와 같은 DB를 가리킨다.
+    ICEBERG_JDBC_URI: "jdbc:postgresql://catalog-postgres-rw:5432/iceberg"
+    # ── 오브젝트 스토어(SeaweedFS) ──
+    ICEBERG_S3_ENDPOINT: "http://seaweedfs:8333"
+    AWS_DEFAULT_REGION: "us-east-1"
+    # boto3 세션 리전. S3ComputeLogManager는 dagster_aws가 직접 boto3를 부르므로
+    # common/constants.py의 setdefault 셰임 경로를 타지 않는다 → 여기서 명시해야 한다.
+    AWS_REGION: "us-east-1"
+    # 🔴 SeaweedFS는 AWS SDK v2의 aws-chunked 프레이밍을 풀지 못해 객체가 조용히 손상된다.
+    # 파이썬(pyiceberg·boto3) 경로가 SDK v2를 타므로 **누락 금지**.
+    AWS_REQUEST_CHECKSUM_CALCULATION: "when_required"
+    AWS_RESPONSE_CHECKSUM_VALIDATION: "when_required"
+    # ── 컴퓨트 ──
+    # in-cluster는 **평문 gRPC**로 직결한다. TLS Ingress(sc://spark-grpc…:8443)는 호스트↔클러스터
+    # 구간 통제였고 여기는 그 구간 자체가 없다. 그래서 GRPC_DEFAULT_SSL_ROOTS_FILE_PATH도
+    # **설정하지 않는다** — 두면 다음 사람이 "TLS를 쓰는구나"로 오독한다.
+    SPARK_REMOTE: "sc://spark-connect:15002"
+    DBT_TARGET: "spark_connect"
+    # ── Dagster 동작 ──
+    # 🔴 호스트 시절 10에서 내렸다. daemon limits.memory 3Gi와 **강결합**이다
+    # (docs/resource-sizing.md §Dagster 의존성 연동 규칙: 300MB + N × run당 피크 × 1.5).
+    # 이 값을 올리면 daemon limits.memory를 같은 커밋에서 올린다.
+    DAGSTER_MAX_CONCURRENT_RUNS: "2"
+    DAGSTER_COMPUTE_LOG_BUCKET: "dagster-logs"
+    # ── PoC(Spark Operator 제출 경로) ──
+    POC_NAMESPACE: "default"
+    # 🔴 이미지 레이아웃에서는 defs/poc/constants.py의 레포 루트 상대 계산이 깨진다
+    # (COPY src/ 가 한 겹을 벗겨낸다) → in-cluster에서는 이 override가 **필수**다.
+    # 매니페스트 실체는 ConfigMap `spark-app-manifests`(scripts/k8s-dagster.sh가 레포 파일에서 생성).
+    POC_SPARKAPP_MANIFEST: "/etc/dagster/sparkapps/sparkapplication-poc.yaml"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: dagster-webserver
+    namespace: default
+spec:
+    replicas: 1
+    # RollingUpdate면 새 파드가 뜬 뒤 옛 파드가 죽는 창에 코드 서버가 둘 겹친다.
+    strategy: {type: Recreate}
+    selector:
+        matchLabels: {app: dagster-webserver}
+    template:
+        metadata:
+            labels: {app: dagster-webserver}
+        spec:
+            serviceAccountName: dagster
+            # 🔴 webserver는 k8s API를 부르지 않는다(run 실행은 전부 daemon 경로).
+            # UI·GraphQL이 인증 없이 열려 있다는 사실과 맞물린 실질 통제다 — 탈취돼도
+            # 파드 안에 SA 토큰이 없다. 기능 손실은 0.
+            automountServiceAccountToken: false
+            securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+                fsGroup: 1000
+                seccompProfile: {type: RuntimeDefault}
+            initContainers:
+                # compose의 `depends_on: service_healthy`에 해당한다(conventions/k8s.md §3).
+                # ⚠️ 이 대기는 **TCP 도달까지만** 본다 — `dagster` DB가 실재하는지는 보지 않는다.
+                # 그건 Database CR의 몫이고, 없으면 Dagster가 시끄럽게 죽는다(조용히 통과 아님).
+                - name: wait-meta-db
+                  image: localhost:5001/dagster:0.1.0
+                  imagePullPolicy: Always
+                  command: ["python", "-c"]
+                  args:
+                      - |
+                        import socket, sys, time
+                        for _ in range(60):
+                            try:
+                                socket.create_connection(("catalog-postgres-rw", 5432), 2).close()
+                                sys.exit(0)
+                            except OSError:
+                                time.sleep(2)
+                        sys.exit("catalog-postgres-rw:5432 에 60회 시도 후에도 닿지 않았다")
+                  resources:
+                      requests: {cpu: "50m", memory: "64Mi"}
+                      limits: {cpu: "100m", memory: "128Mi"}
+            containers:
+                - name: dagster-webserver
+                  image: localhost:5001/dagster:0.1.0
+                  imagePullPolicy: Always
+                  # 이미지 ENTRYPOINT가 ["dg"]라 command로 덮는다.
+                  command: ["dagster-webserver"]
+                  args: ["-h", "0.0.0.0", "-p", "3000", "-w", "workspace.yaml"]
+                  ports:
+                      - {name: http, containerPort: 3000}
+                  envFrom:
+                      - configMapRef: {name: dagster-env}
+                  # 🔴 비밀값은 원본 Secret을 **직접 참조**한다. daemon 쪽에 같은 블록이 반복되지만,
+                  # 파생 Secret을 하나 더 만들어 envFrom으로 줄이면 회전 시 두 곳을 고쳐야 해
+                  # "한쪽만 바뀐 채 성공한 것처럼 보이는" 드리프트가 생긴다.
+                  # 선언의 중복이 비밀 물질의 중복보다 안전하다.
+                  # ⚠️ YAML 앵커로 묶을 수 없다 — 앵커는 **문서 스코프**라 `---` 너머로 안 간다
+                  # (compose의 x-dagster-common이 한 파일이라 가능했던 것과 갈리는 지점).
+                  env:
+                      # 메타 DB — dagster 롤
+                      - name: POSTGRES_USER
+                        valueFrom: {secretKeyRef: {name: dagster-meta-pg-app, key: username}}
+                      - name: POSTGRES_PASSWORD
+                        valueFrom: {secretKeyRef: {name: dagster-meta-pg-app, key: password}}
+                      # Iceberg 카탈로그 — iceberg 롤 (pyiceberg 경로)
+                      - name: ICEBERG_CATALOG_USER
+                        valueFrom: {secretKeyRef: {name: catalog-pg-app, key: username}}
+                      - name: ICEBERG_CATALOG_PASSWORD
+                        valueFrom: {secretKeyRef: {name: catalog-pg-app, key: password}}
+                      # 같은 계정의 dbt-spark(JDBC) 경로 별칭
+                      - name: ICEBERG_PG_USER
+                        valueFrom: {secretKeyRef: {name: catalog-pg-app, key: username}}
+                      - name: ICEBERG_PG_PASSWORD
+                        valueFrom: {secretKeyRef: {name: catalog-pg-app, key: password}}
+                      # SeaweedFS S3
+                      - name: ICEBERG_S3_ACCESS_KEY
+                        valueFrom: {secretKeyRef: {name: lakehouse-creds, key: s3-access-key}}
+                      - name: ICEBERG_S3_SECRET_KEY
+                        valueFrom: {secretKeyRef: {name: lakehouse-creds, key: s3-secret-key}}
+                      - name: AWS_ACCESS_KEY_ID
+                        valueFrom: {secretKeyRef: {name: lakehouse-creds, key: s3-access-key}}
+                      - name: AWS_SECRET_ACCESS_KEY
+                        valueFrom: {secretKeyRef: {name: lakehouse-creds, key: s3-secret-key}}
+                  volumeMounts:
+                      # DagsterInstance의 LocalArtifactStorage가 $DAGSTER_HOME/storage 에 쓴다.
+                      - {name: dagster-storage, mountPath: /opt/dagster/dagster_home/storage}
+                      - {name: tmp, mountPath: /tmp}
+                  # 🔴 /server_info 를 쓴다. `/`는 catch-all 라우트라 **무엇이든 200**을 줘서
+                  # 판별력이 없다. 다만 /server_info 도 버전 JSON만 돌려주므로 이 probe가
+                  # 보증하는 것은 "프로세스가 HTTP를 서빙한다"까지다 — **코드 로케이션 상태는
+                  # 반영하지 않는다**(그건 UI 배너로만 드러난다). 통과를 그 이상으로 읽지 않는다.
+                  startupProbe:
+                      httpGet: {path: /server_info, port: 3000}
+                      periodSeconds: 10
+                      # dbt manifest + 22모델 + pyspark import 로드가 느리다. 초기 기동 시간은
+                      # 아직 실측 전이라 넉넉히 300초를 준다 — 첫 배포에서 재보고 조인다.
+                      failureThreshold: 30
+                  readinessProbe:
+                      httpGet: {path: /server_info, port: 3000}
+                      periodSeconds: 10
+                      failureThreshold: 3
+                  livenessProbe:
+                      httpGet: {path: /server_info, port: 3000}
+                      periodSeconds: 30
+                      failureThreshold: 3
+                  resources:
+                      requests: {cpu: "100m", memory: "768Mi"}
+                      limits: {cpu: "500m", memory: "1536Mi"}
+            volumes:
+                - {name: dagster-storage, emptyDir: {}}
+                - {name: tmp, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: dagster-webserver
+    namespace: default
+spec:
+    selector: {app: dagster-webserver}
+    ports:
+        - {name: http, port: 3000, targetPort: 3000}
+---
+# Dagster UI 고정 URL — http://dagster.localtest.me:8080 (kind extraPortMappings 8080→80)
+#
+# 🔴 **"UI만 열었다"로 읽지 않는다.** /graphql 이 UI와 **같은 포트·같은 호스트**로 나가고
+#   거기에는 런 실행·종료·삭제·자산 wipe·스케줄 on/off 뮤테이션이 포함된다. Ingress 하나로
+#   UI만 여는 것은 불가능하다 — conventions/k8s.md §10의 Flink 사례와 같은 축
+#   ("노출 범위는 포트가 아니라 그 포트가 제공하는 API가 정한다").
+#   Dagster OSS에는 인증 계층이 없으므로 **현재 유일한 실효 통제는 kind extraPortMappings의
+#   `listenAddress: 127.0.0.1`**이다. 통제 전모는 docs/security.md §4-3.
+#
+# WebSocket: UI는 /graphql 을 WebSocket으로도 연다(라이브 갱신). ingress-nginx 기본
+#   proxy-read-timeout 60초면 화면이 주기적으로 끊겼다 붙어 **고장으로 보이는 정상**이 된다.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+    name: dagster-webserver
+    namespace: default
+    annotations:
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+    ingressClassName: nginx
+    rules:
+        - host: dagster.localtest.me
+          http:
+              paths:
+                  - path: /
+                    pathType: Prefix
+                    backend:
+                        service:
+                            name: dagster-webserver
+                            port:
+                                number: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: dagster-daemon
+    namespace: default
+spec:
+    replicas: 1
+    # 🔴 daemon은 **2개가 동시에 뜨면 안 된다**(하트비트 중복·스케줄 이중 발화).
+    # RollingUpdate 기본값이면 교체 창에서 정확히 그 상태가 된다.
+    strategy: {type: Recreate}
+    selector:
+        matchLabels: {app: dagster-daemon}
+    template:
+        metadata:
+            labels: {app: dagster-daemon}
+        spec:
+            serviceAccountName: dagster
+            # webserver와 달리 토큰이 필요하다 — SparkApplication 제출 경로(dagster-rbac.yaml).
+            automountServiceAccountToken: true
+            securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+                fsGroup: 1000
+                seccompProfile: {type: RuntimeDefault}
+            initContainers:
+                - name: wait-meta-db
+                  image: localhost:5001/dagster:0.1.0
+                  imagePullPolicy: Always
+                  command: ["python", "-c"]
+                  args:
+                      - |
+                        import socket, sys, time
+                        for _ in range(60):
+                            try:
+                                socket.create_connection(("catalog-postgres-rw", 5432), 2).close()
+                                sys.exit(0)
+                            except OSError:
+                                time.sleep(2)
+                        sys.exit("catalog-postgres-rw:5432 에 60회 시도 후에도 닿지 않았다")
+                  resources:
+                      requests: {cpu: "50m", memory: "64Mi"}
+                      limits: {cpu: "100m", memory: "128Mi"}
+            containers:
+                - name: dagster-daemon
+                  image: localhost:5001/dagster:0.1.0
+                  imagePullPolicy: Always
+                  command: ["dagster-daemon"]
+                  args: ["run", "-w", "workspace.yaml"]
+                  envFrom:
+                      - configMapRef: {name: dagster-env}
+                  # webserver와 동일한 블록이다(위 주석 참조 — 앵커는 문서 스코프라 공유 불가).
+                  # 🔴 한쪽만 고치면 두 파드가 다른 계정으로 붙는다. 항상 함께 바꾼다.
+                  env:
+                      # 메타 DB — dagster 롤
+                      - name: POSTGRES_USER
+                        valueFrom: {secretKeyRef: {name: dagster-meta-pg-app, key: username}}
+                      - name: POSTGRES_PASSWORD
+                        valueFrom: {secretKeyRef: {name: dagster-meta-pg-app, key: password}}
+                      # Iceberg 카탈로그 — iceberg 롤 (pyiceberg 경로)
+                      - name: ICEBERG_CATALOG_USER
+                        valueFrom: {secretKeyRef: {name: catalog-pg-app, key: username}}
+                      - name: ICEBERG_CATALOG_PASSWORD
+                        valueFrom: {secretKeyRef: {name: catalog-pg-app, key: password}}
+                      # 같은 계정의 dbt-spark(JDBC) 경로 별칭
+                      - name: ICEBERG_PG_USER
+                        valueFrom: {secretKeyRef: {name: catalog-pg-app, key: username}}
+                      - name: ICEBERG_PG_PASSWORD
+                        valueFrom: {secretKeyRef: {name: catalog-pg-app, key: password}}
+                      # SeaweedFS S3
+                      - name: ICEBERG_S3_ACCESS_KEY
+                        valueFrom: {secretKeyRef: {name: lakehouse-creds, key: s3-access-key}}
+                      - name: ICEBERG_S3_SECRET_KEY
+                        valueFrom: {secretKeyRef: {name: lakehouse-creds, key: s3-secret-key}}
+                      - name: AWS_ACCESS_KEY_ID
+                        valueFrom: {secretKeyRef: {name: lakehouse-creds, key: s3-access-key}}
+                      - name: AWS_SECRET_ACCESS_KEY
+                        valueFrom: {secretKeyRef: {name: lakehouse-creds, key: s3-secret-key}}
+                  volumeMounts:
+                      - {name: dagster-storage, mountPath: /opt/dagster/dagster_home/storage}
+                      - {name: tmp, mountPath: /tmp}
+                      # SparkApplication 매니페스트(레포 파일에서 생성된 ConfigMap).
+                      # 이미지에 굽지 않는 이유: 고칠 때마다 태그를 올려야 하고 레포 사본과 갈린다.
+                      - {name: spark-app-manifests, mountPath: /etc/dagster/sparkapps, readOnly: true}
+                  # daemon은 포트를 열지 않아 HTTP·TCP probe가 불가능하다 → exec.
+                  # 🔴 주기를 짧게 두면 안 된다 — 이 명령은 매 실행마다 DagsterInstance를 새로 열어
+                  # Postgres 접속을 만든다. CNPG max_connections=100이라 10초 주기면 쌓인다.
+                  startupProbe:
+                      exec: {command: ["dagster-daemon", "liveness-check"]}
+                      periodSeconds: 15
+                      failureThreshold: 20
+                      timeoutSeconds: 20
+                  livenessProbe:
+                      exec: {command: ["dagster-daemon", "liveness-check"]}
+                      periodSeconds: 60
+                      failureThreshold: 3
+                      timeoutSeconds: 20
+                  # readinessProbe는 두지 않는다 — 위 관측 경로 선언 참조(부재가 결정이다).
+                  resources:
+                      requests: {cpu: "250m", memory: "1024Mi"}
+                      limits: {cpu: "1", memory: "3Gi"}
+            volumes:
+                - {name: dagster-storage, emptyDir: {}}
+                - {name: tmp, emptyDir: {}}
+                - name: spark-app-manifests
+                  configMap: {name: spark-app-manifests}

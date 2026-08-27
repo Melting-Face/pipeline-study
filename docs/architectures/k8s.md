@@ -11,10 +11,11 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
 ## 이 프로젝트에서의 위치 — 🚧 채택·이행중(PoC 게이트)
 
 - **채택 방향**: 확장성/성능 한계 극복 + 학습·포트폴리오를 위해 **컴퓨트·데이터 서비스를 K8s로 이전**한다.
-  단, **Dagster는 호스트에** 남기고 클러스터를 **원격 컴퓨트**로 트리거한다
+  **Dagster를 포함해** 전 스택이 클러스터 안에 있다(2026-08-27 — 구 판본은 호스트에 남겼다)
   (오케스트레이터↔컴퓨트 분리).
   전면 이행은 **PoC 성공을 전제**로 단계적으로 진행한다. 전체 로드맵은 [../redesign.md](../redesign.md).
-- **로컬 배포판**: **kind on Podman(rootful)** + 로컬 레지스트리. 호스트 Dagster는 kubeconfig로 클러스터 API에 접근한다.
+- **로컬 배포판**: **kind on Podman(rootful)** + 로컬 레지스트리. in-cluster Dagster는 ServiceAccount로,
+  호스트 실행분은 kubeconfig로 클러스터 API에 접근한다(인증 분기는 코드가 갖는다).
 - **핵심 컴포넌트**: **Spark Operator**(배치)·**Flink Operator**(스트림)로
   `SparkApplication`·`FlinkDeployment`(CRD)를 실행하고,
   **CloudNativePG**(카탈로그 Postgres)로 `Cluster`(CRD) 관리,
@@ -62,7 +63,9 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
 - **Spark 실행**: Apache 공식 **Spark Kubernetes Operator**를 Helm으로 설치하고(`ns=spark-operator`),
   Dagster 자산이 `PipesK8sClient`로 `SparkApplication`(CRD)을 제출·폴링한다.
   규칙은 [../conventions/k8s.md](../conventions/k8s.md) §9~11.
-- **Dagster 위치 주의**: 본 프로젝트는 Dagster를 **호스트에 유지**한다. `dagster-k8s`의 `K8sRunLauncher`는
+- **Dagster 위치**(2026-08-27 개정): Dagster도 **클러스터 안**이다 — 결정과 대안 비교는
+  [dagster.md](dagster.md). 아래 문단은 폐기 전 판본의 근거이며 `K8sRunLauncher` 미채택은 여전히 유효하다.
+- **구 근거(참고)**: 본 프로젝트는 Dagster를 **호스트에 유지**했다. `dagster-k8s`의 `K8sRunLauncher`는
   Dagster를 **클러스터 내부에 배포**할 때 run을 파드로 실행하는 옵션으로, 본 토폴로지의 Spark 트리거 수단이
   아니다(후속 비교 과제, [../redesign.md](../redesign.md) Phase 4).
 

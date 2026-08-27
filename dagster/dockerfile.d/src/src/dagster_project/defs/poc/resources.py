@@ -1,8 +1,10 @@
-"""PoC: 호스트 Dagster → kind SparkApplication 제출·폴링 리소스.
+"""PoC: Dagster → kind SparkApplication 제출·폴링 리소스.
 
-`dagster-k8s`의 `K8sRunLauncher`는 Dagster를 클러스터 내부에 배포할 때의 옵션이라
-본 토폴로지(호스트 Dagster)엔 맞지 않는다. 여기서는 kubernetes 클라이언트로
-Spark Operator의 `SparkApplication`(CRD)을 직접 제출하고 상태를 폴링한다.
+`dagster-k8s`의 `K8sRunLauncher`는 **run 자체**를 파드로 띄우는 옵션이라 축이 다르다.
+현행 run launcher는 `DefaultRunLauncher`(run = daemon 파드 내 서브프로세스)이고,
+여기서는 kubernetes 클라이언트로 Spark Operator의 `SparkApplication`(CRD)을
+직접 제출하고 상태를 폴링한다. 이 리소스는 in-cluster·호스트 양쪽에서 동작한다
+(인증 경로 분기는 `load_kube_auth()` 참조).
 
 상태 판정은 **Apache 오퍼레이터 스펙**을 따른다(Kubeflow와 필드가 다르다):
 `status.currentState.currentStateSummary` + `status.stateTransitionHistory`.
@@ -80,13 +82,31 @@ class SparkOperatorResource(dg.ConfigurableResource):
     # 이 시간을 넘기면 watch가 죽은 것으로 보고 파드 phase로 판정한다.
     pod_terminal_grace_s: int = 180
 
+    def load_kube_auth(self) -> str:
+        """인증 경로를 로드하고 **실제로 쓴 경로 이름**을 돌려준다.
+
+        in-cluster(ServiceAccount)를 먼저 시도하고, 없으면 호스트 kubeconfig로 떨어진다.
+        한 코드가 두 실행 위치를 지탱한다 — 파드에는 `~/.kube/config`가 없고,
+        호스트에는 `/var/run/secrets/...`가 없다.
+
+        🔴 반환값을 로그·메타데이터에 쓴다. `kube_context`를 그대로 찍으면
+        in-cluster에서 쓰이지도 않은 값을 로그가 사실처럼 말한다
+        (원칙 7 — 값은 맞는데 라벨이 틀린 경우).
+        """
+        try:
+            config.load_incluster_config()
+        except config.ConfigException:
+            config.load_kube_config(context=self.kube_context)
+            return f"kubeconfig:{self.kube_context}"
+        else:
+            return "in-cluster"
+
     def _custom_api(self) -> client.CustomObjectsApi:
-        # 호스트 kubeconfig의 지정 컨텍스트로 접속
-        config.load_kube_config(context=self.kube_context)
+        self.load_kube_auth()
         return client.CustomObjectsApi()
 
     def _core_api(self) -> client.CoreV1Api:
-        config.load_kube_config(context=self.kube_context)
+        self.load_kube_auth()
         return client.CoreV1Api()
 
     def _delete_if_exists(self, co: client.CustomObjectsApi, name: str) -> None:

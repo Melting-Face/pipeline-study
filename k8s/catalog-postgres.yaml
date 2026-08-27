@@ -24,7 +24,7 @@ spec:
             database: iceberg
             owner: iceberg
             # 🔴 CNPG **자동생성** 시크릿(`catalog-postgres-app`)을 쓰지 않고 선언 시크릿을 지정한다.
-            # 호스트 Dagster가 이 DB에 직접 붙기 때문이다(.env의 `ICEBERG_CATALOG_*`).
+            # Dagster·dbt·Spark·Flink가 이 DB에 직접 붙기 때문이다(`ICEBERG_CATALOG_*`).
             # 오퍼레이터가 비밀번호를 만들면 사람이 `kubectl get secret`으로 꺼내 `.env`에 옮겨야 하고,
             # 그 동기화가 어긋나면 "나열은 되는데 접속에서 죽는" 부분 성공 드리프트가 재현된다
             # (CLAUDE.md 운영 §"접속 대상을 바꾸는 값은 한 벌로 묶어 바꾼다").
@@ -46,6 +46,17 @@ spec:
               comment: Iceberg JDBC 카탈로그 소유자 (bootstrap.initdb에서 생성 후 선언 관리로 인수)
               passwordSecret:
                   name: catalog-pg-app
+            # Dagster 메타 스토리지(run·event log·schedule) 소유자.
+            # 🔴 `iceberg` 롤을 재사용하지 않는다 — 크리덴셜 하나의 폭발반경을 두 배로 만들고,
+            # "같은 비밀번호를 두 시크릿에 두지 않는다"는 규율의 정반대가 된다.
+            # 이 롤이 소유하는 DB 선언은 **k8s/dagster/dagster-meta-db.yaml**에 있다(한 벌).
+            # bootstrap을 거치지 않고 처음부터 선언 관리라 회전 경로가 깨끗하다.
+            - name: dagster
+              ensure: present
+              login: true
+              comment: Dagster 메타 스토리지 소유자 (선언 관리 — bootstrap 경유 아님)
+              passwordSecret:
+                  name: dagster-meta-pg-app
     # 🚧 백업·PITR(Barman Cloud 플러그인)은 **아직 배선하지 않는다.**
     # 2026-08-19 실측: 플러그인·ObjectStore까지는 떴으나 **SeaweedFS로의 `PutObject`가
     # `InternalError`(max retries 4)로 실패**해 WAL 아카이빙이 무한 재시도에 빠졌다
