@@ -14,6 +14,8 @@
   ([`docs/conventions/codex.md`](docs/conventions/codex.md)).
 - `CLAUDE.md`는 핵심 컨벤션의 **요약/인덱스**, 상세 배경·흐름은 `docs/`에 둔다.
 - 문서는 한국어로 작성하고, 코드 식별자·명령어·경로는 원문 그대로 표기한다.
+- **학습 노트는 `wiki/`**(GitHub 위키로 CI 단방향 미러) — `docs/`는 규칙만 담아 시제 축을
+  지키고, 낡는 글은 여기 둔다. 규약은 [`publishing.md`](docs/conventions/publishing.md) §4-1 상속.
 
 ## 커밋 컨벤션
 
