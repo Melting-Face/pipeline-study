@@ -55,6 +55,49 @@ probe 하나를 지우면 값이 바뀌는데, 규칙 문서에 박아 두면 �
 | **metrics-server** | `kubectl top` 수준의 사용량 | 🔴 **kind에 없다** — 그래서 자원 실측이 `/proc`·cgroup 병행으로 굳어 있다 |
 | **Alertmanager** | 알림 묶음·중복 제거·라우팅 | **알릴 규칙이 없다**(`rule_files` 0건). 발화원 없이 라우터만 두면 §2의 거짓 신호가 하나 더 늘어난다. 단일 사용자 학습 환경이라 수신 채널·당직 개념도 없다 |
 | **exporter 계열**(node·postgres 등) | 서비스별 `/metrics` | 수집기는 살아 있으나 **정본 워크로드를 스크레이프하도록 배선돼 있지 않다**. 그 상태에서 exporter부터 붙이면 **내보내는 쪽만 늘고 읽는 쪽이 없다**(순서가 거꾸로다) |
+| **Loki**(2026-08-27 평가) | 로그 집계·LogQL 질의 | §2를 통과하는 유일한 후보이나 **monolithic이 가볍지 않다** — 아래 §Loki |
+| **Robusta**(2026-08-27 평가) | 알림 보강·자동 조사·K8s 이벤트 | 자원이 아니라 **데이터 거버넌스**에서 먼저 걸린다 — 아래 §Robusta |
+
+#### Loki — §2는 통과하지만 «monolithic = 가볍다»가 아니다
+
+먹일 로그가 이미 흐르므로 §2를 통과하는 **유일한 후보**다. 그럼에도 미채택인 이유는 규모다 —
+공식 문서 기준 **단일 replica가 파드 5종**을 띄운다(본체 · Canary DaemonSet · Gateway ·
+Chunks cache · Results cache). 끄는 옵션은 그 문서에 없다.
+그리고 차트가 `resources`를 **전부 빈 오브젝트**로 두어 예산을 직접 다 선언해야 한다.
+기본 스토리지가 `s3`라 기존 SeaweedFS와는 맞물린다. 수집 에이전트는
+**Promtail이 2026-03-02 EOL**이라 Alloy를 쓴다.
+
+#### Robusta — 걸리는 순서가 자원보다 앞이다
+
+`rule_files`가 0건이라 **보강할 알림 자체가 없어** §2에 걸린다. 그런데 그보다 앞에
+**데이터 반출 축**이 있다(아래 §운영 메모). 자원만 보면 오히려 준비가 나은 편이다 —
+차트가 컴포넌트별 `resources.requests`를 채워 두어 BestEffort 함정이 없다.
+
+### 후보를 세우는 축은 자원이 아니라 «먹일 것이 이미 있는가»
+
+2026-08-27 비교에서 순서가 **자원 비용으로 갈리지 않았다.** [../conventions/monitoring.md](../conventions/monitoring.md)
+§2가 금지하는 것은 *타깃 없는 수집기*이므로, 첫 질문은 "얼마나 드는가"가 아니라
+**"그 수집기가 먹을 것이 지금 흐르고 있는가"** 다.
+
+| | Loki | Prometheus(현행) | Robusta |
+| --- | --- | --- | --- |
+| 무엇을 먹나 | 로그 | 메트릭 | Prometheus **알림** |
+| 그 먹이가 지금 있나 | ✅ 있다 | ❌ 정본 워크로드 0개가 낸다 | ❌ `rule_files` 0건 |
+| 붙이면 즉시 보이는 것 | Flink 오퍼레이터 메트릭(현재 로그에만 있어 질의 불가)·Dagster 스텝 로그 | 없음 | 없음 |
+| 자원 선언 | ❌ 전부 `{}` | 선언됨 | ✅ 채워져 있음 |
+
+⇒ **권고 순서는 ① Prometheus 정리 ② Loki ③ Robusta 보류**다.
+①이 먼저인 이유는 그것이 *도구 추가*가 아니라 **거짓 신호 제거**여서다(위 §이 프로젝트에서의 위치).
+
+⚠️ **자원 선언 유무는 비용의 부속이 아니라 판정의 선결 조건이다.** 차트가 `resources`를 비워 두면
+파드가 **BestEffort로 떠 `Σrequests` 합계에 0으로 잡히고**, 그러면 어떤 스택을 올려도
+"예산 안에 들어왔다"는 답이 나온다 — **통과가 통과가 아니게 된다**
+([../resource-sizing.md](../resource-sizing.md) §BestEffort). 그래서 **비용을 재기 전에 선언 유무를 먼저** 본다.
+
+**미확인으로 남은 것**(추측으로 채우지 않는다): Loki 캐시 2종의 `resources` 원문 ·
+Robusta의 기존 Prometheus 연동 모드 파드 차분 · `grafana/loki`와 `grafana-community/helm-charts`의
+차트 정본 관계. 인용 수치는 **`grafana/loki` 기준**이며 그 경로는 이관 발표 5개월 뒤에도
+커밋을 받고 있어 동결이 아님을 확인했다(2026-08-19).
 
 ## 운영 메모
 
@@ -74,7 +117,7 @@ probe 하나를 지우면 값이 바뀌는데, 규칙 문서에 박아 두면 �
   ⚠️ 그리고 갈리는 것이 하나 더 있다. **발견 경로**다. 2026-08-18은 사람이 그 자리에서 한 번
   데었기 때문에 드러났지만, 지금 그 자리에서 답하는 것은 **초록불을 띄우는 수집기**다.
   ⚠️ 이것을 *결정*으로 적어 둔 문장은 찾지 못했다.
-  🔴 **그러나 "기록이 없다"는 "결정이 없었다"가 아니다** — 검색 결과를 의도의 부재로 읽지 않는다.
+  ⚠️ **그러나 "기록이 없다"는 "결정이 없었다"가 아니다** — 검색 결과를 의도의 부재로 읽지 않는다.
   검색 모집단과 hit 수는 `$OBSIDIAN_VAULT/status/observations.md` §기록의 부재 vs 결정의 부재.
 - 🔴 **버전 고정과 방치는 겉모습이 같다.** 태그가 박혀 있으면 규칙에는 맞지만
   ([../conventions/docker.md](../conventions/docker.md) §1-3), 그것이 *관리되는 고정*인지
@@ -92,6 +135,14 @@ probe 하나를 지우면 값이 바뀌는데, 규칙 문서에 박아 두면 �
 - **Dagster 쪽 관측은 실행 기록에 의존한다** — `run_monitoring` 미설정이라 워커가 죽은 런의
   자동 판정이 없고, `compute_logs`가 기본값이라 스텝 로그는 컨테이너 로컬에 남는다.
   자산 단위 관측은 머티리얼라이즈 메타데이터가 담당한다([../conventions/dagster.md](../conventions/dagster.md)).
+- 🔴 **관측 도구가 데이터 반출 경로가 될 수 있다.** Robusta 평가에서 드러난 축이다 —
+  OSS는 CLI/API까지이고 웹 UI·봇·자동 triage는 **Platform(SaaS 또는 Self-Hosted) 전용**인데,
+  **어떤 데이터가 나가는지 공식 문서에 명시가 없다**(2회 재확인으로 부재 확인. 있는 것은
+  *"SOC 2 compliant · US/EU/APAC"* 뿐이며 **컴플라이언스·리전 정보이지 전송 범위가 아니다**).
+  **"명시 없음"을 "안 나간다"로 읽지 않는다.** 이 저장소는 DUA가 걸린 임상 데이터를 다루고,
+  그런 도구의 핵심 기능은 **파드 로그를 읽어 조사**하는 것이라 로그에 쿼리문·테이블명·행 수가
+  섞이는 경로가 실재한다. ⇒ 관측 도구 도입 검토의 선결 조건은 자원 산정이 아니라
+  **`security` 판정과 벤더 확인**이다([../security.md](../security.md)).
 - 관측 수단을 더하거나 뺄 때의 **규칙**(등록 의무·수집기 정리·생존 확인·수치 기재)은
   [../conventions/monitoring.md](../conventions/monitoring.md)가 정본이다.
 - ⚠️ **이 문서의 무게는 실행 환경에 걸려 있다.** 위 공백들이 지금 수용 가능한 것은 현행 검증 환경이
@@ -110,4 +161,10 @@ probe 하나를 지우면 값이 바뀌는데, 규칙 문서에 박아 두면 �
 - Kubernetes SIGs — metrics-server: https://github.com/kubernetes-sigs/metrics-server
 - Apache Flink Kubernetes Operator(메트릭 리포터 설정): https://nightlies.apache.org/flink/flink-kubernetes-operator-docs-main/
 - Dagster 문서(`run_monitoring`·`compute_logs` 설정): https://docs.dagster.io/
+- Grafana Loki — 배포 모드(monolithic 권장 규모·SSD 제거 예정): https://grafana.com/docs/loki/latest/get-started/deployment-modes/
+- Grafana Loki — monolithic Helm 설치(단일 replica가 띄우는 컴포넌트 목록): https://grafana.com/docs/loki/latest/setup/install/helm/install-monolithic/
+- Grafana Loki — Helm `values.yaml`(`resources` 기본값 원문): https://github.com/grafana/loki/blob/main/production/helm/loki/values.yaml
+- Grafana Loki — Promtail EOL 공지(2026-03-02 · Alloy 대체): https://grafana.com/docs/loki/latest/send-data/promtail/
+- Robusta — Open Source vs SaaS(기능 경계): https://docs.robusta.dev/master/how-it-works/oss-vs-saas.html
+- Robusta — Helm `values.yaml`(컴포넌트별 `resources`): https://github.com/robusta-dev/robusta/blob/master/helm/robusta/values.yaml
 - 관측 **규칙** 정본: [../conventions/monitoring.md](../conventions/monitoring.md)

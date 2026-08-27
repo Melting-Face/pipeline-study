@@ -28,7 +28,7 @@
 | [Kubernetes](architectures/k8s.md) | 로컬 K8s 플랫폼 (kind on Podman) |
 | [OCI + Terraform + k3s](architectures/oci.md) | 클라우드 이행 경로 |
 | [Trino](architectures/trino.md) | 현행까지 채택, 재설계로 제거 |
-| [모니터링·관측](architectures/monitoring.md) | Grafana·kube-prometheus-stack 등을 **지금 쓰지 않는 이유** |
+| [모니터링·관측](architectures/monitoring.md) | Grafana·Loki·Robusta 등을 **지금 쓰지 않는 이유** |
 
 ## 코딩 규칙 (conventions)
 
