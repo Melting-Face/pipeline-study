@@ -106,7 +106,7 @@ dbt Labs는 **dbt의 벤더**이므로 `running-dbt-commands` 같은 것은 A여
   | --- | --- | --- | --- |
   | `fetching-dbt-docs` | B | `scripts/search-dbt-docs.sh` | 기존 인지 |
   | `helm-chart-scaffolding` | **C**(← D에서 재분류) | `scripts/validate-chart.sh` | **C + 실행 파일 = 도입 금지 대상인데 `devops-engineer`에 등재 중** — §③ 충돌 |
-  | `brainstorming` | **C** | `server.cjs`·`helper.js`·`start-server.sh`·`stop-server.sh` | **`security` 미검토**. §① 참고 |
+  | `brainstorming` | **C** | `server.cjs`·`helper.js`·`start-server.sh`·`stop-server.sh` | ✅ 검토 완료(2,030행 전수) → 「거부」 → **2026-08-27 「분리안」**: 이 4종은 **실행 범위 밖** |
 
 - **해시 미고정 스킬은 "오늘 안전"이 "내일 안전"을 보장하지 않는다.** lock 밖 스킬은 조용히 바뀌어도
   탐지 수단이 없고, **에러 없이 그냥 최신을 쓴다**([`../philosophy.md`](../philosophy.md) 원칙 7 "성공 신호를 의심한다" 계열).

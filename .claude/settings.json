@@ -135,7 +135,8 @@
       "Bash(*wget*--method*)",
       "Bash(*tistory.com*)",
       "Bash(*.claude/.research/approved*)",
-      "Bash(*.research/approved*)"
+      "Bash(*.research/approved*)",
+      "Bash(*brainstorming/scripts*)"
     ]
   },
   "hooks": {
