@@ -16,6 +16,7 @@
 | 노트 | 무엇을 배웠나 |
 | --- | --- |
 | [Dagster 오케스트레이션](dagster-orchestration.md) | 에셋 정의 방식의 선택과, 에러 없이 사라진 에셋들 |
+| [엔진마다 값이 갈리는 SQL](cross-engine-sql.md) | 같은 SQL이 Trino와 Spark에서 다른 답을 낸다 |
 
 ## 이 프로젝트가 궁금하다면
 
