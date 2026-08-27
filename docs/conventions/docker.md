@@ -171,8 +171,14 @@ COMPOSE_PROFILES=monitoring docker compose up -d   # 프로필 고정
 - pip 설치는 `--no-cache-dir --compile --prefer-binary`로 이미지 크기·빌드 시간을 줄인다.
 - `hadolint`(`.hadolint.yaml`)로 Dockerfile을 린트한다([general.md](general.md)).
 
+- **extras와 dependency-group을 섞지 않는다.** `-e ".[dev]"`는 `[project.optional-dependencies]`에
+  `dev`가 있을 때만 유효하다. PEP 735 `[dependency-groups]`의 그룹은 extras가 아니라서 pip이
+  **에러 없이 `WARNING: … does not provide the extra 'dev'`만 찍고 통과**한다 — 설치된 줄 알지만
+  아무것도 안 깔린 상태가 된다(2026-08-27 빌드 로그에서 실재 확인). 런타임 이미지에는 애초에
+  dev 도구를 넣지 않으므로 **`-e .`이 정답**이다.
+
 ```dockerfile
-RUN pip install --no-cache-dir --compile --prefer-binary -e ".[dev]" \
+RUN pip install --no-cache-dir --compile --prefer-binary -e . \
     && chown -R 1000:1000 /opt/dagster/dagster_home
 
 USER 1000
