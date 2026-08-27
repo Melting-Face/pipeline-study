@@ -52,4 +52,37 @@ resource "kubernetes_manifest" "platform" {
   for_each = local.manifest_docs
 
   manifest = each.value
+
+  # 🔴 **감지와 복구는 다른 축이다.** `kubectl` 로 밖에서 고친 필드는 서버사이드 apply 의
+  #    **필드 소유권**이 `kubectl-patch` 로 넘어가, Terraform 이 drift 를 *보긴 보는데*
+  #    덮지는 못한다(2026-08-28 실측:
+  #    `conflict with "kubectl-patch" using v1: .data.TZ`).
+  #    ⇒ `plan` 은 잡고 `apply` 는 실패하는, **고쳤다고 믿기 쉬운 상태**가 된다.
+  #
+  # 이 스택은 이 리소스들의 **선언된 소유자**이므로 소유권을 되찾는 쪽이 맞다.
+  # ⚠️ 대가: Terraform 이 다른 매니저가 선언 필드에 쓴 값을 **말없이 덮는다.**
+  #    그래서 `k8s/**` 의 리소스를 `kubectl edit`/`patch` 로 고치지 않는다 —
+  #    고쳐야 하면 YAML 을 고치고 `terraform apply` 를 돌린다.
+  field_manager {
+    force_conflicts = true
+  }
+
+  # 🔴 **destroy 교착 방지.** `Database/default/dagster` 에는 CNPG 오퍼레이터가 붙인
+  #    finalizer(`cnpg.io/deleteDatabase`)가 걸려 있다(2026-08-28 실측). Terraform 은
+  #    의존 관계가 없으면 순서를 보장하지 않으므로, **오퍼레이터가 먼저 삭제되면
+  #    finalizer 를 처리할 주체가 사라져 CR 삭제가 영원히 멈춘다.**
+  #    의존을 선언하면 Terraform 이 dependent 를 먼저 destroy 하므로 순서가 뒤집힌다.
+  #
+  # ⚠️ 세 릴리스를 다 거는 것은 과하지 않다 — 지금 finalizer 를 다는 것은 CNPG 뿐이지만,
+  #    Spark·Flink 오퍼레이터도 언제든 자기 CR 에 finalizer 를 붙일 수 있고
+  #    (`SparkApplication`·`FlinkDeployment` 는 이 스택 밖이지만 RBAC 은 안에 있다),
+  #    생성 순서에서도 **오퍼레이터가 먼저**여야 CRD 가 준비된다.
+  #
+  # ⚠️ cert-manager 는 여기 없다 — 이 스택 밖(셸)이라 destroy 로 사라지지 않으므로
+  #    `Certificate`·`Issuer` 의 finalizer 는 처리해 줄 주체가 계속 살아 있다.
+  depends_on = [
+    helm_release.spark_operator,
+    helm_release.flink_operator,
+    helm_release.cnpg,
+  ]
 }
