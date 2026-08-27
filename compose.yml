@@ -42,9 +42,17 @@ x-dagster-common: &dagster-common
 
 services:
   # UI/GraphQL 전용. workspace.yaml로 코드 로케이션을 명시 로드한다.
+  #
+  # 🔴 정본은 **in-cluster**다(k8s/dagster/). 여기 정의는 상시 기동에서 빠지고
+  #   `--profile host-dagster`로만 뜬다 — trino·seaweedfs와 같은 "중단과 삭제의 분리"다.
+  #   자원은 즉시 회수하되 롤백 비용은 0으로 남긴다.
+  # ⚠️ 이걸 in-cluster와 **동시에 띄우지 마라.** 같은 서비스가 두 환경에 살아 있으면
+  #   관측 확인(①타깃 ②up ③로그)을 전부 통과하면서 레거시가 정본 대신 답한다
+  #   (docs/conventions/monitoring.md §3-④ — 이 저장소에서 이미 2회 발생).
   dagster-webserver:
     <<: [*docker-logging, *dagster-common]
     container_name: dagster-webserver
+    profiles: ["host-dagster"]
     entrypoint: ["dagster-webserver"]
     command: ["-h", "0.0.0.0", "-p", "${DAGSTER_PORT}", "-w", "workspace.yaml"]
     ports:
@@ -59,9 +67,11 @@ services:
           cpus: "0.5"
           memory: 768M
   # 스케줄·센서·런큐 처리 + DefaultRunLauncher로 run을 서브프로세스 실행(무거움).
+  # webserver와 같은 profile — 둘은 storage를 공유해야 하므로 항상 함께 뜨고 함께 내린다.
   dagster-daemon:
     <<: [*docker-logging, *dagster-common]
     container_name: dagster-daemon
+    profiles: ["host-dagster"]
     entrypoint: ["dagster-daemon"]
     command: ["run", "-w", "workspace.yaml"]
     deploy:
@@ -72,11 +82,20 @@ services:
         reservations:
           cpus: "1.0"
           memory: 1536M
+  # 🔴 Dagster 메타 스토리지의 정본은 **CNPG의 `dagster` DB**로 옮겨갔다
+  #   (k8s/dagster/dagster-meta-db.yaml). 이 컨테이너를 상시 기동으로 두면 호스트 `dg dev`가
+  #   여기에, 클러스터가 CNPG에 써서 **run 이력이 두 벌로 갈린다** — 정의만 남기고 내린다.
+  #   호스트 개발 루프는 CNPG를 보게 한다:
+  #     kubectl port-forward svc/catalog-postgres-rw 15432:5432
+  #     POSTGRES_HOST=localhost POSTGRES_PORT=15432 POSTGRES_DB=dagster
+  # profiles가 셋인 이유: 의존받는 서비스는 **의존하는 쪽의 profile을 전부 물려받는다**
+  #   (dagster-* = host-dagster · trino = legacy-sql). legacy-meta는 이 컨테이너 단독 기동용.
   postgres:
     <<: *docker-logging
     container_name: postgres
     image: postgres:15
-    # 호스트 Dagster(`uv run dg dev`)가 메타 스토리지에 붙어야 하므로 노출한다.
+    profiles: ["legacy-meta", "host-dagster", "legacy-sql"]
+    # 호스트에서 이 DB에 붙을 때를 위해 노출한다.
     # 루프백 바인딩으로 외부 노출은 막는다(docs/security.md — 최소 노출).
     ports:
       - "127.0.0.1:${POSTGRES_PORT}:5432"
