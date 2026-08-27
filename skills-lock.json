@@ -7,6 +7,12 @@
       "skillPath": "skills/dbt/skills/adding-dbt-unit-test/SKILL.md",
       "computedHash": "f8ce50a6604e31d9b73a57e95ef5f311fde48d04026b67ff09c20a5acd8a2f9f"
     },
+    "brainstorming": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "skillPath": "skills/brainstorming/SKILL.md",
+      "computedHash": "b58d55b64742ecd37923985ec7bdfbe678ffbcb9895562abd28c0a32dcacd7fb"
+    },
     "dagster-expert": {
       "source": "dagster-io/skills",
       "sourceType": "github",
