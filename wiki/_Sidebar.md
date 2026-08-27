@@ -5,6 +5,7 @@
 **학습 노트**
 
 - [Dagster 오케스트레이션](dagster-orchestration.md)
+- [엔진마다 값이 갈리는 SQL](cross-engine-sql.md)
 
 **정본은 저장소에**
 
