@@ -33,8 +33,14 @@ def poc_spark_ingest(
     """SparkApplication을 제출해 Iceberg 샘플 테이블을 적재한다(호스트→kind)."""
     manifest = yaml.safe_load(Path(SPARKAPP_MANIFEST).read_text())
     name = manifest["metadata"]["name"]
+    # 🔴 `kube_context`를 찍지 않는다 — in-cluster에서는 그 값이 쓰이지 않아 로그가
+    # 거짓을 말하게 된다. 실제로 로드된 인증 경로를 받아 찍는다.
+    auth_path = spark_operator.load_kube_auth()
     context.log.info(
-        "SparkApplication 제출: %s (context=%s)", name, spark_operator.kube_context
+        "SparkApplication 제출: %s (auth=%s, manifest=%s)",
+        name,
+        auth_path,
+        SPARKAPP_MANIFEST,
     )
 
     run = spark_operator.submit_and_wait(manifest)

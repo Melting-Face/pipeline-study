@@ -6,7 +6,13 @@ run_coordinator:
   module: dagster.core.run_coordinator
   class: QueuedRunCoordinator
   config:
-    max_concurrent_runs: 10
+    # 🔴 env 참조로 뺀 이유: 실행 위치마다 상한이 다르다. 호스트는 26GB를 쓰지만
+    # in-cluster daemon은 limits.memory 3Gi 안에서 run을 fork한다.
+    # 이 값은 daemon 메모리와 **강결합**이다 — 올리면 한도도 같이 올린다
+    # (docs/resource-sizing.md §Dagster: 300MB + N × run당 피크 × 1.5).
+    # 값의 단일 출처: 호스트 `.env` / in-cluster `k8s/dagster/dagster-deploy.yaml` ConfigMap.
+    max_concurrent_runs:
+      env: DAGSTER_MAX_CONCURRENT_RUNS
 
 run_launcher:
   module: dagster.core.launcher
@@ -60,5 +66,35 @@ event_log_storage:
       port:
         env: POSTGRES_PORT
 
+# run의 step 로그(stdout/stderr) 저장소.
+#
+# 🔴 기본값(LocalComputeLogManager)을 쓰지 않는 이유: webserver와 daemon이 **다른 파드**라
+# 로컬 디스크를 공유하지 않는다. run은 daemon에서 도는데 로그를 보여주는 것은 webserver라,
+# 기본값이면 UI에서 step 로그가 **영영 안 보인다**. compose(별개 컨테이너)에도 있던 결함이지만
+# 단일 프로세스인 `dg dev`가 가려주고 있었다.
+#
+# 한 파일이 두 실행 위치를 지탱한다 — 엔드포인트는 env라 in-cluster는 `seaweedfs:8333`,
+# 호스트는 port-forward(`localhost:18333`)를 본다.
+# ⚠️ 그래서 호스트 `dg dev`도 S3 port-forward가 없으면 compute log를 못 쓴다
+# (`ICEBERG_S3_ENDPOINT`가 이미 같은 전제를 지고 있어 새 전제는 아니다).
+compute_logs:
+  module: dagster_aws.s3.compute_log_manager
+  class: S3ComputeLogManager
+  config:
+    bucket:
+      env: DAGSTER_COMPUTE_LOG_BUCKET
+    prefix: compute-logs
+    endpoint_url:
+      env: ICEBERG_S3_ENDPOINT
+    region:
+      env: AWS_REGION
+    # SeaweedFS는 평문 HTTP다. endpoint_url 스킴에서 유도되지만 명시해 둔다.
+    use_ssl: false
+    # 빈 파일을 올리지 않는다 — 0바이트 객체가 쌓이는 것을 막는다.
+    skip_empty_files: true
+
+# 🔴 껐다. DUA가 걸린 데이터를 다루는 저장소에서 **무엇이 나가는지 확인하지 않은 채**
+# 외부 발신을 켜 둔 상태는 통제로 볼 수 없다(architectures/monitoring.md의
+# "명시 없음을 안 나간다로 읽지 않는다"와 같은 축). 필요해지면 무엇이 나가는지 확인하고 켠다.
 telemetry:
-  enabled: true
+  enabled: false
