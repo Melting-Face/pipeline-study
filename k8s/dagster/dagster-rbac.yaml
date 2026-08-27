@@ -1,0 +1,57 @@
+# Dagster ServiceAccount·RBAC — `SparkApplication` 제출 경로 전용
+#
+# 왜 RBAC이 필요한가: run launcher는 `DefaultRunLauncher`라 **run 실행 자체에는 k8s API가 필요 없다**
+#   (run은 daemon 파드 안의 서브프로세스로 돈다). 권한이 필요한 것은 `defs/poc/`의
+#   `SparkOperatorResource` 하나뿐이다 — 이 자산이 `SparkApplication` CR을 제출하고 상태를 폴링한다.
+#   호스트 Dagster 시절에는 사람의 kubeconfig를 빌려 썼고, in-cluster에서는 이 SA가 그 자리를 대신한다.
+#
+# 🔴 verb는 **코드가 실제로 부르는 것만** 넣는다(defs/poc/resources.py):
+#   create_namespaced_custom_object / get_namespaced_custom_object / delete_namespaced_custom_object
+#   list_namespaced_pod / read_namespaced_pod_log
+#   → `watch`·`patch`·`update`는 호출하지 않으므로 넣지 않는다. 나중에 폴링을 watch로 바꾸면
+#     그때 verb를 추가한다(미리 넣어두면 "왜 있는지 아무도 모르는 권한"이 된다).
+#
+# 🔴 Role이지 ClusterRole이 아니다 — 잡은 `default` 네임스페이스에만 제출된다(POC_NAMESPACE).
+#
+# 검증(반증 셀 — 있는 권한보다 **없는 권한**을 확인하는 편이 강하다):
+#   kubectl auth can-i --as=system:serviceaccount:default:dagster create sparkapplications  # yes
+#   kubectl auth can-i --as=system:serviceaccount:default:dagster delete pods               # no
+#   kubectl auth can-i --as=system:serviceaccount:default:dagster get secrets               # no
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+    name: dagster
+    namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+    name: dagster-spark-submit
+    namespace: default
+rules:
+    # Spark Operator CRD. apiVersion은 `spark.apache.org/v1`이 storage 정본이다
+    # (conventions/k8s.md §9 — 버전은 추측하지 말고 클러스터에서 읽는다).
+    - apiGroups: ["spark.apache.org"]
+      resources: ["sparkapplications"]
+      verbs: ["get", "list", "create", "delete"]
+    # driver/executor 파드 상태·로그 회수. 파드를 만들거나 지우지는 않는다(오퍼레이터 몫).
+    - apiGroups: [""]
+      resources: ["pods"]
+      verbs: ["get", "list"]
+    - apiGroups: [""]
+      resources: ["pods/log"]
+      verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+    name: dagster-spark-submit
+    namespace: default
+subjects:
+    - kind: ServiceAccount
+      name: dagster
+      namespace: default
+roleRef:
+    kind: Role
+    name: dagster-spark-submit
+    apiGroup: rbac.authorization.k8s.io

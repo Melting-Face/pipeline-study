@@ -1,0 +1,48 @@
+# Dagster 메타 스토리지 DB — 기존 CNPG 클러스터(`catalog-postgres`) 안의 **별도 데이터베이스**
+#
+# 왜 별도 Cluster를 안 만드는가: CNPG Cluster 하나가 상주 250m/512Mi를 더 먹는데, CPU는 이미
+#   동시 피크 89%다(docs/resource-sizing.md §B). 메타 DB는 쓰기량이 작아 카탈로그와 인스턴스를
+#   공유해도 무방하다. 대신 **DB와 롤은 분리**한다 — 아래 참조.
+#
+# 🔴 카탈로그(`iceberg`)와 롤을 공유하지 않는 이유 셋:
+#   ① 최소권한 — 크리덴셜 하나의 폭발반경이 두 배가 된다(conventions/k8s.md §5).
+#   ② §12의 "같은 비밀번호를 두 시크릿에 두지 않는다" 규율의 정반대가 된다.
+#   ③ `iceberg` 롤은 bootstrap.initdb가 만든 뒤 선언 관리로 **인수**된 롤이라 이력이 복잡하다.
+#      `dagster`는 처음부터 `managed.roles`로 만들어 회전 경로를 깨끗하게 둔다.
+#   ⇒ 롤 선언은 k8s/catalog-postgres.yaml의 `spec.managed.roles`에 있다(**이 파일과 한 벌**).
+#
+# 🔴 그래서 in-cluster Dagster는 **같은 서버의 두 DB에 서로 다른 계정으로** 붙는다:
+#     POSTGRES_*         → dagster DB / dagster 롤 (Dagster run·event log·schedule)
+#     ICEBERG_CATALOG_*  → iceberg DB / iceberg 롤 (pyiceberg JDBC 카탈로그)
+#   common/constants.py가 `ICEBERG_CATALOG_USER` 미지정 시 `POSTGRES_USER`로 **폴백**하므로,
+#   빠뜨리면 dagster 계정으로 iceberg DB에 붙어 **접속은 성공하고 테이블 접근에서 거부**된다.
+#   부분 성공이라 오진하기 쉽다 — env 매핑은 dagster-deploy.yaml의 ConfigMap이 정본이다.
+#
+# ✅ CRD 실재·필드명은 chart 0.29.0 스키마로 **오프라인 대조 완료**(2026-08-27):
+#     helm template cnpg cnpg/cloudnative-pg --version 0.29.0 --include-crds \
+#       | grep databases.postgresql.cnpg.io
+#   required = [cluster, name, owner] · `cluster`는 {name} 오브젝트 · ensure ∈ {present, absent}
+#   · databaseReclaimPolicy ∈ {delete, retain}
+#   적용 전 최종 관문: kubectl apply --dry-run=server -f k8s/dagster/dagster-meta-db.yaml
+#
+# 폴백(오퍼레이터 버전이 내려가 CRD가 사라진 경우) — 파드명을 하드코딩하지 않는다:
+#   PRIMARY="$(kubectl -n default get cluster catalog-postgres -o jsonpath='{.status.currentPrimary}')"
+#   kubectl -n default exec "$PRIMARY" -c postgres -- psql -tAc \
+#     "SELECT 1 FROM pg_database WHERE datname='dagster'" | grep -q 1 \
+#     || kubectl -n default exec "$PRIMARY" -c postgres -- \
+#        psql -v ON_ERROR_STOP=1 -c 'CREATE DATABASE dagster OWNER dagster'
+#   (`CREATE DATABASE`는 트랜잭션·DO 블록 안에서 못 돌아 SELECT로 먼저 보고 분기한다.)
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+    name: dagster
+    namespace: default
+spec:
+    cluster:
+        name: catalog-postgres
+    name: dagster
+    owner: dagster
+    ensure: present
+    # 🔴 `retain` — CR을 지워도 DB는 남긴다. run 이력은 재생성이 불가능한 관측 기록이고,
+    # 매니페스트 정리 한 번으로 사라지면 안 된다(구 emptyDir 카탈로그 소멸 사고와 같은 축).
+    databaseReclaimPolicy: retain
