@@ -14,6 +14,7 @@
 | [spark.md](spark.md) | 🚧 | 배치 엔진 — 대용량 인제스트 · dbt-spark 마트 · Iceberg 유지보수. 버전은 **최신이 아니라 Iceberg가 지원하는 짝**으로 고른다 |
 | [flink.md](flink.md) | 🚧 | 스트림 엔진 — 실시간 조기경보. Iceberg bronze 스트리밍 읽기를 소스로 쓴다 |
 | [k8s.md](k8s.md) | 🚧 | 컨테이너 오케스트레이션 — 컴퓨트·데이터 서비스 이전(이행중) |
+| [terraform.md](terraform.md) | 🚧 | IaC — 로컬 K8s 플랫폼을 셸에서 이행. 분할 축은 부트스트랩이 아니라 **폭발반경**이다 |
 | [oci.md](oci.md) | 🔎 | 클라우드 이행 — OCI Always Free A1(ARM) + Terraform + k3s(학습·확장 경로) |
 | [trino.md](trino.md) | 🔎 | MPP SQL 엔진 — 현행 compose까지 채택, **재설계로 제거**(dbt→dbt-spark) |
 | [monitoring.md](monitoring.md) | 🔎 | 모니터링·관측 — Grafana·Loki·Robusta 등을 **지금 쓰지 않는 이유** |
