@@ -25,7 +25,19 @@ spec:
                       - -s3
                       - -s3.config=/etc/seaweedfs/s3.json
                       - -master.volumeSizeLimitMB=1024
-                      - -volume.max=10
+                      # 🔴 10 → 30. SeaweedFS는 **버킷(collection)마다 별도 볼륨**을 잡는데
+                      #   슬롯이 차면 새 collection 쓰기가 `InternalError`로 죽는다.
+                      #   2026-08-27 실측: `volume:10/10 active:10 free:0`이고 그중 warehouse는 3개,
+                      #   나머지 7개는 collection 없는 기본 볼륨(합계 ~470KB)이 슬롯만 점유하고 있었다.
+                      #   증상: PutObject → `No writable volumes and no free volumes left`.
+                      #   ⚠️ 이것이 `pg-backup`(Barman WAL) 실패의 원인이기도 하다 —
+                      #   구 주석의 aws-chunked 체크섬 가설은 **잘못된 갈래**였다
+                      #   (체크섬 env가 켜진 상태에서 재현됐고, 같은 클라이언트로 warehouse는 성공했다).
+                      #   디스크가 아니라 **슬롯 상한**이 급소다(실측 시점 디스크 49GB 여유).
+                      - -volume.max=30
+                      # preallocate를 끈다 — 켜져 있으면 볼륨당 1GiB를 미리 잡아
+                      #   30 슬롯이 30GiB 예약이 된다. 로컬 PoC에는 온디맨드 증가가 맞다.
+                      - -master.volumePreallocate=false
                   ports:
                       - {containerPort: 8333, name: s3}
                       - {containerPort: 8888, name: filer}

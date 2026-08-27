@@ -34,14 +34,10 @@
 ./scripts/k8s-up.sh
 ./scripts/k8s-operators.sh
 ./scripts/k8s-poc-storage.sh
-
-podman compose up -d postgres
-cd dagster/dockerfile.d/src
-export DAGSTER_HOME="$PWD"
-uv run dg dev
+./scripts/k8s-dagster.sh
 ```
 
-Dagster UI는 `http://localhost:3000`에서 연다. 컴퓨트 워크로드는 사용할 때만 기동하고
+Dagster UI는 `http://dagster.localtest.me:8080`에서 연다. 컴퓨트 워크로드는 사용할 때만 기동하고
 검증이 끝나면 회수한다. Spark Connect·Flink 기동 명령과 접속 주소는
 [환경 세팅 §3](docs/setup.md#3-로컬-kubernetes)에 있다.
 
@@ -94,7 +90,7 @@ uv run pytest
 | [문서 홈](docs/README.md) | 전체 문서 목차와 처음 읽는 순서 |
 | [환경 세팅](docs/setup.md) | 최초 설치, 기동·접속·회수, 자주 만나는 함정 |
 | [아키텍처 개요](docs/architectures/overview.md) | 서비스 위치, 데이터 흐름, 컴퓨트·스토리지 관계 |
-| [재설계](docs/redesign.md) | 호스트 Dagster + Kubernetes 목표와 단계별 게이트 |
+| [재설계](docs/redesign.md) | Kubernetes 단일 플랫폼 목표와 단계별 게이트 |
 | [코딩 컨벤션](docs/conventions/README.md) | Python·Dagster·dbt·Docker·Kubernetes·Terraform 규칙 |
 | [운영](docs/operations.md) | 환경변수 전파, 보존 정책, 운영 절차 |
 | [보안·거버넌스](docs/security.md) | 원천 데이터·비밀정보·DUA·공개 통제 |

@@ -154,6 +154,7 @@ HTTP UI와 gRPC는 **Ingress**로 나가고(`*.localtest.me:8080` — `localtest
 
 | 경로 | 주소 | 조건 |
 | --- | --- | --- |
+| **Dagster UI** | http://dagster.localtest.me:8080 | **상시**(오케스트레이터는 회수 대상이 아니다) |
 | Flink Web UI | http://flink.localtest.me:8080 | 세션 클러스터가 떠 있을 때 |
 | Spark Web UI | http://spark.localtest.me:8080 | Spark Connect가 `--replicas=1`일 때 |
 | Spark Connect (gRPC) | `sc://spark-grpc.localtest.me:8443/;use_ssl=true` | `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` 필요 |
@@ -197,6 +198,10 @@ podman push --tls-verify=false localhost:5001/spark-runner:0.5.0
 podman build -f k8s/flink/Dockerfile.flink-runner -t localhost:5001/flink-runner:0.3.0 k8s/flink
 podman push --tls-verify=false localhost:5001/flink-runner:0.3.0
 
+# Dagster 이미지는 scripts/k8s-dagster.sh 가 빌드·push한다(§5). 수동으로 하려면:
+#   podman build -t localhost:5001/dagster:0.1.0 dagster/dockerfile.d
+#   podman push --tls-verify=false localhost:5001/dagster:0.1.0
+
 # 최초 1회: Spark Connect Deployment·Service·Ingress·Certificate 생성
 kubectl apply -f k8s/spark/spark-connect-server.yaml
 kubectl scale deploy/spark-connect --replicas=0  # 평시 자원 회수
@@ -213,19 +218,36 @@ kubectl scale deploy/spark-connect --replicas=0  # 평시 자원 회수
 > grep -rn "image:" k8s/spark/*.yaml k8s/flink/*.yaml
 > ```
 
-## 5. Dagster (호스트)
+## 5. Dagster (in-cluster — 정본)
 
 ```shell
-podman compose up -d postgres              # 메타 스토리지만 기동 (127.0.0.1 바인딩)
+./scripts/k8s-dagster.sh                   # 이미지 빌드·push → 메타 DB → RBAC → Deployment → Ingress 대조
+# UI: http://dagster.localtest.me:8080
+```
+
+스크립트는 **적용 전에** 매니페스트의 `image:` 태그와 `DAGSTER_IMAGE_TAG`를 대조하고,
+마지막에 `/server_info`가 **버전 JSON을 돌려주는지**까지 본다(상태코드 200으로 닫지 않는다).
+이미 빌드된 이미지를 재사용하려면 `--skip-build`.
+
+### 호스트 `dg dev` (개발 루프 대안)
+
+```shell
+kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 메타 DB(dagster) + 카탈로그(iceberg)
+kubectl port-forward svc/seaweedfs           18333:8333   # S3 (compute log·Iceberg)
 
 cd dagster/dockerfile.d/src
 export DAGSTER_HOME="$PWD"                 # dagster.yaml이 있는 디렉터리
 uv run dg dev                              # http://localhost:3000
 ```
 
-`compose.yml`의 뼈대는 `dagster-webserver`·`dagster-daemon`·`postgres` 셋이고, 나머지는 `profiles`로
-opt-in한다(`legacy-sql`=trino · `legacy-storage`=seaweedfs · `monitoring`=prometheus).
-호스트 실행 경로에서는 **`postgres`만** 필요하다.
+⚠️ **in-cluster와 동시에 띄우지 않는다.** 같은 서비스가 두 곳에 살아 있으면 관측 확인을 전부
+통과하면서 레거시가 정본 대신 답한다([conventions/monitoring.md](conventions/monitoring.md) §3-④).
+또 `.env`의 `POSTGRES_PORT`가 **15432**(port-forward)여야 한다 — 5432면 compose DB를 보게 돼
+**run 이력이 두 벌로 갈린다.**
+
+`compose.yml`은 이제 **기본 `up`으로 아무것도 띄우지 않는다**(전부 `profiles` opt-in):
+`host-dagster`=webserver·daemon·postgres · `legacy-meta`=postgres만 ·
+`legacy-sql`=trino · `legacy-storage`=seaweedfs · `monitoring`=prometheus.
 
 ```shell
 podman compose --profile legacy-sql up -d trino    # Trino 값 대조가 필요할 때만
@@ -306,6 +328,16 @@ uv run --group notebook jupyter lab --port 8889 --notebook-dir ../../../notebook
   부분 성공이라 원인을 오해하기 쉽다. 엔드포인트와 자격증명은 **한 쌍으로 바꾼다.**
 - **dbt 타깃에 `trino`라는 이름은 없다** — Trino는 `dev`/`prod`이고, 기본값은 `spark_connect`다
   (`target: "{{ env_var('DBT_TARGET', 'spark_connect') }}"`).
+- **`ICEBERG_CATALOG_*`를 비워두면 `POSTGRES_*`로 폴백한다** — in-cluster에서 앞은 메타 DB(`dagster`),
+  뒤는 카탈로그(`iceberg`)로 **처음으로 갈린다**. 빠뜨리면 `dagster` 계정으로 `iceberg` DB에 붙어
+  **접속은 성공하고 테이블 접근에서 거부**된다. 위 `ICEBERG_S3_*` 함정과 같은 형태의 부분 성공이다.
+- **`.dockerignore` 패턴은 빌드 컨텍스트 루트 기준이다** — 코드는 `src/` 아래에 있으므로
+  접두어 없는 패턴은 **아무것도 매칭하지 않는다**. 에러가 없어 조용하다.
+  2026-08-27까지 `src/.venv`(1.2GB)가 이미지에 들어가 있었다. 고친 뒤에는 **이미지 크기로 확인**한다.
+- **SeaweedFS는 버킷(collection)마다 볼륨 슬롯을 쓴다** — `-volume.max`가 차면 **새 버킷에만**
+  `PutObject`가 `InternalError`로 실패한다. 기존 버킷은 멀쩡해서 자격증명·체크섬 문제로 오진하기 쉽다.
+  판정은 `weed shell`의 `volume.list` 첫 줄(`free:0`)과 서버 로그의
+  `No writable volumes and no free volumes left`다. **디스크 여유와는 다른 축**이다.
 
 ### podman machine
 

@@ -5,11 +5,13 @@
 `pipeline-study`는 **Dagster로 오케스트레이션하고, Iceberg 테이블 포맷을 SeaweedFS(S3 호환) 위에
 적재하는** 로컬 레이크하우스 학습 프로젝트다.
 
-> ⚠️ **이 문서는 `compose.yml` 기준의 "현행 스택"이다.** 재설계로 컴퓨트·스토리지는
-> **로컬 Kubernetes로 이전 중**이고 Dagster는 호스트로 나갔다. 목표 토폴로지와 진행 단계는
-> [../redesign.md](../redesign.md), 클러스터 규칙은 [../conventions/k8s.md](../conventions/k8s.md).
-> **2026-08-20 기준 실제로 도는 구성**: 호스트 Dagster + compose `postgres`(메타) +
-> kind 클러스터(Spark Operator·Spark Connect·SeaweedFS·카탈로그 Postgres·ingress-nginx).
+> ⚠️ **이 문서의 compose 서술은 이제 대부분 폐기 전 판본이다.** 재설계로 컴퓨트·스토리지가
+> **로컬 Kubernetes로 이전**했고 **Dagster도 2026-08-27 클러스터로 들어갔다**. 목표 토폴로지는
+> [../redesign.md](../redesign.md), 클러스터 규칙은 [../conventions/k8s.md](../conventions/k8s.md),
+> Dagster 배치 결정은 [dagster.md](dagster.md).
+> **2026-08-27 기준 실제로 도는 구성**: kind 클러스터 하나 — Dagster(webserver·daemon) ·
+> Spark Operator · SeaweedFS · 카탈로그/메타 Postgres(CNPG) · Flink Operator · ingress-nginx.
+> **compose는 기본 `up`으로 아무것도 띄우지 않는다**(전부 profile opt-in이 됐다).
 > **Flink Operator는 ⏸ 미설치**다 — 채택은 했으나 잡 없는 세션 클러스터가 상주 자원을 점유해
 > 내렸고, `scripts/k8s-operators.sh`로 **오퍼레이터만** 복구한다(기본값이 `true`라 지정 없이 설치되며
 > 제외는 `INSTALL_FLINK=false` — [`scripts/k8s-env.sh`](../../scripts/k8s-env.sh); 잡을 돌리려면 세션
@@ -318,17 +320,17 @@ def admissions(s3: S3Resource) -> pa.Table:
 🔴 **절차의 정본은 [`../setup.md`](../setup.md)** 다. 여기서는 순서만 요약하고
 명령을 중복 정의하지 않는다(단일 출처 — [`../doc-sync.md`](../doc-sync.md)).
 
-재설계 이후 기동은 **"전체 스택 `compose up`" 하나가 아니라 네 단계**다.
+재설계 이후 기동은 **"전체 스택 `compose up`" 하나가 아니라 세 단계**이며 **compose는 등장하지 않는다**.
 
 1. **`.env` 작성** — `.env.example` 복사([`../operations.md`](../operations.md) §1-2)
 2. **로컬 K8s 기동**(컴퓨트·스토리지) — `scripts/k8s-up.sh` → `k8s-operators.sh` → `k8s-poc-storage.sh`
-3. **compose는 메타 Postgres만** — `podman compose up -d postgres`
-4. **Dagster는 호스트에서** — `DAGSTER_HOME` 지정 후 `uv run dg dev` → http://localhost:3000
+3. **Dagster 배포** — `scripts/k8s-dagster.sh` → http://dagster.localtest.me:8080
 
-> 컨테이너로 통째 띄우는 `podman compose up -d --build`(webserver·daemon 분리)도 남아 있으나,
-> 이 경우 Dagster가 클러스터를 트리거하는 경로는 별도 배선이 필요하다.
-> `trino`·`seaweedfs`·`prometheus`는 **profile opt-in**이라 기본 `up`에 포함되지 않는다
-> (예: `podman compose --profile legacy-sql up -d trino`).
+> 호스트 `uv run dg dev`(http://localhost:3000)는 **개발 루프 대안**으로 남는다 —
+> 메타 DB·S3에 port-forward가 전제이고, **in-cluster와 동시에 띄우지 않는다**
+> (같은 서비스의 이중 존재 — [../conventions/monitoring.md](../conventions/monitoring.md) §3-④).
+> compose의 `dagster-*`·`postgres`·`trino`·`seaweedfs`·`prometheus`는 **전부 profile opt-in**이라
+> 기본 `up`으로는 **아무것도 뜨지 않는다**(예: `podman compose --profile host-dagster up -d`).
 
 dbt 모델 추가는 스캐폴딩이 필요 없다 — `models/<dataset>/`에 `.sql`을 넣으면 데이터셋 subproject의
 `@dbt_assets(select="fqn:<dataset>")`가 자동 반영한다.
@@ -337,7 +339,7 @@ dbt 모델 추가는 스캐폴딩이 필요 없다 — `models/<dataset>/`에 `.
 
 | 포트 | 서비스                          | profile                                    |
 | ---- | ------------------------------- | ------------------------------------------ |
-| 3000 | Dagster UI                      | — (core, 호스트 `dg dev`도 동일 포트)      |
+| 3000 | Dagster UI (호스트 `dg dev` 전용) | `host-dagster` — **정본은 Ingress 8080**   |
 | 8081 | Trino (컨테이너 8080 → 호스트 8081) | `legacy-sql`                           |
 | 8333 | SeaweedFS S3 API                | `legacy-storage`·`legacy-sql`·`monitoring` |
 | 8888 | SeaweedFS filer UI              | `legacy-storage`·`legacy-sql`·`monitoring` |
