@@ -90,6 +90,43 @@ jobs:
           git fetch --no-tags origin "${{ github.base_ref }}"
           uvx --from gitlint-core gitlint --commits "origin/${{ github.base_ref }}..HEAD"
 
+  terraform:
+    name: Terraform 검증 (validate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      # 🔴 `validate`가 pre-commit이 아니라 여기 있는 이유:
+      #    `validate`는 `init`이 선행돼야 하는데 `.terraform/providers`는 gitignore라
+      #    저장소에 없다. 훅에서 `init`을 돌리면 **커밋이 레지스트리 가용성에 묶인다** —
+      #    `sqlfluff`의 `templater = "dbt"`에서 이미 겪은 함정이다(conventions/dbt.md).
+      #    CI는 어차피 네트워크를 쓰므로 여기가 맞는 자리다.
+      # `-backend=false`: state 백엔드 접속 없이 프로바이더만 받는다(자격증명 불필요).
+      # 스택이 늘면 이 루프가 자동으로 집는다 — 목록을 두 곳에 두지 않는다.
+      - name: 스택별 init + validate
+        run: |
+          set -euo pipefail
+          found=0
+          for dir in terraform/*/; do
+            [ -f "${dir}versions.tf" ] || continue
+            found=$((found + 1))
+            echo "::group::${dir}"
+            terraform -chdir="${dir}" init -backend=false -input=false -no-color
+            terraform -chdir="${dir}" validate -no-color
+            echo "::endgroup::"
+          done
+          # 🔴 0건을 통과로 읽지 않는다 — 디렉터리 구조가 바뀌면 이 잡이 조용히 무의미해진다.
+          if [ "${found}" -eq 0 ]; then
+            echo "terraform/ 아래에서 versions.tf 를 가진 스택을 찾지 못했다" >&2
+            exit 1
+          fi
+          echo "검증한 스택: ${found}개"
+
   defs:
     name: 타입·정의 로드 (mypy · dg check defs)
     runs-on: ubuntu-latest
