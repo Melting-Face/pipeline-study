@@ -57,9 +57,11 @@
   동일한 패턴이며, `dg dev` 기반 **빠른 개발 루프**를 유지한다.
 - **컴퓨트·데이터 서비스는 K8s로 통일**한다(하이브리드 이중관리 회피). 컴퓨트는 **Spark(배치)+Flink(스트림)**.
 - **Trino는 제거**한다. dbt는 **dbt-spark**로 이관하고, ad-hoc 조회는 Spark SQL로 대체한다.
-- 자원 배분(**8 CPU / 22,888 MiB** VM — `scripts/k8s-env.sh`가 정본, **동시 기동 허용**)은
+- 자원 배분(**8 CPU / 26,702 MiB** VM — `scripts/k8s-env.sh`가 정본, **동시 기동 허용**)은
   [resource-sizing.md](resource-sizing.md) "Kubernetes 재설계 시나리오"와 [conventions/k8s.md](conventions/k8s.md) §9-3.
-  🔴 백분율의 분모는 VM 총량이 아니라 **노드 Allocatable**(`8000m` / `22843508Ki`)이다.
+  🔴 백분율의 분모는 VM 총량이 아니라 **노드 Allocatable**(`8000m` / `26679964Ki` = 26054Mi 내림)이다.
+  **수치의 정본은 [resource-sizing.md](resource-sizing.md) §(A)** 이고 여기는 요약이다 —
+  자원을 바꾸면 **양쪽을 한 벌로** 갱신한다(2026-08-27 상향 시 이 줄이 낡은 채 남아 있었다).
 
 ## 3. 핵심 결정 (설계 급소)
 

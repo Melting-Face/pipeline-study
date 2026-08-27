@@ -7,15 +7,22 @@
 CLUSTER_NAME="${CLUSTER_NAME:-lakehouse}"
 MACHINE_NAME="${MACHINE_NAME:-dagster-k8s}"
 # 🔴 **단위 축 주의 — 아래 값은 VM 총량이지 노드 Allocatable이 아니다.**
-#    실측(2026-08-21 13:50 KST, `podman machine inspect`): CPUs=8 / Memory=22888 MiB.
-#    같은 시점 노드 Allocatable은 **22307Mi로 약 581MiB 적다**(VM 커널·kubelet 예약분).
+#    실측(2026-08-27 10:08 KST, `podman machine inspect podman-machine-default`):
+#    CPUs=8 / Memory=26702 MiB / DiskSize=93 GiB.
+#    같은 시점 노드 Allocatable은 **26054Mi(raw 26679964Ki, 내림)로 약 648MiB 적다**(VM 커널·kubelet 예약분).
 #    예산을 짤 때 두 축을 섞으면 안 된다 — 계획서 초안이 22528(VM 축 추정치)을 쓰다 360MiB 부족을 냈다.
-# 🔴 이 값은 **머신 생성 시에만** 적용된다. k8s-up.sh의 MANAGE_MACHINE=false가 실행 중 머신을
+# 🔴 이 값은 **k8s-up.sh가 머신을 만들 때만** 쓰인다. MANAGE_MACHINE=false가 실행 중 머신을
 #    재사용하므로, 머신이 이미 있으면 여기를 고쳐도 현재 머신에는 반영되지 않는다.
 #    목적은 **머신 없는 상태에서 처음 돌리는 사람이 같은 크기의 머신을 받게 하는 것**이다.
+#    ⚠️ 이것을 "podman이 사후 변경을 못 한다"로 읽지 마라 — **두 축은 다르다.**
+#    `podman machine set --cpus/--memory/--disk-size`는 **중지 상태에서 변경된다**(2026-08-27 반증:
+#    22888 → 26702 MiB로 바뀐 뒤에도 kind 클러스터 `lakehouse`와 PVC 2종이 그대로 살아 있었다).
+#    바꾼 뒤에는 **여기와 docs/resource-sizing.md §(A)를 함께 갱신**한다 — 안 그러면 선언이 죽은 값이 된다.
+# ⚠️ MACHINE_NAME(dagster-k8s)은 **MANAGE_MACHINE=true 경로 전용**이다. 현재 실체는 기존
+#    `podman-machine-default`를 재사용 중이며 `dagster-k8s` 머신은 존재하지 않는다(k8s-up.sh:19-28).
 MACHINE_CPUS="${MACHINE_CPUS:-8}"
-MACHINE_MEMORY_MIB="${MACHINE_MEMORY_MIB:-22888}"    # ≈22.35 GiB, VM 총량 (Apple Silicon은 생성 시 확정)
-MACHINE_DISK_GIB="${MACHINE_DISK_GIB:-120}"
+MACHINE_MEMORY_MIB="${MACHINE_MEMORY_MIB:-26702}"    # =26.08 GiB(28.0 GB 십진), VM 총량
+MACHINE_DISK_GIB="${MACHINE_DISK_GIB:-93}"           # =99.9 GB 십진
 
 # --- 로컬 레지스트리 (호스트·클러스터 공통 이름 localhost:5001) ---
 REGISTRY_NAME="${REGISTRY_NAME:-kind-registry}"

@@ -219,6 +219,94 @@ find ~/.claude/projects -name '*.jsonl' -mtime +14 | wc -l
 단가는 스크립트 상단 `PRICING`의 **하드코딩 스냅샷**이다. 모델 출시·인하 때 사람이 갱신해야 한다.
 Sonnet 5 인트로 단가는 2026-08-31 만료다. 단가표에 없는 모델은 0원이 아니라 `미측정`으로 표기된다.
 
+## 4. 클러스터 재생성
+
+kind 클러스터를 다시 만드는 절차다. **재생성은 PVC를 통째로 지우므로** 언제 필요한지부터 가른다.
+
+### 4-1. 정말 재생성이 필요한가 (먼저 답한다)
+
+| 바꾸려는 것 | 재생성 필요? | 수단 |
+| --- | --- | --- |
+| podman machine CPU·메모리·디스크 | ❌ | `podman machine set`(중지 상태에서 변경) |
+| kind `extraPortMappings`(공개 포트)·`extraMounts` | ✅ | 생성 시점 전용 |
+| PVC 용량 | ✅ | kind 기본 SC는 `ALLOWVOLUMEEXPANSION=false` |
+
+⚠️ **머신 자원 변경을 재생성 사유로 오해하지 마라.** 2026-08-27 실측에서 VM 메모리를
+`22888 → 26702 MiB`로 올린 뒤에도 클러스터 `lakehouse`와 PVC 2종이 **Bound 상태로 그대로** 살아 있었다.
+구 문서의 *"Apple Silicon은 생성 시 확정"* 은 **반증됐다** — [resource-sizing.md](resource-sizing.md) §A.
+치르지 않아도 될 재적재를 치르지 않으려면 이 표를 먼저 본다.
+
+**재생성이 확정되면 바꿀 것을 전부 모아서 한 번에 한다.** 창을 여러 번 열면 재적재도 여러 번이다.
+선반영 대상: `k8s/kind-cluster.yaml`(포트·마운트) · `k8s/catalog-postgres.yaml`(`storage.size`) ·
+`scripts/k8s-env.sh`(머신 자원 선언).
+
+### 4-2. 무엇이 소멸하고 비용이 얼마인가
+
+PVC는 kind **노드 컨테이너 안**(local-path)에 있으므로 노드가 지워지면 함께 사라진다.
+
+| 대상 | 담긴 것 | 크기(2026-08-27 실측) | 소멸 시 |
+| --- | --- | --- | --- |
+| `catalog-postgres-1` | Iceberg JDBC 테이블 메타 | **7.7 MB** | ❌ 테이블 정의 소실 — 재적재해야 복구 |
+| `data-seaweedfs-0` | 원천 csv.gz + Iceberg parquet | **10 GB**(볼륨 파일) | ⚠️ parquet 재생성은 전 파이프라인 재실행 |
+| 로컬 레지스트리 | 러너 이미지 | — | ✅ 재빌드·재push |
+| Flink 체크포인트 | 스트리밍 상태 | — | ✅ PoC라 무의미 |
+
+⚠️ **`df`와 `du`는 다른 것을 센다.** `kubectl exec seaweedfs-0 -- df -h /data`는 **노드 디스크 전체**
+(containerd 이미지 레이어 포함, 실측 35.2G/92.4G)를 보여준다. 백업 비용은 `du -sh /data`(10G)다.
+
+### 4-3. 백업 (재생성 전)
+
+**기준선을 먼저 박제한다** — 복구가 맞았다고 말할 근거는 백업 전에만 만들 수 있다.
+
+```shell
+kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 별도 터미널
+
+# 1) 기준선: 테이블 목록과 행 수를 파일로 남긴다
+# 2) 카탈로그 논리 백업
+kubectl exec catalog-postgres-1 -c postgres -- pg_dump -U iceberg iceberg > <저장소 밖 경로>/catalog.sql
+# 3) SeaweedFS: S3 API로 객체 동기(port-forward 18333) 또는 PVC 통째 tar
+```
+
+⚠️ **기준선에는 "이 값이 무엇을 세는가"를 함께 적는다** — *테이블 수*인지 *파일 수*인지,
+*네임스페이스 포함*인지. 안 적으면 복구 후 대조가 **단위만 어긋난 정답**을 통과시킨다
+([philosophy.md](philosophy.md) §계측 단위).
+
+⚠️ **백업 파일은 저장소 밖에 둔다** — 원천 데이터는 DUA 대상이라 커밋 금지다([security.md](security.md)).
+
+⚠️ Flink 스트리밍 잡이 떠 있으면 **취소 전에** 상태를 수집한다 —
+`externalized-checkpoint-retention` 기본값이 `DELETE_ON_CANCELLATION`이라 `flink cancel`이
+체크포인트를 지운다([architectures/flink.md](architectures/flink.md) §순서 함정).
+
+### 4-4. 재생성과 복구
+
+```shell
+./scripts/k8s-down.sh          # kind + 레지스트리 삭제 (podman machine은 보존)
+./scripts/k8s-up.sh
+./scripts/k8s-operators.sh
+./scripts/k8s-poc-storage.sh
+```
+
+⚠️ **복구 순서는 SeaweedFS(S3 객체) → 카탈로그 PG(메타)** 다. 반대로 하면 **테이블은 보이는데
+읽기가 실패**한다 — 메타가 가리키는 객체가 아직 없기 때문이다. 이 저장소가 두 번 겪은
+**"부분 성공" 드리프트**와 같은 모양이라 오진하기 쉽다.
+
+⚠️ CNPG `bootstrap.recovery`(PITR)는 **쓸 수 없다** — Barman Cloud 백업이 미구성 상태다
+(`k8s/catalog-postgres.yaml` 주석). 논리 복원(`psql < catalog.sql`)만 가능하다.
+
+⚠️ **크리덴셜은 한 벌로 확인한다** — `catalog-pg-app` Secret ↔ DB 롤 ↔ `.env`의
+`ICEBERG_CATALOG_PASSWORD` ↔ 이미 뜬 워크로드의 env(§1-2).
+
+### 4-5. 검증
+
+```shell
+cd dagster/dockerfile.d/src && uv run dg check defs
+uv run scripts/spark_connect_smoke.py       # 종료코드 2 = 사전조건 미충족(판정 불가) — 통과 아님
+uv run scripts/iceberg_changelog_probe.py
+```
+
+**최종 판정은 §4-3의 기준선과 행 수 대조**다. 스크립트가 도는 것은 *실행됐다*이지
+*같은 값이 나온다*가 아니다([philosophy.md](philosophy.md) 원칙 7).
+
 ## 참고
 
 - Dagster — Environment variables & secrets: https://docs.dagster.io/guides/deploy/using-environment-variables-and-secrets

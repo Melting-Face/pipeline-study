@@ -72,7 +72,7 @@
 | 문서 | 내용 |
 | --- | --- |
 | [환경 세팅](setup.md) | 절차 정본 — 사전 요구·기동·검증·회수·함정 |
-| [환경변수·운영 정책](operations.md) | `.env`→compose→`EnvVar` 전파 체인, 보존 정책, 토큰 비용 계측 |
+| [환경변수·운영 정책](operations.md) | `.env`→compose→`EnvVar` 전파 체인, 보존 정책, 토큰 비용 계측, 클러스터 재생성 |
 | [리소스 산정](resource-sizing.md) | 호스트 자원에 따른 서비스 옵션 조정 |
 | [보안·데이터 거버넌스 **정책**](security.md) | ISMS-P·의료데이터 규제 매핑, 통제 방침과 보증 범위 |
 | [Agent Skills](skills.md) | Claude/Codex 공용 스킬 카탈로그와 통제 규칙 (허브) |

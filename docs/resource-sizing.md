@@ -21,41 +21,71 @@
 메모리를 인용할 때 **어느 축의 값인지 반드시 병기**한다. 셋은 서로 다른 것을 세며, 숫자만 옮기고
 단위를 바꾸면 조용히 틀린다([philosophy.md](philosophy.md) §계측 단위).
 
+> 📌 **아래 값은 2026-08-27 10:08 KST 실측**이다(직전 판본은 2026-08-21 실측 `22888 MiB`).
+> 자원을 바꾸면 **이 표와 [`scripts/k8s-env.sh`](../scripts/k8s-env.sh)를 한 벌로** 갱신한다.
+
 | 축 | 값 | 무엇을 세는가 | 어디서 읽나 |
 | --- | --- | --- | --- |
-| **VM 총량** | **8 CPU / 22888 MiB** (= 22.35 GiB) | podman machine에 할당된 전체 | `podman machine inspect` |
-| **`MACHINE_MEMORY_MIB`** | `22888` | 위와 **같은 축**(VM 총량)의 선언값 | [`scripts/k8s-env.sh`](../scripts/k8s-env.sh) |
-| **노드 Allocatable** | **8000m / `22843508Ki`** (≈ 22308Mi ≈ 21.8 GiB) | 파드가 실제로 예약 가능한 양 | `kubectl describe node` |
+| **VM 총량** | **8 CPU / 26702 MiB** (= 26.08 GiB = 28.0 GB 십진) | podman machine에 할당된 전체 | `podman machine inspect` |
+| **`MACHINE_MEMORY_MIB`** | `26702` | 위와 **같은 축**(VM 총량)의 선언값 | [`scripts/k8s-env.sh`](../scripts/k8s-env.sh) |
+| **노드 Allocatable** | **8000m / `26679964Ki`** (= 26054.65Mi ≈ 25.44 GiB) | 파드가 실제로 예약 가능한 양 | `kubectl describe node` |
 
-- 🔴 **VM 총량(22888 MiB)이 노드 Allocatable(≈22308Mi)보다 581 MiB 많다.** 차이는 노드 OS·kubelet
+- 🔴 **VM 총량(26702 MiB)이 노드 Allocatable(26054Mi)보다 648 MiB 많다.** 차이는 노드 OS·kubelet
   예약분이며, **둘은 다른 축이라 섞어 쓰면 안 된다.** 이 문서의 **백분율(%)은 전부 Allocatable 기준**이다.
-- **단위를 바꾸는 순간이 함정이다** — `22843508Ki`를 "22843Mi"로 옮긴 중간 기록이 있었고, 이는
-  **536Mi(2.4%) 과대**다(`Ki→Mi`는 ÷1024이지 접두어 치환이 아니다). 표에는 **raw 값을 남기고
-  환산식을 함께** 적는다: `22843508 ÷ 1024 = 22308.1`.
-  ⚠️ 같은 이유로 `22307Mi`로 적힌 기록도 1Mi 어긋난 값이다(정확히는 **22308Mi**). 백분율 결론
-  (52%·14%)은 어느 쪽이든 동일하지만, **값과 함께 "무엇을 세는가"를 적지 않으면 재검산이 불가능**하다.
+- ⚠️ **정수로 줄일 때는 내림한다 — 예산 분모를 실제보다 크게 잡지 않기 위해서다.**
+  `26679964 ÷ 1024 = 26054.65…` → **26054Mi**. 선례(`22843508 ÷ 1024 = 22308.1`)는 소수부가 `.1`이라
+  **반올림과 내림이 같은 값**을 냈고, 그래서 어느 방식인지 말해주지 않았다. 이번 값이 처음으로 갈린다.
+  표에는 **소수부를 살린 값**을 두고, 정수가 필요한 자리에서만 내림한다.
+- ⚠️ **메모리만 늘었고 CPU는 그대로다** — `8000m`은 변하지 않았으므로 **CPU 백분율은 전부 그대로**이고,
+  메모리 백분율만 분모가 커져 내려간다. **"자원을 늘렸다"를 "여유가 생겼다"로 읽지 마라**:
+  §(C) 다이얼이 지목하는 급소(동시 피크 **84%**)는 **CPU 축이라 하나도 완화되지 않았다.**
+- **단위를 바꾸는 순간이 함정이다** — 과거 판본에서 `22843508Ki`를 "22843Mi"로 옮긴 기록이 있었고,
+  이는 **536Mi(2.4%) 과대**였다(`Ki→Mi`는 ÷1024이지 접두어 치환이 아니다). 표에는 **raw 값을 남기고
+  환산식을 함께** 적는다: 현행은 `26679964 ÷ 1024 = 26054.65…` → **26054Mi**(내림).
+  **값과 함께 "무엇을 세는가"를 적지 않으면 재검산이 불가능**하다.
+- ⚠️ **`podman machine list`의 표시값을 그대로 옮기지 마라** — `26.08GiB`로 반올림해 보여주므로
+  거기서 MiB를 역산하면 어긋난다. 선언값의 정본은 **`podman machine inspect`의
+  `.Resources.Memory`(=`26702`, 단위 MiB)** 다.
 
 ```bash
-# macOS(Apple Silicon): 자원은 머신 생성 시 확정(사후 변경은 재생성 필요), kind는 rootful 요구
-podman machine init dagster-k8s --rootful --cpus 8 --memory 22888 --disk-size 120
+# kind는 rootful 요구. 자원은 생성 시 지정하되, 사후 변경도 가능하다(코드블록 아래 참조).
+podman machine init dagster-k8s --rootful --cpus 8 --memory 26702 --disk-size 93
 podman machine start dagster-k8s
 export KIND_EXPERIMENTAL_PROVIDER=podman
 kind create cluster --name lakehouse --config kind-cluster.yaml
 
 # 실측 확인 (환산식을 함께 남긴다)
-kubectl get node -o jsonpath='{.items[0].status.allocatable}'   # cpu:8, memory:22843508Ki
+podman machine inspect <machine> --format '{{.Resources.Memory}}'   # 26702 (MiB, VM 총량 축)
+kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu:8, memory:26679964Ki
 ```
 
-- **호스트 headroom**: VM 22.35 GiB는 **호스트에서 통째로 빠져나간다.** Dagster(webserver+daemon+
-  메타 Postgres)가 호스트에서 도므로 호스트 여유를 따로 봐야 한다 → **아래 (D) 호스트 축**.
-- **disk 120 GB**: SeaweedFS(원천 csv.gz + Iceberg parquet) + Redpanda 로그 + 이미지 레이어 대비.
+- ⚠️ **"사후 변경은 재생성 필요"는 거짓이다(2026-08-27 반증).** 구 판본이 *"Apple Silicon은 생성 시
+  확정"* 이라 적고 있었으나, `podman machine set`으로 **중지 상태에서 변경**할 수 있고 실제로
+  `22888 → 26702 MiB`로 바뀐 뒤에도 kind 클러스터 `lakehouse`와 PVC 2종(`catalog-postgres-1`·
+  `data-seaweedfs-0`)이 **그대로 Bound 상태로 살아 있었다.**
+  **재생성이 강제되는 것은 kind 축뿐**이다 — `extraPortMappings`·`extraMounts`(생성 시점 전용)와
+  PVC 용량(`ALLOWVOLUMEEXPANSION=false`). **두 축을 섞으면 치르지 않아도 될 재적재를 치른다.**
+  절차는 [operations.md](operations.md) §클러스터 재생성.
+- **호스트 headroom**: VM 26.08 GiB는 **호스트에서 통째로 빠져나간다.** 호스트 총량이 32 GB이므로
+  남는 것은 **약 5.9 GiB**이고, 여기서 macOS와 Dagster(webserver+daemon+메타 Postgres)·Jupyter가
+  함께 돌아야 한다 → **아래 (D) 호스트 축**. **메모리를 VM에 더 준 대가는 호스트 축에서 나간다** —
+  이 배분은 *"Dagster를 클러스터로 옮긴다"* 는 전제와 한 벌일 때만 여유롭다.
+- **disk 93 GiB**(≈100 GB 십진): SeaweedFS(원천 csv.gz + Iceberg parquet) + 이미지 레이어 대비.
+  2026-08-27 실측 노드 디스크 사용량 **35.2G / 92.4G(38%)**, 그중 SeaweedFS 볼륨이 **10G**다.
+  ⚠️ 두 값은 **다른 것을 센다** — `df`는 노드 디스크 전체(containerd 이미지 레이어 포함)를,
+  `du /data`는 SeaweedFS 볼륨 파일만 센다. 백업 비용을 산정할 때는 후자다.
 
 ### (B) 컴포넌트 배분 (requests / limits) — 동시 기동
 
-원칙: **Σrequests ≤ 노드 Allocatable(8000m / ≈22308Mi)**. 2026-08-22 실측으로 **BATCH+STREAM 동시
-피크가 84% / 52%** 에 들어옴이 확인돼 시분할 금지가 **동시 기동 허용**으로 바뀌었다
+원칙: **Σrequests ≤ 노드 Allocatable(8000m / 26054Mi)**. 2026-08-22 실측으로 **BATCH+STREAM 동시
+기동이 예산 안에 들어옴**이 확인돼 시분할 금지가 **동시 기동 허용**으로 바뀌었다
 ([conventions/k8s.md](conventions/k8s.md) §9-3).
 아래 표의 `req`는 전부 **실제 선언값**이며, 합계 행은 **관측 차분으로 검산**된 값이다.
+
+⚠️ **백분율은 분모가 바뀌면 함께 바뀐다 — `req` 절대값은 그대로다.** 2026-08-27 VM 메모리 상향
+(22888 → 26702 MiB)으로 Allocatable이 `22308Mi → 26054Mi`가 되어 **메모리 %만** 내려갔다.
+당시 기록된 *"84% / 52%"* 의 `52%`는 **옛 분모(22308Mi) 기준**이고 현행은 **44.7%** 다.
+**CPU %는 분모(`8000m`)가 안 바뀌어 전부 그대로다** — 아래 표의 `%`는 현행 분모 기준으로 재계산했다.
 
 | 구분 | 워크로드 | req CPU | req Mem | lim CPU | lim Mem |
 | --- | --- | --- | --- | --- | --- |
@@ -65,17 +95,17 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'   # cpu:8, memory:
 | | **CloudNativePG 오퍼레이터**(컨트롤러) | 100m | 200Mi | 250m | 384Mi |
 | | Catalog Postgres(Iceberg JDBC, CNPG `Cluster` 1인스턴스) | 250m | 512Mi | 500m | 768Mi |
 | | **ingress-nginx 컨트롤러**(UI 고정 URL) ² | 100m | 90Mi | — | — |
-| | **상주 기준선 소계**(Flink Operator 미설치 상태) | **1950m** | **2372Mi** | | 24% / 11% |
+| | **상주 기준선 소계**(Flink Operator 미설치 상태) | **1950m** | **2372Mi** | | 24% / 9% |
 | **Flink Operator** ³ | 컨트롤러 파드 | 200m | 512Mi | 500m | 1Gi |
 | | 웹훅(webhook) 컨테이너 | 100m | 256Mi | 200m | 512Mi |
-| | **상주 + Flink Operator**(= 회수 후 실측) | **2250m** | **3140Mi** | | **28% / 14%** |
+| | **상주 + Flink Operator**(= 회수 후 실측) | **2250m** | **3140Mi** | | **28% / 12%** |
 | **온디맨드 상주** | **Spark Connect 서버**(dbt 접속용, 미사용 시 `--replicas=0`) | 500m | 1536Mi | 1 | 2Gi |
 | | Flink JobManager(세션 클러스터, 잡 없어도 상주) | 1000m | 2048Mi | 1 | 2Gi |
-| | **동시 피크의 기저**(관측 차분) | **3750m** | **6724Mi** | | 47% / 30% |
+| | **동시 피크의 기저**(관측 차분) | **3750m** | **6724Mi** | | 47% / 26% |
 | **STREAM(일시)** | Flink TaskManager × 1 — **잡 제출 시 온디맨드**, 종료 시 자동 회수 ⁶ | 1000m | 2048Mi | 1 | 2Gi |
 | **BATCH(일시)** | Spark driver ⁴ | 1000m | **1433Mi** | 1 | 1.5Gi |
 | | Spark executor × **1** ⁴ ⁵ | 1000m | **1433Mi** | 1 | 1.5Gi |
-| | **동시 기동 피크(3워크로드 상주) — 실측** | **6750m** | **11638Mi** | | ✅ **84% / 52%** |
+| | **동시 기동 피크(3워크로드 상주) — 실측** | **6750m** | **11638Mi** | | ✅ **84% / 45%** |
 
 ¹ **구 문서의 `750m/250Mi`는 틀렸고 합계만 맞았다.** 실측은 **950m/290Mi**다. 합계가 맞으면
   내역이 틀려도 오래 살아남는다 — 행 단위로 재측정한다.
