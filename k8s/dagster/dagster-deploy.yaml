@@ -334,8 +334,13 @@ spec:
                       failureThreshold: 3
                       timeoutSeconds: 20
                   # readinessProbe는 두지 않는다 — 위 관측 경로 선언 참조(부재가 결정이다).
+                  # 🔴 메모리를 `1Gi`로 적는다(`1024Mi` 아님). 값은 같지만 쿠버네티스가 수량을
+                  # **정규화해 저장**하므로 `1024Mi`로 선언하면 저장값이 `1Gi`가 되어 선언과
+                  # 실측이 영원히 어긋난다. Terraform이 이 리소스를 관리하면 **매 `plan`마다
+                  # diff가 되살아나 drift 감지가 오염된다**(2026-08-28 인수 중 발견).
+                  # 768Mi·1536Mi·3Gi는 이미 정규형이라 영향이 없다.
                   resources:
-                      requests: {cpu: "250m", memory: "1024Mi"}
+                      requests: {cpu: "250m", memory: "1Gi"}
                       limits: {cpu: "1", memory: "3Gi"}
             volumes:
                 - {name: dagster-storage, emptyDir: {}}
