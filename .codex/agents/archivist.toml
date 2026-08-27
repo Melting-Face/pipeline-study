@@ -46,6 +46,8 @@ developer_instructions = '''
   개인 Obsidian 볼트이며 저장소 커밋 대상이 아니다.
 - 미션 파일: `<YYYY-MM-DD>/<NN>-<mission-slug>.md`. `NN`은 Codex의 그날 착수 순번이다.
   일자는 `TZ=Asia/Seoul date +%F`로 구한다.
+- 프론트매터의 `agent`는 역할명이 아니라 실행 런타임이므로 반드시 `codex`로 쓴다.
+  이 값이 달라지면 Codex 경로 가드가 다른 런타임의 기록으로 판정해 후속 수정을 거부한다.
 - 태그: `runtime/codex`. 공용 지도는 상위 `agents/_MOC.md`다.
   템플릿은 `agents/_TEMPLATE.codex.md`다.
 - 신규 MOC 위키링크는 `[[agents/<날짜>/<파일명>]]` 전체 경로를 쓴다.

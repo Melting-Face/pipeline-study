@@ -87,8 +87,22 @@ class JournalGuardTest(unittest.TestCase):
         self, guard: Path, payload: dict[str, object]
     ) -> subprocess.CompletedProcess[str]:
         """archivist 경로 가드에 실제 hook JSON을 전달한다."""
+        hook_payload = {"tool_name": "apply_patch", **payload}
         return subprocess.run(  # noqa: S603
             [sys.executable, str(guard), "archivist"],
+            input=json.dumps(hook_payload),
+            env=self.environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    def _run_inferred_codex_path_guard(
+        self, payload: dict[str, object]
+    ) -> subprocess.CompletedProcess[str]:
+        """실제 transcript의 agent_role로 Codex 워커 경계를 판정한다."""
+        return subprocess.run(  # noqa: S603
+            [sys.executable, str(CODEX_PATH_GUARD)],
             input=json.dumps(payload),
             env=self.environment,
             check=False,
@@ -100,7 +114,10 @@ class JournalGuardTest(unittest.TestCase):
         self, target: Path
     ) -> subprocess.CompletedProcess[str]:
         """Codex apply_patch 어댑터에 신규 파일 경로를 전달한다."""
-        payload = {"tool_input": {"command": f"*** Add File: {target}\n"}}
+        payload = {
+            "tool_name": "apply_patch",
+            "tool_input": {"command": f"*** Add File: {target}\n"},
+        }
         return subprocess.run(  # noqa: S603
             [sys.executable, str(CODEX_PRE_WRITE_GUARD)],
             input=json.dumps(payload),
@@ -173,6 +190,119 @@ class JournalGuardTest(unittest.TestCase):
             == "deny"
         )
         assert any("journal_pre_write.py" in command for command in commands)
+
+    def test_codex_guards_keep_stable_indices_and_include_exec(self) -> None:
+        """기존 trust 인덱스를 유지한 채 exec 호출까지 검사한다."""
+        hooks = json.loads(CODEX_HOOKS.read_text(encoding="utf-8"))
+        matchers_by_command = {
+            hook["command"]: group["matcher"]
+            for group in hooks["hooks"]["PreToolUse"]
+            for hook in group["hooks"]
+        }
+
+        worker_matcher = next(
+            matcher
+            for command, matcher in matchers_by_command.items()
+            if "worker_path_guard.py" in command
+        )
+        journal_matcher = next(
+            matcher
+            for command, matcher in matchers_by_command.items()
+            if "journal_pre_write.py" in command
+        )
+        policy_matcher = next(
+            matcher
+            for command, matcher in matchers_by_command.items()
+            if "policy_guard.py" in command
+        )
+
+        expected_matcher = "^Bash$|^exec$|^apply_patch$"
+        assert worker_matcher == expected_matcher
+        assert journal_matcher == expected_matcher
+        assert policy_matcher == expected_matcher
+
+    def test_codex_exec_patch_uses_session_agent_role(self) -> None:
+        """exec 내부 patch는 session_meta의 agent_role 경계를 적용한다."""
+        transcript = self.root / "analyst.jsonl"
+        transcript.write_text(
+            json.dumps(
+                {
+                    "type": "session_meta",
+                    "payload": {
+                        "thread_source": "subagent",
+                        "agent_role": "analyst",
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        base_payload = {
+            "tool_name": "exec",
+            "cwd": str(self.repository),
+            "transcript_path": str(transcript),
+        }
+        allowed = self._run_inferred_codex_path_guard(
+            {
+                **base_payload,
+                "tool_input": (
+                    'const patch = "*** Begin Patch\\n'
+                    "*** Add File: notebooks/probe.md\\n"
+                    '*** End Patch"; tools.apply_patch(patch);'
+                ),
+            }
+        )
+        denied = self._run_inferred_codex_path_guard(
+            {
+                **base_payload,
+                "tool_input": (
+                    'const patch = "*** Begin Patch\\n'
+                    "*** Add File: dagster/probe.md\\n"
+                    '*** End Patch"; tools.apply_patch(patch);'
+                ),
+            }
+        )
+        read_only_exec = self._run_inferred_codex_path_guard(
+            {
+                **base_payload,
+                "tool_input": 'tools.exec_command({cmd: "pwd"});',
+            }
+        )
+
+        assert allowed.stdout == ""
+        assert (
+            json.loads(denied.stdout)["hookSpecificOutput"]["permissionDecision"]
+            == "deny"
+        )
+        assert read_only_exec.stdout == ""
+
+    def test_codex_exec_patch_fails_closed_for_unknown_subagent_role(self) -> None:
+        """역할을 식별할 수 없는 서브에이전트 patch는 차단한다."""
+        transcript = self.root / "unknown.jsonl"
+        transcript.write_text(
+            json.dumps(
+                {"type": "session_meta", "payload": {"thread_source": "subagent"}}
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        result = self._run_inferred_codex_path_guard(
+            {
+                "tool_name": "exec",
+                "cwd": str(self.repository),
+                "transcript_path": str(transcript),
+                "tool_input": (
+                    'const patch = "*** Begin Patch\\n'
+                    "*** Add File: docs/probe.md\\n"
+                    '*** End Patch"; tools.apply_patch(patch);'
+                ),
+            }
+        )
+
+        assert (
+            json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"]
+            == "deny"
+        )
 
     def test_codex_stop_blocks_once_until_journal_is_closed(self) -> None:
         """변경 세션은 미기록 시 한 번만 이어지고 마감 저널이 있으면 통과한다."""

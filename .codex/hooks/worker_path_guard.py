@@ -111,12 +111,36 @@ def emit_deny(reason: str) -> None:
 
 
 def extract_paths(command: str) -> list[str]:
-    """apply_patch 명령에서 변경 경로를 추출한다."""
+    """직접 또는 exec 내부 apply_patch에서 변경 경로를 추출한다."""
+    normalized = command.replace("\\n", "\n")
     paths = re.findall(
-        r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", command, re.MULTILINE
+        r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", normalized, re.MULTILINE
     )
-    paths.extend(re.findall(r"^\*\*\* Move to: (.+)$", command, re.MULTILINE))
+    paths.extend(re.findall(r"^\*\*\* Move to: (.+)$", normalized, re.MULTILINE))
     return [path.strip() for path in paths if path.strip()]
+
+
+def tool_source(payload: dict[str, object]) -> str:
+    """직접 도구와 freeform exec의 입력 문자열을 동일한 형태로 반환한다."""
+    tool_input = payload.get("tool_input")
+    if isinstance(tool_input, str):
+        return tool_input
+    if not isinstance(tool_input, dict):
+        return ""
+    for key in ("command", "source", "input"):
+        value = tool_input.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
+
+
+def is_patch_call(payload: dict[str, object], source: str) -> bool:
+    """직접 apply_patch와 exec 내부 tools.apply_patch 호출을 식별한다."""
+    return (
+        payload.get("tool_name") == "apply_patch"
+        or "tools.apply_patch(" in source
+        or "*** Begin Patch" in source
+    )
 
 
 def transcript_events(raw_path: str) -> Iterator[dict[str, object]]:
@@ -161,6 +185,31 @@ def developer_texts(event: dict[str, object]) -> list[str]:
     ]
 
 
+def session_agent_role(event: dict[str, object]) -> str | None:
+    """세션 메타의 직접 또는 중첩된 워커 역할을 반환한다."""
+    meta = event.get("payload")
+    if not isinstance(meta, dict):
+        return None
+
+    agent_role = meta.get("agent_role")
+    if isinstance(agent_role, str) and agent_role:
+        return agent_role
+
+    source = meta.get("source")
+    if not isinstance(source, dict):
+        return None
+    subagent = source.get("subagent")
+    if not isinstance(subagent, dict):
+        return None
+    thread_spawn = subagent.get("thread_spawn")
+    if not isinstance(thread_spawn, dict):
+        return None
+    nested_role = thread_spawn.get("agent_role")
+    if isinstance(nested_role, str) and nested_role:
+        return nested_role
+    return None
+
+
 def infer_worker(payload: dict[str, object]) -> str | None:
     """서브에이전트 transcript에서 활성 워커를 식별한다."""
     raw_path = payload.get("transcript_path")
@@ -172,6 +221,10 @@ def infer_worker(payload: dict[str, object]) -> str | None:
     if first_event is None or not is_subagent_meta(first_event):
         return None
 
+    agent_role = session_agent_role(first_event)
+    if agent_role is not None:
+        return agent_role
+
     for event in events:
         developer_text = "\n".join(developer_texts(event))
         matches = [
@@ -182,6 +235,15 @@ def infer_worker(payload: dict[str, object]) -> str | None:
         if len(matches) == 1:
             return matches[0]
     return None
+
+
+def is_unidentified_subagent(payload: dict[str, object]) -> bool:
+    """transcript가 역할을 식별하지 못한 서브에이전트 세션인지 확인한다."""
+    raw_path = payload.get("transcript_path")
+    if not isinstance(raw_path, str) or not raw_path:
+        return False
+    first_event = next(transcript_events(raw_path), None)
+    return first_event is not None and is_subagent_meta(first_event)
 
 
 def matches_prefix(path: str, prefix: str) -> bool:
@@ -240,15 +302,22 @@ def main() -> None:
         emit_deny("워커 경계 가드가 hook 입력을 읽지 못했다(fail-closed).")
         return
 
+    source = tool_source(payload)
+    if not is_patch_call(payload, source):
+        return
+
     worker = sys.argv[1] if len(sys.argv) > 1 else infer_worker(payload)
     if worker is None:
+        if is_unidentified_subagent(payload):
+            emit_deny(
+                "서브에이전트 역할을 식별하지 못해 patch를 차단했다(fail-closed)."
+            )
         return
     if worker not in BOUNDARIES:
         emit_deny(f"정의되지 않은 Codex 워커 경계다: `{worker}`.")
         return
 
-    command = str((payload.get("tool_input") or {}).get("command") or "")
-    paths = extract_paths(command)
+    paths = extract_paths(source)
     if not paths:
         emit_deny("apply_patch 입력에서 변경 경로를 찾지 못했다(fail-closed).")
         return

@@ -11,6 +11,20 @@ from pathlib import Path
 ADD_FILE_RE = re.compile(r"^\*\*\* Add File: (.+)$", re.MULTILINE)
 
 
+def tool_source(payload: dict[str, object]) -> str:
+    """직접 도구와 freeform exec의 입력 문자열을 동일한 형태로 반환한다."""
+    tool_input = payload.get("tool_input")
+    if isinstance(tool_input, str):
+        return tool_input
+    if not isinstance(tool_input, dict):
+        return ""
+    for key in ("command", "source", "input"):
+        value = tool_input.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
+
+
 def main() -> None:
     """신규 파일별 pre-write 결과 중 첫 거부를 Codex hook에 반환한다."""
     try:
@@ -18,12 +32,15 @@ def main() -> None:
     except (json.JSONDecodeError, ValueError):
         return
 
-    tool_input = payload.get("tool_input")
-    if not isinstance(tool_input, dict):
+    command = tool_source(payload)
+    is_patch = (
+        "tools.apply_patch(" in command
+        or payload.get("tool_name") == "apply_patch"
+        or "*** Begin Patch" in command
+    )
+    if not is_patch:
         return
-    command = tool_input.get("command")
-    if not isinstance(command, str):
-        return
+    command = command.replace("\\n", "\n")
 
     guard = Path(__file__).resolve().parents[2] / "scripts" / "journal_guard.py"
     if not guard.is_file():
