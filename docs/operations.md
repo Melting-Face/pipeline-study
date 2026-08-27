@@ -54,12 +54,22 @@ dg.EnvVar("KEY") / os.environ["KEY"]  (코드에서 참조)
 
 ### 1-2. 호스트 실행과 컨테이너 실행의 값이 다른 키
 
-재설계 토폴로지에서 Dagster는 **호스트**(`uv run dg dev`)에서 돌고 메타 Postgres는 **compose**에 있다
-([conventions/k8s.md](conventions/k8s.md) §8). 같은 키라도 **누가 읽느냐에 따라 값이 달라진다**.
+Dagster는 2026-08-27부터 **클러스터 안**에서 돌고 메타 Postgres도 **CNPG의 `dagster` DB**다
+([conventions/k8s.md](conventions/k8s.md) §8). 실행 위치가 셋이라 같은 키의 값이 **셋으로 갈린다**.
 
-| 키 | 컨테이너(compose) | 호스트(`dg dev`) |
-| --- | --- | --- |
-| `POSTGRES_HOST` | `postgres`(서비스명) — `compose.yml`이 **리터럴로 고정** | `localhost` — `.env` 값 사용 |
+| 키 | compose 컨테이너 | 호스트(`dg dev`) | in-cluster |
+| --- | --- | --- | --- |
+| `POSTGRES_HOST` | `postgres` — `compose.yml`이 리터럴 고정 | `localhost`(port-forward) | `catalog-postgres-rw` |
+| `POSTGRES_PORT` | `5432` | **`15432`** — port-forward 포트 | `5432` |
+| `POSTGRES_DB` | `dagster`(compose DB) | `dagster`(CNPG DB) | `dagster`(CNPG DB) |
+| `ICEBERG_S3_ENDPOINT` | `http://seaweedfs:8333` | `http://localhost:18333` | `http://seaweedfs:8333` |
+| `SPARK_REMOTE` | (미설정) | TLS Ingress 또는 port-forward | `sc://spark-connect:15002` |
+
+⚠️ **호스트 경로의 `POSTGRES_PORT`가 급소다.** 5432면 compose DB를, 15432면 CNPG DB를 본다 —
+둘 다 이름이 `dagster`라 **접속은 어느 쪽이든 성공하고 run 이력만 조용히 갈린다.**
+정본은 CNPG이므로 호스트 실행 시 port-forward + 15432를 쓴다.
+
+in-cluster 값의 정본은 `k8s/dagster/dagster-deploy.yaml`의 ConfigMap이다(`.env`가 아니다).
 
 - `dagster.yaml`의 `hostname`은 **하드코딩하지 않고** `env: POSTGRES_HOST`로 참조한다.
   하드코딩하면 호스트 실행 시 이름 해석이 안 돼 `too many retries for DB connection`으로 죽는다(2026-08-18 실측).

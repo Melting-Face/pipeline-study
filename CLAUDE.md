@@ -191,7 +191,7 @@
 - **Docker/Compose 규칙**: 로깅·env YAML 앵커, 이미지 `latest` 금지, healthcheck + `depends_on`,
   전 서비스 `deploy.resources` 명시. **옵션 기능은 `profiles`로 분리**(뼈대는 profile
   없이 항상 실행, `--profile <name>`으로 opt-in) — `monitoring`(prometheus)·`legacy-sql`(trino)·
-  `legacy-storage`(seaweedfs). **뼈대(core)는 `dagster-webserver`·`dagster-daemon`·`postgres` 셋뿐**이다.
+  `legacy-storage`(seaweedfs)·`host-dagster`·`legacy-meta`. **뼈대(core)는 이제 비었다** — 전부 opt-in이다.
   **`profiles`는 "제거 예정"의 중간 단계로도 쓴다** — `trino`는 재설계 제거 대상이나 22모델 방언
   교정이 끝날 때까지 **값 대조의 정본**이라 정의는 남기고 **상시 기동만 끊는다**("중단"과 "삭제"의 분리:
   자원은 즉시 회수, 롤백 비용 0). `seaweedfs`도 스토리지 정본이 K8s로 이전돼 같은 처리를 했다(2026-08-19).
@@ -214,7 +214,7 @@
   `.ipynb_checkpoints/` 무시로 이중 방어한다. 상세 [`notebooks/README.md`](notebooks/README.md).
 - **로컬 K8s(현행 검증 환경)**: **kind on Podman**(rootful 머신 필수) 클러스터 `lakehouse` +
   로컬 레지스트리 `localhost:5001`. 기동은 `scripts/k8s-up.sh` → `k8s-operators.sh` → `k8s-poc-storage.sh`
-  (설정 단일 출처 `scripts/k8s-env.sh`). Dagster는 **호스트 유지**, 컴퓨트·스토리지만 클러스터에 둔다.
+  → `k8s-dagster.sh`(설정 단일 출처 `k8s-env.sh`). **Dagster도 in-cluster**다(2026-08-27 — 구 규약 폐기).
   규칙 [`docs/conventions/k8s.md`](docs/conventions/k8s.md), 예산·배분 [`docs/resource-sizing.md`](docs/resource-sizing.md).
   클러스터에는 **Spark Operator**(배치)·**Spark Connect**(dbt-spark 접속용 상주)가 있고,
   Spark·Flink가 **같은 Iceberg JDBC 카탈로그**를 공유한다.
@@ -228,7 +228,7 @@
   재기동만으로 카탈로그가 소멸했다). 서비스명에 **`-rw`/`-ro`/`-r` 접미사**가 붙고 접미사 없는 이름은 없다.
   **비밀번호 회전은 Secret·DB 롤·`.env`·워크로드 재기동을 한 벌로** 한다 — 한쪽만 바꾸면
   **성공한 것처럼 보이는데 안 바뀐 상태**가 된다(§12에 해소 내역).
-  **메타 Postgres(Dagster)는 compose에 남긴다**(순환 의존 회피).
+  **메타 Postgres도 같은 CNPG**에 `Database` CR로 둔다(롤·시크릿은 카탈로그와 분리).
   **SeaweedFS는 오퍼레이터 미채택**(상주 +500m/+1Gi인데 이미 PVC라 급소가 아니다).
   엔진 버전은 **최신이 아니라 Iceberg가 지원하는 짝**으로 고정한다(예: `iceberg-flink-runtime`이 2.1까지라 Flink는 2.1).
   Spark Connect는 유일한 상주 컴퓨트라 미사용 시 `--replicas=0`으로 내린다.
@@ -251,8 +251,8 @@
   (`sc://` URL에 CA 옵션이 없다). `backend-protocol`이 Ingress 단위라 **UI와 호스트를 나눈다**.
   **Flink는 REST와 UI가 같은 포트**라 UI를 내면 **잡 제출 API도 함께 나간다**("UI만 열었다"로 읽지 않는다).
   컴퓨트 **러너 이미지는 로컬 레지스트리에 직접 push**하고(`kind load` 불필요) **태그와 매니페스트를 함께 올린다**.
-  상세·실측은 [`docs/conventions/k8s.md`](docs/conventions/k8s.md)(§9 Spark·§9-2 Flink·§9-3 동시 기동·§11 스토어·§12 CNPG)와
-  [`docs/architectures/spark.md`](docs/architectures/spark.md).
+  상세·실측은 [`docs/conventions/k8s.md`](docs/conventions/k8s.md)(§8 Dagster·§9 Spark·§9-2 Flink·§9-3 동시 기동·§11 스토어)와
+  [`docs/conventions/k8s/cnpg.md`](docs/conventions/k8s/cnpg.md)·[`docs/architectures/dagster.md`](docs/architectures/dagster.md).
 - **Terraform/IaC 규칙**: 스택 단위 `terraform/<stack>/`, 버전 고정 + `.terraform.lock.hcl` 커밋, 포매터는
   **`terraform fmt`(2-space, 4칸 규칙의 예외)**, `*.tfstate`·`terraform.tfvars`·개인키 **커밋 금지**,
   부트스트랩은 **cloud-init 선언형**. 첫 스택 [`terraform/oci-k3s/`](terraform/oci-k3s/README.md)(OCI A1+k3s)는

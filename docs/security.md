@@ -85,7 +85,7 @@ Credentialed Health Data License + DUA**(데이터 이용 협약, 재식별 시�
 | 인증기준 | 통제 방침 | 보증 범위 |
 | --- | --- | --- |
 | **2.5 인증 및 권한관리** | 서비스 계정을 `.env` 크리덴셜로 분리한다. OCI API 키는 로컬 생성·공개키만 업로드하고, SSH 키는 용도별로 분리하며, kubeconfig는 권한 `600`으로 둔다 | 키의 생성·보관·분리까지. 서비스별 RBAC·최소권한 매트릭스는 범위 밖이다([§4-3](#4-3-서비스-rbac최소권한-25--26)) |
-| **2.6 접근통제** | 서비스는 내부 네트워크로 격리하고 비밀 설정은 `:ro`로 마운트한다. 공개 노드의 인그레스는 `/32` 화이트리스트로 좁힌다 | 호스트 경계까지. 클러스터 내부 파드 간 통신(`NetworkPolicy`)과 관리 UI 인증은 범위 밖이다 |
+| **2.6 접근통제** | 서비스는 내부 네트워크로 격리하고 비밀 설정은 `:ro`로 마운트한다. 공개 노드의 인그레스는 `/32` 화이트리스트로 좁힌다 | 호스트 경계까지. 클러스터 내부 파드 간 통신(`NetworkPolicy`)과 관리 UI 인증은 범위 밖이며, **그 범위 밖에 인증 없는 Dagster UI·GraphQL이 실제로 있다**(§4-3) |
 | **2.7 암호화 적용** | 비밀정보는 하드코딩하지 않고 참조로 주입한다(`dg.EnvVar`·`${ENV:...}`). 개인키·`*.tfstate`·`*.tfvars`·kubeconfig는 gitignore + 권한 `600` | 전송 구간과 비밀의 저장소 유입까지. **저장 암호화(at-rest)는 범위 밖**이며 실서비스 확장의 전제다([§4-2](#4-2-저장전송-암호화-27)) |
 | **2.8 정보시스템 도입 및 개발 보안** | 같은 게이트(`gitleaks`·`detect-private-key`·`ruff`·`sqlfluff`·`shellcheck`·`hadolint`)를 **로컬 pre-commit과 서버측 CI 양쪽**에 건다. 이미지 `latest` 태그를 금지한다 | 로컬 훅을 우회해도 **서버측에서 다시 걸린다**. 단 커밋 메시지 검사는 **PR 경로에서만** 돌고, 의존성 스캔(SCA)·스킬 설치 경로는 범위 밖이다 |
 | **2.9 시스템 및 서비스 운영관리** | Docker 로그를 보존 한도와 함께 남기고(`max-size`×`max-file`), healthcheck와 `depends_on` 조건, `deploy.resources`를 선언한다 | **선언된 서비스에 한한다.** 적용 범위의 실측은 `architectures/monitoring.md`에서 관측 시각과 함께 읽는다 |
@@ -252,7 +252,24 @@ Credentialed Health Data License + DUA**(데이터 이용 협약, 재식별 시�
 
 서비스별 계정을 **분리**하고 필요한 권한만 부여한다.
 
-**CloudNativePG(카탈로그 PG)** — RBAC이 **2계층**이다.
+**Dagster(in-cluster)** — Dagster OSS에는 **인증 계층이 없다.** UI와 `/graphql`이 같은 포트로 나가고
+거기에 **런 실행·종료·삭제·자산 wipe·스케줄 on/off** 뮤테이션이 포함된다. Ingress 하나로 UI만 여는 것은
+불가능하다 — 노출 범위는 포트가 아니라 그 포트가 제공하는 API가 정한다(Flink와 같은 축).
+
+| 통제 | 상태 |
+| --- | --- |
+| kind `extraPortMappings`의 `listenAddress: 127.0.0.1` | ✅ — **현재 유일한 실효 통제**(LAN 도달 불가) |
+| webserver `automountServiceAccountToken: false` | ✅ — UI가 탈취돼도 파드에 k8s 토큰이 없다(기능 손실 0) |
+| daemon `Role`을 ns 한정 4 verb로 제한 | ✅ — `sparkapplications`·`pods`·`pods/log`뿐 |
+| `dagster-webserver --read-only` | ❌ **쓸 수 있는데 안 쓴다** — UI가 주 조작 수단이라 무력화된다 |
+| `NetworkPolicy` · TLS Ingress | ❌ 저장소 전체가 미도입 — Dagster만 예외로 둘 근거가 없다 |
+
+⚠️ **이 판정은 「로컬 단독 실행」 전제 위에 선다.** [architectures/oci.md](architectures/oci.md)의
+클라우드 스택을 재개해 **인터넷에 면한 노드**가 생기면 이 절을 **먼저 다시 읽는다** —
+그 시점에는 인증 없는 GraphQL 뮤테이션이 즉시 최상위 위험이 된다.
+`telemetry`는 껐다(무엇이 나가는지 확인하지 않은 외부 발신은 통제로 볼 수 없다).
+
+**CloudNativePG(카탈로그·메타 PG)** — RBAC이 **2계층**이다.
 컨트롤러 `ClusterRole/cloudnative-pg`는 **전 네임스페이스의 `secrets`·`configmaps`·`services`에 RW**를 갖는다
 (cluster-wide 설치 · CNPG 아키텍처상 불가피). 반면 인스턴스용 `Role/catalog-postgres`는 `resourceNames`로
 **자기 시크릿·configmap·Cluster에만** 한정돼 최소권한을 지킨다.

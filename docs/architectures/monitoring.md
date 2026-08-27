@@ -114,6 +114,11 @@ Robusta의 기존 Prometheus 연동 모드 파드 차분 · `grafana/loki`와 `g
   있었고 그 조회 실패가 "버킷 0개"로 읽혔다 → **있는 것을 없다고** 판정.
   지금은 **수집기가 compose를 보고 K8s를 놓친다** → **안 보는 것을 본다고** 판정.
   **원인은 같다 — SeaweedFS가 compose와 K8s에 이중으로 존재한다.** 방향만 뒤집혔다.
+  📌 **2026-08-27 같은 축이 하나 더 생겼다 — Dagster다.** in-cluster로 옮기면서 compose의
+  `dagster-webserver`·`dagster-daemon`·`postgres`를 **`profiles`로 내려** 기본 `up`에서 뺐다.
+  정의를 남긴 것은 롤백을 위해서지만, 그것이 곧 **동시에 띄울 수 있다는 뜻**이다.
+  판정 시 확인할 것은 셋 — 호스트 3000 리스너 부재 · compose 컨테이너 부재 ·
+  Ingress `/server_info`가 **버전 JSON**을 돌려주는 것(200만으로는 판별이 안 된다).
   ⚠️ 그리고 갈리는 것이 하나 더 있다. **발견 경로**다. 2026-08-18은 사람이 그 자리에서 한 번
   데었기 때문에 드러났지만, 지금 그 자리에서 답하는 것은 **초록불을 띄우는 수집기**다.
   ⚠️ 이것을 *결정*으로 적어 둔 문장은 찾지 못했다.
@@ -132,8 +137,13 @@ Robusta의 기존 Prometheus 연동 모드 파드 차분 · `grafana/loki`와 `g
   [../resource-sizing.md](../resource-sizing.md)가 정본이다.
 - **Flink 오퍼레이터 메트릭은 로그로만 나간다**(slf4j 리포터, 5분 간격). 값은 남지만
   시계열로 질의할 수 없고, 로그 보존 정책([../operations.md](../operations.md) §2)의 수명을 따른다.
-- **Dagster 쪽 관측은 실행 기록에 의존한다** — `run_monitoring` 미설정이라 워커가 죽은 런의
-  자동 판정이 없고, `compute_logs`가 기본값이라 스텝 로그는 컨테이너 로컬에 남는다.
+- **Dagster 쪽 관측은 실행 기록에 의존한다**(2026-08-27 갱신) — `run_monitoring` 부재의 이유가
+  "안 켰다"에서 **"`DefaultRunLauncher`가 지원하지 않는다"** 로 확정됐다(켜면 `NotImplementedError`).
+  ⇒ **부재가 결정**이고, 대가는 daemon 재시작 시 진행 중 run이 `STARTED`로 고아가 되는 것이다.
+  `compute_logs`는 기본값(Local)에서 **`S3ComputeLogManager`로 바뀌었다** — webserver와 daemon이
+  다른 파드라 로컬 디스크로는 UI에 스텝 로그가 영영 안 보였다.
+  ⚠️ **그 업로드 실패는 run 상태에 나타나지 않는다** — Dagster가 예외를 삼키므로 `RUN_SUCCESS`인 채
+  로그만 사라진다(2026-08-27 실발생). 관측 경로 확인은 **버킷을 직접 보는 것**이다.
   자산 단위 관측은 머티리얼라이즈 메타데이터가 담당한다([../conventions/dagster.md](../conventions/dagster.md)).
 - 🔴 **관측 도구가 데이터 반출 경로가 될 수 있다.** Robusta 평가에서 드러난 축이다 —
   OSS는 CLI/API까지이고 웹 UI·봇·자동 triage는 **Platform(SaaS 또는 Self-Hosted) 전용**인데,

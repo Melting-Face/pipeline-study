@@ -12,7 +12,7 @@
 
 ## Kubernetes 재설계 시나리오 (kind + Podman · 8 CPU / 22.3 GiB) 🚧
 
-> 대상: [redesign.md](redesign.md)의 목표 토폴로지. **Dagster는 호스트**(이 예산 밖), 컴퓨트·데이터
+> 대상: [redesign.md](redesign.md)의 목표 토폴로지. **Dagster도 이 예산 안**(2026-08-27), 컴퓨트·데이터
 > 서비스만 로컬 K8s(kind on Podman)에 둔다. 컴퓨트는 **Spark(배치) / Flink(스트리밍)** 2엔진이며,
 > 2026-08-22 실측으로 **시분할 → 동시 기동**으로 규약이 바뀌었다([conventions/k8s.md](conventions/k8s.md) §9-3).
 
@@ -99,13 +99,16 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu:8, mem
 | **Flink Operator** ³ | 컨트롤러 파드 | 200m | 512Mi | 500m | 1Gi |
 | | 웹훅(webhook) 컨테이너 | 100m | 256Mi | 200m | 512Mi |
 | | **상주 + Flink Operator**(= 회수 후 실측) | **2250m** | **3140Mi** | | **28% / 12%** |
+| **Dagster**(상주) ⁷ | `dagster-webserver`(UI·GraphQL) | 100m | 768Mi | 500m | 1536Mi |
+| | `dagster-daemon`(스케줄·센서 + run 서브프로세스) | 250m | 1024Mi | 1 | 3Gi |
+| | **상주 + Flink Operator + Dagster — 실측** | **2600m** | **4932Mi** | | ✅ **32% / 18%** |
 | **온디맨드 상주** | **Spark Connect 서버**(dbt 접속용, 미사용 시 `--replicas=0`) | 500m | 1536Mi | 1 | 2Gi |
 | | Flink JobManager(세션 클러스터, 잡 없어도 상주) | 1000m | 2048Mi | 1 | 2Gi |
-| | **동시 피크의 기저**(관측 차분) | **3750m** | **6724Mi** | | 47% / 26% |
+| | **동시 피크의 기저**(관측 차분) | **4100m** | **8516Mi** | | 51% / 33% |
 | **STREAM(일시)** | Flink TaskManager × 1 — **잡 제출 시 온디맨드**, 종료 시 자동 회수 ⁶ | 1000m | 2048Mi | 1 | 2Gi |
 | **BATCH(일시)** | Spark driver ⁴ | 1000m | **1433Mi** | 1 | 1.5Gi |
 | | Spark executor × **1** ⁴ ⁵ | 1000m | **1433Mi** | 1 | 1.5Gi |
-| | **동시 기동 피크(3워크로드 상주) — 실측** | **6750m** | **11638Mi** | | ✅ **84% / 45%** |
+| | **동시 기동 피크(3워크로드 상주) + Dagster** | **7100m** | **13430Mi** | | ⚠️ **89% / 52%** |
 
 ¹ **구 문서의 `750m/250Mi`는 틀렸고 합계만 맞았다.** 실측은 **950m/290Mi**다. 합계가 맞으면
   내역이 틀려도 오래 살아남는다 — 행 단위로 재측정한다.
@@ -135,8 +138,16 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu:8, mem
   ⇒ 이 표는 그대로 둔다. TM 상주는 **상시 구성이 아니라 시연 창 안의 일시 구성**이고,
   상시로 돌려야 할 때 **TM 상주 기준으로 재실측**한다.
 
-> 🔴 **`BestEffort` 파드는 `describe node` 합계에 0으로 잡힌다.** 현재 cert-manager 3파드가 그 상태이며
-> 실사용은 약 82MiB인데 표시는 0이다. **"합계에 없다 = 없다"가 아니다.** 예산을 대조할 때 함께 돌린다.
+⁷ **Dagster 행은 2026-08-27 17:18 KST `kubectl describe node` 실측**이다(분모 = Allocatable 8000m/26054Mi).
+  순증은 **350m/1792Mi**이고, 이 값은 회수 다이얼이 듣지 않아 **모든 시나리오에 상시 더해진다**
+  ([conventions/k8s.md](conventions/k8s.md) §9-3 경계 ④).
+  ⚠️ **마지막 행(7100m/13430Mi)만은 실측이 아니라 산술**이다 — 실측 6750m에 실측 350m을 더한 값이고,
+  BATCH+STREAM+Dagster를 **동시에 띄운 관측 창은 아직 열린 적이 없다**. 재측정은 §(C-2) 순서를 따른다.
+  값 자체는 두 실측의 합이라 신뢰할 만하지만 **"관측했다"로 인용하지 않는다.**
+
+> 🔴 **`BestEffort` 파드는 `describe node` 합계에 0으로 잡힌다.** 2026-08-27 실측 **6개**로 늘었다
+> (cert-manager 3 · barman-cloud · kube-proxy · local-path-provisioner).
+> **"합계에 없다 = 없다"가 아니다.** 예산을 대조할 때 함께 돌린다.
 >
 > ```shell
 > kubectl get pods -A \
@@ -176,9 +187,9 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu:8, mem
 1. **★★★★★ Flink 세션 클러스터 회수** — 검증·데모가 끝나는 **그 자리에서** `FlinkDeployment`를 삭제한다.
    JM은 **잡이 없어도 1000m/2048Mi를 상주 점유**하며, 이 규율이 깨져 13시간 샌 전례가 있다
    ([conventions/k8s.md](conventions/k8s.md) §9-3).
-2. **★★★★★ `spark.executor.instances` ≤ 1 (Flink 세션이 떠 있는 동안)** — 동시 피크 실측이
-   `6750m`(84%)인데 executor를 하나 더 붙이면 **`7750m` = 97%** 로 사실상 여유가 사라진다.
-   대용량 인제스트로 executor를 늘려야 하면 **Flink 세션을 먼저 내린다**(둘 중 하나만 확장).
+2. **★★★★★ `spark.executor.instances` ≤ 1 (Flink 세션이 떠 있는 동안)** — Dagster 상주분(350m)이
+   더해지면서 동시 피크가 `7100m`(89%)이 됐고, executor를 하나 더 붙이면 **`8100m` = 101%** 다.
+   이제 "여유가 없다"가 아니라 **스케줄 자체가 실패**한다. 늘려야 하면 **Flink 세션을 먼저 내린다.**
 3. **★★★★☆ Flink TaskManager slot/개수** — 스트리밍 병렬도. 기본 TM 1개(× 2슬롯).
    TM은 **잡 제출 시 온디맨드**로 뜨고 잡 종료와 함께 회수되므로 유휴 비용은 0이다.
    **단, 이것은 배치 잡에서 관측된 전제다** — **스트리밍 잡의 TM은 잡 수명 내내 산다**
@@ -190,6 +201,10 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu:8, mem
    **2026-08-23 결정으로 Redpanda는 미도입 유지**가 됐다(스트림 소스가 Iceberg bronze 스트리밍
    읽기로 바뀜 — [architectures/flink.md](architectures/flink.md)). 이 다이얼은 **당분간 죽은 항목**이며,
    [conventions/k8s.md](conventions/k8s.md) §9-3 **경계 ③(Redpanda 도입 시 재계산)도 발동하지 않는다.**
+5. **★★★☆☆ `DAGSTER_MAX_CONCURRENT_RUNS`** — daemon 파드 안의 run 동시성.
+   ⚠️ **회수 다이얼이 아니라 처리량 다이얼**이다 — 내려도 상주 자원은 줄지 않는다.
+   Dagster 자체는 오케스트레이터라 **회수 대상이 아니다**(내리면 스케줄·센서가 함께 멈춘다).
+   올릴 때는 daemon `limits.memory`를 아래 §Dagster 공식대로 **같은 커밋에서** 올린다.
 
 > 🔴 **스트리밍은 동시 기동 허용의 전제를 깬다.**
 >
@@ -222,8 +237,9 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu:8, mem
 
 ### (D) 호스트 축 — VM 밖의 예산
 
-**클러스터 예산만 보면 안 된다.** VM이 가져간 몫은 호스트에서 통째로 빠져나가고,
-Dagster는 그 **밖**에서 돈다.
+**클러스터 예산만 보면 안 된다.** VM이 가져간 몫은 호스트에서 통째로 빠져나간다.
+2026-08-27부터 **Dagster도 VM 안**으로 들어가 호스트 축이 그만큼 가벼워졌다 —
+남은 상시 호스트 소비자는 macOS 자체와 (옵션) Jupyter뿐이다.
 
 🔴 **산술상 잔여를 실제 여유로 읽지 않는다.** macOS는 **메모리 압축**으로 버티므로
 `unused`가 수백 MB만 남아도 동작한다 — 성립하는 것과 여유가 있는 것은 다르다.
@@ -379,11 +395,16 @@ daemon 필요 메모리
     300MB + 2 × 4GB × 1.5 = 12.3g → limit 16g
 ```
 
-**결정 절차**: ① 가장 메모리를 많이 쓰는 에셋을 특정 → ② `podman stats dagster-daemon` 또는 UI run
-로그로 피크 추정 → ③ 위 공식 적용 → ④ `dagster.yaml`·`compose.yml`·`cpus`를 **함께** 수정 → ⑤ 실측 검증.
+**결정 절차**: ① 가장 메모리를 많이 쓰는 에셋을 특정 → ② `kubectl top pod -l app=dagster-daemon`
+또는 UI run 로그로 피크 추정 → ③ 위 공식 적용 → ④ 매니페스트의 **ConfigMap 값과 `resources`를 함께**
+수정 → ⑤ 실측 검증.
 
-**의존성 연동 규칙** — `max_concurrent_runs`(`dagster.yaml`)와 daemon `memory`(`compose.yml`)는 강결합.
+**의존성 연동 규칙** — `max_concurrent_runs`와 daemon `memory`는 강결합이다.
 한쪽만 바꾸면 OOM 또는 낭비된 한도가 발생한다.
+⚠️ in-cluster에서는 **둘이 같은 파일에 있다** — `k8s/dagster/dagster-deploy.yaml`의
+ConfigMap `DAGSTER_MAX_CONCURRENT_RUNS`와 daemon `resources.limits.memory`.
+`dagster.yaml`은 그 값을 `env:`로 **참조만** 한다(값을 갖지 않는다). 호스트 실행분은 `.env`.
+아래 표의 `compose.yml` 축은 **호스트 경로(`--profile host-dagster`)에만** 해당한다.
 
 | 변경 | 연동 필수 | 방향 |
 | --- | --- | --- |
@@ -409,8 +430,10 @@ daemon 필요 메모리
 - 동시 run·pyiceberg 연결이 늘면 `max_connections`를 상향한다.
 - 카탈로그 쪽은 **테이블 메타만** 담아 데이터가 작다 → `shared_buffers 128MB`로 충분하다.
   접속자는 Dagster(pyiceberg)·Spark·Flink·dbt 4종이라 연결 수가 먼저 병목이 된다.
-- **메타 PG를 클러스터로 옮기지 않는다** — Dagster는 호스트에 남으므로, 메타 스토리지를 kind에 두면
-  클러스터가 없을 때 Dagster 자체가 기동하지 못하는 **순환 의존**이 된다.
+- **메타 PG도 이 클러스터에 있다**(2026-08-27 개정) — 같은 `catalog-postgres`에 `Database` CR로
+  `dagster` DB를 더했다. 구 근거였던 "순환 의존"은 Dagster가 함께 클러스터로 들어오면서 소멸했다
+  (둘 다 없으면 둘 다 없는 것이지 순환이 아니다). ⇒ 접속자는 이제 **메타 축까지 5종**이라
+  `max_connections`를 볼 때 이 축을 함께 센다.
 
 ## SeaweedFS
 

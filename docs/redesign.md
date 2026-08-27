@@ -1,4 +1,4 @@
-# 재설계 로드맵 — 호스트 Dagster + Kubernetes(Spark Operator)
+# 재설계 로드맵 — Kubernetes 단일 플랫폼(Dagster·Spark·Flink)
 
 > **상태**: 🚧 **채택·이행중(PoC 게이트)**. 방향은 확정, 전면 이행은 **Phase 0 PoC 성공을 전제**로 단계적으로 진행한다.
 > **동기**: 단일 호스트 compose의 확장성/성능 한계 극복 + **학습·포트폴리오**(K8s Operator·Spark-on-K8s 실전 패턴 시연).
@@ -107,7 +107,7 @@ lineage(스트림): **Iceberg bronze(changelog 스트리밍 읽기) → Flink(�
 | 데이터 서비스 위치 | SeaweedFS·카탈로그 Postgres **K8s로 이전** | 단일 패러다임(K8s) 통일 |
 | 카탈로그 Postgres 관리 | **CloudNativePG 오퍼레이터**(← Deployment+emptyDir) | PVC·failover·PITR·튜닝이 CR 한 장. Spark·Flink 오퍼레이터와 **같은 선언형 패러다임**. 이전 구성은 재기동만으로 카탈로그가 소멸했다 |
 | SeaweedFS 관리 | **StatefulSet 유지**(오퍼레이터 미채택 🔎) | 오퍼레이터는 master/volume/filer 분리로 **+500m/+1Gi** 상주 순증인데, 이미 PVC라 막을 유실 급소가 없다. Phase 2 이후 재검토 |
-| Dagster 실행 위치 | **호스트 유지** | 개발 루프 속도 + 컨트롤/컴퓨트 분리 시연 |
+| Dagster 실행 위치 | **in-cluster**(2026-08-27 개정 — 구 판정은 "호스트 유지") | 우회 경로(port-forward 2개 + TLS Ingress + CA 주입)가 서비스 DNS 직결로 대체된다. 호스트 headroom 회수는 예산 설계의 전제였다. run launcher는 `DefaultRunLauncher` 유지 |
 
 ## 4. 이행 플랜
 

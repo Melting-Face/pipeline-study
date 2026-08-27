@@ -21,8 +21,9 @@
 
 | 문서 | 내용 |
 | --- | --- |
-| [재설계 로드맵](redesign.md) | 호스트 Dagster + K8s로의 이행. 목표 토폴로지·급소·PDCA |
+| [재설계 로드맵](redesign.md) | K8s로의 이행. 목표 토폴로지·급소·PDCA |
 | [전체 아키텍처](architectures/overview.md) | Dagster · dbt · Iceberg · SeaweedFS 스택과 bronze 적재 템플릿 |
+| [Dagster](architectures/dagster.md) | 오케스트레이터 — in-cluster 배포 결정과 대안 비교 |
 | [Docker/Compose](architectures/docker.md) | 현행 채택 |
 | [Spark](architectures/spark.md) · [Flink](architectures/flink.md) | 재설계 컴퓨트 |
 | [Kubernetes](architectures/k8s.md) | 로컬 K8s 플랫폼 (kind on Podman) |
@@ -39,7 +40,7 @@
 | [공통](conventions/general.md) | 언어·들여쓰기·커밋 메시지·릴리스·pre-commit·**문서 작성 규약** |
 | [Git 워크플로](conventions/git.md) | 브랜치·커밋 단위·**병렬 세션 worktree** |
 | [Python](conventions/python.md) | ruff·타입 힌트·예외·의존성·스크립트 절차형 |
-| [Dagster](conventions/dagster.md) | 함수형 에셋 정의·메타데이터·잡·스케줄 |
+| [Dagster](conventions/dagster.md) | 함수형 에셋 정의·메타데이터·잡·스케줄 · **K8s in-cluster 배포** |
 | [dbt](conventions/dbt.md) | 레이어링·네이밍·테스트·sqlfluff·**방언 흡수** |
 | [분석](conventions/analysis.md) | gold / 노트북 / 리포트 **3층 분리**와 배치 기준 |
 | [외부 공개](conventions/publishing.md) | 공개는 커밋보다 강한 기준. 소규모 셀 마스킹·DUA·출처 등급 |
@@ -48,6 +49,7 @@
 | [Docker](conventions/docker.md) | 앵커·태그 고정·healthcheck·`deploy.resources`·profiles |
 | [관측·모니터링](conventions/monitoring.md) | 서비스 추가 시 **관측 수단 등록 의무** |
 | [Kubernetes](conventions/k8s.md) | 워크로드·requests/limits·probe·RBAC·Operator·Ingress |
+| [CNPG Postgres](conventions/k8s/cnpg.md) | 카탈로그·메타 DB · 선언 롤 · 백업 · PVC 제약 |
 | [Terraform/IaC](conventions/terraform.md) | 스택 구조·버전 고정·state 커밋 금지 |
 | [에이전트 오케스트레이션](conventions/agents.md) | AI 세션 2계층·권한·게이트·저널 |
 | [Codex 에이전트 구성](conventions/codex.md) | Claude와 분리된 Codex 지침·워커·권한·hook·스킬 운영 |
