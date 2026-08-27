@@ -1,0 +1,85 @@
+name: wiki
+
+# `wiki/` 원본을 GitHub 위키(`<repo>.wiki.git`)로 **단방향 미러**한다 (2026-08-27 신설).
+#
+# 왜 이 구조인가: GitHub 위키는 **별도 저장소**라 이 저장소의 pre-commit 훅 22종이
+# 하나도 돌지 않는다. 위키를 직접 편집하면 공개 저장소에 `gitleaks`도 `doc-lint`도
+# 없는 쓰기 표면이 생긴다. 그래서 원본을 `wiki/`에 두고 **커밋 게이트를 상속**시킨 뒤,
+# 여기서 기계적으로 복사만 한다. 즉 이 워크플로는 게이트가 아니라 **배달부**다.
+#
+# 설계 원칙(ci.yml과 동일):
+#   1. 인프라에 붙지 않는다 — 파일 복사와 git 조작뿐이다.
+#   2. secrets를 쓰지 않는다 — `GITHUB_TOKEN`만 쓴다.
+#      🔴 이 토큰으로 wiki push가 되는지는 **첫 실행이 검증한다.** 안 되면 대안은
+#         PAT인데 그건 원칙 2와 충돌하므로, 실패 시 자동 우회하지 않고 **사람에게 올린다.**
+#   3. 규칙을 재선언하지 않는다 — 문서 규약 검사는 pre-commit / ci.yml `lint` 잡 소관이다.
+#
+# 🔴 선행조건(사람이 1회): 웹 UI에서 위키 첫 페이지를 만들어야 `.wiki.git`이 생성된다.
+#    빈 위키에는 clone 대상이 없다(2026-08-27 실측: `Repository not found`).
+#    함께 Settings → Wikis → "Restrict editing to collaborators only"를 켠다 —
+#    저장소가 PUBLIC이라 이걸 안 켜면 아무나 위키를 고칠 수 있고, 그 편집은
+#    다음 미러가 덮어써 **조용히 사라진다**(기여자에게도 나쁘다).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'wiki/**'
+      - '.github/workflows/wiki.yml'
+  # 위키를 처음 초기화한 직후 등 손으로 한 번 돌릴 수 있게 열어 둔다.
+  workflow_dispatch:
+
+# 같은 ref에 새 푸시가 오면 진행 중인 미러를 취소한다.
+# 🔴 cancel-in-progress가 안전한 이유는 이 잡이 **멱등**이기 때문이다 —
+#    매 실행이 wiki/ 전체를 통째로 다시 반영하지, 증분을 쌓지 않는다.
+concurrency:
+  group: wiki-${{ github.ref }}
+  cancel-in-progress: true
+
+# ci.yml은 contents:read다. 쓰기가 필요한 것은 이 워크플로뿐이라 여기만 write로 두고
+# 파일을 분리했다(권한은 워크플로 단위라, 합치면 lint 잡까지 쓰기 권한을 갖게 된다).
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    name: wiki/ → GitHub 위키 미러
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 위키 저장소 clone
+        run: |
+          set -euo pipefail
+          if ! git clone \
+              "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" \
+              wiki-remote; then
+            echo "::error::위키 저장소를 clone하지 못했다."
+            echo "::error::웹 UI에서 위키 첫 페이지를 만들어 .wiki.git을 생성했는지 확인하라."
+            exit 1
+          fi
+
+      - name: 페이지 복사 + 링크 접미어 변환
+        run: |
+          set -euo pipefail
+          # 위키가 소유한 것은 페이지뿐이다. .git 외 기존 파일을 지우고 통째로 다시 깐다
+          # (멱등성 — 저장소에서 지운 페이지가 위키에 남지 않는다).
+          find wiki-remote -mindepth 1 -maxdepth 1 -not -name '.git' -exec rm -rf {} +
+          cp wiki/*.md wiki-remote/
+          python3 scripts/wiki_linkify.py wiki-remote
+
+      - name: 변경이 있을 때만 push
+        working-directory: wiki-remote
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "변경 없음 — push를 건너뛴다."
+            exit 0
+          fi
+          # 위키에는 커밋 규약 게이트(gitlint)가 없지만, 원본 커밋을 역추적할 수 있게
+          # 소스 SHA를 본문에 남긴다. 위키 이력만 보고도 어느 커밋에서 왔는지 알 수 있다.
+          git commit -m "docs: wiki/ 미러 (${GITHUB_SHA:0:7})" -m "source: ${GITHUB_SHA}"
+          git push

@@ -25,7 +25,12 @@ supervisor가 직접 배정한다. 🔴 **당신이 쓰는 문서에 당신을 �
 
 ## 역할 경계
 
-**쓸 수 있는 곳** — `docs/**` · 최상위 `README.md`. 그 밖은 `worker_path_guard.py tech-writer`가 `deny`한다.
+**쓸 수 있는 곳** — `docs/**` · 최상위 `README.md` · `wiki/**`.
+그 밖은 `worker_path_guard.py tech-writer`가 `deny`한다.
+
+**`wiki/**` 는 GitHub 위키로 미러돼 나간다** — 독자는 `docs/posts/**`와 같은 *모르는 사람*이고
+규약도 [`publishing.md`](../../docs/conventions/publishing.md) §4-1로 같다. 다른 것은 게이트 위치다:
+사람이 업로드하는 단계가 없으므로 **커밋 전에 `security` 컨펌**을 받는다. 미러는 배달이지 승인이 아니다.
 
 **🔴 쓸 수 없는 곳 (가드 강제)** — `docs/security.md` · `docs/skills.md` · `docs/skills/**`.
 **당신을 판정하는 근거 문서**다(ISMS-P 통제 매핑·반출 금지선·스킬 출처 등급).
