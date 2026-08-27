@@ -29,7 +29,7 @@ Codex 설정 경로를 보호하기 위한 링크·보호 규칙만 Claude 설�
 | hook | `settings.json`의 `hooks` | `.codex/hooks.json` + `.codex/hooks/*.py` |
 | 명령 정책 | `permissions.allow/ask/deny` | sandbox + `.codex/rules/*.rules` + hook |
 | 스킬 | `.claude/skills` | `.agents/skills` |
-| 저널 | `agents/claude-code/<날짜>/` + `/journal` | `agents/<날짜>/` + Stop 보정 |
+| 저널 | `agents/<날짜>/` + `/journal` | `agents/<날짜>/` + Stop 보정 |
 
 OpenAI는 Claude Code의 지침·설정·스킬·hook·슬래시 명령·subagent를 Codex로
 가져오는 `/import`를 제공한다. 이 저장소는 이미 세밀한 경로 가드와 데이터 거버넌스
@@ -73,11 +73,12 @@ Codex 권한은 다음 순서로 겹쳐 쓴다.
 Codex와 Claude는 `SessionStart`, `PreToolUse`, `PostToolUse`, `Stop` 같은 이름을
 공유하지만 실행 계약이 완전히 같지는 않다.
 
-- Codex의 `apply_patch`는 `tool_input.command`에 patch 전문을 전달한다. 경로 가드는
+- Codex CLI 0.149.1의 파일 수정은 최상위 `exec` 안에서 `tools.apply_patch(...)`를 호출한다.
+  경로 가드는 freeform `exec` 입력과 직접 `apply_patch` 입력을 모두 정규화한 뒤
   `*** Add/Update/Delete File:` 헤더를 파싱한다.
 - 워커 경로 가드는 각 워커 TOML의 인라인 hook이 아니라 `.codex/hooks.json`에 한 번
-  배선한다. 서브에이전트 transcript의 `thread_source = "subagent"`와 워커 어댑터 표식을
-  함께 확인하므로 메인 세션의 patch에는 역할 경계를 잘못 적용하지 않는다.
+  배선한다. 서브에이전트 transcript의 `thread_source = "subagent"`와 `agent_role`을
+  확인하므로 메인 세션의 patch에는 역할 경계를 잘못 적용하지 않는다.
 - Codex `PreToolUse`는 `deny`와 `additionalContext`를 사용한다. Claude 구성에서 쓰던
   대화형 `ask`를 그대로 반환하면 Codex가 hook 실패로 처리하고 도구를 계속 실행한다.
 - 확정적으로 금지할 HTTP mutation과 `.env`·Terraform state 쓰기는 `deny`한다.

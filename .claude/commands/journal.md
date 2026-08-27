@@ -12,10 +12,10 @@ allowed-tools: Read, Write, Edit, Glob, Bash(date:*), Bash(ls:*), Bash(mkdir:*),
 
 ## 절차
 
-1. **볼트 경로 확정** — `${OBSIDIAN_VAULT:-$HOME/obsidian}`. 저널 루트는 `<볼트>/agents/claude-code/`.
+1. **볼트 경로 확정** — `${OBSIDIAN_VAULT:-$HOME/obsidian}`. 저널 루트는 `<볼트>/agents/`(두 런타임 공유 — 출처는 frontmatter 태그가 가른다).
 2. **KST 날짜·시각 확인** — `TZ=Asia/Seoul date '+%Y-%m-%d %H:%M'`. 폴더는 이 날짜를 쓴다.
 3. **미션 슬러그 결정** — 인자 `$1`이 있으면 그것을, 없으면 이번 세션의 주 작업에서 영문 kebab-case로 유추한다.
-4. **대상 파일** — `<볼트>/agents/claude-code/<YYYY-MM-DD>/<NN>-<mission-slug>.md`
+4. **대상 파일** — `<볼트>/agents/<YYYY-MM-DD>/<NN>-<mission-slug>.md`
    - **`NN` 발급**: `scripts/journal_guard.py session-start`로 **다음 번호를 조회**한다(직접 `ls`로 세지 마라 —
      병렬 세션과 경합해 중복이 난다). 신규 생성은 `PreToolUse` hook이 중복·건너뜀을 차단한다.
    - **`NN` 판정 기준**은 **본문 상호작용 로그의 첫 이벤트 시각**(대개 사용자 요청 수령)이다.

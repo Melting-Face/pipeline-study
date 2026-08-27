@@ -33,13 +33,17 @@ hooks:
 | 사용자 최종 보고 직전 | `## ✅ supervisor — 취합·보고`, `status`·`updated` 갱신 |
 
 ## 저널 위치
-- 런타임 루트: `${OBSIDIAN_VAULT:-~/obsidian}/agents/claude-code/`.
+- 저널 루트: `${OBSIDIAN_VAULT:-~/obsidian}/agents/`.
   개인 Obsidian 볼트이며 저장소 커밋 대상이 아니다.
-- 미션 파일: `<YYYY-MM-DD>/<NN>-<mission-slug>.md`. `NN`은 Claude Code의 그날 착수 순번이다.
-  일자는 `TZ=Asia/Seoul date +%F`로 구한다.
-- 태그: `runtime/claude-code`. 공용 지도는 상위 `agents/_MOC.md`다.
-  기존 Claude 템플릿은 `agents/_TEMPLATE.md`로 보존한다.
-- 신규 MOC 위키링크는 `[[agents/claude-code/<날짜>/<파일명>]]` 전체 경로를 쓴다.
+- 미션 파일: `<YYYY-MM-DD>/<NN>-<mission-slug>.md`. `NN`은 **그날의 단일 수열**이다
+  (런타임을 가리지 않는다). 일자는 `TZ=Asia/Seoul date +%F`로 구한다.
+- 🔴 **날짜 폴더는 두 런타임이 공유한다.** 출처는 경로가 아니라 frontmatter
+  `agent: claude-code`와 `runtime/claude-code` 태그가 가른다. 공용 지도는 `agents/_MOC.md`,
+  템플릿은 `agents/_TEMPLATE.md`다.
+- 신규 MOC 위키링크는 `[[agents/<날짜>/<파일명>]]` 전체 경로를 쓴다.
+- ⚠️ **다른 런타임의 저널을 열지 마라.** `worker_path_guard.py`가 내용으로 판정한다 —
+  frontmatter `agent:`가 `claude-code`가 아니거나 **이미 쓰인 번호**면 `ask`로 올라간다.
+  번호는 반드시 hook이 발급한 값을 쓴다(직접 `ls`로 세지 마라).
 
 ## 할 일
 1. **정합성 점검**: 미션 저널에 프론트매터(`mission`·`status`·`agent`·`model`·`started`/`updated`)와 계층 섹션(supervisor·워커)이 규약대로 있는지 확인. 빠진 필드·섹션을 채우거나 `TODO`로 표시.

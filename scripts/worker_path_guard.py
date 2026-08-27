@@ -39,6 +39,7 @@ r"""워커 경로 경계 가드 — 에이전트 스코프 PreToolUse hook.
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -151,9 +152,17 @@ BOUNDARIES = {
 OBSIDIAN_ROOT = Path(
     os.environ.get("OBSIDIAN_VAULT") or str(Path.home() / "obsidian")
 ).expanduser()
+DAY_DIR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+JOURNAL_NAME_RE = re.compile(r"^(\d{2})-[a-z0-9][a-z0-9-]*\.md$")
+
 OUTSIDE_ALLOW = {
+    # 🔴 저널은 접두어로 열지 않는다. 평탄화(2026-08-27) 이후 두 런타임이 **같은
+    #    `agents/<날짜>/`를 공유**하므로, `agents/`를 접두어로 열면 Claude archivist가
+    #    **Codex 기록까지** 쓸 수 있어 런타임 분리가 권한 분리가 되지 않는다.
+    #    ⇒ 경계 축을 **경로에서 내용으로** 옮겨 아래 `is_claude_journal_path()`가 진다.
+    #    (`.codex/hooks/worker_path_guard.py`가 먼저 푼 문제의 거울상 — 그쪽이 이미
+    #     평탄이라 같은 판정을 갖고 있고, 둘은 **짝으로 유지**해야 한다.)
     "archivist": (
-        str(OBSIDIAN_ROOT / "agents" / "claude-code"),
         str(OBSIDIAN_ROOT / "agents" / "_MOC.md"),
         str(OBSIDIAN_ROOT / "agents" / "_TEMPLATE.md"),
     ),
@@ -173,6 +182,56 @@ OUTSIDE_ALLOW = {
 #    ⚠️ `archivist`는 여기 넣지 않는다 — 저널은 진료 데이터가 아니고, 볼트 경로가
 #    환경마다 달라 `ask`로 사람에게 묻는 편이 맞다(둘의 성격이 반대다).
 OUTSIDE_STRICT = frozenset({"data-extractor"})
+
+
+def read_journal_agent(path: Path) -> str:
+    """기존 저널 frontmatter의 `agent:` 값을 반환한다. 없으면 빈 문자열."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    if not lines or lines[0].strip() != "---":
+        return ""
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        key, separator, value = line.partition(":")
+        if separator and key.strip() == "agent":
+            return value.split("#")[0].strip().strip("\"'")
+    return ""
+
+
+def is_claude_journal_path(target: Path) -> bool:
+    """Claude archivist가 무승인으로 쓸 수 있는 `agents/<날짜>/<NN>-<slug>.md`인가.
+
+    🔴 판정 축이 **경로가 아니라 내용**이다. 평탄화 이후 두 런타임이 같은 폴더를
+    공유하므로 경로만으로는 남의 기록을 가릴 수 없다.
+      - **기존 파일**: frontmatter `agent:`가 `claude-code`일 때만 허용
+        (= Codex 저널을 덮어쓰려 하면 여기서 걸린다).
+      - **신규 파일**: 그 날짜의 **다음 번호**일 때만 허용
+        (= 이미 있는 번호를 재사용해 남의 것을 밀어내지 못한다).
+    """
+    agents_root = (OBSIDIAN_ROOT / "agents").resolve()
+    try:
+        relative = target.relative_to(agents_root)
+    except ValueError:
+        return False
+    if len(relative.parts) != 2 or DAY_DIR_RE.fullmatch(relative.parts[0]) is None:
+        return False
+
+    matched = JOURNAL_NAME_RE.fullmatch(relative.name)
+    if matched is None:
+        return False
+    if target.exists():
+        return read_journal_agent(target) == "claude-code"
+
+    numbers = [
+        int(existing.group(1))
+        for path in target.parent.glob("*.md")
+        if (existing := JOURNAL_NAME_RE.fullmatch(path.name)) is not None
+    ]
+    return int(matched.group(1)) == max(numbers, default=0) + 1
+
 
 # PreToolUse 입력에서 대상 경로가 담기는 키 — 도구마다 이름이 다르다.
 PATH_KEYS = ("file_path", "notebook_path", "path")
@@ -228,6 +287,9 @@ def main() -> None:
         allowed = OUTSIDE_ALLOW.get(worker, ())
         roots = (Path(prefix).expanduser().resolve() for prefix in allowed)
         if any(target.is_relative_to(root) for root in roots):
+            sys.exit(0)
+        # 저널은 접두어가 아니라 **내용**으로 판정한다(공유 폴더라 경로로는 못 가른다).
+        if worker == "archivist" and is_claude_journal_path(target):
             sys.exit(0)
         if worker in OUTSIDE_STRICT:
             # 🔴 `ask`로 두면 **막히지 않는다** — auto 모드 분류기가 파일 도구의 `ask`를

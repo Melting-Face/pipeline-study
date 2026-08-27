@@ -34,7 +34,7 @@ $OBSIDIAN_VAULT/agents/            # 저널 루트
 
 - 파일명 앞 `NN`은 **선택된 날짜 폴더에서** 미션을 착수한 순서다. 날짜 폴더가 바뀌면
   `01`부터 다시 시작한다. Codex는 `agents/<YYYY-MM-DD>/`의 기존 이력 뒤에서 다음 번호를
-  발급하고, Claude Code는 `agents/claude-code/<YYYY-MM-DD>/`에서 별도로 발급한다.
+  발급한다. Claude Code도 **같은 폴더**를 쓰므로 `NN`은 그날의 **단일 수열**이다.
 - 순번은 **파일명에만** 붙인다. 프론트매터 `mission:`·`tags:`의 슬러그는 **번호 없이** 유지한다.
 - 기존 이력의 위키링크는 파일명 그대로 보존한다. 신규 기록은 동명 노트의 모호성을 막기 위해
   볼트 기준 전체 경로를 쓴다 — `[[agents/2026-08-26/01-runtime-journal-separation]]`.

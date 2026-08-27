@@ -9,12 +9,12 @@
     플랜 모드의 계획 파일은 하네스가 `~/.claude/plans/<랜덤슬러그>.md`에
     **경로와 이름을 정해서** 만든다. 우리가 바꿀 수 없고, 슬러그가 무작위라
     나중에 어떤 미션의 계획인지 알아볼 수 없다. 저널
-    (`agents/claude-code/<날짜>/<NN>-<slug>.md`)
+    (`agents/<날짜>/<NN>-<slug>.md`)
     은 볼트에 쌓이는데 그 근거가 된 **계획서만 홈 디렉터리에 흩어져 남는** 셈이다.
 
-    그래서 Claude 저널과 **같은 NN·같은 슬러그**로
-    `plans/claude-code/<날짜>/<NN>-<slug>.md`에 복사한다.
-    런타임별 동명 파일을 구분하도록 저널 링크에는 볼트 기준 전체 경로를 쓴다.
+    그래서 저널과 **같은 NN·같은 슬러그**로
+    `plans/<날짜>/<NN>-<slug>.md`에 복사한다.
+    저널 링크에는 볼트 기준 전체 경로를 써서 `plans/`와 `agents/`가 헷갈리지 않게 한다.
 
     🔴 미션 이름의 정본은 **저널**이다. 이 스크립트는 이름을 짓지 않고
     **저널에서 읽어 따라간다** — 계획서가 저널보다 먼저 생기는 경우가 흔해서
@@ -48,11 +48,14 @@ from pathlib import Path
 # 하네스가 계획 파일을 만드는 고정 위치. 프로젝트가 아니라 **홈** 아래다.
 PLAN_SOURCE_DIR = Path.home() / ".claude" / "plans"
 
-# Claude Code 저널과 계획 미러는 런타임별 경로를 유지한다. Codex가 사용하는
-# `agents/<날짜>/`도 백링크 대조를 위한 호환 경로로 읽는다.
-JOURNAL_SUBDIR = Path("agents") / "claude-code"
-LEGACY_JOURNAL_SUBDIR = Path("agents")
-PLAN_SUBDIR = Path("plans") / "claude-code"
+# 저널·계획 미러 모두 `<루트>/<날짜>/`에 바로 쌓는다(런타임 하위 경로 없음).
+# 런타임 구분은 frontmatter 태그가 지며, 경로는 날짜만 가른다
+# (journal_guard.py의 `RUNTIME_DIRS`와 같은 결정 — 둘이 어긋나면 미러 짝이 깨진다).
+JOURNAL_SUBDIR = Path("agents")
+# 구 Claude 전용 경로. 평탄화(2026-08-27) 이전에 쌓인 저널을 **읽기만** 한다 —
+# 미이전분이 남아 있어도 백링크 대조가 끊기지 않게 하는 호환 경로다.
+LEGACY_JOURNAL_SUBDIR = Path("agents") / "claude-code"
+PLAN_SUBDIR = Path("plans")
 
 # 저널 파일명 규약 `<NN>-<mission-slug>.md`. journal_guard.py와 같은 형태를 본다.
 JOURNAL_NAME_RE = re.compile(r"^(\d{2})-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$")
@@ -149,7 +152,9 @@ def compose(source_text: str, journal_rel: str) -> str:
     matched = JOURNAL_NAME_RE.match(f"{name}.md")
     slug = matched.group(2) if matched else name
     stamp = datetime.now(tz=KST).strftime("%Y-%m-%dT%H:%M+09:00")
-    journal_link = f"agents/claude-code/{day}/{name}"
+    # 🔴 경로를 다시 쓰지 않고 `JOURNAL_SUBDIR`에서 유도한다 — 여기 하드코딩이 있어서
+    #    평탄화 때 상수만 고치면 링크가 조용히 옛 경로를 가리킬 뻔했다(2026-08-27).
+    journal_link = f"{JOURNAL_SUBDIR.as_posix()}/{day}/{name}"
     backlink = (
         f"> 🔗 미션 저널: [[{journal_link}]] · "
         "이 파일은 **미러**다(원본은 하네스 관리)\n\n"

@@ -321,14 +321,20 @@
   **"호출이 줄었다"를 실효로 읽지 않는다**(원칙 7).
   저널의 **기록 주체는 `archivist`**(경합 방지 single-writer) — 호출 실패·세션 급종료·**워커 배정 불가** 시에만
   supervisor가 폴백한다. **`$OBSIDIAN_VAULT`(기본 `~/obsidian`)** 의
-  `agents/claude-code/<YYYY-MM-DD>/<NN>-<mission>.md`에
-  쌓으며 **저장소 커밋 대상 아님**. **기록 시점(필수)**: ①미션 개시 ②계층 간 이벤트 직후 ③서브에이전트 결과 수령 직후
+  `agents/<YYYY-MM-DD>/<NN>-<mission>.md`에
+  쌓으며 **저장소 커밋 대상 아님**. **두 런타임이 날짜 폴더를 공유**하고 출처는 frontmatter
+  `agent:`가 가른다 — 경로로 가르면 **NN이 갈려 같은 날 같은 번호가 두 개** 생긴다(실발생).
+  공유하므로 **archivist의 쓰기 경계도 경로가 아니라 내용**이 진다(`ask`이므로 실효는 규율 —
+  [`docs/conventions/agents/enforcement.md`](docs/conventions/agents/enforcement.md)).
+  **기록 시점(필수)**: ①미션 개시 ②계층 간 이벤트 직후 ③서브에이전트 결과 수령 직후
   ④**사용자 최종 보고 직전** ⑤세션 종료·컨텍스트 요약 직전. **미션 판단**: 파일 생성·수정 / 위임 / 결정·합의 /
   비가역 중 하나면 연다(단순 조회 제외). 누락 보정은 **`/journal`**, `NN`은 hook이 발급한다.
   서브에이전트 호출 시 **실행 메타**(`subagent_type`·`model`·도구 호출 수·토큰·소요)와 경계 준수를 남긴다
   (수치 없으면 `미측정` — **추정치 금지**). **저널과 `_MOC.md`는 한 벌로 갱신**한다.
-  **플랜 모드 계획서는 같은 볼트의 `plans/claude-code/<YYYY-MM-DD>/<NN>-<mission>.md`로
-  미러**된다(`scripts/plan_mirror_guard.py`).
+  **플랜 모드 계획서는 같은 볼트의 `plans/<YYYY-MM-DD>/<NN>-<mission>.md`로
+  미러**된다(`scripts/plan_mirror_guard.py`). ⚠️ **경로 규약을 바꿀 때는 이관을 먼저 하고
+  배선을 나중에 바꾼다** — 가드 본문은 매 호출 즉시 반영돼 **이관 대상이 이관 도중에 늘어난다**.
+  파일만 옮기면 짝 기록이 되살린다(상세 [`docs/conventions/agents/plan-mirror.md`](docs/conventions/agents/plan-mirror.md)).
   **미션 이름의 정본은 저널이라 미러는 이름을 짓지 않고 따라간다**(저널이 생길 때까지 보류했다 소급).
   **저널과 계획서는 노출 통제의 축이 다르다** — 저널은 무엇을 남길지 *고르며* 쓰지만 계획서는
   하네스 산출물을 **통째로** 복사해 고르는 단계가 없다. 볼트는 자동 푸시되므로 **복사는 외부 발신**이고,

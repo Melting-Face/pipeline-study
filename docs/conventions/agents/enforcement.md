@@ -57,11 +57,32 @@
   `archivist` 보정을 요청한다. 두 번째 Stop(`stop_hook_active: true`)은 `systemMessage`만 반환해
   무한 반복을 막는다.
 - **기존 저널 수정·`_` 접두 파일·볼트 밖 경로는 검사하지 않는다** — 가드는 넘버링에만 관여한다.
-- Codex는 `apply_patch` 입력을 `.codex/hooks/journal_pre_write.py`가 `pre-write` 형식으로
-  변환한다. Codex archivist 경계는 기존 날짜 저널의 `agent: codex`까지 확인해 Claude 이력
-  수정을 막는다.
-- 신규 경로는 Claude Code의 `agents/claude-code/<날짜>/`와 Codex의
-  `agents/<날짜>/`다. Codex는 기존 날짜별 이력과 같은 폴더에서 다음 `NN`을 발급한다.
+- Codex CLI 0.149.1에서 파일 수정은 최상위 `exec` 안의 `tools.apply_patch(...)`로 기록된다.
+  `.codex/hooks/worker_path_guard.py`와 `journal_pre_write.py`는 직접 `apply_patch` 입력과
+  freeform `exec` 문자열을 모두 정규화해 patch 헤더를 추출한다. patch가 아닌 일반 `Bash`와
+  읽기 `exec`는 통과시킨다.
+- 워커 역할은 transcript 첫 `session_meta.payload.agent_role`을 우선 사용한다. 구버전
+  developer 지시문 표식은 fallback이고, 서브에이전트 patch에서 역할을 식별하지 못하면
+  fail-closed한다. Codex archivist 경계는 기존 날짜 저널의 `agent: codex`까지 확인해
+  Claude 이력 수정을 막는다.
+- 세 가드는 기존 hook trust 인덱스를 보존하도록 하나의 `PreToolUse` 그룹에 두고
+  `Bash|exec|apply_patch`를 함께 받는다. hook 파일 변경 후 현재 세션의 자식 워커는 시작 시
+  스냅샷을 계속 쓰므로, 새 세션에서 `/hooks` 신뢰 또는 검토된
+  `--dangerously-bypass-hook-trust` 프로브로 실발동을 확인한다.
+- 경로는 **두 런타임 모두 `agents/<날짜>/`** 다(2026-08-27 평탄화). `NN`은 그날의
+  **단일 수열**이라 런타임이 갈려도 번호가 겹치지 않는다 — 갈라 두었을 때 실제로
+  **같은 날 `01`이 두 개** 생겼다.
+- ⚠️ **폴더를 공유하므로 경계 축이 경로에서 내용으로 옮겨졌다.** 양쪽 archivist 모두
+  기존 저널의 frontmatter `agent:`를 읽어 **남의 런타임 기록 수정**을 막고, 신규는
+  **다음 번호일 때만** 통과시킨다(Claude: `scripts/worker_path_guard.py`
+  §`is_claude_journal_path` / Codex: `.codex/hooks/worker_path_guard.py`
+  §`is_codex_journal_path`). **둘은 짝이라 한쪽만 고치면 경계가 비대칭이 된다.**
+  ⚠️ **그 경계의 결정값은 `ask`이고, 파일 도구의 `ask`는 auto 모드 분류기가 흡수한다**
+  ([`parallel.md`](parallel.md) §hook 결정값) — **뜨지만 멈추지는 않는다.** 경로 축이던 때와
+  **동등이지 강화가 아니다.** 그리고 판정이 frontmatter `agent:` **한 필드**에 걸려 있어
+  그 값이 역할명 등으로 오염되면 경계가 함께 흔들린다(실발생 — 오늘자 저널 하나가
+  `agent: archivist`로 적혔다). 오염의 방향은 안전하지만(더 막힌다) **그 "더"가 `ask`라서
+  실효는 규율이 진다.** ⇒ **"내용으로 막는다"를 "확실히 막힌다"로 읽지 않는다.**
 - `$OBSIDIAN_VAULT`가 없는 환경에서는 **조용히 통과**한다 —
   가드가 개인 환경 의존성을 세션의 전제조건으로 만들면 안 된다.
 

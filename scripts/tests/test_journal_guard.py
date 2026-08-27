@@ -230,19 +230,32 @@ class JournalGuardTest(unittest.TestCase):
         """런타임별 동명 노트를 피하도록 계획서 백링크에 전체 경로를 쓴다."""
         mirrored = compose("# 계획\n", "2026-08-26/01-runtime-separation")
 
-        expected = "[[agents/claude-code/2026-08-26/01-runtime-separation]]"
+        expected = "[[agents/2026-08-26/01-runtime-separation]]"
         assert expected in mirrored
 
-    def test_archivist_write_boundaries_follow_runtime_paths(self) -> None:
-        """각 archivist는 현재 런타임의 저널 경로만 무승인으로 쓸 수 있다."""
-        codex_path = self.vault / "agents" / "2026-08-26" / "01-a.md"
+    def test_archivist_write_boundaries_follow_frontmatter_not_path(self) -> None:
+        """평탄화 후 경계 축은 **경로가 아니라 내용**이다.
+
+        두 런타임이 `agents/<날짜>/`를 공유하므로 경로로는 서로를 가릴 수 없다.
+        기존 파일은 frontmatter `agent:`로, 신규 파일은 **다음 번호인가**로 가른다.
+        """
+        day = self.vault / "agents" / "2026-08-26"
+        day.mkdir(parents=True)
+        # 같은 폴더에 두 런타임의 저널이 나란히 있다 — 이 상황이 이 테스트의 전제다.
+        codex_path = day / "01-a.md"
+        codex_path.write_text("---\nagent: codex\n---\n", encoding="utf-8")
+        claude_path = day / "02-a.md"
+        claude_path.write_text("---\nagent: claude-code\n---\n", encoding="utf-8")
+
         old_codex_path = self.vault / "agents" / "codex" / "2026-08-26" / "01-a.md"
-        claude_path = self.vault / "agents" / "claude-code" / "2026-08-26" / "01-a.md"
         legacy_claude_path = self.vault / "agents" / "2026-08-25" / "01-claude.md"
         legacy_claude_path.parent.mkdir(parents=True)
         legacy_claude_path.write_text(
             "---\nagent: claude-code\n---\n", encoding="utf-8"
         )
+        # 신규는 **다음 번호**(03)만 열린다. 02는 이미 쓰였으므로 재사용이 막혀야 한다.
+        claude_next = day / "03-next.md"
+        claude_taken = day / "02-collide.md"
 
         codex_allowed = self._run_path_guard(
             CODEX_PATH_GUARD,
@@ -276,6 +289,14 @@ class JournalGuardTest(unittest.TestCase):
             CLAUDE_PATH_GUARD,
             {"tool_input": {"file_path": str(claude_path)}},
         )
+        claude_new_allowed = self._run_path_guard(
+            CLAUDE_PATH_GUARD,
+            {"tool_input": {"file_path": str(claude_next)}},
+        )
+        claude_taken_asks = self._run_path_guard(
+            CLAUDE_PATH_GUARD,
+            {"tool_input": {"file_path": str(claude_taken)}},
+        )
         claude_asks = self._run_path_guard(
             CLAUDE_PATH_GUARD,
             {"tool_input": {"file_path": str(codex_path)}},
@@ -298,9 +319,17 @@ class JournalGuardTest(unittest.TestCase):
             ]
             == "deny"
         )
-        assert claude_allowed.stdout == ""
-        assert (
+        # 대조군 둘이 **먼저** 통과해야 아래 위반 셀의 `ask`가 근거가 된다.
+        assert claude_allowed.stdout == ""  # 자기 런타임의 기존 저널
+        assert claude_new_allowed.stdout == ""  # 다음 번호의 신규 저널
+        assert (  # 남의 런타임 저널 — 같은 폴더인데도 내용으로 갈린다
             json.loads(claude_asks.stdout)["hookSpecificOutput"]["permissionDecision"]
+            == "ask"
+        )
+        assert (  # 이미 쓰인 번호 재사용 — 남의 기록을 밀어내지 못한다
+            json.loads(claude_taken_asks.stdout)["hookSpecificOutput"][
+                "permissionDecision"
+            ]
             == "ask"
         )
 
