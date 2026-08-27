@@ -38,7 +38,7 @@ Terraform의 리소스 모델은 create/read/update가 기본이라 같은 실�
 | --- | --- | --- | --- |
 | **A. cluster** | podman machine · kind · 로컬 레지스트리 · ingress-nginx | 10G 유실 | 셸 유지 |
 | **B. data** | SeaweedFS · CNPG Cluster · Secret · 버킷 | 10G 유실 | 셸 유지 |
-| **C. platform** | 오퍼레이터 5종 · 로컬 CA · 워크로드 RBAC · Dagster | 안전(재생성 가능) | **Terraform으로 이행**(미구현) |
+| **C. platform** | 오퍼레이터·컨트롤러 5종 · 로컬 CA · 워크로드 RBAC · Dagster | 안전(재생성 가능) | **Terraform으로 이행**(미구현) |
 
 ⚠️ **현재 구현된 것은 없다.** 이 문서는 설계와 스파이크 실측이며, 스택 C는 아직 만들지 않았다 —
 지금 도는 것은 전부 `scripts/k8s-*.sh`다. 진행 상태를 이 문서에서 읽지 않는다.
@@ -70,7 +70,7 @@ terraform/lakehouse-platform/
 ├── versions.tf     required_version · 프로바이더 핀 · .terraform.lock.hcl 커밋
 ├── provider.tf     kubernetes·helm — config_context 고정
 ├── variables.tf    차트 버전·이미지 태그·Ingress 호스트(k8s-env.sh 값 이관)
-├── operators.tf    helm_release ×5
+├── operators.tf    helm_release ×3 (아래 주의)
 ├── security.tf     로컬 CA · 워크로드 RBAC
 ├── dagster.tf      k8s/dagster/*.yaml 을 yamldecode 로 적용
 └── outputs.tf
@@ -78,6 +78,22 @@ terraform/lakehouse-platform/
 
 이행이 끝나면 `scripts/k8s-operators.sh`는 사라지고 `terraform apply`가 그 자리를 대신한다.
 `k8s-dagster.sh`에는 **이미지 빌드·push만** 남는다.
+
+⚠️ **C의 5종이 전부 helm은 아니다**(2026-08-28 실측 — 이 문서 초판이 "helm 5종"으로 적었던 것은 틀렸다).
+
+| 대상 | 설치 방식 | Terraform 대응 |
+| --- | --- | --- |
+| Spark Operator · Flink Operator · CloudNativePG | `helm upgrade --install` | `helm_release` — import 가능 |
+| cert-manager · Barman Cloud 플러그인 | **원격 멀티도큐먼트 매니페스트 `kubectl apply`** | ⚠️ 대응이 자명하지 않다 |
+
+원격 매니페스트 둘은 ingress-nginx와 **같은 문제**다 — URL 하나가 수십 개 오브젝트를 담고 있어
+`kubernetes_manifest` 하나로 못 받는다. 선택지는 셋이고 어느 것도 공짜가 아니다:
+공식 helm 차트로 갈아타기(설치 산출물이 달라진다) · `http` 데이터소스로 받아 `yamldecode` 분해
+(멀티도큐먼트 분해가 HCL에서 지저분하다) · **셸에 남기기**(A 스택과 같은 취급).
+⇒ 초기 이행에서는 **셸에 남긴다**. 이 둘은 버전 고정이 URL에 박혀 있어 drift 위험이 낮다.
+
+Flink Operator는 `--set` 8종(자원)에 더해 **`--values k8s/flink/operator-values.yaml`도 함께** 쓴다.
+import 시 둘 다 HCL로 옮겨야 `plan`이 `0 to change`가 된다.
 
 ## 운영 메모
 
@@ -118,8 +134,27 @@ diff가 뜨면 HCL이 실제 설치 값과 어긋난 것이고, 모르고 apply�
 **`kubectl`이 그 파일로 실패한다는 것은 확인했지만, Terraform이 그 파일을 읽는다는 것은
 확인한 적이 없다.** 도구 A로 검증한 조건을 도구 B에 그대로 적용한 셈이다.
 
-⇒ 이 축은 `미확인`으로 남긴다. 우회(`terraform plan -refresh=false`)가 있어 설계를 막지 않는다.
-확정하려면 **kubeconfig를 조작하지 말고 노드를 실제로 정지**시켜야 한다(변인이 하나로 준다).
+⇒ 그래서 **노드를 실제로 정지시켜 다시 쟀다**(변인이 하나로 준다). 결과는 아래.
+
+### 불통 시 `plan`은 실패한다 — 우회는 절반만 듣는다
+
+2026-08-27 실측(`podman stop lakehouse-control-plane` 후). 조용히 오도하지 **않는다** —
+`Planning failed`로 시끄럽게 죽는다. 다만 실패 지점이 **둘**이고 성질이 다르다.
+
+| 축 | 증상 | `-refresh=false` |
+| --- | --- | --- |
+| state에 있는 리소스의 refresh | `Get .../namespaces/...: connection refused` | ✅ 사라진다 |
+| **`kubernetes_manifest`의 GVK 해석** | `Invalid configuration for API client` — `Get .../apis` | ❌ **그대로 남는다** |
+
+🔴 **이 문서가 앞서 적었던 "우회가 있어 설계를 막지 않는다"는 틀렸다.**
+`kubernetes_manifest`는 refresh와 무관하게 `/apis`로 GVK를 해석해야 하므로,
+**YAML을 `yamldecode`로 적용하는 이 설계에서는 `plan` 자체가 라이브 클러스터를 요구한다.**
+
+실무상 치명적이지는 않다 — 죽은 클러스터에는 어차피 `apply`할 수 없다. 그러나 다음 둘이 따라온다.
+
+- **CI에서 `plan`을 드라이런 게이트로 쓸 수 없다**(클러스터 없는 러너에서 돈다).
+  문법·포맷 게이트는 `terraform fmt -check` + `validate`까지이고, 그 둘은 클러스터 없이 돈다.
+- 클러스터가 내려간 상태에서 "선언이 뭐였더라"를 `plan`으로 확인할 수 없다. `terraform show`로 본다.
 
 ### `scripts/worktree-new.sh`는 기존 브랜치를 붙이지 못한다
 
