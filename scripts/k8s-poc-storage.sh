@@ -90,9 +90,22 @@ kubectl create secret generic dagster-meta-pg-app -n default \
 
 # 2) 선행 조건 — 오퍼레이터·플러그인 CRD.
 #    카탈로그 PG는 **CNPG Cluster CR**이고 그 CR이 barman 플러그인을 참조한다.
+#    🔴 두 CRD의 **출처가 다르다**(2026-08-28 이관).
+#      clusters.postgresql.cnpg.io    ← CNPG 차트 = **Terraform** (lakehouse-platform)
+#      objectstores.barmancloud...    ← Barman 플러그인 = **k8s-operators.sh**
+#    그래서 안내도 갈라야 한다 — 예전처럼 "k8s-operators.sh 를 실행하라"로 뭉치면
+#    CNPG 쪽에서 **틀린 안내**가 된다(그 스크립트는 이제 CNPG 를 설치하지 않는다).
 for crd in clusters.postgresql.cnpg.io objectstores.barmancloud.cnpg.io; do
     if ! kubectl get crd "${crd}" >/dev/null 2>&1; then
-        printf 'CRD 없음(%s) — 먼저 ./scripts/k8s-operators.sh 를 실행하라\n' "${crd}" >&2
+        case "${crd}" in
+            clusters.postgresql.cnpg.io)
+                printf 'CRD 없음(%s) — 먼저 다음을 실행하라:\n' "${crd}" >&2
+                printf '  terraform -chdir=%s/terraform/lakehouse-platform apply\n' "${REPO_ROOT}" >&2
+                ;;
+            *)
+                printf 'CRD 없음(%s) — 먼저 ./scripts/k8s-operators.sh 를 실행하라\n' "${crd}" >&2
+                ;;
+        esac
         exit 1
     fi
 done

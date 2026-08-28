@@ -72,8 +72,13 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu:8, mem
   이 배분은 *"Dagster를 클러스터로 옮긴다"* 는 전제와 한 벌일 때만 여유롭다.
 - **disk 93 GiB**(≈100 GB 십진): SeaweedFS(원천 csv.gz + Iceberg parquet) + 이미지 레이어 대비.
   실측 노드 디스크 사용량 **35.2G / 92.4G(38%)**, 그중 SeaweedFS 볼륨이 **10G**다.
-  ⚠️ 두 값은 **다른 것을 센다** — `df`는 노드 디스크 전체(containerd 이미지 레이어 포함)를,
-  `du /data`는 SeaweedFS 볼륨 파일만 센다. 백업 비용을 산정할 때는 후자다.
+  ⚠️ **세 값이 각각 다른 것을 센다** — `df`는 노드 디스크 전체
+  (containerd 이미지 레이어 포함), `du /data`는 SeaweedFS **볼륨 파일의 예약 공간**,
+  버킷 합계는 **실제 오브젝트**다. ⚠️ `du`를 데이터량으로 읽지 마라 — SeaweedFS 볼륨은
+  **preallocate된 sparse 파일**이라 `du`가 1.0G라 부르는 파일이 `ls -la`로는 62KB다.
+  실측 `du` **10G** vs 버킷 합계 **106.8MB**(약 100배 차).
+  용량 계획은 `du`, **백업·재적재 비용은 버킷 합계**로 본다 — 이 둘을 섞어
+  `architectures/terraform.md`가 재적재 비용을 100배로 적었던 전례가 있다.
 
 ### (B) 컴포넌트 배분 (requests / limits) — 동시 기동
 
