@@ -11,7 +11,8 @@
   엣지·소규모·홈랩·CI에 적합.
 - **Always Free A1**: 테넌시당 **월 1,500 OCPU시간 + 9,000 GB시간**(≈ **2 OCPU/12 GB** 상시), 블록스토리지 200 GB
   무료. ARM64이므로 컨테이너 이미지는 **arm64 빌드**가 필요하다.
-  > **2026-06-15 한도 축소**: 4 OCPU/24 GB → **2 OCPU/12 GB**(절반). 기존 초과 사용분은 2026-08-18까지 축소하지 않으면
+  > **한도 축소**(2026-06-15 · 초과분 정리 기한 2026-08-18): <!-- date-ok -->
+  > 4 OCPU/24 GB → **2 OCPU/12 GB**(절반). 기한까지 축소하지 않으면
   > 종료된다고 Oracle이 통보했다. 초과 설정은 **과금**되므로 `variables.tf`에 `validation`으로 상한을 걸어뒀다.
   > 출처: [Always Free Resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm) ·
   > [Oracle Cloud Customer Connect 공지](https://community.oracle.com/customerconnect/discussion/970310/oci-always-free-updated-ampere-a1-compute-allocation)
@@ -56,7 +57,7 @@
 
 **4) 토폴로지** — *단일 노드 채택* (다중/HA는 자원상 후속)
 
-## 현황 — ⏸ 보류 (2026-08-17)
+## 현황 — ⏸ 보류
 
 **로컬 K8s(kind on Podman)로 방향을 되돌렸다.** OCI 이행은 중단이 아니라 **보류**이며, 코드·state를 그대로 둔다.
 
@@ -73,12 +74,12 @@
 - 🔴 **재개는 「Δ 트리거」다 — `apply` 실행 *전에* `security` 재판정을 1회 받는다.**
   재개는 **공인 IP 노드를 새로 세우는 비가역 작업**이라 [conventions/agents.md](../conventions/agents.md)
   §게이트의 Δ 조건(ⓑ 비가역·ⓒ 외부 노출)에 그대로 걸린다. **보류 기간 동안 저장소의 노출 실태가
-  바뀌었으므로 보류 시점(2026-08-17)의 판정을 재사용하지 않는다.** 재판정 대상 넷:
+  바뀌었으므로 보류 시점의 판정을 재사용하지 않는다.** 재판정 대상 넷:
   1. **공개 노출면** — Security List `/32` 화이트리스트가 **현재** 공인 IP와 맞는지(보류 중 바뀌었을
      가능성이 높다), 호스트 iptables의 **kubelet 10250 소스 무제한**이 그대로인지
      ([security.md §2.6](../security.md) — SL이 앞단 방어라 SL이 느슨해지면 즉시 노출된다).
   2. **관리 UI 인증 재현 여부** — 로컬 kind에서 **관리 UI를 Ingress로 낼 때 인증이 전제되지 않는**
-     사례가 확인됐다(2026-08-22 — 대상·상태는 비공개 posture 기록 `$OBSIDIAN_VAULT/security/posture.md` §2).
+     사례가 확인됐다(대상·상태는 비공개 posture 기록 `$OBSIDIAN_VAULT/security/posture.md` §2).
      🔴 **같은 매니페스트를 공인 IP
      노드에 올리면 그대로 인터넷 노출이 된다** — 로컬에서 "내부망이라 괜찮다"고 넘긴 판정은
      OCI에서 성립하지 않는다. 보류 이후 클러스터에 **추가된 워크로드 전체**가 대상이다.
@@ -107,10 +108,10 @@
     폴링하고 `availability_status == "AVAILABLE"`인 순간에만 `apply`를 던진다.
     실패하는 `LaunchInstance` 반복은 API 스로틀링(429)도 자초하므로 이 편이 두 배로 유리하다.
   - **판정은 `availability_status`로만 한다** — 같은 응답의 `available_count`는 무료 테넌시에서
-    비어(`null`) 온다(2026-08-17 도쿄 AD-1 실측). 카운트를 조건에 넣으면 재고가 열려도 건너뛴다.
+    비어(`null`) 온다(도쿄 AD-1 실측). 카운트를 조건에 넣으면 재고가 열려도 건너뛴다.
   - enum은 `AVAILABLE` / `OUT_OF_HOST_CAPACITY` / `HARDWARE_NOT_SUPPORTED` 세 가지다.
     `HARDWARE_NOT_SUPPORTED`는 재고가 아니라 **설정** 문제이므로 즉시 중단한다.
-  - **shape을 줄여도 소용없다** — 2026-08-17 실측: 4/24·2/12·1/6 **모두 동일 실패**. 크기가 아니라 호스트 재고 문제다.
+  - **shape을 줄여도 소용없다** — 실측: 4/24·2/12·1/6 **모두 동일 실패**. 크기가 아니라 호스트 재고 문제다.
   - **쿼터와 용량은 다른 축이다** — 같은 시점 `oci_limits_resource_availability` 조회 결과 `standard-a1-core-count`
     한도 41·사용 0으로 **쿼터는 여유**였다. 500이 나와도 한도를 의심할 필요는 없다.
   - **AD·리전 우회는 사실상 불가** — Always Free는 **홈 리전 전용**이고 홈 리전은 **변경 불가**
