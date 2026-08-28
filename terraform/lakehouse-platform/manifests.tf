@@ -8,7 +8,7 @@ locals {
   # 🔴 명시 목록이다. `fileset` 로 긁지 않는다 — `k8s/**` 에는 **다른 스택 소유**가 섞여 있다.
   #    제외 대상과 이유:
   #      kind-cluster.yaml           A(cluster) — 클러스터 생성 시점 산출물
-  #      seaweedfs.yaml              B(data) — destroy 하면 PVC 10G 가 간다
+  #      seaweedfs.yaml              B(data) — destroy 하면 PVC 가 간다(실데이터 약 107MB)
   #      catalog-postgres.yaml       B(data) — 위와 같음
   #      catalog-pg-backup.yaml      B(data) — Cluster CR 과 한 벌
   #      spark/spark-connect-server.yaml   온디맨드 컴퓨트(회수 다이얼 0번) — 상주가 아니다
