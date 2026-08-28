@@ -54,22 +54,16 @@ if [ "${SKIP_BUILD}" = "false" ]; then
         || { printf 'push 후에도 레지스트리에 태그가 없다: %s\n' "${IMAGE}" >&2; exit 1; }
 fi
 
-# 2) 메타 DB. 롤은 catalog-postgres.yaml의 managed.roles가 만든다(k8s-poc-storage.sh가 적용).
-#    Database CRD 실재는 chart 0.29.0 스키마로 오프라인 대조했으나, 클러스터 버전이
-#    다를 수 있으므로 여기서 한 번 더 본다 — 없으면 폴백 명령을 안내하고 멈춘다.
-if ! kubectl get crd databases.postgresql.cnpg.io >/dev/null 2>&1; then
-    printf 'CRD databases.postgresql.cnpg.io 가 없다(CNPG 버전 확인 필요).\n' >&2
-    printf '폴백은 k8s/dagster/dagster-meta-db.yaml 헤더 주석 참조.\n' >&2
-    exit 1
-fi
-log "메타 DB 선언 적용 (CNPG Database CR)"
-kubectl apply -f "${REPO_ROOT}/k8s/dagster/dagster-meta-db.yaml"
+# 2) 🔴 **매니페스트는 여기서 적용하지 않는다**(2026-08-28 이관).
+#    `dagster-meta-db.yaml`·`dagster-rbac.yaml`·`dagster-deploy.yaml` 은
+#    `terraform/lakehouse-platform/` 이 소유한다. `kubectl apply` 로 다시 넣으면
+#    서버사이드 apply 의 **필드 소유권이 kubectl 로 넘어가** Terraform 이 drift 를
+#    보고도 못 덮는다(실측: `conflict with "kubectl-patch"`).
+#    ⇒ 매니페스트를 고쳤으면 `terraform -chdir=terraform/lakehouse-platform apply`.
+#
+#    남은 것은 **Terraform 이 다루지 않는 둘**이다 — 이미지(위)와 아래 ConfigMap.
 
-# 3) RBAC — SparkApplication 제출 경로에만 필요하다(DefaultRunLauncher는 k8s API를 안 쓴다).
-log "ServiceAccount·Role·RoleBinding 적용"
-kubectl apply -f "${REPO_ROOT}/k8s/dagster/dagster-rbac.yaml"
-
-# 4) SparkApplication 매니페스트를 ConfigMap으로 주입.
+# 3) SparkApplication 매니페스트를 ConfigMap으로 주입.
 #    🔴 매번 **레포 파일에서 다시 만든다** — ConfigMap은 사본이라 그대로 두면 레포와 갈리고,
 #    그러면 "클러스터가 정본 대신 답하는" 이중 존재가 하나 더 생긴다.
 log "ConfigMap spark-app-manifests 갱신 (정본 = 레포 파일)"
@@ -77,10 +71,9 @@ kubectl create configmap spark-app-manifests -n default \
     --from-file="$(basename "${SPARKAPP_SRC}")=${SPARKAPP_SRC}" \
     --dry-run=client -o yaml | kubectl apply -f -
 
-# 5) webserver·daemon.
-log "Dagster 배포 적용"
-kubectl apply -f "${REPO_ROOT}/k8s/dagster/dagster-deploy.yaml"
-
+# 4) rollout 대기 — 배포 자체는 Terraform 이 했다. 여기서는 **수렴을 기다리기만** 한다.
+#    이미지 태그를 올린 뒤 이 스크립트를 돌리는 흐름이라, 새 이미지로 파드가 뜨는 것을
+#    확인할 자리가 필요하다.
 # 코드 로케이션 로드(dbt manifest + pyspark import)가 느려 넉넉히 준다.
 # `wait --for=condition=ready pod`가 아니라 rollout status를 쓴다 — 파드 생성 전이면
 # 전자는 즉시 실패한다(conventions/k8s.md §10).
