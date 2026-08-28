@@ -1,6 +1,6 @@
 # CNPG — 카탈로그·메타 Postgres 규칙
 
-> [k8s.md](../k8s.md) §12에서 분리(2026-08-27 — 상위 문서가 doc_lint 500줄 상한에 닿았다).
+> [k8s.md](../k8s.md) §12에서 분리(상위 문서가 doc_lint 500줄 상한에 닿았다).
 > 상위 규칙은 [k8s.md](../k8s.md), 자원 수치는 [../../resource-sizing.md](../../resource-sizing.md)에 있다.
 
 - **오퍼레이터**: [CloudNativePG](https://cloudnative-pg.io/)(CNCF). `scripts/k8s-operators.sh`가 Helm으로
@@ -18,19 +18,19 @@
 - **`bootstrap.initdb.secret`은 "초기화 1회"다 — 스크립트 재실행으로 비밀번호가 회전되지 않는다.**
   `PG_PASSWORD=새값 ./scripts/k8s-poc-storage.sh`를 돌리면 **k8s Secret만 바뀌고 DB 롤은 옛 값 그대로**다.
   그러면 Secret을 읽는 워크로드는 인증에 실패하고 `.env`를 읽는 호스트 경로는 성공해
-  **위 "부분 성공" 드리프트가 축만 바꿔 재현된다**(2026-08-19 `security`·`devops-qa` 감사 공통 지적).
+  **위 "부분 성공" 드리프트가 축만 바꿔 재현된다**(`security`·`devops-qa` 감사 공통 지적).
   CNPG가 시크릿 변경을 롤에 반영하는 것은 **`spec.managed.roles`로 선언한 롤뿐**이고
   `bootstrap.initdb`로 만든 계정은 대상이 아니다(CNPG `declarative_role_management` 문서).
-  → **해결(2026-08-19)**: `spec.managed.roles`에 `iceberg`를 선언해 CNPG가 시크릿 변경을 롤에 재적용하게 했다.
+  → **해결**: `spec.managed.roles`에 `iceberg`를 선언해 CNPG가 시크릿 변경을 롤에 재적용하게 했다.
   `bootstrap.initdb`로 만든 롤을 **선언 관리로 인수**하는 형태이며 `name`은 initdb의 `owner`와 같아야 한다.
-  2026-08-27 `dagster` 롤을 추가했다(인수가 아니라 처음부터 선언) —
+  `dagster` 롤도 같은 방식으로 추가했다(인수가 아니라 처음부터 선언) —
   실측 `reconciled: ["iceberg","dagster"]`. 단 **이미 떠 있는 워크로드의 env는 여전히 수동**이라
   Spark Connect·Flink·Dagster 파드는 **재기동까지 한 벌**이다.
 - **`bootstrap.initdb.owner`와 시크릿 `username`은 반드시 같아야 한다**(CNPG 문서 명시).
   CR의 `owner`는 리터럴이라 `PG_USER` env override와 자동으로 맞춰지지 않으므로,
   `k8s-poc-storage.sh`가 **적용 전에 CR의 `owner`와 `PG_USER`를 대조해 불일치 시 중단**한다.
 - **probe(§3)·RBAC(§5)·securityContext(§6)는 CR에 쓰지 않는다 — 오퍼레이터가 채운다.**
-  2026-08-19 `kubectl get pod catalog-postgres-1 -o yaml` 실측: `runAsNonRoot:true`·uid/gid `26`·
+  `kubectl get pod catalog-postgres-1 -o yaml` 실측: `runAsNonRoot:true`·uid/gid `26`·
   `readOnlyRootFilesystem:true`·`capabilities.drop:[ALL]`·`seccompProfile:RuntimeDefault`,
   `/healthz`·`/readyz`·`/startupz` 3종 probe, 전용 SA·Role(자기 시크릿에 `resourceNames` 한정)이 모두 자동 생성된다.
   **CR에 없다고 위반으로 읽지 않는다**(정적 감사의 거짓 갭). 반대로 중복 선언해 오퍼레이터 값과 충돌시키지도 않는다.
@@ -42,7 +42,7 @@
   `k8s-env.sh`의 `ensure_cert_manager` 헬퍼가 있으면 재사용·없으면 설치한다(멱등).
   **`rollout status` 완료 ≠ 웹훅 서빙 준비** — cainjector가 CA 번들을 주입하기 전에는
   cert-manager 리소스 생성이 `x509: certificate signed by unknown authority`로 거부된다
-  (2026-08-19 실측: 직후 플러그인 apply가 3건 실패). `ensure_cert_manager`는 **설치 여부와 무관하게**
+  (실측: 직후 플러그인 apply가 3건 실패). `ensure_cert_manager`는 **설치 여부와 무관하게**
   self-signed `Issuer`의 `--dry-run=server`가 통과할 때까지 폴링한다("이미 설치됨"도 준비를 뜻하지 않는다).
   백업 대상은 클러스터 내부 **SeaweedFS(S3)** 로 두어 외부 비용을 만들지 않는다.
   `INSTALL_CNPG_BACKUP=true`로 opt-in한다(§`profiles`와 같은 "뼈대는 항상 / 옵션은 opt-in" 원칙).
@@ -52,8 +52,8 @@
   평문이라 WAL·base backup이 평문 전송·저장된다(카탈로그 DB는 테이블 식별자·메타 포인터만 담아
   PHI 경로는 아니다 — [security.md](../../security.md) 4-4).
 - **PVC 사후 확장이 안 된다** — kind 기본 SC(`rancher.io/local-path`)는 `ALLOWVOLUMEEXPANSION=false`다
-  (2026-08-19 실측). 용량은 처음에 넉넉히 잡고, 늘리려면 클러스터 재생성이다.
-- **메타 Postgres(Dagster)도 이 클러스터가 갖는다**(2026-08-27 개정). 별도 Cluster를 세우지 않고
+  (실측). 용량은 처음에 넉넉히 잡고, 늘리려면 클러스터 재생성이다.
+- **메타 Postgres(Dagster)도 이 클러스터가 갖는다**. 별도 Cluster를 세우지 않고
   같은 `catalog-postgres`에 **`Database` CR로 `dagster` DB만** 더한다(CRD `databases.postgresql.cnpg.io`).
   롤은 `managed.roles`의 **`dagster`** 로 카탈로그(`iceberg`)와 분리하고 시크릿도 따로 둔다.
   구 근거 "Dagster가 호스트라 순환 의존"은 §8 개정으로 소멸했다 — 이제 kind 기동 순서만 지키면 된다.
