@@ -60,6 +60,17 @@ jobs:
           sudo chmod +x /usr/local/bin/hadolint
           hadolint --version
 
+      # 🔴 `terraform_fmt` 훅은 **terraform 바이너리를 부른다.** 없으면
+      #    `Neither Terraform nor OpenTofu binary could be found` 로 훅이 실패한다
+      #    (2026-08-28 실측 — 로컬은 terraform 이 깔려 있어 통과했고 CI 에서만 터졌다).
+      #    hadolint 와 같은 처리다: 훅이 `language: system` 계열이면 러너에도 도구를 깐다.
+      # ⚠️ 이 게이트는 **개발 머신에도 terraform 이 있어야** 돈다. 없는 사람에게는
+      #    커밋이 막히므로 docs/setup.md §0 사전 요구 도구에 넣어야 한다(아직 미반영).
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
       - uses: actions/cache@v6
         with:
           path: ~/.cache/pre-commit
