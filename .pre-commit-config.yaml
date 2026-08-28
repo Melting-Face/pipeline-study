@@ -239,6 +239,25 @@ repos:
         files: '\.md$'
         stages: [pre-commit]
 
+  # Terraform 포매터 — conventions/terraform.md §3이 요구하던 게이트의 집행 수단
+  # (규약은 있었으나 훅이 없어 terraform/oci-k3s 는 한 번도 검사받은 적이 없었다).
+  #
+  # 🔴 **`terraform_validate`는 여기 넣지 않는다.** `validate`는 `init`이 선행돼야 하는데
+  #    `.terraform/providers`는 gitignore라 저장소에 없다. 훅에서 `init`을 돌리면
+  #    **커밋이 프로바이더 레지스트리 가용성에 묶인다.** 이 저장소는 같은 함정을
+  #    `sqlfluff`의 `templater = "dbt"`에서 이미 겪었다 — 커밋이 Spark Connect 가용성에
+  #    묶여 게이트로 쓸 수 없었고, 그래서 22개 모델이 오래 무검사로 남았다.
+  #    ⇒ `validate`는 **CI 잡**이 진다(.github/workflows/ci.yml 의 `terraform`).
+  #    2026-08-28 실측: worktree에서 `terraform validate` 가
+  #    `no package for oracle/oci 6.37.0 cached in .terraform/providers` 로 실패했다.
+  #
+  # `fmt`는 네트워크가 필요 없어 로컬 게이트로 적합하다. 2-space는 terraform의 정규
+  # 포맷이며 전역 4칸 규칙의 **의도된 예외**다(conventions/terraform.md §3).
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.109.0
+    hooks:
+      - id: terraform_fmt
+
   # 커밋 메시지 Conventional Commits 검사 (규칙은 루트 .gitlint)
   - repo: https://github.com/jorisroovers/gitlint
     rev: v0.19.1

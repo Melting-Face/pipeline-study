@@ -261,8 +261,11 @@ PVC는 kind **노드 컨테이너 안**(local-path)에 있으므로 노드가 �
 | 로컬 레지스트리 | 러너 이미지 | — | ✅ 재빌드·재push |
 | Flink 체크포인트 | 스트리밍 상태 | — | ✅ PoC라 무의미 |
 
-⚠️ **`df`와 `du`는 다른 것을 센다.** `kubectl exec seaweedfs-0 -- df -h /data`는 **노드 디스크 전체**
-(containerd 이미지 레이어 포함, 실측 35.2G/92.4G)를 보여준다. 백업 비용은 `du -sh /data`(10G)다.
+⚠️ **`df`·`du`·버킷 합계가 각각 다른 것을 센다.** `df -h /data`는 **노드 디스크 전체**
+(containerd 이미지 레이어 포함, 실측 35.2G/92.4G)다. `du -sh /data`는 **10G**인데 이것은
+**preallocate된 sparse 볼륨 파일의 예약분**이지 데이터량이 아니다(같은 파일이 `ls -la`로는 62KB).
+⚠️ **백업 대상은 버킷 합계 106.8MB**다(2026-08-28 실측). 용량 계획엔 `du`, 백업 비용엔 버킷 합계를
+쓴다 — 상세는 [resource-sizing.md](resource-sizing.md) §disk.
 
 ### 4-3. 백업 (재생성 전)
 
