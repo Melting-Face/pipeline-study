@@ -27,7 +27,7 @@
 | 보안 **현행 실태**(비공개) | `$OBSIDIAN_VAULT/security/posture.md` | `docs/security.md`(정책 — **한 벌로 갱신**: 한쪽만 고치면 정책이 실태를 앞질러 "다 됐다"로 읽힌다) |
 | 환경 세팅 **절차** | `docs/setup.md` | 루트 `README.md`(빠른 시작만) · `docs/architectures/overview.md`(순서 요약) |
 | 환경변수 추가 | `.env.example` | `compose.yml`(앵커) → 코드(`EnvVar`) → `docs/operations.md` 전파 체인 |
-| **열린 작업**(공개 가능) | **GitHub Issues** — 라벨 `area:*` 필수 | 해당 규칙 문서의 **「담지 않는 것」 선언**(Issue 라벨 명시)<br/>등록 전에 §실무 규칙 7 **축 3(위협)** 으로 공개 가능 판정을 먼저 한다. |
+| **열린 작업**(공개 가능) | **GitHub Issues** | 해당 규칙 문서의 **「담지 않는 것」 선언**<br/>등록 전에 §실무 규칙 7 **축 3(위협)** 으로 공개 가능 판정을 먼저 한다. |
 | **진행 상태·미해결**(비공개) | `$OBSIDIAN_VAULT/status/`(`backlog.md`·`observations.md`·`_index.md`) | 해당 규칙 문서의 **「이 문서가 담지 않는 것」 선언**(볼트 경로 명시) · `docs/README.md`<br/>**볼트에 먼저 쓰고 `docs/`에서 지운다** — 반대 순서는 손실이 비가역이다. |
 | 데이터셋 스키마·피처 | `docs/dataset_schema.md` | 해당 `models/<dataset>/source.yml` · `schema.yml` |
 | 분석 규칙(gold·노트북·리포트) | `docs/conventions/analysis.md` | `CLAUDE.md` 분석 섹션 · `docs/conventions/dbt.md`(gold 레이어) · `docs/test.md`(grain 테스트) · `notebooks/README.md` |
