@@ -7,6 +7,11 @@
 # 새 worktree에 없다는 것이다(git.md §7 "비커밋 파일은 worktree마다 별도 준비"). 그 준비를
 # 사람이 매번 기억해야 하면 규칙은 조용히 샌다 — 그래서 배선을 스크립트에 박는다.
 #
+# 🔴 **브랜치 상태는 4축이고 넷 다 처리한다**(§1 참고). "새로 만든다"만 다루면 병렬 세션이
+#    서로의 브랜치를 밀어내는 상황 — 즉 이 스크립트가 존재하는 이유인 그 상황 — 에서
+#    정작 못 쓰게 된다. 축을 다 세지 않으면 분기 하나로 닫고 **고쳤다고 믿는데 안 고쳐진**
+#    상태가 된다(원칙 7).
+#
 # 🔴 **`.claude/.claims`는 복사가 아니라 심볼릭 링크다.** 이게 이 스크립트의 핵심이다.
 #    worktree는 **파일**을 격리하지만 **클러스터·컨테이너**는 격리하지 못한다. 그런데
 #    세션 간 충돌 감지(`session_sync_guard.py`)는 `$CLAUDE_PROJECT_DIR/.claude/.claims`를
@@ -44,8 +49,52 @@ WORKTREE_DIR="$(cd "${REPO_ROOT}/.." && pwd)/$(basename "${REPO_ROOT}")-${SLUG}"
 [ ! -e "${WORKTREE_DIR}" ] || die "이미 존재한다: ${WORKTREE_DIR}"
 
 # 1) worktree 생성. 같은 브랜치는 한 worktree에만 체크아웃되므로 중복 작업이 자연 차단된다.
-log "생성: ${WORKTREE_DIR} (브랜치 ${BRANCH})"
-git -C "${REPO_ROOT}" worktree add "${WORKTREE_DIR}" -b "${BRANCH}"
+#
+#    브랜치 상태를 **4축**으로 가른다. **판정 순서가 규칙이다 — 점유 여부를 먼저 본다.**
+#    로컬 존재 검사를 앞에 두면 축 3이 축 2로 흡수돼 `worktree add`가 raw git 에러를 뱉는다.
+#    막히기는 하지만 **왜 막혔고 다음에 뭘 할지**를 알 수 없다 — 그게 이 분기의 목적이다.
+#
+#      축 1  어디에도 없음           → `-b`로 새로 만든다
+#      축 2  로컬에 있고 미점유       → `-b`를 **빼고** 그 브랜치를 붙인다
+#      축 3  다른 worktree가 점유 중  → 분기가 아니라 **안내**(git이 어차피 거부한다)
+#      축 4  원격에만 있음           → `origin/<B>`를 시작점으로 추적 브랜치를 만든다
+#
+#    🔴 축 4에서 시작점을 **명시**하는 이유: `git worktree add <dir> <branch>`의 원격 추측
+#       (DWIM)은 `--guess-remote` 설정과 remote 개수에 좌우돼 환경마다 갈린다. 명시하지 않으면
+#       원격을 **추적하지 않는 별개 브랜치**가 조용히 생긴다(에러 없음 — 원칙 7 계열).
+#       remote 이름은 `origin` 가정이다.
+#
+#    점유 경로는 `--porcelain`에서 뽑는다 — `branch` 줄 **직전의** `worktree` 줄이 그 경로다.
+CHECKED_OUT_AT="$(
+    git -C "${REPO_ROOT}" worktree list --porcelain \
+        | awk -v want="branch refs/heads/${BRANCH}" '
+            /^worktree / { wt = substr($0, 10) }
+            $0 == want   { print wt; exit }
+        '
+)"
+
+if [ -n "${CHECKED_OUT_AT}" ]; then
+    # 축 3 — `worktree add`를 부르지 않고 여기서 끝낸다.
+    die "브랜치 ${BRANCH} 는 이미 다른 worktree가 쓰고 있다: ${CHECKED_OUT_AT}
+      한 브랜치는 한 worktree에만 체크아웃된다 — 이게 중복 작업의 암묵적 lock이다(git.md §7).
+      선택지: ① 그 디렉터리에서 이어 작업한다 ② 다른 브랜치명을 쓴다 ③ 그쪽을 먼저 정리한다.
+        git -C \"${REPO_ROOT}\" worktree list"
+elif git -C "${REPO_ROOT}" show-ref --verify --quiet "refs/heads/${BRANCH}"; then
+    # 축 2 — 이미 있는 브랜치이므로 `-b`를 붙이면 "already exists"로 죽는다.
+    log "생성: ${WORKTREE_DIR} (기존 로컬 브랜치 ${BRANCH} 를 붙인다)"
+    ADD_ARGS=("${WORKTREE_DIR}" "${BRANCH}")
+elif git -C "${REPO_ROOT}" show-ref --verify --quiet "refs/remotes/origin/${BRANCH}"; then
+    # 축 4 — 로컬에는 없고 원격에만 있다.
+    log "생성: ${WORKTREE_DIR} (원격 origin/${BRANCH} 를 추적하는 브랜치를 만든다)"
+    ADD_ARGS=("-b" "${BRANCH}" "${WORKTREE_DIR}" "origin/${BRANCH}")
+else
+    # 축 1 — 신규.
+    log "생성: ${WORKTREE_DIR} (새 브랜치 ${BRANCH})"
+    ADD_ARGS=("${WORKTREE_DIR}" "-b" "${BRANCH}")
+fi
+
+# 호출은 **한 곳**에 둔다 — 분기마다 복사하면 옵션이 갈렸을 때 grep으로 못 찾는다.
+git -C "${REPO_ROOT}" worktree add "${ADD_ARGS[@]}"
 
 # 2) 비커밋 자산 링크. 원본이 없으면 건너뛴다(있는 것만 잇는다).
 for asset in "${LINK_ASSETS[@]}"; do

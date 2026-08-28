@@ -79,8 +79,17 @@
 # 예: ./scripts/worktree-new.sh feat/spark-thrift-poc --venv
 ```
 
-하는 일: 브랜치명 규약([`git.md`](../git.md) §1) 검사 → `worktree add` → **비커밋 자산 심볼릭 링크** →
-(옵션) `uv sync` + `dbt deps`.
+하는 일: 브랜치명 규약([`git.md`](../git.md) §1) 검사 → **브랜치 상태 4축 판정** → `worktree add` →
+**비커밋 자산 심볼릭 링크** → (옵션) `uv sync` + `dbt deps`.
+
+**새 브랜치만 만드는 게 아니다.** 브랜치 상태를 넷으로 갈라 처리한다 — 신규는 `-b`로, 로컬에 이미
+있으면 `-b` **없이** 붙이고, 원격에만 있으면 `origin/<B>`를 **시작점으로 명시**해 추적 브랜치를
+만들며, 다른 worktree가 점유 중이면 **어느 디렉터리가 쓰고 있는지 알려주고 멈춘다**.
+
+⚠️ 마지막 축은 실패가 아니라 **설계**다. 한 브랜치는 한 worktree에만 체크아웃되고 그게 중복 작업의
+암묵적 lock이므로([`git.md`](../git.md) §7), 스크립트가 우회할 일이 아니라 사람이 고를 일이다.
+그래서 분기하지 않고 선택지를 띄운다. 배경·경위는
+[`../../architectures/terraform.md`](../../architectures/terraform.md) §운영 메모.
 
 ### 발견 ① — worktree는 피어 감지를 **조용히 끈다** (링크로 해결)
 
