@@ -1,0 +1,82 @@
+name: 작업 (task)
+description: 규칙·처방·문서 갭·이행 대기 등 열린 작업
+title: "type(scope): "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        🔴 **등록 전에 공개 가능 판정을 먼저 한다** — `docs/doc-sync.md` §실무 규칙 7 축 3(위협).
+        인프라 공격 표면·시크릿 스캔 결함·관측 공백 지도는 **Issue가 아니라 볼트**로 간다.
+        **갈리면 볼트가 기본값**이다(공개는 되돌릴 수 없다).
+
+        ⚠️ **아래 선택은 라벨을 자동으로 붙이지 않는다.** 본문에 기록될 뿐이므로
+        **생성 후 오른쪽 Labels에서 `area:*` 1개와 `prio:*` 1개를 직접 붙인다.**
+        기준은 [`docs/conventions/issue.md`](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/issue.md).
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 영역 (area)
+      description: 파일 경로 기준으로 고른다. 판정하지 말고 경로만 본다.
+      options:
+        - "area:docs — docs/** · README.md · 규약 문서"
+        - "area:infra — k8s/** · terraform/** · compose.yml · Dockerfile"
+        - "area:pipeline — dagster_project/** · models/** · 적재·변환"
+        - "area:agents — .claude/** · .codex/** · 워커·스킬·가드 스크립트"
+        - "area:ci — .github/workflows/** · pre-commit · 린트 게이트"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: prio
+    attributes:
+      label: 우선순위 (prio)
+      description: >-
+        "얼마나 중요한가"가 아니라 **"먼저 해야 하는가"** 로 고른다.
+        판정이 갈리면 낮은 쪽을 고른다 — 전부 high면 순서가 사라진다.
+      options:
+        - "prio:high — 먼저 한다 (다른 작업을 막거나 방치 비용이 크다)"
+        - "prio:medium — 다음 사이클에 한다 (계획된 순서를 따른다)"
+        - "prio:low — 열어두되 일정 없음 (착수 시점을 정하지 않는다)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 배경
+      description: 무엇이 문제이고 왜 지금인가. 한 번의 불편인지 반복(Rule of Three)인지 밝힌다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: confirmed
+    attributes:
+      label: 지금까지 확인된 것
+      description: >-
+        실행한 명령과 그 출력을 적는다. 수치를 적을 때는 **그 값이 무엇을 세는지**(계측 단위)를 함께 적는다.
+      placeholder: |
+        `gh label list` → 17종 (기본 9 + area 5 + prio 3)
+        ※ "17"은 라벨 파일 수가 아니라 GitHub에 실재하는 라벨 수다.
+    validations:
+      required: false
+
+  - type: textarea
+    id: not-done
+    attributes:
+      label: 하지 않은 것
+      description: >-
+        🔴 **비워 두지 않는다.** 이 칸이 없으면 "확인했다"와 "안 해봤다"가 구분되지 않는다.
+        부정 결과(없음·통과·정상)를 적었다면 **관측 경로가 살아 있었는지**도 함께 적는다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: todo
+    attributes:
+      label: 할 일
+      description: 체크박스로 쪼갠다.
+      value: |
+        - [ ]
+    validations:
+      required: false

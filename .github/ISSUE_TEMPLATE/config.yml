@@ -1,0 +1,7 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 보안 취약점 신고
+    url: https://github.com/Melting-Face/pipeline-study/blob/main/docs/security.md
+    about: >-
+      인프라 공격 표면·시크릿 노출·관측 공백은 공개 Issue로 열지 말고 저장소 소유자에게
+      직접 알려 주세요. 공개 판정 기준은 docs/doc-sync.md 실무 규칙 7 축 3(위협)입니다.
