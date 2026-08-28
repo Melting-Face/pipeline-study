@@ -13,6 +13,41 @@
     예: `feat/oci-k3s-terraform` · `fix/iceberg-orphan` · `docs/git-convention`.
 - **`main` 직접 커밋**은 오타·문서 소폭 등 **사소·저위험**에 한정한다.
 
+## 1-1. 브랜치 정리 — 머지 후 자동 삭제
+
+**스위치는 하나가 아니라 3층**이고 서로를 대체하지 않는다 — 하나만 켜고 "정리했다"로 읽지 않는다
+(신설 시점에 열린 PR **0건인데 원격 head 8개·로컬 9개**가 남아 있었다).
+
+| 층 | 수단 | 지우는 것 |
+| --- | --- | --- |
+| ① 원격 | `gh repo edit <owner>/<repo> --delete-branch-on-merge` | PR 머지 시 **서버 측** head 브랜치 |
+| ② remote-tracking | `git config --global fetch.prune true` | 원격에 없는 `origin/<name>` 참조 |
+| ③ 로컬 | `gh alias set prm 'pr merge --squash --delete-branch'` | 로컬 브랜치 — **git엔 자동 수단이 없다** |
+
+②는 로컬 브랜치를 안 건드려 전역이 안전하고, 그 부수 효과가 ③의 안전망이다 — upstream이 사라진
+브랜치가 `git branch -vv`에 `[origin/x: gone]`으로 **보이게** 된다. ③을 별칭으로 두는 이유는
+매번 `-d`를 붙이는 것이 규율 의존이기 때문이다. **③이 못 덮는 구멍 셋**: ⓐ 웹 UI 머지(원격만
+지워지고 **로컬은 남는다**) ⓑ 다른 worktree에 체크아웃된 브랜치(`git branch -d` 거부 —
+`git worktree remove` 선행) ⓒ `-d`의 기본 브랜치 switch가 `main`이 다른 worktree에 있으면 실패
+(머지는 성공하므로 로컬만 수동 삭제). 점검은 `git fetch --prune && git branch -vv | grep ': gone]'`.
+
+> **목록 조회이지 삭제가 아니며, 자동 삭제 별칭으로 만들지 않는다.** `: gone]`은 *"머지됐다"* 가 아니라
+> *"원격이 없다"* 다 — 남이 원격만 지운 경우도 같은 표시고, squash분은 `-d`가 거부해 `-D`가 필요해진다.
+
+🔴 **squash 저장소에서 `git branch --merged`는 머지 판정 근거가 아니다** — squash는 내용만 `main`에
+넣고 SHA는 바꿔 브랜치 tip이 `origin/main`의 조상이 되지 않는다. 이 저장소 실측에서 두 축의 답이
+갈렸다: `git branch --merged origin/main`은 **2개**, `gh pr list --state merged`는 **6개**
+(#4·#5·#6·#7·#9·#10). ⇒ **판정 축은 PR 상태**로 잡고, `--merged`를 쓰려면 *"머지됐는데 안 잡히는
+것이 모집단에서 빠진다"* 를 함께 적는다. 유실 여부는 **별개 축**이며
+`git merge-base --is-ancestor <branch> origin/<branch>`로 본다(yes=뒤처짐만).
+
+**검증 — "켰다"를 "작동한다"로 읽지 않는다(원칙 7).** 설정값 조회는 **켜졌다**까지다. 실집행은 다음
+PR 머지 직후 **층을 갈라서** 본다 — 한꺼번에 보면 ①만 켜져도 ②가 작동한 것처럼 보인다(로컬 ref가
+그냥 낡은 것일 뿐). ⓐ원격 head 소멸=① ⓑ`--prune` **없는** `git fetch`의 `origin/<브랜치>` 제거=②
+ⓒ로컬 브랜치 소멸=③. **신설 시 관측**: ①②는 선언 확인 완료, **②는 실작동까지**(`--prune` 없는
+`fetch`가 낡은 `origin/refactor/trino-lakehouse`를 제거). **①③의 실집행은 미확인** — 당시 열린 PR이
+0건이라 머지시킬 대상이 없었다. 정리 결과는 원격 2개·로컬 2개·`gone` 0건.
+
 ## 2. 커밋 단위 — 논리적으로 쪼갠다
 
 - **한 커밋 = 한 관심사.** 서로 다른 type(`feat`/`fix`/`docs`/`refactor`)을 한 커밋에 섞지 않는다.
