@@ -38,7 +38,7 @@
 | [`skills/sourcing.md`](skills/sourcing.md) | **출처 등급(A~D)·C등급 통제·lock 관리의 정본**. 설치·갱신·감사 절차 |
 | [`skills/caveats.md`](skills/caveats.md) | C등급 5종·`helm-chart-scaffolding` **단서 원문**(등재의 조건), `ask` 검증 불가 실측 |
 | [`skills/wiring.md`](skills/wiring.md) | 배선 **메커니즘** — `tools:`/`disallowedTools`/`skills:` 프로브, 프리로드 자격 3축 |
-| [`skills/inventory.md`](skills/inventory.md) | lock 3벌·해시 재계산·출처 실측·프로젝트 스코프 **스냅샷** |
+| `$OBSIDIAN_VAULT/status/skills-inventory.md` | lock 3벌·해시 재계산·출처 실측 **스냅샷** — 축 1·2를 둘 다 실패해 저장소 밖 |
 
 ## 실측 (2026-08-24 **00:03 KST** — 현행)
 
@@ -50,7 +50,7 @@
 | **lock ↔ 디스크 일치** | ✅ **16 = 16**(차집합 양방향 0) | ✅ 14 = 14 | 유지 |
 | 스키마 결손 | **1건** — `dagster-integrations`에 `skillPath` 없음 | 미관측 | 나머지 15종은 보유 |
 | 출처 미상(D등급) | **0** | 0 | 유지 — 아래 오경보 참조 |
-| 해시 재현 | 🟡 **15/16** — `find-skills` 1건 불일치 | ✅ 14/14 | 변조 징후 없음·재현 실패(`미확인`). [skills/inventory.md](skills/inventory.md) §해시 재계산 |
+| 해시 재현 | 🟡 **15/16** — `find-skills` 1건 불일치 | ✅ 14/14 | 변조 징후 없음·재현 실패(`미확인`). 볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md`의 해시 재계산 절 |
 
 > **오경보 한 건을 그대로 남긴다 (2026-08-24)** — 이 표는 처음에 *"출처 미상 1건 — `documentation`의
 > 작성 주체 미상"* 이라고 적혔다. **거짓이었다.** `security` 점검이 `~/.zsh_history`에서 설치 이력을 찾아냈다:
@@ -80,9 +80,9 @@
 **둘 다 정확한 값이고 단위만 다르다.** 그래서 「디스크 16」이라고 쓸 때는 **링크를 세었다**는 것을 함께 적는다
 — 값이 맞고 단위가 어긋난 수치는 검산을 통과하며 남는다([philosophy.md](philosophy.md) §계측 단위).
 **설치 경로가 심볼릭 링크라는 사실은 이 저장소의 상수**다(`.claude/skills/` → `.agents/skills/`).
-경로 규칙·매칭 로직을 바꾸면 **[skills/inventory.md](skills/inventory.md) §형태 매트릭스를 통째로 다시 돌린다.**
+경로 규칙·매칭 로직을 바꾸면 **볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md`의 형태 매트릭스를 통째로 다시 돌린다.**
 
-이전 판 스냅샷(2026-08-21 10:35 · 01:14)은 [`skills/inventory.md`](skills/inventory.md)에 있다.
+이전 판 스냅샷은 볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md`에 있다.
 
 ## ① 잠긴 스킬 (skills-lock.json — 커밋·재현성)
 
@@ -103,7 +103,7 @@
 
 > **이 표를 "검증된 스킬 목록"으로 읽지 않는다.** 9건 중 **5건이 C등급**이고, `security` 검토를
 > 통과한 것은 **A등급 3종 + `jeffallan` 2종뿐**이며 1종은 **거부**됐다.
-> ✅ 해시는 **재계산·대조가 가능해졌다**([skills/inventory.md](skills/inventory.md) §해시 재계산).
+> ✅ 해시는 **재계산·대조가 가능해졌다**(볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md`의 해시 재계산 절).
 > 다만 이 표의 한계는 **그대로**다 — 무결성이 검증돼도 **출처 신뢰성과 `security` 검토는 별개 축**이고,
 > 이 표가 말하는 것은 여전히 **"받아온 뒤 바뀌지 않았다"** 까지다. **"안 바뀜"은 "안전함"이 아니다.**
 

@@ -89,7 +89,7 @@
 | ↳ [출처 등급·통제](skills/sourcing.md) | A~D 등급 정의·C등급 통제·lock 관리의 **정본** |
 | ↳ [C등급 단서](skills/caveats.md) | 등재의 **조건**이 되는 단서 원문 |
 | ↳ [배선 메커니즘](skills/wiring.md) | `tools:`/`disallowedTools`/`skills:` 프로브·프리로드 자격 |
-| ↳ [인벤토리 실측](skills/inventory.md) | lock 3벌·해시 재계산·출처 실측 스냅샷 |
+| ↳ 인벤토리 실측 | **볼트로 이관** — `$OBSIDIAN_VAULT/status/skills-inventory.md`(스냅샷·비공개) |
 
 > **보안 실태는 이 저장소에 없다.** 저장소가 공개이고 이 경로가 GitHub Security Policy 페이지의
 > 탐색 대상(`.github/` → 루트 → `docs/`)이라, 미비점 목록이 첫 화면이 될 수 있다.

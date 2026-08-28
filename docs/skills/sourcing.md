@@ -3,7 +3,7 @@
 > [`../skills.md`](../skills.md)에서 분리한 문서다. **이 문서가 출처 등급(A~D)·C등급 통제·lock 관리의 정본**이다 —
 > 워커 지시문 편집으로 바뀌지 않는다(지시문이 사실인 범위는 **매핑까지**다).
 > 단서 원문은 [`caveats.md`](caveats.md), 배선 메커니즘은 [`wiring.md`](wiring.md),
-> 인벤토리 실측은 [`inventory.md`](inventory.md).
+> 인벤토리 실측은 볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md`(비공개).
 
 ## 관리 (설치·갱신·감사)
 
@@ -19,7 +19,8 @@
   | `skills-lock.json` | 저장소(프로젝트) | **14** | `computedHash`(64) | ✅ **가능** | ✅ 대상 |
   | `~/.agents/.skill-lock.json` | 홈(전역) | **0**(전량 제거) | `skillFolderHash`(40) | ❌ 업스트림 tree SHA | ❌ 저장소 밖 |
 
-  ✅ **키가 다른 것은 부실이 아니라 설계다**([`inventory.md`](inventory.md) §해시 재계산) — 전역은 **업스트림 git tree SHA**라
+  ✅ **키가 다른 것은 부실이 아니라 설계다**(볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md`)
+  — 전역은 **업스트림 git tree SHA**라
   로컬 재계산 대상이 아니고 **출처 식별자**로 기능한다. 실제로 D등급 9종을 전부 해소했다(§출처 실측).
   **2026-08-21 10:31 전역 lock은 0종이 됐다** — 출처 규명의 정본이던 파일이 비었으므로,
   앞으로 출처 추적은 **프로젝트 lock의 `source`·`skillPath`** 로 한다.
@@ -44,7 +45,8 @@
   lock에 남아 있다고 **받을 수 있다는 뜻이 아니다** — 재현성 주장의 숨은 전제다.
 - **감사**: 외부 스킬은 도입 전 내용을 검토한다(보안·품질). 판정은 아래 **§출처 등급별 통제**를 따른다.
 - **재현성**: `skills-lock.json`은 **커밋**해 팀·CI가 동일 스킬 버전을 쓰게 한다.
-  ✅ **락이 "진실의 출처"인 범위가 무결성까지 넓어졌다**([`inventory.md`](inventory.md) §해시 재계산 — `computedHash` 재현 가능).
+  ✅ **락이 "진실의 출처"인 범위가 무결성까지 넓어졌다**
+  (볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md` — `computedHash` 재현 가능).
   **전역 제거 이후 락의 무게가 달라졌다** — `.agents`·`.claude/skills`가 gitignore라
   **클론에 실체가 따라오지 않으므로**, 재현성을 지는 것은 `skills-lock.json` **하나뿐**이다.
 - **배선 감사 주기**: 스킬 추가·제거 후, 워커 신설·개편 시 **[`skill-matcher`](../../.claude/agents/skill-matcher.md)** 를 배정한다.
@@ -85,7 +87,7 @@ dbt Labs는 **dbt의 벤더**이므로 `running-dbt-commands` 같은 것은 A여
 | --- | --- | --- | --- |
 | **A · 벤더가 자기 제품을 다룸** | 스킬이 다루는 도구 = 출처의 제품 | 제한 없이 사용 | **15** (dbt 10 · terraform 3 · dagster 2) |
 | **B · 벤더 조직이나 자기 제품 아님** | 조직 계정이되 그 도구의 벤더는 아님 | 사용 가능. **lock 편입 검토**, 실행 파일 포함 시 `security` 검토 | **5** (`dignified-python`·`auditing-skills`·`sql-optimization`·`multi-stage-dockerfile`·`find-skills`) |
-| **C · 개인·커뮤니티** | 개인 GitHub 계정 | 도입 전 **`security` 본문 검토 필수** + 워커 지시문 **단서 문구 필수**. **실행 파일 포함 시 도입 금지** | **9** ([`inventory.md`](inventory.md) §출처 실측) |
+| **C · 개인·커뮤니티** | 개인 GitHub 계정 | 도입 전 **`security` 본문 검토 필수** + 워커 지시문 **단서 문구 필수**. **실행 파일 포함 시 도입 금지** | **9** (볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md`) |
 | **D · 출처 미상** | 어느 lock에도 출처가 없음 | 실행 파일 포함이면 **검토 전 사용 금지**, 문서 전용이면 **관찰** | ✅ **0** (전부 규명) |
 
 - ⚠️ **A↔B의 실무 차이는 작다**(둘 다 사용 가능). 그래서 이 정정의 값은 통제 변화가 아니라
@@ -110,7 +112,8 @@ dbt Labs는 **dbt의 벤더**이므로 `running-dbt-commands` 같은 것은 A여
 
 - **해시 미고정 스킬은 "오늘 안전"이 "내일 안전"을 보장하지 않는다.** lock 밖 스킬은 조용히 바뀌어도
   탐지 수단이 없고, **에러 없이 그냥 최신을 쓴다**([`../philosophy.md`](../philosophy.md) 원칙 7 "성공 신호를 의심한다" 계열).
-  ⚠️ **이전 판의 대안 조항("해시를 기록하고 감사 시 재계산·대조")은 폐기한다** — [`inventory.md`](inventory.md) §해시 재계산에서
+  ⚠️ **이전 판의 대안 조항("해시를 기록하고 감사 시 재계산·대조")은 폐기한다** —
+  볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md`의 해시 재계산 절에서
   알고리즘이 `미확인`으로 확인돼 **실행 불가한 죽은 규칙**이었다. 대체 수단은 아직 없다(`미해결`).
 - **C·D 등급 스킬을 워커에 등재할 때는 §③ 표의 제약 칸에 단서를 명시**한다(무해화 문구가 없으면 등재하지 않는다).
 
@@ -118,7 +121,8 @@ dbt Labs는 **dbt의 벤더**이므로 `running-dbt-commands` 같은 것은 A여
 8,989행 스캔 결과 인젝션·반출·비밀노출 유도 **0건**, 단 아래 패턴 존재)
 
 **이 표는 C등급 9종 중 2종만 덮는다** — 나머지 7종은 2026-08-19에 D("출처 미상")로 분류돼
-**C등급 통제를 한 번도 받지 않았다**([`inventory.md`](inventory.md) §출처 실측 재분류). 미검토분은 그 표의 "검토 상태" 칸에 있다.
+**C등급 통제를 한 번도 받지 않았다**(볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md`).
+미검토분은 그 표의 "검토 상태" 칸에 있다.
 
 | 스킬 | 위치 | 패턴 | 단서 |
 | --- | --- | --- | --- |
