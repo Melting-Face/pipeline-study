@@ -11,7 +11,7 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
 ## 이 프로젝트에서의 위치 — 🚧 채택·이행중(PoC 게이트)
 
 - **채택 방향**: 확장성/성능 한계 극복 + 학습·포트폴리오를 위해 **컴퓨트·데이터 서비스를 K8s로 이전**한다.
-  **Dagster를 포함해** 전 스택이 클러스터 안에 있다(2026-08-27 — 구 판본은 호스트에 남겼다)
+  **Dagster를 포함해** 전 스택이 클러스터 안에 있다(구 판본은 호스트에 남겼다)
   (오케스트레이터↔컴퓨트 분리).
   전면 이행은 **PoC 성공을 전제**로 단계적으로 진행한다. 전체 로드맵은 [../redesign.md](../redesign.md).
 - **로컬 배포판**: **kind on Podman(rootful)** + 로컬 레지스트리. in-cluster Dagster는 ServiceAccount로,
@@ -21,12 +21,12 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
   **CloudNativePG**(카탈로그 Postgres)로 `Cluster`(CRD) 관리,
   Redpanda·SeaweedFS·카탈로그 Postgres를 K8s에 배포한다(**Trino 제거**). Iceberg 테이블은 Spark·Flink가 공유한다.
   **웹 UI 진입점은 ingress-nginx**로 고정 URL화한다(`*.localtest.me:8080`).
-- **구축 현황(2026-08-19 실측)**: 클러스터 k8s **v1.36.1** 단일 노드.
+- **구축 현황(실측)**: 클러스터 k8s **v1.36.1** 단일 노드.
   **Spark Operator 1.0.0**(chart 1.8.0) / **Flink Operator 1.15.0**(+cert-manager) 기동,
   **Spark Connect 서버**(dbt 접속용) 상주, SeaweedFS·카탈로그 Postgres 운영 중
   카탈로그 Postgres는 **CloudNativePG 1.30.0**(chart 0.29.0)이 관리하는 `Cluster`로 **교체 완료**
   (operand `postgresql:18.6-standard-trixie`, PVC 5Gi, `catalog-postgres-rw` 접속).
-  Spark 잡이 새 카탈로그에 `iceberg.poc.sample`을 등록하는 것까지 확인(2026-08-19).
+  Spark 잡이 새 카탈로그에 `iceberg.poc.sample`을 등록하는 것까지 확인했다.
   **ingress-nginx v1.15.1**(kind provider)로 Spark·Flink UI를 `port-forward` 없이 노출.
   Dagster 자산이 `SparkApplication`을 제출해 Iceberg에 적재하고(Phase 0 게이트 통과),
   **Flink이 같은 Iceberg 카탈로그를 조회**하는 것까지 확인.
@@ -63,7 +63,7 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
 - **Spark 실행**: Apache 공식 **Spark Kubernetes Operator**를 Helm으로 설치하고(`ns=spark-operator`),
   Dagster 자산이 `PipesK8sClient`로 `SparkApplication`(CRD)을 제출·폴링한다.
   규칙은 [../conventions/k8s.md](../conventions/k8s.md) §9~11.
-- **Dagster 위치**(2026-08-27 개정): Dagster도 **클러스터 안**이다 — 결정과 대안 비교는
+- **Dagster 위치**(개정): Dagster도 **클러스터 안**이다 — 결정과 대안 비교는
   [dagster.md](dagster.md). 아래 문단은 폐기 전 판본의 근거이며 `K8sRunLauncher` 미채택은 여전히 유효하다.
 - **구 근거(참고)**: 본 프로젝트는 Dagster를 **호스트에 유지**했다. `dagster-k8s`의 `K8sRunLauncher`는
   Dagster를 **클러스터 내부에 배포**할 때 run을 파드로 실행하는 옵션으로, 본 토폴로지의 Spark 트리거 수단이

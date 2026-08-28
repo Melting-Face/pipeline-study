@@ -12,7 +12,7 @@ Spark는 **범용 분산 데이터 처리 엔진**이다. driver가 DAG를 스�
 ## 이 프로젝트에서의 위치 — 🚧 채택·이행중(PoC 게이트)
 
 - **채택 방향**: 재설계로 **K8s의 Apache Spark Operator**([apache/spark-kubernetes-operator](https://github.com/apache/spark-kubernetes-operator),
-  GA 1.0.0 2026-07-26)를 컴퓨트로 도입한다(Kubeflow spark-operator에서 이전). 확장성 확보와 함께,
+  GA 1.0.0 2026-07-26) <!-- date-ok --> 를 컴퓨트로 도입한다(Kubeflow spark-operator에서 이전). 확장성 확보와 함께,
   오케스트레이터↔원격 컴퓨트 분리를 시연하는 **학습/포트폴리오** 목적이다. 전체 로드맵은 [../redesign.md](../redesign.md).
 - **컴퓨트 분업(급소)**: Spark가 장식이 되지 않도록 역할을 분리한다.
   lineage는 **Spark(bronze·인제스트) → Iceberg → dbt-on-Trino(silver/gold)**.
@@ -181,14 +181,14 @@ dbt-spark가 공식 지원하는 method는 **thrift / http / odbc / session 넷�
 
 ### 프로젝트 결정
 
-- **지금**: **Spark `rewrite_data_files`** 로 처리한다(2026-08-19 Trino에서 이관 — Trino 제거의 선행조건①).
+- **지금**: **Spark `rewrite_data_files`** 로 처리한다(Trino에서 이관 — Trino 제거의 선행조건①).
   `remove_orphan_files`도 함께 Spark로 옮겨 **유지보수 엔진을 하나로** 모았다.
   유지보수 잡의 **1·3단계 op로 구현**했다
   ([maintenance.py](../../dagster/dockerfile.d/src/src/dagster_project/defs/maintenance.py)).
   접속은 **공식 통합 `dagster-pyspark`의 `LazyPySparkResource`** 를 쓴다(커스텀 리소스를 만들지 않는다 —
   [conventions/dagster.md](../conventions/dagster.md)의 "불필요한 서브클래싱 지양"). Spark Connect로 붙이는
   방법은 **`spark_config={"spark.remote": ...}`** 한 줄이다 — 내부 `builder.config(k, v)`가 이 키를 받아
-  `pyspark.sql.connect` 세션을 만든다(2026-08-19 실측). 카탈로그 설정은 **서버 측**에 있어
+  `pyspark.sql.connect` 세션을 만든다(실측). 카탈로그 설정은 **서버 측**에 있어
   Dagster는 주소만 갖는다(비밀정보 비노출).
   - **`Lazy~`를 쓰는 이유**: 세션을 `spark_session` **접근 시점**에 만든다. 비-Lazy(`PySparkResource`)는
     리소스 초기화에서 즉시 연결해, 유지보수와 무관한 run까지 Spark Connect 가용성(=port-forward)에 묶인다.
@@ -202,9 +202,9 @@ dbt-spark가 공식 지원하는 method는 **thrift / http / odbc / session 넷�
 - **`remove_orphan_files`는 Hadoop FileSystem을 쓴다** — Iceberg의 `S3FileIO`(`io-impl`)는
   카탈로그가 아는 파일만 다루는데, 이 프로시저는 카탈로그가 **모르는** 파일을 찾는 게 목적이라
   warehouse 디렉터리를 직접 나열해야 한다. Spark Connect 서버에 `spark.hadoop.fs.s3*`(S3A) 설정이
-  없으면 `UnsupportedFileSystemException: No FileSystem for scheme "s3"`로 죽는다(2026-08-19 실측).
+  없으면 `UnsupportedFileSystemException: No FileSystem for scheme "s3"`로 죽는다(실측).
   jar(`hadoop-aws`·`aws-java-sdk-bundle`)는 러너 이미지에 이미 있고 **설정만** 필요했다.
-  - ⚠️ **그 배선이 실제로 통했는지는 `미검증`이다**(2026-08-22 재판정). 실행에서
+  - ⚠️ **그 배선이 실제로 통했는지는 `미검증`이다**(재판정). 실행에서
     `No FileSystem for scheme "s3"`가 **0건**이었지만, 프로시저가 **테이블 해석 단계에서 먼저 죽어
     Hadoop FS 나열에 도달조차 못 했다.** **에러가 안 났다는 것을 "배선이 통과했다"로 읽으면 안 된다** —
     그 코드 경로가 실행되지 않았을 뿐이다([philosophy.md](../philosophy.md) 원칙 7: 부정 결과는

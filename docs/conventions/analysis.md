@@ -70,7 +70,7 @@ inner join {{ ref('icustay_times') }} as t using (stay_id)
   **서버 측**에 있어 클라이언트가 `sc://localhost:15002`만 알면 된다 — **보안상 이 경로를 기본으로 쓴다.**
   pyiceberg 직접 접속이 필요하면 자격증명은 반드시 `os.environ` 참조로 읽고 **값을 셀에 쓰지 않는다**
   (코딩 철학 #4).
-  > **자격증명은 `ICEBERG_S3_*`로 분리한다**(2026-08-19 확정). 호스트에서 K8s 카탈로그에 붙을 때
+  > **자격증명은 `ICEBERG_S3_*`로 분리한다**(확정). 호스트에서 K8s 카탈로그에 붙을 때
   > 쓰는 키는 `ICEBERG_S3_ACCESS_KEY`·`ICEBERG_S3_SECRET_KEY`(= 클러스터 Secret `lakehouse-creds`의 값)이며,
   > 미설정 시 공용 `AWS_*`로 폴백한다(compose 단독 구성 호환). 엔드포인트(`ICEBERG_S3_ENDPOINT`)와
   > **자격증명은 한 쌍**이다 — 엔드포인트만 바꾸고 키를 공용으로 두면 아래 증상이 난다.
