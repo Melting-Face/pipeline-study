@@ -66,6 +66,17 @@ OBSERVATION_DATE_RE = re.compile(r"\b20\d{2}-\d{2}-\d{2}\b")
 DATE_EXEMPT_FILES = ("docs/references.md",)
 DATE_EXEMPT_DIRS = ("wiki",)
 
+# 줄 단위 예외 — 외부 출처의 발행일·EOL·릴리스 날짜.
+#   🔴 파일 단위 예외로는 이 축을 못 뺀다. 규칙 문서 한복판에 인용이 한 줄 끼어 있고
+#      `conventions/publishing.md` §3이 *"제목·링크·버전/날짜"* 를 **요구**하므로,
+#      그 줄의 날짜를 지우면 **다른 규칙을 어긴다.** 두 규칙이 실제로 충돌한 자리다.
+#   🔴 **Rule of Three로 도입했다** — ① Spark Operator GA ② Promtail EOL(2곳).
+#      한 건일 때는 문구를 고쳐 피했고(`k8s.md`), 두 번째에서 그 우회가 인용 규칙과
+#      충돌해 더 못 미뤘다. **쓰이지 않을 예외 문법을 미리 만들지 않는다.**
+#   ⚠️ 이 마커는 **면제이지 검증이 아니다** — 붙이면 그 줄은 아무도 안 본다.
+#      관측 일자에 붙이면 조용히 통과하므로, **외부 출처에만** 쓴다.
+DATE_OPT_OUT = "<!-- date-ok -->"
+
 # 기본 검사 대상 — 사람과 AI가 함께 읽는 문서만. 벤더·생성물은 제외한다.
 #   🔴 `wiki/`는 **저장소 밖으로 나가는 원본**이라 반드시 여기 있어야 한다.
 #      GitHub 위키는 별도 저장소(`<repo>.wiki.git`)라 pre-commit 훅이 안 돈다.
@@ -230,7 +241,7 @@ def check_dates(files: list[Path], repo_root: Path) -> list[str]:
             if FENCE_RE.match(line):
                 in_fence = not in_fence
                 continue
-            if in_fence:
+            if in_fence or DATE_OPT_OUT in line:
                 continue
             # 링크는 표시 텍스트만 남긴다 — 인용 URL 안의 날짜는 출처 표기다.
             prose = LINK_TEXT_RE.sub(r"\1", line)
