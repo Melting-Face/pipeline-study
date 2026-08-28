@@ -11,7 +11,7 @@
 | --- | --- | --- |
 | [overview.md](overview.md) | 🚧 | 현행 스택 스냅샷·데이터 흐름(Dagster·dbt·Iceberg·SeaweedFS) — **재설계 이행 중**이라 Trino 경로는 제거 대상이고, 스냅샷은 관측 시점과 함께 읽는다 |
 | [docker.md](docker.md) | ✅ | 컨테이너·compose 배포(채택) |
-| [dagster.md](dagster.md) | ✅ | 오케스트레이터 — **in-cluster 배포**(2026-08-27). raw 매니페스트 · `DefaultRunLauncher` 유지 이유와 대안 비교 |
+| [dagster.md](dagster.md) | ✅ | 오케스트레이터 — **in-cluster 배포**. raw 매니페스트 · `DefaultRunLauncher` 유지 이유와 대안 비교 |
 | [spark.md](spark.md) | 🚧 | 배치 엔진 — 대용량 인제스트 · dbt-spark 마트 · Iceberg 유지보수. 버전은 **최신이 아니라 Iceberg가 지원하는 짝**으로 고른다 |
 | [flink.md](flink.md) | 🚧 | 스트림 엔진 — 실시간 조기경보. Iceberg bronze 스트리밍 읽기를 소스로 쓴다 |
 | [k8s.md](k8s.md) | 🚧 | 컨테이너 오케스트레이션 — 컴퓨트·데이터 서비스 이전(이행중) |
