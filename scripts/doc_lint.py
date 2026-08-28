@@ -51,6 +51,35 @@ MAX_FILE_LINES = 500
 
 EMPHASIS_MARKER = "🔴"
 
+# 관측·결정 일자는 문서에 두지 않는다(`docs/doc-sync.md` §실무 규칙 7 — 축 2).
+#   수치와 전말은 볼트로, 열린 항목은 Issue로 가고 문서에는 인과와 처방만 남는다.
+#   🔴 **출처 발행일은 예외다** — 낡지 않는 사실이고 `conventions/publishing.md` §3이
+#      *"제목·링크·버전/날짜를 남긴다"* 로 요구한다. 그래서 판정 전에 링크의 **URL을
+#      떼고 표시 텍스트만** 본다(인용 주소 안의 날짜를 위반으로 세지 않기 위함).
+#   🔴 신설 시점에는 **기본 검사에 넣지 않고 `--dates`로만** 돌렸다. 기존 위반이
+#      300건대라 기본에 넣으면 전부 빨간불이 되고, 고칠 수 없는 위반이 쌓이면 도구가
+#      통째로 무시된다(URL 줄·표 행을 빼는 것과 같은 이유).
+#      ⇒ 정리로 **0건**이 된 뒤 기본 검사에 편입했다.
+#         `--dates`는 이 축만 따로 볼 때 쓴다.
+#      🔴 **유입을 막는 게이트가 없으면 잔여를 0으로 만들어도 다시 는다** —
+#         실제로 정리 중에 main 진행분으로 5건이 새로 들어왔다. 편입이 그 답이다.
+OBSERVATION_DATE_RE = re.compile(r"\b20\d{2}-\d{2}-\d{2}\b")
+
+# 예외 — 출처 인용 문서와, 독자·통제가 다른 위키 산출물.
+DATE_EXEMPT_FILES = ("docs/references.md",)
+DATE_EXEMPT_DIRS = ("wiki",)
+
+# 줄 단위 예외 — 외부 출처의 발행일·EOL·릴리스 날짜.
+#   🔴 파일 단위 예외로는 이 축을 못 뺀다. 규칙 문서 한복판에 인용이 한 줄 끼어 있고
+#      `conventions/publishing.md` §3이 *"제목·링크·버전/날짜"* 를 **요구**하므로,
+#      그 줄의 날짜를 지우면 **다른 규칙을 어긴다.** 두 규칙이 실제로 충돌한 자리다.
+#   🔴 **Rule of Three로 도입했다** — ① Spark Operator GA ② Promtail EOL(2곳).
+#      한 건일 때는 문구를 고쳐 피했고(`k8s.md`), 두 번째에서 그 우회가 인용 규칙과
+#      충돌해 더 못 미뤘다. **쓰이지 않을 예외 문법을 미리 만들지 않는다.**
+#   ⚠️ 이 마커는 **면제이지 검증이 아니다** — 붙이면 그 줄은 아무도 안 본다.
+#      관측 일자에 붙이면 조용히 통과하므로, **외부 출처에만** 쓴다.
+DATE_OPT_OUT = "<!-- date-ok -->"
+
 # 기본 검사 대상 — 사람과 AI가 함께 읽는 문서만. 벤더·생성물은 제외한다.
 #   🔴 `wiki/`는 **저장소 밖으로 나가는 원본**이라 반드시 여기 있어야 한다.
 #      GitHub 위키는 별도 저장소(`<repo>.wiki.git`)라 pre-commit 훅이 안 돈다.
@@ -186,6 +215,47 @@ def check_links(repo_root: Path) -> list[str]:
     return findings
 
 
+def check_dates(files: list[Path], repo_root: Path) -> list[str]:
+    """문서 본문에 **관측·결정 일자**가 남아 있는지 본다.
+
+    잡는 것은 *"이 자리에 날짜가 있다"* 까지다. 그것이 관측 일자인지 출처 발행일인지
+    기계는 가르지 못하므로 **예외를 파일 단위로** 둔다(`DATE_EXEMPT_*`).
+    🔴 그래서 이 검사가 **0건이어도 「낡는 문장이 없다」는 뜻이 아니다** —
+    날짜 없이 쓴 실측 수치(*"피크 84%"*)는 이 축의 관측 범위 **밖**이다.
+    """
+    findings: list[str] = []
+    for path in files:
+        rel = path.relative_to(repo_root) if path.is_relative_to(repo_root) else path
+        if rel.as_posix() in DATE_EXEMPT_FILES:
+            continue
+        if any(part in DATE_EXEMPT_DIRS for part in rel.parts):
+            continue
+
+        in_fence = False
+        in_frontmatter = False
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if lineno == 1 and line.strip() == "---":
+                in_frontmatter = True
+                continue
+            if in_frontmatter:
+                if line.strip() == "---":
+                    in_frontmatter = False
+                continue
+            if FENCE_RE.match(line):
+                in_fence = not in_fence
+                continue
+            if in_fence or DATE_OPT_OUT in line:
+                continue
+            # 링크는 표시 텍스트만 남긴다 — 인용 URL 안의 날짜는 출처 표기다.
+            prose = LINK_TEXT_RE.sub(r"\1", line)
+            findings.extend(
+                f"{rel}:{lineno}: observation-date {m.group(0)} "
+                f"— 일자는 볼트/Issue로 (doc-sync §실무 규칙 7 축 2)"
+                for m in OBSERVATION_DATE_RE.finditer(prose)
+            )
+    return findings
+
+
 def check_vault_refs(repo_root: Path) -> list[str] | None:
     """`docs/`가 가리키는 볼트 파일·절이 실재하는지 본다.
 
@@ -260,6 +330,9 @@ def main() -> int:
     parser.add_argument(
         "--links", action="store_true", help="저장소 전역 링크·앵커만 검사"
     )
+    parser.add_argument(
+        "--dates", action="store_true", help="관측·결정 일자 표기만 검사"
+    )
     args = parser.parse_args()
 
     if args.links:
@@ -300,6 +373,22 @@ def main() -> int:
         print("검사 대상 없음", file=sys.stderr)
         return 2
 
+    if args.dates:
+        date_findings = check_dates(files, repo_root)
+        if not args.summary:
+            for finding in date_findings:
+                print(finding)
+        else:
+            counts: dict[str, int] = {}
+            for finding in date_findings:
+                counts[finding.split(":")[0]] = counts.get(finding.split(":")[0], 0) + 1
+            for rel, count in sorted(counts.items(), key=lambda item: -item[1]):
+                print(f"{count:5d}  {rel}")
+        print(
+            f"\n일자 표기 {len(date_findings)}건 / 문서 {len(files)}개", file=sys.stderr
+        )
+        return 1 if date_findings else 0
+
     total = 0
     per_file: list[tuple[Path, int]] = []
 
@@ -324,6 +413,11 @@ def main() -> int:
         # 🔴 아래 본 루프와 **별도 패스**다 — 본 루프는 줄 단위 위반을 `lineno`와 함께
         #    내지만 이 규칙은 문서당 1건이라 집계가 먼저 끝나야 한다. 펜스 판정은
         #    같은 `FENCE_RE`를 쓰므로 두 패스가 갈리지 않는다.
+        # 관측 일자 — 줄 단위. 별도 함수를 재사용해 `--dates`와 **같은 판정**을 쓴다.
+        #   🔴 여기서 로직을 복제하면 두 경로의 모집단이 갈린다
+        #      (이 저장소가 반복해 데인 함정).
+        findings.extend(check_dates([path], repo_root))
+
         marker_count = 0
         counting_fence = False
         for line in lines:

@@ -63,11 +63,11 @@
 
 위 표는 **선언값**이다. 워커에게 실제로 지급된 목록은 실측에서 갈렸다.
 
-| 관측 | 워커 | 선언 | 실제 보유 |
-| --- | --- | --- | --- |
-| 2026-08-19 | `data-engineer` | `Read, Write, Edit, Bash, Grep, Glob` | `Read`·`Write`·`Edit`·`Bash` (4) |
-| 2026-08-19 | `data-qa` | `Read, Grep, Glob, Bash` | `Read`·`Bash` (2) |
-| 2026-08-22 | `data-extractor` | `Read, Write, Bash, Grep, Glob` | `Read`·`Write`·`Bash` (3) |
+| 워커 | 선언 | 실제 보유 |
+| --- | --- | --- |
+| `data-engineer` | `Read, Write, Edit, Bash, Grep, Glob` | `Read`·`Write`·`Edit`·`Bash` (4) |
+| `data-qa` | `Read, Grep, Glob, Bash` | `Read`·`Bash` (2) |
+| `data-extractor` | `Read, Write, Bash, Grep, Glob` | `Read`·`Write`·`Bash` (3) |
 
 두 가지가 따라온다.
 

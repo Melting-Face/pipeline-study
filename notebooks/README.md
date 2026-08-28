@@ -37,7 +37,7 @@ compose의 `trino`는 `--profile legacy-sql` 로만 뜬다(방언 값 대조용)
 
 `.env`로 대상을 K8s 카탈로그로 돌릴 때 **`ICEBERG_S3_ACCESS_KEY`/`ICEBERG_S3_SECRET_KEY`도 함께**
 채워야 한다. 엔드포인트(`ICEBERG_S3_ENDPOINT`)만 K8s로 바꾸고 키는 공용 `AWS_ACCESS_KEY_ID`
-(compose SeaweedFS용)를 두면 **두 SeaweedFS의 키가 달라** 이렇게 죽는다(2026-08-19 실측):
+(compose SeaweedFS용)를 두면 **두 SeaweedFS의 키가 달라** 이렇게 죽는다(실측):
 
 | 단계 | 결과 |
 |---|---|

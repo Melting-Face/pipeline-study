@@ -19,7 +19,7 @@
 "prometheus가 `seaweedfs:9324` 메트릭을 수집"으로 적어 뒀다) 그 컨테이너가 같이 뜨고
 `-metricsPort=9324`(`:173`)로 응답한다. **수집기가 죽어 있는 상태가 아니다.**
 
-**단절은 수집기가 아니라 대상에 있다.** 오브젝트 스토리지 **정본은 2026-08-19에 K8s로 이전**됐고
+**단절은 수집기가 아니라 대상에 있다.** 오브젝트 스토리지 **정본이 K8s로 이전**됐고
 compose 쪽은 `legacy-storage` profile로 **상시 기동만 끊긴 레거시**다. 그런데 정본인
 `k8s/seaweedfs.yaml`에는 메트릭 포트가 없다. 즉 수집기는 **살아 있는 채로 정본이 아닌 대상을 보고 있다.**
 이것이 더 나쁜 종류의 고장이다 — **켜면 초록불이 뜨기 때문에 검산을 통과하며 남는다.**
@@ -55,8 +55,8 @@ probe 하나를 지우면 값이 바뀌는데, 규칙 문서에 박아 두면 �
 | **metrics-server** | `kubectl top` 수준의 사용량 | 🔴 **kind에 없다** — 그래서 자원 실측이 `/proc`·cgroup 병행으로 굳어 있다 |
 | **Alertmanager** | 알림 묶음·중복 제거·라우팅 | **알릴 규칙이 없다**(`rule_files` 0건). 발화원 없이 라우터만 두면 §2의 거짓 신호가 하나 더 늘어난다. 단일 사용자 학습 환경이라 수신 채널·당직 개념도 없다 |
 | **exporter 계열**(node·postgres 등) | 서비스별 `/metrics` | 수집기는 살아 있으나 **정본 워크로드를 스크레이프하도록 배선돼 있지 않다**. 그 상태에서 exporter부터 붙이면 **내보내는 쪽만 늘고 읽는 쪽이 없다**(순서가 거꾸로다) |
-| **Loki**(2026-08-27 평가) | 로그 집계·LogQL 질의 | §2를 통과하는 유일한 후보이나 **monolithic이 가볍지 않다** — 아래 §Loki |
-| **Robusta**(2026-08-27 평가) | 알림 보강·자동 조사·K8s 이벤트 | 자원이 아니라 **데이터 거버넌스**에서 먼저 걸린다 — 아래 §Robusta |
+| **Loki** | 로그 집계·LogQL 질의 | §2를 통과하는 유일한 후보이나 **monolithic이 가볍지 않다** — 아래 §Loki |
+| **Robusta** | 알림 보강·자동 조사·K8s 이벤트 | 자원이 아니라 **데이터 거버넌스**에서 먼저 걸린다 — 아래 §Robusta |
 
 #### Loki — §2는 통과하지만 «monolithic = 가볍다»가 아니다
 
@@ -65,7 +65,7 @@ probe 하나를 지우면 값이 바뀌는데, 규칙 문서에 박아 두면 �
 Chunks cache · Results cache). 끄는 옵션은 그 문서에 없다.
 그리고 차트가 `resources`를 **전부 빈 오브젝트**로 두어 예산을 직접 다 선언해야 한다.
 기본 스토리지가 `s3`라 기존 SeaweedFS와는 맞물린다. 수집 에이전트는
-**Promtail이 2026-03-02 EOL**이라 Alloy를 쓴다.
+**Promtail이 EOL**이라 Alloy를 쓴다(공지는 §참고).
 
 #### Robusta — 걸리는 순서가 자원보다 앞이다
 
@@ -75,7 +75,7 @@ Chunks cache · Results cache). 끄는 옵션은 그 문서에 없다.
 
 ### 후보를 세우는 축은 자원이 아니라 «먹일 것이 이미 있는가»
 
-2026-08-27 비교에서 순서가 **자원 비용으로 갈리지 않았다.** [../conventions/monitoring.md](../conventions/monitoring.md)
+비교에서 순서가 **자원 비용으로 갈리지 않았다.** [../conventions/monitoring.md](../conventions/monitoring.md)
 §2가 금지하는 것은 *타깃 없는 수집기*이므로, 첫 질문은 "얼마나 드는가"가 아니라
 **"그 수집기가 먹을 것이 지금 흐르고 있는가"** 다.
 
@@ -97,29 +97,29 @@ Chunks cache · Results cache). 끄는 옵션은 그 문서에 없다.
 **미확인으로 남은 것**(추측으로 채우지 않는다): Loki 캐시 2종의 `resources` 원문 ·
 Robusta의 기존 Prometheus 연동 모드 파드 차분 · `grafana/loki`와 `grafana-community/helm-charts`의
 차트 정본 관계. 인용 수치는 **`grafana/loki` 기준**이며 그 경로는 이관 발표 5개월 뒤에도
-커밋을 받고 있어 동결이 아님을 확인했다(2026-08-19).
+커밋을 받고 있어 동결이 아님을 확인했다.
 
 ## 운영 메모
 
 - 🔴 **수집 대상과 정본이 갈린 것이 이 문서의 핵심 사실이다.** SeaweedFS 메트릭
   (`-metricsPort=9324`)은 compose 정의에 **그대로 살아 있다** — 사라진 것은 메트릭이 아니라
-  **정본의 자리**다. 오브젝트 스토리지 정본이 K8s로 이전됐는데(2026-08-19)
+  **정본의 자리**다. 오브젝트 스토리지 정본이 K8s로 이전됐는데
   `k8s/seaweedfs.yaml`에는 해당 인자도 포트도 **만들어지지 않았다**. 그래서 수집기는 계속 응답을
   받지만 그 응답은 레거시 쪽에서 온다. **compose와 K8s의 관측 수준이 갈린 지점**이다.
   **이 상태는 가설이 아니라 이 저장소에서 한 번 실현된 실패 양식이고, 방향만 거울상이다.**
-  2026-08-18에 "원천 데이터가 어디에도 없다"고 판정한 적이 있고 **다음 날 오진으로 정정**됐다
+  한때 "원천 데이터가 어디에도 없다"고 판정한 적이 있고 **다음 날 오진으로 정정**됐다
   ([../redesign.md](../redesign.md) Phase 2 정정 · [../philosophy.md](../philosophy.md)
   §*#7의 근거 — 실패가 실패로 보이지 않는다*의 사례표).
   그때는 **사람이 K8s만 조회하고 compose를 놓쳤다** — compose 컨테이너가 `Exited`라 S3 API가 죽어
   있었고 그 조회 실패가 "버킷 0개"로 읽혔다 → **있는 것을 없다고** 판정.
   지금은 **수집기가 compose를 보고 K8s를 놓친다** → **안 보는 것을 본다고** 판정.
   **원인은 같다 — SeaweedFS가 compose와 K8s에 이중으로 존재한다.** 방향만 뒤집혔다.
-  📌 **2026-08-27 같은 축이 하나 더 생겼다 — Dagster다.** in-cluster로 옮기면서 compose의
+  📌 **같은 축이 하나 더 생겼다 — Dagster다.** in-cluster로 옮기면서 compose의
   `dagster-webserver`·`dagster-daemon`·`postgres`를 **`profiles`로 내려** 기본 `up`에서 뺐다.
   정의를 남긴 것은 롤백을 위해서지만, 그것이 곧 **동시에 띄울 수 있다는 뜻**이다.
   판정 시 확인할 것은 셋 — 호스트 3000 리스너 부재 · compose 컨테이너 부재 ·
   Ingress `/server_info`가 **버전 JSON**을 돌려주는 것(200만으로는 판별이 안 된다).
-  ⚠️ 그리고 갈리는 것이 하나 더 있다. **발견 경로**다. 2026-08-18은 사람이 그 자리에서 한 번
+  ⚠️ 그리고 갈리는 것이 하나 더 있다. **발견 경로**다. 그때는 사람이 그 자리에서 한 번
   데었기 때문에 드러났지만, 지금 그 자리에서 답하는 것은 **초록불을 띄우는 수집기**다.
   ⚠️ 이것을 *결정*으로 적어 둔 문장은 찾지 못했다.
   ⚠️ **그러나 "기록이 없다"는 "결정이 없었다"가 아니다** — 검색 결과를 의도의 부재로 읽지 않는다.
@@ -137,13 +137,13 @@ Robusta의 기존 Prometheus 연동 모드 파드 차분 · `grafana/loki`와 `g
   [../resource-sizing.md](../resource-sizing.md)가 정본이다.
 - **Flink 오퍼레이터 메트릭은 로그로만 나간다**(slf4j 리포터, 5분 간격). 값은 남지만
   시계열로 질의할 수 없고, 로그 보존 정책([../operations.md](../operations.md) §2)의 수명을 따른다.
-- **Dagster 쪽 관측은 실행 기록에 의존한다**(2026-08-27 갱신) — `run_monitoring` 부재의 이유가
+- **Dagster 쪽 관측은 실행 기록에 의존한다** — `run_monitoring` 부재의 이유가
   "안 켰다"에서 **"`DefaultRunLauncher`가 지원하지 않는다"** 로 확정됐다(켜면 `NotImplementedError`).
   ⇒ **부재가 결정**이고, 대가는 daemon 재시작 시 진행 중 run이 `STARTED`로 고아가 되는 것이다.
   `compute_logs`는 기본값(Local)에서 **`S3ComputeLogManager`로 바뀌었다** — webserver와 daemon이
   다른 파드라 로컬 디스크로는 UI에 스텝 로그가 영영 안 보였다.
   ⚠️ **그 업로드 실패는 run 상태에 나타나지 않는다** — Dagster가 예외를 삼키므로 `RUN_SUCCESS`인 채
-  로그만 사라진다(2026-08-27 실발생). 관측 경로 확인은 **버킷을 직접 보는 것**이다.
+  로그만 사라진다(실발생). 관측 경로 확인은 **버킷을 직접 보는 것**이다.
   자산 단위 관측은 머티리얼라이즈 메타데이터가 담당한다([../conventions/dagster.md](../conventions/dagster.md)).
 - 🔴 **관측 도구가 데이터 반출 경로가 될 수 있다.** Robusta 평가에서 드러난 축이다 —
   OSS는 CLI/API까지이고 웹 UI·봇·자동 triage는 **Platform(SaaS 또는 Self-Hosted) 전용**인데,
@@ -174,7 +174,7 @@ Robusta의 기존 Prometheus 연동 모드 파드 차분 · `grafana/loki`와 `g
 - Grafana Loki — 배포 모드(monolithic 권장 규모·SSD 제거 예정): https://grafana.com/docs/loki/latest/get-started/deployment-modes/
 - Grafana Loki — monolithic Helm 설치(단일 replica가 띄우는 컴포넌트 목록): https://grafana.com/docs/loki/latest/setup/install/helm/install-monolithic/
 - Grafana Loki — Helm `values.yaml`(`resources` 기본값 원문): https://github.com/grafana/loki/blob/main/production/helm/loki/values.yaml
-- Grafana Loki — Promtail EOL 공지(2026-03-02 · Alloy 대체): https://grafana.com/docs/loki/latest/send-data/promtail/
+- Grafana Loki — Promtail EOL 공지(2026-03-02 <!-- date-ok --> · Alloy 대체): https://grafana.com/docs/loki/latest/send-data/promtail/
 - Robusta — Open Source vs SaaS(기능 경계): https://docs.robusta.dev/master/how-it-works/oss-vs-saas.html
 - Robusta — Helm `values.yaml`(컴포넌트별 `resources`): https://github.com/robusta-dev/robusta/blob/master/helm/robusta/values.yaml
 - 관측 **규칙** 정본: [../conventions/monitoring.md](../conventions/monitoring.md)

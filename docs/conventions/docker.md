@@ -69,7 +69,7 @@ FROM trinodb/trino:${TRINO_VERSION}
 - Trino처럼 주 단위 릴리즈를 하는 이미지는 **LTS 버전**을 우선한다(비-LTS는 다음 릴리즈 후 패치 중단).
   현재 Trino LTS는 `477` 계열. 이 레포는 `trino:468`을 쓰므로, 업그레이드 시 LTS로 올리는 것을 권장한다.
 - **예외**: compose의 `chrislusf/seaweedfs`(`compose.yml:166`)는 **고정하지 않은 채 둔다.**
-  🔴 다만 근거는 *"태그 정책이 없어 고정 불가"* 가 **아니다**(2026-08-22 교정 — 이전 문구는 사실이
+  🔴 다만 근거는 *"태그 정책이 없어 고정 불가"* 가 **아니다**(교정됨 — 이전 문구는 사실이
   아니었다). 업스트림은 버전을 발급하며(로컬 이미지의 `org.opencontainers.image.version` 라벨),
   이 저장소도 **K8s 쪽은 이미 고정**했다(`k8s/seaweedfs.yaml:21` = `chrislusf/seaweedfs:3.80`).
   고정하지 않는 실제 이유는 셋이다.
@@ -174,7 +174,7 @@ COMPOSE_PROFILES=monitoring docker compose up -d   # 프로필 고정
 - **extras와 dependency-group을 섞지 않는다.** `-e ".[dev]"`는 `[project.optional-dependencies]`에
   `dev`가 있을 때만 유효하다. PEP 735 `[dependency-groups]`의 그룹은 extras가 아니라서 pip이
   **에러 없이 `WARNING: … does not provide the extra 'dev'`만 찍고 통과**한다 — 설치된 줄 알지만
-  아무것도 안 깔린 상태가 된다(2026-08-27 빌드 로그에서 실재 확인). 런타임 이미지에는 애초에
+  아무것도 안 깔린 상태가 된다(빌드 로그에서 실재 확인). 런타임 이미지에는 애초에
   dev 도구를 넣지 않으므로 **`-e .`이 정답**이다.
 
 ```dockerfile

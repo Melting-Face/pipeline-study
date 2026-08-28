@@ -35,7 +35,7 @@
 - **AI 보조**: 병렬 에이전트는 각자 worktree에서 격리 작업한다([`git.md`](../git.md) §6과 함께 적용).
   Claude Code 서브에이전트는 `isolation: worktree`로 임시 worktree를 자동 사용할 수 있다.
 
-## 왜 지켜지지 않는가 (2026-08-18 실측)
+## 왜 지켜지지 않는가 (실측)
 
 규칙이 있어도 **세션은 그냥 저장소 루트에서 시작**한다. 이 날 4개 세션이 전부 main 워킹트리에서
 돌았고, 다음 증상이 나왔다.
@@ -55,7 +55,7 @@
 - **이미 섞여버렸다면 브랜치를 옮기지 말고**, 관심사별로 나눠 커밋한 뒤 정리한다. 되돌리기 전에
   `git stash create` + `git update-ref refs/backup/<이름>`으로 **워킹트리를 건드리지 않는 스냅샷**을
   떠둔다(`stash push`와 달리 작업 내용이 되돌아가지 않는다).
-- 🔴 **공유 트리에서는 `git commit -- <경로…>`로 pathspec을 못 박는다**(2026-08-19 사고 후 신설).
+- 🔴 **공유 트리에서는 `git commit -- <경로…>`로 pathspec을 못 박는다**(사고 후 신설).
   인덱스는 세션 간 **공유 자원**이라, 내가 `git add` 한 것만 인덱스에 있다는 보장이 없다.
   pathspec을 주면 커밋 대상이 **명령 안에서 확정**되고 다른 세션의 스테이징분이 딸려갈 수 없다.
   ```bash
@@ -69,7 +69,7 @@
   실제로 `git status` 확인 후 커밋했는데 그 사이 스테이징된 남의 파일 2개가 실려 나갔다(`a95af44`).
   **확인은 창을 좁히고 pathspec은 창을 없앤다** — 둘 다 한다.
 
-## 도입 절차 — `scripts/worktree-new.sh` (2026-08-19 신설)
+## 도입 절차 — `scripts/worktree-new.sh`
 
 `git worktree add`는 한 줄이다. 실제 마찰은 **gitignore된 자산이 새 worktree에 없다**는 것이고,
 그 준비를 사람이 매번 기억해야 하면 규칙은 조용히 샌다. 그래서 배선을 스크립트에 박았다.
@@ -96,7 +96,7 @@ worktree는 **파일·인덱스**를 격리하지만 **클러스터·컨테이�
 → 해법은 가드 수정이 아니라 **레지스트리를 링크로 공유**하는 것이다.
 `Path.resolve()`가 링크를 따라가므로 가드의 `/.claude/.claims/` 매칭도 그대로 성립한다.
 
-**실측(2026-08-19, 3셀 대조)** — 동일 페이로드(`git stash list`)로 `CLAUDE_PROJECT_DIR`만 바꿔 실행:
+**실측(3셀 대조)** — 동일 페이로드(`git stash list`)로 `CLAUDE_PROJECT_DIR`만 바꿔 실행:
 
 | 셀 | `CLAUDE_PROJECT_DIR` | 결과 |
 | --- | --- | --- |
@@ -115,7 +115,7 @@ worktree는 **파일·인덱스**를 격리하지만 **클러스터·컨테이�
 
 `session_sync_guard.py`의 `main()`은 **어떤 서브커맨드든 먼저 `touch_session()`을 부른다.**
 따라서 `session_id`를 지어내 stdin으로 넣으면 그 가짜 세션이 **레지스트리에 실제로 등록**되고,
-이후 관측에서 살아 있는 피어로 잡힌다(2026-08-19에 두 세션이 각각 하나씩 오염시켰고,
+이후 관측에서 살아 있는 피어로 잡힌다(두 세션이 각각 하나씩 오염시킨 사례가 있고,
 그 결과가 위 표의 "4개"다). **읽기 전용 검사가 아니다.**
 테스트 후에는 `.claude/.claims/sessions/<접두>.json`을 지운다(TTL 90분이라 두면 빠지긴 한다).
 
@@ -137,7 +137,7 @@ worktree A의 `git switch`는 worktree B의 HEAD를 움직이지 않는다 — *
 위험한 만큼, 항상 뜨면 무시하는 법을 배운다.** 같은 채널로 나오는 인프라 축 진짜 경고의
 신호 대 잡음비가 깎인다.
 
-✅ **해소됨 (2026-08-20 · 커밋 `adfba1b`)** — `live_sessions(me, worktree=None)`로 **축별 필터**를 넣었다.
+✅ **해소됨 (커밋 `adfba1b`)** — `live_sessions(me, worktree=None)`로 **축별 필터**를 넣었다.
 git 축만 `worktree`를 넘겨 같은 트리로 한정하고, 인프라 축은 인자를 주지 않아 전체를 유지한다.
 판정 키는 `cwd`가 아니라 **`git rev-parse --show-toplevel`** 이다 — 세션을 하위 디렉터리에서 열면
 `cwd`가 달라져 같은 트리인데도 다르게 보이기 때문이다. 루트와 브랜치는 **한 번의 git 호출**로 받는다
@@ -173,7 +173,7 @@ venv에는 editable 설치(`_editable_impl_dagster_project.pth`)가 들어 있�
 uv 캐시가 더우면 **약 60초**). 비용이 있으므로 문서·SQL만 만지는 작업이면 `--venv`를 생략한다
 (스크립트 기본값이 생략이다).
 
-**`--venv` 실검증(2026-08-19)**: 생성된 worktree에서 `dagster_project.__file__`이
+**`--venv` 실검증**: 생성된 worktree에서 `dagster_project.__file__`이
 **worktree 자신의 소스**를 가리키는 것을 확인했고(격리 성립), 그 venv로
 `scripts/spark_connect_smoke.py`를 돌려 **전 항목 통과(exit=0)** 했다.
 
@@ -206,7 +206,7 @@ uv 캐시가 더우면 **약 60초**). 비용이 있으므로 문서·SQL만 만
 따라서 이 도입은 **다음 세션부터** 효력이 있고, 지금 main 트리를 공유 중인 세션들에는
 **pathspec 의무(위)가 계속 유일한 방어선**이다. 둘은 대체 관계가 아니라 **시간축이 다른 방어**다.
 
-## 사고 사례 — 인덱스 교차 오염 (2026-08-19)
+## 사고 사례 — 인덱스 교차 오염
 
 | 항목 | 내용 |
 | --- | --- |
@@ -219,7 +219,7 @@ uv 캐시가 더우면 **약 60초**). 비용이 있으므로 문서·SQL만 만
 > **"중단"과 "삭제"의 분리처럼, 여기서도 "되돌림"과 "정정"을 분리한다** — 히스토리를 되감는 것만이
 > 정정이 아니다. 내용이 정확하고 유실이 없다면 **기록으로 귀속을 바로잡는 편이 위험이 낮다.**
 
-## 교차 오염의 3변종 — 정정 가능성은 단계적으로 줄어든다 (2026-08-19~20)
+## 교차 오염의 3변종 — 정정 가능성은 단계적으로 줄어든다
 
 pathspec을 **양쪽 다 지켰는데도** 하루에 세 번 섞였다. **pathspec은 파일을 가르지 hunk를 가르지
 못하기** 때문이다 — 세 세션이 `CLAUDE.md`·`docs/conventions/agents.md`를 함께 들고 있으면
@@ -235,7 +235,7 @@ pathspec을 **양쪽 다 지켰는데도** 하루에 세 번 섞였다. **pathsp
   상대"는 "그 파일을 만진 상대"와 다르다. 관측 범위 편향이 그대로 커밋 본문에 박힌다.
 - **1·2차는 통보로 닫히므로 규약이 막아야 하는 것은 3차**다. 아래 두 조항이 그것이다.
 
-## 겹침은 네 축이다 — pathspec으로 풀리는 것은 하나뿐 (2026-08-23)
+## 겹침은 네 축이다 — pathspec으로 풀리는 것은 하나뿐
 
 세션 넷이 한 트리를 공유한 날 실측했다. **"파일이 겹치는가"는 네 축 중 하나만 답한다.**
 
@@ -252,7 +252,7 @@ pathspec을 **양쪽 다 지켰는데도** 하루에 세 번 섞였다. **pathsp
 [ERROR] Your pre-commit configuration is unstaged.
 `git add .pre-commit-config.yaml` to fix this.
 ```
-*(관측 주체 `23f895`, 2026-08-23 18:11 KST — 자기 파일만 pathspec으로 담았는데도 막혔다)*
+*(관측 주체 `23f895` — 자기 파일만 pathspec으로 담았는데도 막혔다)*
 그날 **세 세션의 커밋이 이 파일 하나에 직렬화**됐다. 남의 파일을 `git add`로 스테이징하는 것은
 ①을 유발하므로 답이 아니고, 해법은 **소유자가 커밋하는 것**뿐이다.
 
@@ -299,7 +299,7 @@ error: Your local changes to the following files would be overwritten by merge:
 
 **마지막 그물은 커밋 직전 `git diff --cached --stat` 재확인**이다. 그날 사고를 거기서 잡았다.
 
-## `git add`와 pathspec을 **섞으면** 조용히 반만 커밋된다 (2026-08-24 실측)
+## `git add`와 pathspec을 **섞으면** 조용히 반만 커밋된다 (실측)
 
 위 §pathspec 규칙은 *"`git add` 대신 `git commit -- <경로>`"* 인데, **둘을 섞었을 때**
 무슨 일이 나는지는 적혀 있지 않았다. 실측 결과 **유실이 아니라 누락이 나고, 에러가 나지 않는다.**
@@ -345,7 +345,7 @@ error: Your local changes to the following files would be overwritten by merge:
 구문·ruff)과 **확인하지 못한 것**(`PreToolUse` matcher 실발동, `NotebookEdit` 실재 여부)을 갈라 남겼다.
 그 "확인하지 못한 것"이 곧바로 다음 검증 항목이 됐고, **실제로 배선 누락이 발견됐다**(§아래).
 
-## 커밋했다고 실행되는 것은 아니다 — 배선 확인 (2026-08-20)
+## 커밋했다고 실행되는 것은 아니다 — 배선 확인
 
 `4dc6e1c`가 추가한 `scripts/worker_path_guard.py`는 **어떤 에이전트 정의에도 배선돼 있지 않다.**
 `.claude/agents/` 전체에서 이 스크립트를 참조하는 곳은 **0곳**이고, 유일한 워커 훅은
@@ -361,7 +361,7 @@ error: Your local changes to the following files would be overwritten by merge:
 - 배선한 뒤에는 **일부러 위반시켜** 가드의 `permissionDecisionReason` 원문이 나오는지 본다
   (auto 모드 분류기가 막은 것과 **문구 출처로 갈린다**).
 
-## 공유 트리에서 파일이 사라졌을 때 (2026-08-23)
+## 공유 트리에서 파일이 사라졌을 때
 
 공유 트리에서 **파일이 안 보인다**는 관측은 삭제·유실이 아닌 경우가 대부분이다.
 3자 병렬 세션에서 실제로 오경보 1건과 **결론은 맞는데 메커니즘을 지어낸** 정정 1건이 났다.
@@ -386,7 +386,7 @@ error: Your local changes to the following files would be overwritten by merge:
    **`미확인`** 이다(위 표에서 실제 원인은 의도적 `rm`이었고 `git switch`가 아니었다 —
    당사자 자기보고로 확인).
 
-**판정 실행례**(2026-08-23 16:30~16:35 KST 관측 · 공유 트리 로컬 `main`=`a7cdf59` 기준 · `date`로 실측)
+**판정 실행례**(공유 트리 로컬 `main`=`a7cdf59` 기준 · 관측 시각은 `date`로 실측)
 
 ```bash
 git log --all --diff-filter=D --oneline -- .github/workflows/ci.yml   # → 0건 (삭제 아님)

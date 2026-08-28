@@ -37,13 +37,13 @@
 │  로컬 레지스트리 (kind local-registry)                             │
 └──────────────────────────────────────────────────────────────────┘
    Iceberg 공유:  Spark(batch write) ↔ dbt-spark(마트) ↔ Flink(stream r/w)
-   ※ BATCH(Spark)·STREAM(Flink)은 동시 기동 허용(2026-08-22 실측 — 경계 3개는 conventions/k8s.md §9-3)
-   ※ 스트림 소스는 Redpanda → Iceberg bronze로 변경(2026-08-23 결정·같은 날 이행). Redpanda는 미도입 유지
-   ※ [STREAM] 경로는 2026-08-23 실증됨 — Spark append → Flink 스트리밍 읽기 → Iceberg 싱크 → Spark 되읽기
+   ※ BATCH(Spark)·STREAM(Flink)은 동시 기동 허용(실측 — 경계 3개는 conventions/k8s.md §9-3)
+   ※ 스트림 소스는 Redpanda → Iceberg bronze로 변경(결정·같은 날 이행). Redpanda는 미도입 유지
+   ※ [STREAM] 경로는 실증됨 — Spark append → Flink 스트리밍 읽기 → Iceberg 싱크 → Spark 되읽기
       체크포인트(SeaweedFS)·RocksDB 배포 완료. 단 Dagster의 스트림 잡 수명주기 관리는 아직 목표(미착수)
 ```
 
-> **※ dbt 경로는 아직 "클러스터 대상 실행"이 아니다**(2026-08-22 실측). Spark Connect 서버는
+> **※ dbt 경로는 아직 "클러스터 대상 실행"이 아니다**(실측). Spark Connect 서버는
 > **`--master local[2]`**, 즉 **파드 한 개 안의 로컬 모드**로 돌고 있어 executor가 따로 뜨지 않는다.
 > 위 그림의 화살표는 **목표 상태**이며, 현재는 "K8s 파드 안의 단일 JVM"이 정확한 서술이다.
 > 한계(병렬도 ≈ 1·driver 힙 1g·`shuffle.partitions` 200)와 `k8s://` 전환에 필요한 2가지는
@@ -61,7 +61,7 @@
   [resource-sizing.md](resource-sizing.md) "Kubernetes 재설계 시나리오"와 [conventions/k8s.md](conventions/k8s.md) §9-3.
   🔴 백분율의 분모는 VM 총량이 아니라 **노드 Allocatable**(`8000m` / `26679964Ki` = 26054Mi 내림)이다.
   **수치의 정본은 [resource-sizing.md](resource-sizing.md) §(A)** 이고 여기는 요약이다 —
-  자원을 바꾸면 **양쪽을 한 벌로** 갱신한다(2026-08-27 상향 시 이 줄이 낡은 채 남아 있었다).
+  자원을 바꾸면 **양쪽을 한 벌로** 갱신한다(상향 시 이 줄이 낡은 채 남아 있었다).
 
 ## 3. 핵심 결정 (설계 급소)
 
@@ -71,7 +71,7 @@
 분업을 명시해 "엔진을 위한 엔진"(오버엔지니어링)을 방지한다.
 lineage(배치): **Spark(bronze·인제스트) → Iceberg → dbt-spark(silver/gold)** /
 lineage(스트림): **Iceberg bronze(changelog 스트리밍 읽기) → Flink(실시간 피처·경보) → Iceberg**.
-**스트림 소스가 Redpanda에서 바뀌었고**(2026-08-23 결정) **같은 날 이행됐다** — 근거는
+**스트림 소스가 Redpanda에서 바뀌었고** **같은 날 이행됐다** — 근거는
 [architectures/flink.md](architectures/flink.md) §스트림 소스를 Redpanda에서 Iceberg changelog로 바꾼 근거,
 실행 결과는 같은 문서 §스트리밍 왕복 실증.
 **이 lineage에서 실증된 구간은 「Iceberg → Flink → Iceberg」의 *경로*까지**이고,
@@ -107,7 +107,7 @@ lineage(스트림): **Iceberg bronze(changelog 스트리밍 읽기) → Flink(�
 | 데이터 서비스 위치 | SeaweedFS·카탈로그 Postgres **K8s로 이전** | 단일 패러다임(K8s) 통일 |
 | 카탈로그 Postgres 관리 | **CloudNativePG 오퍼레이터**(← Deployment+emptyDir) | PVC·failover·PITR·튜닝이 CR 한 장. Spark·Flink 오퍼레이터와 **같은 선언형 패러다임**. 이전 구성은 재기동만으로 카탈로그가 소멸했다 |
 | SeaweedFS 관리 | **StatefulSet 유지**(오퍼레이터 미채택 🔎) | 오퍼레이터는 master/volume/filer 분리로 **+500m/+1Gi** 상주 순증인데, 이미 PVC라 막을 유실 급소가 없다. Phase 2 이후 재검토 |
-| Dagster 실행 위치 | **in-cluster**(2026-08-27 개정 — 구 판정은 "호스트 유지") | 우회 경로(port-forward 2개 + TLS Ingress + CA 주입)가 서비스 DNS 직결로 대체된다. 호스트 headroom 회수는 예산 설계의 전제였다. run launcher는 `DefaultRunLauncher` 유지 |
+| Dagster 실행 위치 | **in-cluster**(개정 — 구 판정은 "호스트 유지") | 우회 경로(port-forward 2개 + TLS Ingress + CA 주입)가 서비스 DNS 직결로 대체된다. 호스트 headroom 회수는 예산 설계의 전제였다. run launcher는 `DefaultRunLauncher` 유지 |
 
 ## 4. 이행 플랜
 
@@ -151,7 +151,7 @@ lineage(스트림): **Iceberg bronze(changelog 스트리밍 읽기) → Flink(�
 - Dagster & Spark: https://docs.dagster.io/integrations/libraries/spark
 - dbt-spark 어댑터: https://docs.getdbt.com/docs/core/connect-data-platform/spark-setup
 - Spark on Kubernetes: https://spark.apache.org/docs/latest/running-on-kubernetes.html
-- Redpanda(Kafka API) — 🔎 **미도입 유지**(2026-08-23, 스트림 소스가 Iceberg로 변경): https://docs.redpanda.com/
+- Redpanda(Kafka API) — 🔎 **미도입 유지**(스트림 소스가 Iceberg로 변경): https://docs.redpanda.com/
 - Iceberg Flink 읽기(스트리밍·append 제약): https://iceberg.apache.org/docs/latest/flink-queries/
 - Iceberg JDBC 카탈로그: https://iceberg.apache.org/docs/latest/jdbc/ · REST 카탈로그 권고: https://trino.io/docs/current/object-storage/metastores.html
 - kind Podman provider: https://kind.sigs.k8s.io/docs/user/rootless/ · 로컬 레지스트리: https://kind.sigs.k8s.io/docs/user/local-registry/

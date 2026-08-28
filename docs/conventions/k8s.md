@@ -1,7 +1,7 @@
 # Kubernetes 규칙 (이행)
 
 > **상태**: 🚧 **채택·이행중**. 재설계로 **컴퓨트·데이터 서비스를 K8s로 이전**했고 **Dagster도 클러스터로 들어왔다**
-> (2026-08-27). 전체 로드맵은 [../redesign.md](../redesign.md), PoC 게이트는 그 Phase 0.
+> 전체 로드맵은 [../redesign.md](../redesign.md), PoC 게이트는 그 Phase 0.
 > 아래 §1~8은 [docker.md](docker.md)의 원칙(이미지 고정·자원 한도·비밀 참조·non-root)을 K8s 리소스로 옮긴 공통 규칙,
 > §9~12는 **본 재설계 고유 규칙**(Spark Operator·노출·로컬 클러스터·CNPG 카탈로그 PG)이다.
 > **연관**: 아키텍처 [../architectures/k8s.md](../architectures/k8s.md)·[../architectures/spark.md](../architectures/spark.md),
@@ -13,7 +13,7 @@
 - **컴퓨트 잡**(Spark driver/executor·Flink JM/TM): 오퍼레이터가 CRD(`SparkApplication`·`FlinkDeployment`)로 생성.
 - **상태 저장**(seaweedfs·redpanda): `StatefulSet` + `PersistentVolumeClaim`(PVC)로 데이터 유실 방지.
   단 **카탈로그 postgres는 오퍼레이터(CNPG)** 가 관리한다(§12) — 파드·PVC·서비스를 오퍼레이터가 만든다.
-  **`emptyDir`를 상태 저장에 쓰지 않는다** — 2026-08-19까지 카탈로그 PG가 `emptyDir`였고,
+  **`emptyDir`를 상태 저장에 쓰지 않는다** — CNPG 이전 전까지 카탈로그 PG가 `emptyDir`였고,
   파드 재기동만으로 Iceberg 테이블 메타가 전부 소멸하는 상태였다(S3 parquet은 남아 "부분 생존"으로 보인다).
 - 노출은 `Service`(기본 ClusterIP), 외부 진입은 필요 시 `Ingress`. (**Dagster도 클러스터 안**이다, §8)
 
@@ -30,7 +30,7 @@ resources:
 - 수치의 단일 출처는 [../resource-sizing.md](../resource-sizing.md). `limits.memory` 합 ≤ 노드 할당가능 메모리.
 - **예외는 외부 매니페스트를 그대로 적용하는 경우뿐**이고, 그때는 예외임을 기록한다.
   현재 유일한 예외는 **ingress-nginx**(kind provider `deploy.yaml`) — `requests` 100m/90Mi만 있고
-  **`limits`가 없다**(2026-08-19 실측). 상주 부하가 작아 수용하되, 자체 오버레이로 값을 얹는 것은 후속 과제로 둔다.
+  **`limits`가 없다**(실측). 상주 부하가 작아 수용하되, 자체 오버레이로 값을 얹는 것은 후속 과제로 둔다.
 
 ## 3. 헬스체크는 probe로 (compose healthcheck 매핑)
 
@@ -62,7 +62,7 @@ resources:
 
 ## 8. Dagster 배치 — in-cluster
 
-- **원칙**(2026-08-27 이전): webserver·daemon을 **클러스터 안 Deployment 2개**로 두고 UI는 Ingress로 낸다.
+- **원칙**(in-cluster 이전 전): webserver·daemon을 **클러스터 안 Deployment 2개**로 두고 UI는 Ingress로 낸다.
   run launcher는 **`DefaultRunLauncher` 유지**(run = daemon 파드 내 서브프로세스). `K8sRunLauncher`는 후속 과제다.
 - 토폴로지·env 매핑·probe·이미지 규칙의 정본은 [dagster.md](dagster.md) §K8s in-cluster 배포.
   호스트 `dg dev`는 **개발 루프 대안**으로 남는다(메타 DB·S3에 port-forward 전제).
@@ -70,7 +70,7 @@ resources:
 ## 9. Spark Operator·SparkApplication 규칙
 
 - **오퍼레이터**: Apache 공식 **Spark Kubernetes Operator**([apache/spark-kubernetes-operator](https://github.com/apache/spark-kubernetes-operator),
-  GA **1.0.0** 2026-07-26)를 Helm으로 `ns=spark-operator`에 설치한다. Kubeflow spark-operator에서 이전했다
+  GA **1.0.0**)를 Helm으로 `ns=spark-operator`에 설치한다. Kubeflow spark-operator에서 이전했다
   (공식 생태계 무게중심 이동). 오퍼레이터가 `spark-submit`을 대행하므로 자산은 명령형 submit 대신
   **선언형 `SparkApplication`(CRD)** 을 제출한다.
 - **차트 버전 ≠ appVersion**(설치 시 최다 실수): GA **appVersion 1.0.0**은 **chart 1.8.0**이다.
@@ -79,7 +79,7 @@ resources:
   대조하고 `scripts/k8s-env.sh`의 `SPARK_OPERATOR_CHART_VERSION`에 **chart 버전**을 핀한다.
 - **CRD**: `apiVersion: spark.apache.org/**v1**`, `kind: SparkApplication`.
   chart 1.8.0의 CRD는 **`v1beta1`(served) + `v1`(served·**storage**) 2버전**이고 `storedVersions=["v1"]`이라
-  **`v1`이 정본**이다(2026-08-18 라이브 실측 — `kubectl get crd sparkapplications.spark.apache.org -o json`).
+  **`v1`이 정본**이다(라이브 실측 — `kubectl get crd sparkapplications.spark.apache.org -o json`).
   `v1beta1`도 served라 apply 자체는 되지만, 저장 시 `v1`로 변환되고 **`v1` 전용 필드
   (`resourceRetainDurationMillis`·`ttlAfterStopMillis`)를 못 쓴다**. 버전은 추측하지 말고 클러스터에서 읽는다.
   Kubeflow(`sparkoperator.k8s.io/v1beta2`)와 **스펙이 다르다** —
@@ -101,19 +101,19 @@ resources:
   - **S3 접근 경로가 둘이고 역할이 다르다**(혼동 주의):
     **Iceberg `S3FileIO`**(AWS SDK v2, `iceberg-aws-bundle`)는 **테이블 데이터 I/O** 전담이고,
     **S3A**(`hadoop-aws`, AWS SDK v1)는 `s3a://` 스킴으로 **원본 파일**(csv.gz)을 읽거나 이벤트로그를 쓸 때 쓴다.
-    Iceberg만 쓰는 잡은 S3A가 없어도 돌기 때문에 **부재를 알아차리기 어렵다**(2026-08-18까지 이미지에 없었다).
+    Iceberg만 쓰는 잡은 S3A가 없어도 돌기 때문에 **부재를 알아차리기 어렵다**(한동안 이미지에 없었다).
   - **`hadoop-aws` 버전은 베이스 이미지의 `hadoop-client-*`와 정확히 일치**시킨다
     (Spark 3.5.9 → **3.3.4**). SDK 번들 버전은 추측하지 말고 `hadoop-project` pom의
     `<aws-java-sdk.version>`을 본다(3.3.4 → **1.12.262**).
   - **S3A로 직접 쓰기(`df.write.parquet("s3a://...")`)는 SeaweedFS에서 실패한다** — 기본
     `FileOutputCommitter`가 `_temporary` **rename**에 의존하는데 오브젝트 스토어에는 rename이 없다
-    (2026-08-18 실측: `Could not rename ... _temporary/...`). 필요해지면 S3A committer(magic)와
+    (실측: `Could not rename ... _temporary/...`). 필요해지면 S3A committer(magic)와
     `spark-hadoop-cloud` 의존을 추가해야 한다.
     **다만 본 설계는 영향받지 않는다** — 쓰기는 전부 Iceberg 테이블(=S3FileIO, rename 미사용)로 나가고
-    S3A는 **읽기 전용**으로만 쓴다. 검증: `s3a://` csv.gz 4행 read → Iceberg 테이블 write 4행 (2026-08-18).
+    S3A는 **읽기 전용**으로만 쓴다. 검증: `s3a://` csv.gz 4행 read → Iceberg 테이블 write 4행.
   - **진입점 스크립트는 driver CWD 밖에 둔다** — 이미지 WORKDIR(`/opt/spark/work-dir`)에 두면
     `spark-submit`이 `local://` 진입점을 CWD로 복사하며 **대상을 먼저 삭제**해 소스가 사라지고
-    `NoSuchFileException`으로 죽는다(2026-08-17 실측). 이 레포는 `/opt/spark/app/`을 쓴다.
+    `NoSuchFileException`으로 죽는다(실측). 이 레포는 `/opt/spark/app/`을 쓴다.
 - **잡 네임스페이스를 반드시 지정**한다 — 차트 기본값 `workloadResources.namespaces.data`는 비어 있고
   `overrideWatchedNamespaces: true`라, 비워두면 **감시 네임스페이스가 없고 workload SA·rolebinding도 생기지 않는다**.
   설치 시 `--set workloadResources.namespaces.data[0]=<ns>`.
@@ -130,18 +130,19 @@ resources:
   (Kubeflow의 `status.applicationState.state`가 아니다). **성공·실패 모두 최종 `ResourceReleased`로 수렴**하므로
   최종 상태만으로는 결과를 구분할 수 없다 → **`status.stateTransitionHistory`에 `Succeeded`가 있었는지**로 판정한다.
   오퍼레이터를 갈아끼울 때는 매니페스트·스크립트뿐 아니라 **이 글루 코드까지 함께** 옮긴다
-  (2026-08-17 이전 시 누락돼 자산이 죽어 있었다).
-- **오퍼레이터 watch는 장시간 후 죽는다 — 상태 필드만 믿지 않는다**(2026-08-19 실측).
+  (이전 시 누락돼 자산이 죽어 있었다).
+- **오퍼레이터 watch는 장시간 후 죽는다 — 상태 필드만 믿지 않는다**(실측).
   `SparkApplication`의 `currentStateSummary`가 driver 파드 `Succeeded` 이후에도 **`DriverReady`에
   영구 고착**하는 현상을 확인했다(최장 **4시간 32분**). 오퍼레이터 파드는 재시작 0에 GC 로그도
   정상이라 **살아 있는 것처럼 보인다** — 죽은 것은 `SparkApplication` **watch**다.
 
-  | 잡 제출 시점 | 오퍼레이터 기동 후 경과 | 완료 감지 |
-  | --- | --- | --- |
-  | 2026-08-18 16:02 | 5분 | ✅ 2.5분 뒤 `within retention` 로그 |
-  | 2026-08-19 05:43 | 13.7시간 | ❌ 전이 없음 |
-  | 2026-08-19 19:16 · 19:29 | 27시간 | ❌ 전이 없음 |
-  | `rollout restart` 직후 | 20초 | ✅ 2.5분 뒤 정상 전이 |
+  | 오퍼레이터 기동 후 경과 | 완료 감지 |
+  | --- | --- |
+  | 5분 | ✅ 2.5분 뒤 `within retention` 로그 |
+  | 13.7시간 · 27시간 | ❌ 전이 없음 |
+  | `rollout restart` 직후 20초 | ✅ 2.5분 뒤 정상 전이 |
+
+  관측 일자와 전체 타임라인은 `$OBSIDIAN_VAULT/status/observations.md`에 있다.
 
   **기각한 가설 2개**(둘 다 실측으로): ① `delete`→즉시 `create` 경합 — 간격을 60초 둔 대조군도
   동일하게 실패했다. ② retain이 전이를 지연시킨다 — `Application is within retention ...`
@@ -158,7 +159,7 @@ resources:
   watch 사멸 시에만 탈출하는 설계다. 회복은 `kubectl -n spark-operator rollout restart deploy`.
   근본 해결은 업스트림(apache/spark-kubernetes-operator) 몫이다.
 
-  **이 방어는 2026-08-22에 처음으로 실동작이 확인됐다**(그전까지는 **작성됐을 뿐 발동한 적이 없었다** —
+  **이 방어는 뒤늦게야 실동작이 확인됐다**(그전까지는 **작성됐을 뿐 발동한 적이 없었다** —
   "구현했다"와 "작동한다"는 다른 축이다, [../philosophy.md](../philosophy.md) 원칙 7).
 
   | 항목 | 실측 |
@@ -176,19 +177,19 @@ resources:
   실측 187초가 기대 창 180~185초를 **2초 초과**한 것은 폴링 경계와 자산 종료 처리 지연으로 설명되며,
   이 정도 오차까지 함께 적어야 다음 사람이 "187이면 180이 아니네"로 오판하지 않는다.
 - **검증 상태**: PoC **잡**(`k8s/spark/sparkapplication-poc.yaml`)은 Apache 오퍼레이터에서 **동작 확인됨**
-  (2026-08-17 — Iceberg write+read-back `rows=3`, exitCode 0, 정리 오류 0건).
+  (Iceberg write+read-back `rows=3`, exitCode 0, 정리 오류 0건).
   PoC **자산**(`defs/poc/`)도 라이브 통과 — `dagster asset materialize` → CRD 제출·폴링 → driver 로그 회수.
-  **2026-08-27 in-cluster 재검증**: daemon 파드의 ServiceAccount로 제출·완료(RBAC 4 verb만으로 충분).
+  **in-cluster 재검증**: daemon 파드의 ServiceAccount로 제출·완료(RBAC 4 verb만으로 충분).
   → [redesign.md](../redesign.md) **Phase 0 게이트 통과**.
 
 ## 9-2. Flink Operator·FlinkDeployment 규칙 (스트리밍)
 
-> ✅ **오퍼레이터는 기본 설치된다**(2026-08-22 갱신). `scripts/k8s-env.sh`의 **`INSTALL_FLINK` 기본값이
+> ✅ **오퍼레이터는 기본 설치된다**. `scripts/k8s-env.sh`의 **`INSTALL_FLINK` 기본값이
 > `true`** 이며, 빼려면 `INSTALL_FLINK=false ./scripts/k8s-operators.sh`로 설치한다.
-> 2026-08-19에 잠시 제거했던 이유(잡 없는 세션 클러스터가 1 CPU / 2Gi를 상주 점유)는
+> 한때 제거했던 이유(잡 없는 세션 클러스터가 1 CPU / 2Gi를 상주 점유)는
 > **예산 상향과 동시 기동 실측**으로 해소됐다(§9-3). VM 실측값의 정본은
 > [resource-sizing.md](../resource-sizing.md) §(A)이고 **여기에 수치를 복제하지 않는다**
-> (2026-08-27 상향 때 이 줄이 낡은 채 남아 있었다).
+> (예산 상향 때 이 줄이 낡은 채 남아 있었다).
 > **오퍼레이터 상주와 세션 클러스터 상주는 다른 축이다** — 오퍼레이터는 상시 두되,
 > **세션 클러스터(`FlinkDeployment`)는 잡이 없어도 JM이 상주**하므로(아래 Web UI 항목)
 > **검증이 끝나면 반드시 내린다.** 회수 규율은 예산이 늘어도 그대로다(§9-3).
@@ -196,12 +197,12 @@ resources:
 - **오퍼레이터**: Apache **Flink Kubernetes Operator**를 Helm으로 설치하고,
   스트리밍 잡은 **`FlinkDeployment`(CRD)** 로 선언한다.
   JobManager/TaskManager 자원(`memory`·`cpu`)을 명시한다(§2, 수치는 [../resource-sizing.md](../resource-sizing.md)).
-  CRD는 `flink.apache.org/**v1beta1**` 단일(2026-08-18 실측, operator 1.15.0).
+  CRD는 `flink.apache.org/**v1beta1**` 단일(실측, operator 1.15.0).
 - **차트 버전은 설치 시점에 반드시 확인**한다 — `downloads.apache.org/flink/`는 **현행 릴리스만** 보관해
-  구버전 차트 URL이 **404**가 된다(2026-08-18: 핀돼 있던 `1.10.0`이 사라져 설치 불가 → `1.15.0`으로 갱신).
+  구버전 차트 URL이 **404**가 된다(핀돼 있던 `1.10.0`이 사라져 설치 불가 → `1.15.0`으로 갱신).
   `curl -s https://downloads.apache.org/flink/ | grep flink-kubernetes-operator`로 대조 후 `k8s-env.sh`에 핀한다.
 - **버전 짝은 엔진이 아니라 Iceberg가 정한다**: `iceberg-flink-runtime-<flinkMinor>` 아티팩트는
-  **2.1까지만 존재**한다(`-2.2`는 Maven Central 404, 2026-08-18). 오퍼레이터 CRD가 `v2_2`를 받아줘도
+  **2.1까지만 존재**한다(`-2.2`는 Maven Central 404). 오퍼레이터 CRD가 `v2_2`를 받아줘도
   Iceberg가 없으면 무의미하므로 **Flink는 2.1 계열로 고정**한다(현재 `flink:2.1.3-java17` + Iceberg `1.11.0`).
 - **`watchNamespaces={<잡 ns>}`를 반드시 준다** — 비우면 잡 SA(`flink`)와 Role이 **오퍼레이터 ns에만** 생겨
   잡 ns에서 파드가 못 뜬다(Spark 차트의 `workloadResources.namespaces`와 같은 함정).
@@ -220,10 +221,10 @@ resources:
   레거시 `flink-shaded-hadoop-2-uber` 대신 Spark 러너와 **같은 계열의 shaded 클라이언트**
   (`hadoop-client-api`·`hadoop-client-runtime` 3.3.4)를 `/opt/flink/lib`에 넣는다.
 - **크리덴셜은 SQL DDL에 쓰지 않는다** — `sql-client`가 실행문을 **그대로 echo**해 터미널·로그에 평문이 남는다
-  (2026-08-18 실측). S3 키는 표준 env(`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`)로 넣어 **S3FileIO의 기본
+  (실측). S3 키는 표준 env(`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`)로 넣어 **S3FileIO의 기본
   자격증명 체인**이 집어가게 하고 DDL에서 뺀다. Secret→env 주입은 `podTemplate`으로 한다(§4).
 
-  #### 예외: JDBC 카탈로그 DDL — **조건부 허용** (2026-08-22, `security` C5)
+  #### 예외: JDBC 카탈로그 DDL — **조건부 허용** (`security` C5)
 
   Iceberg **JDBC 카탈로그**의 `CREATE CATALOG`는 S3 키와 달리 **환경변수 체인이 없어** DDL에
   접속 정보를 넣는 것을 피할 수 없다. 아래 **5개 조건을 전부** 만족할 때만 허용한다.
@@ -242,7 +243,7 @@ resources:
      `$OBSIDIAN_VAULT/security/posture.md`가 소유한다.
 
   **관측 범위 교훈 — "관측 경로의 생존"과 "관측 범위의 충분성"은 다른 축이다.**
-  2026-08-22 점검에서 지정한 범위(`/opt/flink/log`·`/tmp`)를 **벗어난** 셸 히스토리 파일
+  `security` 점검에서 지정한 범위(`/opt/flink/log`·`/tmp`)를 **벗어난** 셸 히스토리 파일
   (`/opt/flink/.flink-sql-history`)에 평문 **5라인**이 남아 있었다. 같은 점검의 생존 확인은
   **811·6·814건**으로 멀쩡했다 — **경로가 살아 있다는 것이 범위가 충분하다는 뜻이 아니다.**
   ⇒ 유출 점검 범위에는 **숨김 파일(`.*`)·셸 히스토리·홈 디렉터리**를 반드시 포함한다
@@ -253,7 +254,7 @@ resources:
   `kubectl port-forward svc/<name>-rest 8081:8081`(§10). **세션 클러스터는 잡이 없어도 JM이 상주**해
   UI가 계속 살아 있다(Spark의 driver UI가 잡 종료와 함께 사라지는 것과 대비 —
   [../architectures/flink.md](../architectures/flink.md)). TaskManager는 잡 제출 시 온디맨드로 뜬다.
-- **검증 상태**(2026-08-18): 세션 클러스터(`k8s/flink/flinkdeployment-session.yaml`)에서
+- **검증 상태**: 세션 클러스터(`k8s/flink/flinkdeployment-session.yaml`)에서
   **Spark가 쓴 Iceberg 테이블을 Flink가 읽는 것까지 확인** — `SHOW DATABASES`→`poc`,
   `SELECT * FROM poc.sample`→3행(alice/bob/carol). 카탈로그·S3는 Spark와 **동일한 JDBC 카탈로그 + SeaweedFS**.
 - **소스·싱크·상태**: 소스는 **Iceberg bronze 스트리밍 읽기**,
@@ -310,7 +311,7 @@ resources:
 ### 경계 ④ — Dagster 상주는 회수 다이얼이 듣지 않는다
 
 Spark Connect는 `--replicas=0`, Flink 세션은 `delete`로 회수되지만 **오케스트레이터는 회수 대상이 아니다**
-(내리면 스케줄·센서·런큐가 함께 멈춘다). 그래서 Dagster의 **350m/1792Mi**(2026-08-27 `describe node` 실측)는
+(내리면 스케줄·센서·런큐가 함께 멈춘다). 그래서 Dagster의 **350m/1792Mi**(`describe node` 실측)는
 경계 ①~③의 **모든 시나리오에 상시 더해지는 첫 워크로드**다. BATCH+STREAM 동시 피크에 얹으면 CPU **89%**이고,
 `spark.executor.instances`를 2로 올리면 **101%로 스케줄 자체가 실패**한다 — 경계 ②는 이제
 "여유가 없다"가 아니라 **"안 된다"** 이다. 확장이 필요하면 늘리는 쪽이 아니라 **Flink 세션을 먼저 내린다.**
@@ -355,22 +356,22 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
 - **Iceberg의 `io-impl`(S3FileIO)만으로는 부족한 작업이 있다** — `spark.hadoop.fs.s3*`(S3A)를 **함께** 준다.
   S3FileIO는 **카탈로그가 아는 파일**만 다루므로, warehouse 디렉터리를 직접 나열해야 하는
   `remove_orphan_files`(카탈로그가 *모르는* 파일을 찾는 게 목적)는 **Hadoop FileSystem**을 탄다.
-  설정이 없으면 `UnsupportedFileSystemException: No FileSystem for scheme "s3"`로 죽는다(2026-08-19 실측).
+  설정이 없으면 `UnsupportedFileSystemException: No FileSystem for scheme "s3"`로 죽는다(실측).
   warehouse가 `s3://`라 **`fs.s3.impl`도 S3A로 매핑**해야 하고(`fs.s3a.impl`만으론 안 잡힌다),
   jar(`hadoop-aws`·`aws-java-sdk-bundle`)는 러너 이미지에 이미 있어 **설정만** 추가하면 된다.
   S3A는 AWS SDK **v1**이라 SeaweedFS의 aws-chunked 문제(SDK v2 flexible checksum)와는 무관하다.
   참조: `k8s/spark/spark-connect-server.yaml`.
 - **서비스 접근**: **HTTP 계열(웹 UI·REST)은 Ingress**(고정 URL), **그 밖의 데이터 접속(JDBC·S3)은
-  `port-forward`** 를 기본으로 한다. **gRPC는 TLS Ingress로 낸다**(2026-08-22 개정 — 아래 §gRPC).
+  `port-forward`** 를 기본으로 한다. **gRPC는 TLS Ingress로 낸다**(아래 §gRPC).
   Dagster 리소스(SeaweedFS·카탈로그 DB 엔드포인트)는 이 노출 주소를 `EnvVar`로 주입한다(하드코딩 금지, §4).
   **Flink는 REST와 UI가 같은 포트(8081)** 라 UI를 Ingress로 낸 순간 **REST도 함께 나간다** —
-  `port-forward`가 필요 없고(2026-08-22 실측: `curl http://flink.localtest.me:8080/overview` → JSON),
+  `port-forward`가 필요 없고(실측: `curl http://flink.localtest.me:8080/overview` → JSON),
   동시에 **인증 없이 잡 제출·취소가 가능한 면**이 열린다는 뜻이다. kind가 `127.0.0.1`로만 바인딩해
   위험은 낮지만 **"UI만 열었다"로 읽지 않는다**(노출 범위는 포트가 아니라 그 포트가 제공하는 API가 정한다).
 - **kind는 공개 포트를 클러스터 생성 시점에만 정할 수 있다.** 노드가 컨테이너라 사후에 포트를 추가할 수 없어,
   `kind-cluster.yaml`에 **`extraPortMappings`가 없으면 Ingress·NodePort 둘 다 호스트에서 닿지 않는다**
   (`hostNetwork: true`도 소용없다 — 노드는 podman VM 안이라 VM 네트워크까지만 닿는다).
-  빠뜨렸다면 **클러스터 재생성**이 유일한 방법이므로 처음부터 넣어둔다(2026-08-19 실측 후 도입).
+  빠뜨렸다면 **클러스터 재생성**이 유일한 방법이므로 처음부터 넣어둔다(실측 후 도입).
   - 호스트 포트는 **8080/8443**을 쓴다. macOS에서 1024 미만 바인딩은 root가 필요한데
     podman의 포트 포워딩(gvproxy)은 사용자 권한으로 돈다.
   - 재생성 시 **`k8s-down.sh`를 쓰지 말고 `kind delete cluster`만** 한다. down 스크립트는
@@ -381,7 +382,7 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
   - Spark(Connect UI)는 일반 `Ingress` 리소스로 4040을 노출한다(`spark.localtest.me`, 평문 HTTP).
     **gRPC(15002)는 별도 호스트 `spark-grpc.localtest.me`에 TLS로 낸다** — 아래 §gRPC.
 
-### gRPC를 Ingress로 내보내는 규칙 (2026-08-22 신설 · 실측)
+### gRPC를 Ingress로 내보내는 규칙 (실측)
 
 > 종전 규약은 *"gRPC는 Ingress로 내보내지 않는다(YAGNI)"* 였다. **CA 신뢰 축이 실측으로 닫히면서**
 > 뒤집었다 — port-forward는 매 세션 별도 터미널을 요구하고, 끊긴 상태가 **에러가 아니라 무한 대기**로
@@ -404,7 +405,7 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
   export GRPC_DEFAULT_SSL_ROOTS_FILE_PATH=~/.lakehouse-ca.crt
   ```
 
-- **검증 순서**(2026-08-22 실측, 이 순서로 통과함): ① `openssl s_client -CAfile …` → `Verify return code: 0`
+- **검증 순서**(실측, 이 순서로 통과함): ① `openssl s_client -CAfile …` → `Verify return code: 0`
   ② `curl --cacert … https://spark-grpc.localtest.me:8443/` → **`http_ver=2`·`sslverify=0`·`code=415`**
   ③ pyspark 질의 왕복 ④ `scripts/spark_connect_smoke.py`.
   **②의 `415`는 실패가 아니라 성공 신호다** — gRPC 백엔드가 비-gRPC 요청에 주는 정상 응답이라
@@ -412,11 +413,11 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
   **`openssl s_client -alpn h2`의 `No ALPN negotiated`는 판정 근거로 쓰지 않는다** — 같은 시점
   `curl`이 `http_ver=2`를 냈다. 도구 하나의 부정 결과로 닫지 말고 **교차 확인**한다(원칙 7).
   - 설치 대기는 `wait --for=condition=ready pod`가 아니라 **`rollout status deploy/...`** 로 한다.
-    파드 생성 전이면 전자는 `no matching resources found`로 **즉시 실패**한다(2026-08-19 실측).
+    파드 생성 전이면 전자는 `no matching resources found`로 **즉시 실패**한다(실측).
   - 기동 직후 컨트롤러가 **liveness 실패로 1회 재시작**할 수 있다(노드가 다른 롤아웃으로 바쁠 때
     `/healthz` 타임아웃). 자체 회복하므로 곧바로 실패로 판단하지 않는다.
 - **`kubectl proxy`는 UI 대안으로 쓰지 않는다**: Flink는 동작하지만 **Spark UI는 302 `Location`이
-  프록시 포트가 아니라 API 서버 주소를 가리켜** 브라우저가 따라가지 못한다(2026-08-19 실측).
+  프록시 포트가 아니라 API 서버 주소를 가리켜** 브라우저가 따라가지 못한다(실측).
 
 ## 11. 오브젝트 스토어·Iceberg 카탈로그 정합
 
@@ -428,14 +429,14 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
 - **카탈로그 이름은 전 엔진이 같아야 한다 — 정본은 `iceberg`.**
   JDBC 카탈로그는 `catalog_name` 컬럼으로 네임스페이스·테이블 레지스트리를 **분할**한다.
   이름이 다르면 **같은 DB·같은 버킷을 봐도 서로의 테이블이 보이지 않는다**(빈 카탈로그처럼 동작).
-  2026-08-18 실측: Spark/Flink가 `jdbccat`, Dagster/Trino가 `iceberg`로 갈려 있어
+  실측: Spark/Flink가 `jdbccat`, Dagster/Trino가 `iceberg`로 갈려 있어
   Dagster 적재분이 Spark에서 보이지 않을 상태였다 → `iceberg`로 통일하고 기존 행을 마이그레이션했다.
   설정 위치: Spark `spark.sql.catalog.<name>`·`ICEBERG_CATALOG_NAME`(러너 env) / Flink `CREATE CATALOG <name>` /
   Dagster `common/constants.py:CATALOG_NAME` / Trino `iceberg.jdbc-catalog.catalog-name`.
 - **SeaweedFS는 AWS SDK의 flexible checksum(aws-chunked)을 풀지 못한다.**
   최신 SDK는 PutObject에 CRC64NVME 체크섬을 기본 적용하며 본문을 청크로 감싸는데, SeaweedFS가 이를
   해제하지 않아 **프레이밍 바이트가 객체 내용에 그대로 저장**된다
-  (2026-08-18 실측: Iceberg `metadata.json`이 `11\r\n{...}\r\n0\r\nx-amz-checksum-...`로 저장 →
+  (실측: Iceberg `metadata.json`이 `11\r\n{...}\r\n0\r\nx-amz-checksum-...`로 저장 →
   다음 읽기에서 pyiceberg가 JSON 파싱 실패). **오류가 쓰기가 아니라 이후 읽기에서 나므로 추적이 어렵다.**
   → `AWS_REQUEST_CHECKSUM_CALCULATION=when_required`(+`AWS_RESPONSE_CHECKSUM_VALIDATION`)로 끈다.
   코드에도 `common/constants.py`가 `os.environ.setdefault`로 기본값을 못 박는다(환경 누락 시 조용한 손상 방지).
@@ -443,7 +444,7 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
 
 ## 12. 카탈로그·메타 Postgres = CloudNativePG(CNPG)
 
-규칙 본문은 **[k8s/cnpg.md](k8s/cnpg.md)** 로 분리했다(2026-08-27 — 이 문서가 doc_lint 500줄 상한에 닿았다).
+규칙 본문은 **[k8s/cnpg.md](k8s/cnpg.md)** 로 분리했다(이 문서가 doc_lint 500줄 상한에 닿았다).
 요지만: 오퍼레이터는 CNPG(chart 0.29.0 = app 1.30.0), 서비스는 **`-rw`/`-ro`/`-r` 접미사**,
 크리덴셜은 **선언 시크릿 + `managed.roles`**(bootstrap은 초기화 1회라 회전이 안 된다),
 probe·RBAC·securityContext는 **CR에 쓰지 않는다**(오퍼레이터가 채운다), PVC는 **사후 확장 불가**,

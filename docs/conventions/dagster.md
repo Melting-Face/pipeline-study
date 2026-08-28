@@ -37,7 +37,7 @@ class MyDbtTranslator(DagsterDbtTranslator):   # ← 가급적 사용하지 않�
 공식 리소스는 Dagster가 유지보수하고(`_is_dagster_maintained`), UI 표시·설정 스키마·수명주기 훅
 (`setup_for_execution`)이 표준을 따른다.
 
-- **사례(2026-08-19)**: Iceberg 유지보수용 Spark 접속을 커스텀 `SparkConnectResource`로 만들었다가
+- **사례**: Iceberg 유지보수용 Spark 접속을 커스텀 `SparkConnectResource`로 만들었다가
   **`dagster-pyspark`의 `LazyPySparkResource`로 교체**했다. Spark Connect 접속은 커스텀 코드가 아니라
   **`spark_config={"spark.remote": "sc://..."}`** 한 줄이면 된다 — 내부 `builder.config(k, v)`가
   이 키를 받아 `pyspark.sql.connect` 세션을 만든다(실측). 커스텀 모듈(`common/spark.py`)은 삭제했다.
@@ -145,7 +145,7 @@ src/dagster_project/
   - **리소스는 `@dg.definitions`** 로 감싼 함수가 `Definitions(resources=...)`를 반환하면 수집·merge된다.
   - ⚠️ **`@dg.definitions`는 `@asset`이 있는 모듈에 같이 두지 않는다.** 한 모듈에 `@dg.definitions`가 있으면
     **그 함수의 반환값이 모듈의 정의 전체를 대체**해, 같은 파일의 모듈 스코프 `@asset`이 **조용히 수집되지 않는다**
-    (에러도 경고도 없다 — 2026-08-18 실측: `defs/poc/assets.py`가 이 형태라 `poc_spark_ingest`가 UI에 뜬 적이 없었다).
+    (에러도 경고도 없다 — 실측: `defs/poc/assets.py`가 이 형태라 `poc_spark_ingest`가 UI에 뜬 적이 없었다).
     리소스 등록은 `defs/resources.py`(공유) 또는 `defs/<dataset>/resources.py`(서브프로젝트 전용)처럼
     **자산이 없는 모듈**에 둔다.
     - 자동발견 누락은 조용해서 놓치기 쉽다 → 정의 추가 후 **`dg check defs`** 또는
