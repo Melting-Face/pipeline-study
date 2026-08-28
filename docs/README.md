@@ -4,10 +4,17 @@
 같은 레이크하우스 패턴으로 적재·변환하는 것은 **데이터셋별 질문에 답하기 위한 준비**이고,
 답을 내는 규칙은 [분석 컨벤션](conventions/analysis.md)에 있다.
 
-> **이 문서군이 담지 않는 것 — 진행 상태**
-> `docs/`는 **규칙**을 담는다. *지금 무엇이 열려 있고 어디까지 됐는지*는 저장소 밖
-> `$OBSIDIAN_VAULT/status/`에 있다. 판정 축은 [doc-sync](doc-sync.md) §실무 규칙 7.
-> 낡는 문장을 규칙 옆에 두면 규칙까지 신뢰를 잃기 때문이다.
+> **누가 읽는가 — 이 저장소를 가져가 돌리려는 사람과 에이전트**
+> `README.md`와 `docs/`는 저장소를 **클론해 자기 환경에서 실행하려는 독자**를 대상으로 한다.
+> 그래서 여기 있는 문장은 **남의 환경에서도 참**이어야 한다 — 호스트 절대경로·개인 머신
+> 스펙·계정명은 담지 않는다. 저장소를 **모르는 사람**이 읽는 [`posts/`](posts/README.md)와
+> `wiki/`는 독자도 반출 통제도 다르다([publishing](conventions/publishing.md)).
+
+> **담지 않는 것 — 진행 상태 · 관측 일자 · 실측 수치**
+> *지금 무엇이 열려 있는지*는 공개 가능분이 [GitHub Issues](https://github.com/Melting-Face/pipeline-study/issues),
+> 나머지가 저장소 밖 `$OBSIDIAN_VAULT/status/`에 있다.
+> **관측 일자와 실측 수치도 여기 두지 않는다** — 볼트가 갖고 `docs/`에는 인과와 처방만 남는다.
+> 판정 축은 [doc-sync](doc-sync.md) §실무 규칙 7. 낡는 문장을 규칙 옆에 두면 규칙까지 신뢰를 잃기 때문이다.
 
 ## 처음 왔다면
 
@@ -82,7 +89,7 @@
 | ↳ [출처 등급·통제](skills/sourcing.md) | A~D 등급 정의·C등급 통제·lock 관리의 **정본** |
 | ↳ [C등급 단서](skills/caveats.md) | 등재의 **조건**이 되는 단서 원문 |
 | ↳ [배선 메커니즘](skills/wiring.md) | `tools:`/`disallowedTools`/`skills:` 프로브·프리로드 자격 |
-| ↳ [인벤토리 실측](skills/inventory.md) | lock 3벌·해시 재계산·출처 실측 스냅샷 |
+| ↳ 인벤토리 실측 | **볼트로 이관** — `$OBSIDIAN_VAULT/status/skills-inventory.md`(스냅샷·비공개) |
 
 > **보안 실태는 이 저장소에 없다.** 저장소가 공개이고 이 경로가 GitHub Security Policy 페이지의
 > 탐색 대상(`.github/` → 루트 → `docs/`)이라, 미비점 목록이 첫 화면이 될 수 있다.

@@ -6,10 +6,10 @@
 적재하는** 로컬 레이크하우스 학습 프로젝트다.
 
 > ⚠️ **이 문서의 compose 서술은 이제 대부분 폐기 전 판본이다.** 재설계로 컴퓨트·스토리지가
-> **로컬 Kubernetes로 이전**했고 **Dagster도 2026-08-27 클러스터로 들어갔다**. 목표 토폴로지는
+> **로컬 Kubernetes로 이전**했고 **Dagster도 클러스터로 들어갔다**. 목표 토폴로지는
 > [../redesign.md](../redesign.md), 클러스터 규칙은 [../conventions/k8s.md](../conventions/k8s.md),
 > Dagster 배치 결정은 [dagster.md](dagster.md).
-> **2026-08-27 기준 실제로 도는 구성**: kind 클러스터 하나 — Dagster(webserver·daemon) ·
+> **실제로 도는 구성**: kind 클러스터 하나 — Dagster(webserver·daemon) ·
 > Spark Operator · SeaweedFS · 카탈로그/메타 Postgres(CNPG) · Flink Operator · ingress-nginx.
 > **compose는 기본 `up`으로 아무것도 띄우지 않는다**(전부 profile opt-in이 됐다).
 > **Flink Operator는 ⏸ 미설치**다 — 채택은 했으나 잡 없는 세션 클러스터가 상주 자원을 점유해

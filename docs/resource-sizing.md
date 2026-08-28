@@ -12,16 +12,16 @@
 
 ## Kubernetes 재설계 시나리오 (kind + Podman · 8 CPU / 22.3 GiB) 🚧
 
-> 대상: [redesign.md](redesign.md)의 목표 토폴로지. **Dagster도 이 예산 안**(2026-08-27), 컴퓨트·데이터
+> 대상: [redesign.md](redesign.md)의 목표 토폴로지. **Dagster도 이 예산 안**, 컴퓨트·데이터
 > 서비스만 로컬 K8s(kind on Podman)에 둔다. 컴퓨트는 **Spark(배치) / Flink(스트리밍)** 2엔진이며,
-> 2026-08-22 실측으로 **시분할 → 동시 기동**으로 규약이 바뀌었다([conventions/k8s.md](conventions/k8s.md) §9-3).
+> 실측으로 **시분할 → 동시 기동**으로 규약이 바뀌었다([conventions/k8s.md](conventions/k8s.md) §9-3).
 
 ### (A) 예산의 단위 축은 **셋**이다
 
 메모리를 인용할 때 **어느 축의 값인지 반드시 병기**한다. 셋은 서로 다른 것을 세며, 숫자만 옮기고
 단위를 바꾸면 조용히 틀린다([philosophy.md](philosophy.md) §계측 단위).
 
-> 📌 **아래 값은 2026-08-27 10:08 KST 실측**이다(직전 판본은 2026-08-21 실측 `22888 MiB`).
+> 📌 **아래 값은 실측**이다(관측 시각과 직전 판본 값은 `$OBSIDIAN_VAULT/status/observations.md`).
 > 자원을 바꾸면 **이 표와 [`scripts/k8s-env.sh`](../scripts/k8s-env.sh)를 한 벌로** 갱신한다.
 
 | 축 | 값 | 무엇을 세는가 | 어디서 읽나 |
@@ -59,7 +59,7 @@ podman machine inspect <machine> --format '{{.Resources.Memory}}'   # 26702 (MiB
 kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu:8, memory:26679964Ki
 ```
 
-- ⚠️ **"사후 변경은 재생성 필요"는 거짓이다(2026-08-27 반증).** 구 판본이 *"Apple Silicon은 생성 시
+- ⚠️ **"사후 변경은 재생성 필요"는 거짓이다(반증됨).** 구 판본이 *"Apple Silicon은 생성 시
   확정"* 이라 적고 있었으나, `podman machine set`으로 **중지 상태에서 변경**할 수 있고 실제로
   `22888 → 26702 MiB`로 바뀐 뒤에도 kind 클러스터 `lakehouse`와 PVC 2종(`catalog-postgres-1`·
   `data-seaweedfs-0`)이 **그대로 Bound 상태로 살아 있었다.**
@@ -71,23 +71,23 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu:8, mem
   함께 돌아야 한다 → **아래 (D) 호스트 축**. **메모리를 VM에 더 준 대가는 호스트 축에서 나간다** —
   이 배분은 *"Dagster를 클러스터로 옮긴다"* 는 전제와 한 벌일 때만 여유롭다.
 - **disk 93 GiB**(≈100 GB 십진): SeaweedFS(원천 csv.gz + Iceberg parquet) + 이미지 레이어 대비.
-  2026-08-27 실측 노드 디스크 사용량 **35.2G / 92.4G(38%)**, 그중 SeaweedFS 볼륨이 **10G**다.
-  ⚠️ **세 값이 각각 다른 것을 센다**(2026-08-28 축 하나 추가) — `df`는 노드 디스크 전체
+  실측 노드 디스크 사용량 **35.2G / 92.4G(38%)**, 그중 SeaweedFS 볼륨이 **10G**다.
+  ⚠️ **세 값이 각각 다른 것을 센다** — `df`는 노드 디스크 전체
   (containerd 이미지 레이어 포함), `du /data`는 SeaweedFS **볼륨 파일의 예약 공간**,
   버킷 합계는 **실제 오브젝트**다. ⚠️ `du`를 데이터량으로 읽지 마라 — SeaweedFS 볼륨은
   **preallocate된 sparse 파일**이라 `du`가 1.0G라 부르는 파일이 `ls -la`로는 62KB다.
-  2026-08-28 실측 `du` **10G** vs 버킷 합계 **106.8MB**(약 100배 차).
+  실측 `du` **10G** vs 버킷 합계 **106.8MB**(약 100배 차).
   용량 계획은 `du`, **백업·재적재 비용은 버킷 합계**로 본다 — 이 둘을 섞어
   `architectures/terraform.md`가 재적재 비용을 100배로 적었던 전례가 있다.
 
 ### (B) 컴포넌트 배분 (requests / limits) — 동시 기동
 
-원칙: **Σrequests ≤ 노드 Allocatable(8000m / 26054Mi)**. 2026-08-22 실측으로 **BATCH+STREAM 동시
+원칙: **Σrequests ≤ 노드 Allocatable(8000m / 26054Mi)**. 실측으로 **BATCH+STREAM 동시
 기동이 예산 안에 들어옴**이 확인돼 시분할 금지가 **동시 기동 허용**으로 바뀌었다
 ([conventions/k8s.md](conventions/k8s.md) §9-3).
 아래 표의 `req`는 전부 **실제 선언값**이며, 합계 행은 **관측 차분으로 검산**된 값이다.
 
-⚠️ **백분율은 분모가 바뀌면 함께 바뀐다 — `req` 절대값은 그대로다.** 2026-08-27 VM 메모리 상향
+⚠️ **백분율은 분모가 바뀌면 함께 바뀐다 — `req` 절대값은 그대로다.** VM 메모리 상향
 (22888 → 26702 MiB)으로 Allocatable이 `22308Mi → 26054Mi`가 되어 **메모리 %만** 내려갔다.
 당시 기록된 *"84% / 52%"* 의 `52%`는 **옛 분모(22308Mi) 기준**이고 현행은 **44.7%** 다.
 **CPU %는 분모(`8000m`)가 안 바뀌어 전부 그대로다** — 아래 표의 `%`는 현행 분모 기준으로 재계산했다.
@@ -130,7 +130,7 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu:8, mem
   `spark.{driver,executor}.memory=1024m`에 JVM overhead가 더해진 값을 오퍼레이터가 request로 환산한다.
   **표에는 실측 1433Mi를 쓰고 유도값을 쓰지 않는다** — 계획 예측이 메모리에서 `+50Mi`(25Mi × 2) 빗나간
   원인이 정확히 이것이었다.
-  **그래서 이 값은 Spark 3.5.9 → 4.1 상향 시 재실측 대상이다**(2026-08-23 결정 · **이행 전** —
+  **그래서 이 값은 Spark 3.5.9 → 4.1 상향 시 재실측 대상이다**(결정됨 · **이행 전** —
   [architectures/spark.md](architectures/spark.md) §Spark 3.5.9 → 4.1 상향 결정). `1433Mi`는
   **선언값이 아니라 JVM overhead가 더해진 환산 결과**라, 런타임이 바뀌면(Scala 2.13 · JDK 17+)
   같은 `1024m` 선언에서도 다른 값이 나올 수 있다. **새 값을 여기 미리 적지 않는다 — 상향 후 실측한다.**
@@ -143,14 +143,14 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu:8, mem
   ⇒ 이 표는 그대로 둔다. TM 상주는 **상시 구성이 아니라 시연 창 안의 일시 구성**이고,
   상시로 돌려야 할 때 **TM 상주 기준으로 재실측**한다.
 
-⁷ **Dagster 행은 2026-08-27 17:18 KST `kubectl describe node` 실측**이다(분모 = Allocatable 8000m/26054Mi).
+⁷ **Dagster 행은 `kubectl describe node` 실측**이다(분모 = Allocatable 8000m/26054Mi).
   순증은 **350m/1792Mi**이고, 이 값은 회수 다이얼이 듣지 않아 **모든 시나리오에 상시 더해진다**
   ([conventions/k8s.md](conventions/k8s.md) §9-3 경계 ④).
   ⚠️ **마지막 행(7100m/13430Mi)만은 실측이 아니라 산술**이다 — 실측 6750m에 실측 350m을 더한 값이고,
   BATCH+STREAM+Dagster를 **동시에 띄운 관측 창은 아직 열린 적이 없다**. 재측정은 §(C-2) 순서를 따른다.
   값 자체는 두 실측의 합이라 신뢰할 만하지만 **"관측했다"로 인용하지 않는다.**
 
-> 🔴 **`BestEffort` 파드는 `describe node` 합계에 0으로 잡힌다.** 2026-08-27 실측 **6개**로 늘었다
+> 🔴 **`BestEffort` 파드는 `describe node` 합계에 0으로 잡힌다.** 실측 **6개**로 늘었다
 > (cert-manager 3 · barman-cloud · kube-proxy · local-path-provisioner).
 > **"합계에 없다 = 없다"가 아니다.** 예산을 대조할 때 함께 돌린다.
 >
@@ -163,7 +163,7 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu:8, mem
 > **Redpanda는 아직 미도입**이라 위 표에 없다. 도입 시 STREAM 피크가 그만큼 올라가므로
 > **이 표와 [conventions/k8s.md](conventions/k8s.md) §9-3의 경계를 함께 재계산**한다.
 
-> **Spark Operator 행 정정 (2026-08-19)** — 종전 `100m/256Mi req · 250m/512Mi lim`은
+> **Spark Operator 행 정정** — 종전 `100m/256Mi req · 250m/512Mi lim`은
 > **Kubeflow(Go) 오퍼레이터 시절 수치**였다. 프로젝트는 Apache 오퍼레이터(**JVM**)로 이전했는데
 > 이 표를 재검토하지 않아, 아래 두 가지가 동시에 성립하고 있었다.
 >
@@ -198,12 +198,12 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu:8, mem
 3. **★★★★☆ Flink TaskManager slot/개수** — 스트리밍 병렬도. 기본 TM 1개(× 2슬롯).
    TM은 **잡 제출 시 온디맨드**로 뜨고 잡 종료와 함께 회수되므로 유휴 비용은 0이다.
    **단, 이것은 배치 잡에서 관측된 전제다** — **스트리밍 잡의 TM은 잡 수명 내내 산다**
-   (2026-08-23 실측: 상주 피크 `4750m (59%)` / `8772Mi (39%)`). 아래 **"스트리밍 시"** 블록 참조.
+   (실측: 상주 피크 `4750m (59%)` / `8772Mi (39%)`). 아래 **"스트리밍 시"** 블록 참조.
    **스트리밍 잡을 내릴 때는 순서가 있다** — `externalized-checkpoint-retention` 기본값이
    `DELETE_ON_CANCELLATION`이라 `flink cancel` 후 체크포인트가 **지워진다.**
    **증거·상태 수집은 취소 전에** 한다([architectures/flink.md](architectures/flink.md) §순서 함정).
 4. **★★★☆☆ Redpanda dev 모드 메모리**(도입 시) — `--memory`/`--smp`로 축소, 데모 후 스케일 0.
-   **2026-08-23 결정으로 Redpanda는 미도입 유지**가 됐다(스트림 소스가 Iceberg bronze 스트리밍
+   **Redpanda는 미도입 유지**로 결정됐다(스트림 소스가 Iceberg bronze 스트리밍
    읽기로 바뀜 — [architectures/flink.md](architectures/flink.md)). 이 다이얼은 **당분간 죽은 항목**이며,
    [conventions/k8s.md](conventions/k8s.md) §9-3 **경계 ③(Redpanda 도입 시 재계산)도 발동하지 않는다.**
 5. **★★★☆☆ `DAGSTER_MAX_CONCURRENT_RUNS`** — daemon 파드 안의 run 동시성.
@@ -243,7 +243,7 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu:8, mem
 ### (D) 호스트 축 — VM 밖의 예산
 
 **클러스터 예산만 보면 안 된다.** VM이 가져간 몫은 호스트에서 통째로 빠져나간다.
-2026-08-27부터 **Dagster도 VM 안**으로 들어가 호스트 축이 그만큼 가벼워졌다 —
+**Dagster도 VM 안**으로 들어가 호스트 축이 그만큼 가벼워졌다 —
 남은 상시 호스트 소비자는 macOS 자체와 (옵션) Jupyter뿐이다.
 
 🔴 **산술상 잔여를 실제 여유로 읽지 않는다.** macOS는 **메모리 압축**으로 버티므로
@@ -435,7 +435,7 @@ ConfigMap `DAGSTER_MAX_CONCURRENT_RUNS`와 daemon `resources.limits.memory`.
 - 동시 run·pyiceberg 연결이 늘면 `max_connections`를 상향한다.
 - 카탈로그 쪽은 **테이블 메타만** 담아 데이터가 작다 → `shared_buffers 128MB`로 충분하다.
   접속자는 Dagster(pyiceberg)·Spark·Flink·dbt 4종이라 연결 수가 먼저 병목이 된다.
-- **메타 PG도 이 클러스터에 있다**(2026-08-27 개정) — 같은 `catalog-postgres`에 `Database` CR로
+- **메타 PG도 이 클러스터에 있다** — 같은 `catalog-postgres`에 `Database` CR로
   `dagster` DB를 더했다. 구 근거였던 "순환 의존"은 Dagster가 함께 클러스터로 들어오면서 소멸했다
   (둘 다 없으면 둘 다 없는 것이지 순환이 아니다). ⇒ 접속자는 이제 **메타 축까지 5종**이라
   `max_connections`를 볼 때 이 축을 함께 센다.

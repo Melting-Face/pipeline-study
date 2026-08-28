@@ -54,7 +54,7 @@ dg.EnvVar("KEY") / os.environ["KEY"]  (코드에서 참조)
 
 ### 1-2. 호스트 실행과 컨테이너 실행의 값이 다른 키
 
-Dagster는 2026-08-27부터 **클러스터 안**에서 돌고 메타 Postgres도 **CNPG의 `dagster` DB**다
+Dagster는 **클러스터 안**에서 돌고 메타 Postgres도 **CNPG의 `dagster` DB**다
 ([conventions/k8s.md](conventions/k8s.md) §8). 실행 위치가 셋이라 같은 키의 값이 **셋으로 갈린다**.
 
 | 키 | compose 컨테이너 | 호스트(`dg dev`) | in-cluster |
@@ -72,7 +72,7 @@ Dagster는 2026-08-27부터 **클러스터 안**에서 돌고 메타 Postgres도
 in-cluster 값의 정본은 `k8s/dagster/dagster-deploy.yaml`의 ConfigMap이다(`.env`가 아니다).
 
 - `dagster.yaml`의 `hostname`은 **하드코딩하지 않고** `env: POSTGRES_HOST`로 참조한다.
-  하드코딩하면 호스트 실행 시 이름 해석이 안 돼 `too many retries for DB connection`으로 죽는다(2026-08-18 실측).
+  하드코딩하면 호스트 실행 시 이름 해석이 안 돼 `too many retries for DB connection`으로 죽는다(실측).
 - compose `postgres`는 호스트가 붙을 수 있도록 **`127.0.0.1:${POSTGRES_PORT}:5432`** 로 퍼블리시한다
   (루프백 바인딩 — 외부 노출 금지, [security.md](security.md)).
 - 호스트 실행 시 **`DAGSTER_HOME`을 `dagster.yaml`이 있는 디렉터리**(`dagster/dockerfile.d/src`)로 지정한다.
@@ -93,7 +93,7 @@ in-cluster 값의 정본은 `k8s/dagster/dagster-deploy.yaml`의 ConfigMap이다
   - **엔드포인트와 자격증명은 한 쌍으로 바꾼다.** 엔드포인트만 K8s(`localhost:18333`)로 돌리고
     키를 공용 `AWS_*`로 두면 **부분 성공**이 난다 — 카탈로그 나열(`list_tables`)은 Postgres만 보므로
     성공하고, `load_table`이 `metadata.json`을 S3에서 읽는 순간 `ACCESS_DENIED during HeadObject`로 죽는다
-    (2026-08-19 실측). 값 자체가 다르다(k8s Secret `lakehouse-creds`). **접속 대상을 바꾸는 값은 한 벌로 묶어 바꾼다.**
+    (실측). 값 자체가 다르다(k8s Secret `lakehouse-creds`). **접속 대상을 바꾸는 값은 한 벌로 묶어 바꾼다.**
 - **`AWS_REQUEST_CHECKSUM_CALCULATION`/`AWS_RESPONSE_CHECKSUM_VALIDATION`**: SeaweedFS 호환 필수 키.
   값이 없으면 최신 SDK 기본값이 객체를 손상시킨다([conventions/k8s.md](conventions/k8s.md) §11).
   코드 기본값이 있지만 컨테이너·외부 도구를 위해 `.env`·compose 앵커에도 명시한다.
@@ -128,7 +128,7 @@ orphan 정리가 안전하다. 순서를 바꾸면 살아 있는 파일을 지�
 ### 2-1. 로컬 세션 로그 정리 (`cleanupPeriodDays`)
 
 AI 세션 로그는 `~/.claude/projects/<프로젝트-경로-슬러그>/`에 `<session-id>.jsonl`로 쌓이고,
-서브에이전트 로그는 그 아래 `<session-id>/subagents/`에 붙는다. 2026-08-20 실측 시 이 저장소 몫만
+서브에이전트 로그는 그 아래 `<session-id>/subagents/`에 붙는다. 실측 시 이 저장소 몫만
 **74MB·103파일**이었다.
 
 **통째로 지우지 않는다 — 같은 디렉터리에 영구 메모리가 산다.**
@@ -171,7 +171,7 @@ find ~/.claude/projects -name '*.jsonl' -mtime +14 | wc -l
 > 원본 값을 먼저 기록해 두고 손댄다.
 
 > Iceberg 유지보수는 `iceberg_maintenance_job`(주간 스케줄, **컴팩션→만료→orphan** 순서)으로
-> 자동화했다. 컴팩션·orphan 정리는 **Spark Iceberg 프로시저**로 실행한다(2026-08-19에 Trino에서 이관 —
+> 자동화했다. 컴팩션·orphan 정리는 **Spark Iceberg 프로시저**로 실행한다(Trino에서 이관 —
 > [architectures/trino.md](architectures/trino.md)). 실행에는 **Spark Connect 접속**이 필요하다:
 > 호스트에서 돌릴 때는 `kubectl port-forward svc/spark-connect 15002:15002`, 주소는 `SPARK_REMOTE`.
 >
@@ -184,7 +184,8 @@ find ~/.claude/projects -name '*.jsonl' -mtime +14 | wc -l
 
 ## 3. 토큰 비용 계측
 
-> **관측 시각**: 2026-08-21 18:43~19:20 KST(스냅샷 — 세션이 계속 쌓이므로 재실행 시 값이 달라진다).
+> **스냅샷이다** — 세션이 계속 쌓이므로 재실행 시 값이 달라진다.
+> 관측 시각과 당시 값은 `$OBSIDIAN_VAULT/status/observations.md`.
 
 ### 왜
 
@@ -227,7 +228,8 @@ find ~/.claude/projects -name '*.jsonl' -mtime +14 | wc -l
 ### 단가 유지보수
 
 단가는 스크립트 상단 `PRICING`의 **하드코딩 스냅샷**이다. 모델 출시·인하 때 사람이 갱신해야 한다.
-Sonnet 5 인트로 단가는 2026-08-31 만료다. 단가표에 없는 모델은 0원이 아니라 `미측정`으로 표기된다.
+Sonnet 5 인트로 단가는 2026-08-31 만료다. <!-- date-ok -->
+단가표에 없는 모델은 0원이 아니라 `미측정`으로 표기된다.
 
 ## 4. 클러스터 재생성
 
@@ -241,7 +243,7 @@ kind 클러스터를 다시 만드는 절차다. **재생성은 PVC를 통째로
 | kind `extraPortMappings`(공개 포트)·`extraMounts` | ✅ | 생성 시점 전용 |
 | PVC 용량 | ✅ | kind 기본 SC는 `ALLOWVOLUMEEXPANSION=false` |
 
-⚠️ **머신 자원 변경을 재생성 사유로 오해하지 마라.** 2026-08-27 실측에서 VM 메모리를
+⚠️ **머신 자원 변경을 재생성 사유로 오해하지 마라.** 실측에서 VM 메모리를
 `22888 → 26702 MiB`로 올린 뒤에도 클러스터 `lakehouse`와 PVC 2종이 **Bound 상태로 그대로** 살아 있었다.
 구 문서의 *"Apple Silicon은 생성 시 확정"* 은 **반증됐다** — [resource-sizing.md](resource-sizing.md) §A.
 치르지 않아도 될 재적재를 치르지 않으려면 이 표를 먼저 본다.
@@ -254,7 +256,7 @@ kind 클러스터를 다시 만드는 절차다. **재생성은 PVC를 통째로
 
 PVC는 kind **노드 컨테이너 안**(local-path)에 있으므로 노드가 지워지면 함께 사라진다.
 
-| 대상 | 담긴 것 | 크기(2026-08-27 실측) | 소멸 시 |
+| 대상 | 담긴 것 | 크기(실측) | 소멸 시 |
 | --- | --- | --- | --- |
 | `catalog-postgres-1` | Iceberg JDBC 테이블 메타 | **7.7 MB** | ❌ 테이블 정의 소실 — 재적재해야 복구 |
 | `data-seaweedfs-0` | 원천 csv.gz + Iceberg parquet | **10 GB**(볼륨 파일) | ⚠️ parquet 재생성은 전 파이프라인 재실행 |
@@ -264,7 +266,7 @@ PVC는 kind **노드 컨테이너 안**(local-path)에 있으므로 노드가 �
 ⚠️ **`df`·`du`·버킷 합계가 각각 다른 것을 센다.** `df -h /data`는 **노드 디스크 전체**
 (containerd 이미지 레이어 포함, 실측 35.2G/92.4G)다. `du -sh /data`는 **10G**인데 이것은
 **preallocate된 sparse 볼륨 파일의 예약분**이지 데이터량이 아니다(같은 파일이 `ls -la`로는 62KB).
-⚠️ **백업 대상은 버킷 합계 106.8MB**다(2026-08-28 실측). 용량 계획엔 `du`, 백업 비용엔 버킷 합계를
+⚠️ **백업 대상은 버킷 합계 106.8MB**다(실측). 용량 계획엔 `du`, 백업 비용엔 버킷 합계를
 쓴다 — 상세는 [resource-sizing.md](resource-sizing.md) §disk.
 
 ### 4-3. 백업 (재생성 전)

@@ -1,6 +1,6 @@
 # dbt 코딩 규칙
 
-어댑터: **`dbt-spark`**(현행 — 기본 타깃 `spark_connect`, 2026-08-21 전환) ·
+어댑터: **`dbt-spark`**(현행 — 기본 타깃 `spark_connect`) ·
 **`dbt-trino`**(값 대조용 존치 — `DBT_TARGET=dev`로 전환, [../redesign.md](../redesign.md) Phase 1).
 trino는 **제거된 것이 아니다** — 엔진 간 값 차이(`dbt.datediff`·`dbt.dateadd` 등)를 잡는 유일한 대조 수단이다.
 두 어댑터를 **동시 설치**해 타깃만 바꿔가며 대조한다(Iceberg/SeaweedFS 레이크하우스는 공통).
@@ -31,7 +31,7 @@ sqlfluff 명세는 별도 `.sqlfluff` 파일 대신 **repo 루트 `pyproject.tom
 **`templater = "dbt"`는 게이트로 쓸 수 없다.** dbt templater는 모델을 **실제로 컴파일**하려고
 dbt 어댑터를 통해 Spark Connect에 접속한다. 즉 커밋이 클러스터·port-forward 가용성에 묶인다.
 그래서 이 저장소의 SQL 22개 모델은 오랫동안 **설정만 있고 아무 검사도 받지 않는 상태**였다
-(문서는 "미포함 사유: dbt 모델 부재"라고 적고 있었으나 모델은 이미 실재했다 — 2026-08-21 교정).
+(문서는 "미포함 사유: dbt 모델 부재"라고 적고 있었으나 모델은 이미 실재했다 — 교정됨).
 
 `jinja` templater는 오프라인·수초라 게이트로 쓸 수 있다. 대신 **dbt 런타임 객체를 모른다**:
 
@@ -244,7 +244,7 @@ models:
   `Cannot set database in spark!`로 죽는다. 카탈로그는 타깃이 정한다(trino=프로파일 `database`,
   spark=`spark.sql.defaultCatalog`).
 
-### `+file_format: iceberg`는 필수다 (2026-08-22 추가)
+### `+file_format: iceberg`는 필수다
 
 `dbt_project.yml`의 `mimic_iv.tables`에 **`+file_format: iceberg` 한 줄**을 추가했다.
 dbt-spark의 기본 `file_format`은 iceberg가 아니며, **없으면 아래 셋이 동시에 무너진다.**
@@ -262,7 +262,7 @@ dbt-spark의 기본 `file_format`은 iceberg가 아니며, **없으면 아래 �
 - ⚠️ **244는 `description` 항목 수**이지 파일 줄 수가 아니다(`schema.yml`은 626줄).
 - **dbt-trino는 이 config를 무시**하므로 **Trino 경로에는 무해**하다 — 값 대조를 깨지 않는다.
 
-### dbt-spark 어댑터가 ANSI 모드를 강제로 끈다 (2026-08-22 발견)
+### dbt-spark 어댑터가 ANSI 모드를 강제로 끈다
 
 `dbt/adapters/spark/connections.py:189-191`이 세션 생성 시 ANSI 관련 설정을 **프로파일 값보다
 나중에 덮어쓴다.** 즉 `server_side_parameters`에 ANSI를 켜 두어도 **적용되지 않는다.**
@@ -319,7 +319,7 @@ dbt-spark의 기본 `file_format`은 iceberg가 아니며, **없으면 아래 �
 **"돌아가는 것"이 아니라 "같은 값이 나오는 것"이 이행의 목표다.** 내장 크로스 어댑터 매크로는
 어댑터별 구현이 **다른 의미**일 수 있고, 그러면 조용히 결과가 갈린다.
 
-- 실측 반례(2026-08-19, 설치본 소스 확인) — 🔴 **`dbt.datediff`는 쓰지 않는다**:
+- 실측 반례(설치본 소스 확인) — 🔴 **`dbt.datediff`는 쓰지 않는다**:
 
   | 구현 | `'hour'` 의미 |
   | --- | --- |
@@ -330,7 +330,7 @@ dbt-spark의 기본 `file_format`은 iceberg가 아니며, **없으면 아래 �
   `11:00 → 12:59`가 경계교차는 **1**, ceil은 **2**다. `ventilation`의 `>= 14`,
   `urine_output_rate`의 `<= 5`처럼 **임계값 비교**에 쓰이므로 값이 갈리면 silver 피처가 달라진다.
 
-- **오분류 교정(2026-08-22) — `dbt.dateadd`도 의미론이 같지 않다**:
+- **오분류 교정 — `dbt.dateadd`도 의미론이 같지 않다**:
 
   이 문서는 오랫동안 `dbt.dateadd`를 *"어댑터 간 의미론이 같다"* 쪽으로 분류하고 **권장**해 왔다.
   **틀렸다.** 설치본 소스 확인 결과 두 어댑터의 구현이 다음과 같이 갈린다.

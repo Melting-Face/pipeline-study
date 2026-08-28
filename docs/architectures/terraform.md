@@ -16,7 +16,7 @@ Terraform은 **선언형 인프라 프로비저닝** 도구다. 리소스의 목
 
 ### 왜 옮기는가 — 근거는 관념이 아니라 사고 2건이다
 
-2026-08-27 `scripts/k8s-up.sh`에서 같은 부류의 버그가 **두 번** 나왔다. 레지스트리 컨테이너와
+`scripts/k8s-up.sh`에서 같은 부류의 버그가 **두 번** 나왔다. 레지스트리 컨테이너와
 kind 노드를 각각 *실행 / 부재* 이분법으로 보다가, 실제 상태가 셋(**실행 / 중지 / 부재**)이라
 중지 상태에서 죽었다. 셸로 멱등성을 손으로 짜는 한 이 부류는 계속 나온다 —
 Terraform의 리소스 모델은 create/read/update가 기본이라 같은 실수가 성립하지 않는다.
@@ -32,7 +32,7 @@ Terraform의 리소스 모델은 create/read/update가 기본이라 같은 실�
 기존 클러스터를 파괴 없이 인수할 수 없다는 뜻이고, 그러면 "Terraform 채택"이 곧
 "클러스터 재생성"이 된다. 그 비용은 **PVC 2개 / 실데이터 약 125MB**다.
 
-🔴 **이 문서 초판은 그 비용을 "실데이터 10.0G"라고 적었다. 약 100배 틀린 값이다**(2026-08-28 교정).
+🔴 **이 문서 초판은 그 비용을 "실데이터 10.0G"라고 적었다. 약 100배 틀린 값이다**(교정됨).
 `du -sh /data`가 10.0G를 보고한 것은 맞지만, 그것은 SeaweedFS가 **preallocate한 sparse 볼륨
 파일의 예약 공간**이다. 같은 파일을 `ls -la`로 보면 62KB다. 실제 오브젝트는 버킷 합계
 **106.8MB**(warehouse 107MB · dagster-logs 6.5KB · pg-backup 56B)이고, 여기에 카탈로그 DB
@@ -73,7 +73,7 @@ C만 옮겨도 목적 둘이 **데이터 위험 없이** 충족된다. A는 클�
 역할 분담 · probe가 보증하지 않는 것 …). HCL 타입 리소스로 재작성하면 **그 지식이 사라진다.**
 
 ⇒ `kubernetes_manifest { manifest = yamldecode(file(...)) }` 형태로 **YAML을 정본으로 유지**하고
-HCL은 배선만 담는다. 2026-08-27 스파이크에서 CNPG `Database` CR로 `plan` 통과를 확인했다.
+HCL은 배선만 담는다. 스파이크에서 CNPG `Database` CR로 `plan` 통과를 확인했다.
 
 ### 예정 구성
 
@@ -91,7 +91,7 @@ terraform/lakehouse-platform/
 이행이 끝나면 `scripts/k8s-operators.sh`는 사라지고 `terraform apply`가 그 자리를 대신한다.
 `k8s-dagster.sh`에는 **이미지 빌드·push만** 남는다.
 
-⚠️ **C의 5종이 전부 helm은 아니다**(2026-08-28 실측 — 이 문서 초판이 "helm 5종"으로 적었던 것은 틀렸다).
+⚠️ **C의 5종이 전부 helm은 아니다**(실측 — 이 문서 초판이 "helm 5종"으로 적었던 것은 틀렸다).
 
 | 대상 | 설치 방식 | Terraform 대응 |
 | --- | --- | --- |
@@ -118,7 +118,7 @@ CNPG 차트가 CRD를 함께 제거하면 `Cluster` CR이 사라지고 **B의 PV
 ### `helm_release` 인수는 `0 to change`에 도달하지 못한다
 
 🔴 **이 문서 초판이 "`plan`이 `0 to change`여야 인수가 끝난 것"이라 적은 것은 틀렸다**
-(2026-08-28 실측). helm은 릴리스에 **병합된 값만** 저장하고 *어느 저장소에서 받았는지*와
+(실측). helm은 릴리스에 **병합된 값만** 저장하고 *어느 저장소에서 받았는지*와
 *값이 `--set`으로 왔는지 `--values`로 왔는지*는 저장하지 않는다. 그래서 import 직후
 `repository`·`set`·`values`가 **항상 diff로 남는다** — HCL이 틀려서가 아니라 복원 불가능한
 설정 전용 속성이기 때문이다. 세 릴리스 모두 같은 형태였다.
@@ -136,7 +136,7 @@ state에 기록하지 않으므로 `true`면 인수 직후 항상 update-in-plac
 **metadata 전체가 `known after apply`로 덮여 진짜 diff가 묻힌다.**
 네임스페이스를 셸이 이미 만들었다면 `false`가 사실에 맞다.
 
-실측 대조 결과(2026-08-28) — 셋 다 **기능적으로 동일**했다:
+실측 대조 결과 — 셋 다 **기능적으로 동일**했다:
 CNPG는 EOF 빈 줄 1개, Flink는 후행 빈 줄 2개, Spark은 `helm.sh/hook: test` Pod만 차이였다
 (`helm template`은 test 훅을 렌더하지만 릴리스 매니페스트에는 들어가지 않는다).
 그 뒤 `apply` 1회로 정합을 맞췄고 **파드 재시작 0**(이름·재시작 횟수·생성시각 불변),
@@ -153,21 +153,21 @@ helm revision만 1씩 올랐다. 이후 `plan`은 `No changes`다.
 ### 게이트는 `fmt`와 `validate`를 **다른 자리에** 둔다
 
 규약(`conventions/terraform.md` §3)은 둘을 함께 커밋 전 게이트로 요구했으나 집행 수단이
-없었고(2026-08-27까지 terraform 훅 0개 — `terraform/oci-k3s/`는 한 번도 검사받은 적이 없다),
+없었고(terraform 훅 0개 — `terraform/oci-k3s/`는 한 번도 검사받은 적이 없다),
 넣으려 보니 **같은 자리에 둘 수 없었다.**
 
 - **`fmt` → pre-commit.** 네트워크가 필요 없다.
 - **`validate` → CI 잡.** `validate`는 `init`이 선행돼야 하는데 `.terraform/providers`는
   gitignore라 저장소에 없다. 훅에서 `init`을 돌리면 **커밋이 프로바이더 레지스트리
   가용성에 묶인다** — `sqlfluff`의 `templater = "dbt"`에서 이미 겪은 함정이다.
-  2026-08-28 실측: worktree에서 `validate`가
+  실측: worktree에서 `validate`가
   `no package for oracle/oci 6.37.0 cached in .terraform/providers`로 실패했다.
 - **`plan`은 어디에도 두지 않는다.** 위 §불통 시 `plan` 참조.
 
 CI 잡은 `terraform/*/`를 순회해 스택이 늘어도 자동으로 집고, **0건이면 통과가 아니라 실패**로
 떨어뜨린다(디렉터리 구조가 바뀌었을 때 잡이 조용히 무의미해지는 것을 막는다).
 
-### 프로바이더 실측 (2026-08-27)
+### 프로바이더 실측
 
 | 프로바이더 | 버전 | 확인된 것 |
 | --- | --- | --- |
@@ -187,7 +187,7 @@ CI 잡은 `terraform/*/`를 순회해 스택이 늘어도 자동으로 집고, *
 
 ### 불통 시 `plan`은 실패한다 — 우회는 절반만 듣는다
 
-2026-08-27 실측(`podman stop lakehouse-control-plane` 후). 조용히 오도하지 **않는다** —
+실측(`podman stop lakehouse-control-plane` 후). 조용히 오도하지 **않는다** —
 `Planning failed`로 시끄럽게 죽는다. 다만 실패 지점이 **둘**이고 성질이 다르다.
 
 | 축 | 증상 | `-refresh=false` |

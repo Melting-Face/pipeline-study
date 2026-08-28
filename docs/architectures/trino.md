@@ -1,4 +1,4 @@
-> **이행 상태(2026-08-19)**: **상시 기동 해제** — compose `trino`가 `profiles: ["legacy-sql"]`로
+> **이행 상태**: **상시 기동 해제** — compose `trino`가 `profiles: ["legacy-sql"]`로
 > 내려가 기본 `up`에서 빠졌다(자원 3 CPU / 6G 회수). 호스트 게시 포트도 `8080→8081`로 옮겼다
 > (8080은 kind ingress가 점유).
 >
@@ -13,7 +13,7 @@
 > **대조용**으로 역할만 바뀌었다). ②까지 해소되면 compose 서비스·어댑터·`common/trino.py`를
 > 하나의 논리적 커밋으로 제거한다.
 >
-> **추가 변경(2026-08-21)**: **dbt 기본 타깃이 trino를 떠났다.** `profiles.yml`의 `target`이
+> **추가 변경**: **dbt 기본 타깃이 trino를 떠났다.** `profiles.yml`의 `target`이
 > `"{{ env_var('DBT_TARGET', 'spark_connect') }}"` 라서, 아무것도 지정하지 않으면 **Spark Connect로 간다.**
 > trino는 이제 *기본 경로*가 아니라 **명시적으로 불러내는 대조 경로**다.
 >

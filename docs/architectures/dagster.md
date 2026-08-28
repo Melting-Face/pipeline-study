@@ -11,7 +11,7 @@ Dagster는 **자산(asset) 중심 오케스트레이터**다. "어떤 태스크�
 
 ## 이 프로젝트에서의 위치 — ✅ 채택 (in-cluster)
 
-**오케스트레이터도 클러스터 워크로드다**(2026-08-27 이전). webserver·daemon을 kind 클러스터
+**오케스트레이터도 클러스터 워크로드다**. webserver·daemon을 kind 클러스터
 `lakehouse`의 Deployment 2개로 두고 UI는 `http://dagster.localtest.me:8080` Ingress로 낸다.
 Spark·Flink·SeaweedFS·CNPG와 **같은 층**에 놓여, 컨트롤 플레인만 다른 실행 환경에 있던 상태가 끝났다.
 
@@ -60,7 +60,7 @@ Dagster에는 오퍼레이터라는 층이 아예 없어 **워크로드 축 하�
 
 ### 성공한 run이 관측 실패를 가린다
 
-2026-08-27 첫 in-cluster 실행에서 자산은 `RUN_SUCCESS`인데 **compute log의 S3 업로드가 실패**하고 있었다.
+첫 in-cluster 실행에서 자산은 `RUN_SUCCESS`인데 **compute log의 S3 업로드가 실패**하고 있었다.
 Dagster는 compute log 업로드 예외를 삼키므로 **run 상태만 보면 알 수 없다** — 버킷을 직접 봐야 드러난다.
 ⇒ 관측 경로는 "run이 성공했다"가 아니라 **"로그가 목적지에 도착했다"** 로 확인한다.
 

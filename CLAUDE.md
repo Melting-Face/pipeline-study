@@ -6,16 +6,16 @@
 
 ## 문서화 원칙
 
-- 이 프로젝트에서 정한 **규칙·결정·작업 패턴은 최대한 문서로 남긴다**.
-- 규칙을 새로 정하거나 바꾸면 `CLAUDE.md`·`docs/`·`README.md`를 **함께 갱신**해
-  단일 출처(single source of truth)를 유지한다.
-- Codex는 `AGENTS.md`·`.codex/**`를 별도 정본으로 사용한다. 공통 프로젝트 규칙은
-  양쪽 요약을 동기화하되, 런타임 고유 설정은 상대 설정에 복제하지 않는다
-  ([`docs/conventions/codex.md`](docs/conventions/codex.md)).
+- **규칙·결정·작업 패턴은 문서로 남긴다.** 규칙을 새로 정하거나 바꾸면 `CLAUDE.md`·`docs/`·`README.md`를
+  **함께 갱신**해 단일 출처(single source of truth)를 유지한다.
+- Codex는 `AGENTS.md`·`.codex/**`를 별도 정본으로 쓴다. 공통 규칙은 양쪽 요약을 동기화하되
+  런타임 고유 설정은 복제하지 않는다([`codex.md`](docs/conventions/codex.md)).
 - `CLAUDE.md`는 핵심 컨벤션의 **요약/인덱스**, 상세 배경·흐름은 `docs/`에 둔다.
 - 문서는 한국어로 작성하고, 코드 식별자·명령어·경로는 원문 그대로 표기한다.
-- **학습 노트는 `wiki/`**(GitHub 위키로 CI 단방향 미러) — `docs/`는 규칙만 담아 시제 축을
-  지키고, 낡는 글은 여기 둔다. 규약은 [`publishing.md`](docs/conventions/publishing.md) §4-1 상속.
+- **`README.md`·`docs/`의 독자는 「클론해 돌리려는 사람·에이전트」다.** **일자·실측 수치는 두지 않는다.**
+  남길지는 **3축** — ①재현(남의 환경에서도 참인가) ②시제(저절로 낡는가) ③위협(공개가 이득인가).
+  ①∧②면 남고, 나가는 것은 ③으로 갈라 **공개=Issue / 아니면 볼트**([`doc-sync.md`](docs/doc-sync.md) §실무 규칙 7).
+- **학습 노트는 `wiki/`**(CI 단방향 미러) — 독자·통제가 달라 [`publishing.md`](docs/conventions/publishing.md) §4-1을 따른다.
 
 ## 커밋 컨벤션
 
@@ -125,7 +125,7 @@
   (`macros/cross_engine.sql`의 `elapsed`·`unnest_array`, `default__`에 `raise_compiler_error`).
   **`dbt.datediff`는 쓰지 않는다** — Spark는 경과시간 `ceil`, Trino는 경계 교차라 임계값 비교에서 값이 갈린다.
   기준은 "도는 것"이 아니라 **"같은 값"**. `dbt compile`은 이를 못 잡으므로 **컴파일 통과를 이행 완료로 읽지 않는다**.
-- **SQL 린트 게이트는 `sqlfluff` + jinja 스텁이다**(2026-08-21 신설). `templater = "dbt"`는 모델을 실제로
+- **SQL 린트 게이트는 `sqlfluff` + jinja 스텁이다**. `templater = "dbt"`는 모델을 실제로
   컴파일하려 **Spark Connect에 접속**해 커밋이 클러스터 가용성에 묶이므로 게이트로 쓸 수 없었고, 그래서
   22개 모델이 **설정만 있고 아무 검사도 받지 않는 상태**로 오래 남아 있었다(문서는 "모델 부재"라 적고 있었으나
   거짓이었다). `jinja`로 바꾸는 대가로 dbt 런타임 객체를 스텁으로 대체한다 — dispatch 매크로는
@@ -196,7 +196,7 @@
   `legacy-storage`(seaweedfs)·`host-dagster`·`legacy-meta`. **뼈대(core)는 이제 비었다** — 전부 opt-in이다.
   **`profiles`는 "제거 예정"의 중간 단계로도 쓴다** — `trino`는 재설계 제거 대상이나 22모델 방언
   교정이 끝날 때까지 **값 대조의 정본**이라 정의는 남기고 **상시 기동만 끊는다**("중단"과 "삭제"의 분리:
-  자원은 즉시 회수, 롤백 비용 0). `seaweedfs`도 스토리지 정본이 K8s로 이전돼 같은 처리를 했다(2026-08-19).
+  자원은 즉시 회수, 롤백 비용 0). `seaweedfs`도 스토리지 정본이 K8s로 이전돼 같은 처리를 했다.
   **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받는다** — `seaweedfs`에 `legacy-storage`만
   붙이면 `trino`(legacy-sql)·`prometheus`(monitoring)가 의존 비활성으로 깨져 profile이 3개다.
   바꾼 뒤 **`docker compose --profile <p> config --services`로 profile별 확인**한다(기동 없이 수초).
@@ -216,11 +216,11 @@
   `.ipynb_checkpoints/` 무시로 이중 방어한다. 상세 [`notebooks/README.md`](notebooks/README.md).
 - **로컬 K8s(현행 검증 환경)**: **kind on Podman**(rootful 머신 필수) 클러스터 `lakehouse` +
   로컬 레지스트리 `localhost:5001`. 기동은 `scripts/k8s-up.sh` → `k8s-operators.sh` → `k8s-poc-storage.sh`
-  → `k8s-dagster.sh`(설정 단일 출처 `k8s-env.sh`). **Dagster도 in-cluster**다(2026-08-27 — 구 규약 폐기).
+  → `k8s-dagster.sh`(설정 단일 출처 `k8s-env.sh`). **Dagster도 in-cluster**다(구 규약 폐기).
   규칙 [`docs/conventions/k8s.md`](docs/conventions/k8s.md), 예산·배분 [`docs/resource-sizing.md`](docs/resource-sizing.md).
   클러스터에는 **Spark Operator**(배치)·**Spark Connect**(dbt-spark 접속용 상주)가 있고,
   Spark·Flink가 **같은 Iceberg JDBC 카탈로그**를 공유한다.
-  **Flink Operator**(기본 설치)와 세션 클러스터로 **Iceberg 배치 왕복이 실증**됐다(2026-08-22).
+  **Flink Operator**(기본 설치)와 세션 클러스터로 **Iceberg 배치 왕복이 실증**됐다.
   예산 규약은 **시분할 → 동시 기동**으로 개정됐고(피크 실측 **CPU 84%** — 메모리 %는 VM 상향마다
   바뀌므로 여기 적지 않는다) 경계가 셋이다 — Flink 상주는
   **JM만**(TM은 잡 제출 시 온디맨드·수명 1분 미만), **`spark.executor.instances` ≤ 1**, Redpanda 미도입.
@@ -278,7 +278,7 @@
   **순서가 규칙이다 — 제한 수단을 먼저 만들고 연다**(열고 나서 통제를 찾지 않는다).
   `disallowedTools`는 **도구 단위라 스킬을 못 가르므로** 스킬 단위 강제는 **`scripts/skill_gate_guard.py`**
   (`PreToolUse` matcher `Skill`)가 진다 — **워커 지시문의 §참고 스킬 표를 직접 파싱**해 표 밖을 `deny`하고,
-  파싱 실패·표 부재는 **fail-closed**다. ✅ deny 실집행 확인(2026-08-24 센티널 프로브).
+  파싱 실패·표 부재는 **fail-closed**다. ✅ deny 실집행 확인(센티널 프로브).
   **표를 가드에 복사하지 않는다** — 지시문 표가 **집행 정본**이고 `docs/skills.md` §③은 **파생 인덱스**다
   (런타임에 §③은 워커 컨텍스트에 **없다**. 정합 검사는 **워커 → 문서** 방향).
   **도달 범위는 lock 등재분보다 넓다** — 워커가 보는 목록에는 `skills-lock.json` 밖의 하네스·플러그인
@@ -309,9 +309,9 @@
   `tech-writer`의 `except`). **「계층 밖」은 `archivist`·`skill-matcher` 2종**(계층 자체를 감사·기록).
   판정 축 다섯은 중첩되지 않는다: `*-verifier`=값 / `*-qa`=체계 / `security`=노출 / `skill-matcher`=배선 /
   `archivist`=기록. **「계획 대비 실행 정합」은 supervisor가 직접 진다**(아래 Δ 자기신고 문제 참조).
-  ⚠️ **`director` 계층은 2026-08-23 폐기**했다 — 실적 **91~97% 미경유**인데 규약만 살아 **컨펌이
+  ⚠️ **`director` 계층은 폐기**했다 — 실적 **91~97% 미경유**인데 규약만 살아 **컨펌이
   하루 0회가 된 사고**를 냈다. **아무도 경유하지 않는 절차는 게이트를 조용히 비운다.** 구 근거
-  *"서브에이전트에 `Agent`가 없다"* 는 **2026-08-24 반증**(공식 문서+프로브 — 기본 3계층 허용): 막는 것은
+  *"서브에이전트에 `Agent`가 없다"* 는 **반증됐다**(공식 문서+프로브 — 기본 3계층 허용): 막는 것은
   하네스가 아니라 **`tools:` 화이트리스트**다. 저널·옛 문서의 "3계층"·"관할 밖"은 폐기 전 판본이다.
 
   **① 게이트·저널** — **`security` 최종 컨펌은 「계획(G1) + 작업내용(G2) + 계획 델타(Δ·조건부)」**.
@@ -361,7 +361,7 @@
   **이중 소유** — 내부 결론의 **저자는 `analyst`**이고 `tech-writer`는 **표현만** 손본다 ② `docs/conventions/**`는
   **규약 정본** — supervisor 결정을 **받아적을 뿐** 규칙을 신설·변경하지 않는다(`CLAUDE.md`는 `docs/` 밖이라
   가드가 **실제로** 막는다). ②는 **`ask` 프롬프트조차 없다** — 게이트를 **경로 축에서 가역성 축으로**
-  옮겨(2026-08-22) `docs/conventions/**`·`docs/architectures/**`를 정본 게이트에서 뺐다.
+  옮겨 `docs/conventions/**`·`docs/architectures/**`를 정본 게이트에서 뺐다.
   문서 편집은 git이 되돌리고 **최종 관문은 커밋 `ask` 1회**다. **전원이 매번 위반하는 규칙은 규칙이 아니다** —
   쓰기 범위 35파일 중 23파일이 게이트라 규칙 변경과 오탈자 교정이 구분 없이 올라오고 있었다.
   남은 정본 게이트는 **실행 규칙·통제 배선**뿐이다(`CLAUDE.md`·`.claude/agents/**`·`settings.json`·
@@ -398,7 +398,7 @@
   판정자 6종은 `disallowedTools: Write, Edit, NotebookEdit`으로 **미부여(난이도) → 거부(강제)** 로 올린다.
   **인자형 `disallowedTools`(`Agent(archivist)` 같은)는 세부 필터가 아니라 도구 전체를 제거할 수 있다** —
   폐기된 `director`가 그 사례다(`tools:` 미지정일 때 배정 33회가 실제로 돌았고, 명시로 바꾼 커밋 뒤 `Agent`가 사라졌다).
-  **2026-08-24 프로브 지지** — 하네스는 `Agent`를 **기본 지급**하고 **`disallowedTools`가 `tools`보다 먼저** 걸린다.
+  **프로브 지지** — 하네스는 `Agent`를 **기본 지급**하고 **`disallowedTools`가 `tools`보다 먼저** 걸린다.
   ⇒ **통제를 좁히는 변경일수록 실호출로 확인**한다.
   ❌ **`permissionMode`는 쓰지 않는다** — 부모가 auto 모드면 **무시**되어 "막았다고 믿는" 상태만 만든다.
   **워커별 경로 범위는 `permissions`로 못 건다**(세션 전역) — **에이전트 정의 내 `hooks`만이 유일한 수단**이고
@@ -463,20 +463,20 @@
   `deny` > `ask` > `allow` 순으로 **auto 모드 분류기보다 먼저** 평가되고 **서브에이전트에도 동일 적용**된다 —
   비가역 작업(git 커밋·푸시, `terraform/kubectl apply`, `compose down -v`, `dbt --full-refresh`, `DROP`/`TRUNCATE`,
   `.env`·`tfstate` 수정, 외부 발신)은 `ask`로 못 박는다. `allow`에 비가역 명령을 넣지 않는다.
-  **`permissions.allow`는 워커 hook의 `deny`를 우회하지 못한다**(2026-08-22 실측 — `Edit(docs/**)`가
+  **`permissions.allow`는 워커 hook의 `deny`를 우회하지 못한다**(실측 — `Edit(docs/**)`가
   `allow`에 있는 상태에서 `except` 경로가 차단됐고 파일 내용도 안 바뀌었다. 대조군 먼저 통과).
   이 순서가 반대였다면 **`allow` 한 줄이 전 워커의 경로 경계를 열었을 것**이다(`permissions`는 세션 전역).
   ⇒ **편의를 위해 `allow`를 넓힐 때는 이 순서를 다시 실측하고 넓힌다**(보증 범위는 `Edit`·`docs/**`까지).
   **파일 경로 경계는 `Edit(<경로>)`로만 선언한다** — `Write(<경로>)`는 매칭기가 인식하지 않는 죽은 규칙이고,
   `Edit(<경로>)` 하나가 `Write`·`Edit`·`NotebookEdit`을 모두 커버한다.
   상세 [`docs/conventions/agents.md`](docs/conventions/agents.md).
-- **토큰 비용은 `요청 수 × 컨텍스트 크기`다**(2026-08-21 실측 — 캐시 읽기가 비용의 **62.5%**,
+- **토큰 비용은 `요청 수 × 컨텍스트 크기`다**(실측 — 캐시 읽기가 비용의 **62.5%**,
   총 1,409M 토큰 중 메인 세션 89.8%). 세션 **기저 프롬프트가 62~68k 토큰**인데 긴 세션은 요청당
   341k까지 부풀어 **같은 요청 1건이 5배 비싸진다**(약 $0.033 → $0.17).
   **작업 단위로 세션을 끊는다** — 컨텍스트는 줄지 않고 **누적만** 하므로 미션이 끝나면 세션도 끝낸다.
   이것이 단일 최대 절감 레버이고, 요청 수(도구 왕복)를 줄이는 것이 그다음이다.
   **`CLAUDE.md`에 줄을 더하면 앞으로의 모든 요청에 곱해진다** — 회귀 실측상 기저의 **약 44%**가
-  이 파일이다(`기저토큰 = 0.5301 × 바이트 + 34,131`·R²=0.926, 세션 54개, 2026-08-23 재현).
+  이 파일이다(`기저토큰 = 0.5301 × 바이트 + 34,131`·R²=0.926, 세션 54개, 재현 2회).
   **절편을 함께 읽어라** — 기울기만 보면 총량인지 한계인지 안 갈린다(실제로 오독을 의심했다 오경보로
   판명). **1,000바이트 = 요청당 −530토큰**이 실무 상수다. 그래서 이 문서는 **규칙만** 두고
   **근거·실측·반증 사례는 `docs/`에** 둔다(요약/인덱스 원칙의 비용 근거).
@@ -487,7 +487,7 @@
 - **보안·데이터 거버넌스**: 원천 데이터·`.env`·크리덴셜은 **무조건 커밋 금지**. 그 밖의 통제 강도는
   **데이터셋에 걸린다**(DUA·재배포 제한 **또는** 개인정보·가명정보 포함 여부). ISMS-P·규제 **매핑**은
   [`docs/security.md`](docs/security.md).
-  **정책(공개)과 실태(비공개)를 가른다**(2026-08-23) — `docs/security.md`는 **정책만** 담고
+  **정책(공개)과 실태(비공개)를 가른다** — `docs/security.md`는 **정책만** 담고
   **현행 실태·미비점·미해소는 `$OBSIDIAN_VAULT/security/posture.md`**(저장소 밖·PRIVATE)에 둔다.
   이유는 가독성이 아니라 **경로 자체**다: GitHub는 Security Policy 페이지에 쓸 문서를
   **`.github/` → 루트 → `docs/`** 순으로 찾으므로, 앞의 둘이 없으면 `docs/security.md`가
