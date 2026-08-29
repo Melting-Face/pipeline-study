@@ -60,11 +60,32 @@ from pathlib import Path
 #    (`.env` 접두어가 `.env.example`까지 막는 것은 의도된 여유다),
 #    좁히면 경계가 조용히 샌다.
 BOUNDARIES = {
-    # 분석가 — 노트북·리포트만. 정의 파일 소유자는 data-engineer다.
-    "analyst": {"allow": ("notebooks/", "docs/analyses/")},
+    # 🔴 `analyst`는 여기 두지 않는다 — 정본은 **`scripts/analyst_path_guard.py`** 다.
+    #    `.claude/agents/analyst.md`의 hook이 그 전용 가드를 부르므로
+    #    `worker_path_guard.py analyst`는 **한 번도 호출되지 않는다**(호출처 전수 0건).
+    #    그런데도 같은 경계(`notebooks/`·`docs/analyses/`)가 여기 중복 선언돼 있었다 —
+    #    죽은 항목은 아무 신호도 내지 않으므로(미정의 워커는 `main()`에서 fail-open)
+    #    **한쪽만 고치면 "고쳤다고 믿는" 상태**가 된다. 이 파일이 경고한 형태다.
+    #    ⇒ 정본 규약 그대로 지운다: **같은 경계를 두 곳에 정의하지 않는다**
+    #    ([permissions.md](../docs/conventions/agents/permissions.md) §경로 경계).
+    #    경계를 바꿔야 하면 `analyst_path_guard.py`의 `ALLOWED_PREFIXES`를 고친다.
     # 데이터 엔지니어 — 인프라 선언은 devops-engineer 소관.
+    # 🔴 `.github/`는 나중에 추가됐다. 그 전까지 **CI 워크플로에 소유자가 없었다** —
+    #    이 표에 `.github/**`가 어느 워커에도 없어 `data-engineer`·`devops-engineer`
+    #    **둘 다 쓸 수 있는 이중 소유**였다(`deny` 축은 열거되지 않으면 통과한다).
+    #    `devops-engineer` 쪽은 손대지 않아 **결과적으로 단독 소유**가 된다.
+    #    ⚠️ 이것은 `deny` 축의 구조적 성질이다 — **넓은 워커에 경계를 더하는 유일한
+    #    방법은 「빼는 쪽」을 적는 것**이라, 새 최상위 디렉터리가 생길 때마다
+    #    소유자를 정하지 않으면 조용히 공유된다. `.github/`는 그 사례 1호다.
     "data-engineer": {
-        "deny": ("terraform/", "k8s/", "compose.yml", ".env", ".claude/"),
+        "deny": (
+            "terraform/",
+            "k8s/",
+            "compose.yml",
+            ".env",
+            ".claude/",
+            ".github/",
+        ),
     },
     # 데브옵스 엔지니어 — 파이프라인 정의·분석 산출물은 남의 소관.
     # 🔴 `dagster_project/`·`dbt/`로 적혀 있었으나 **둘 다 추적 파일 0건**이었다
