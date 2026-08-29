@@ -393,7 +393,7 @@ uv run --group notebook jupyter lab --port 8889 --notebook-dir ../../../notebook
   **접속은 성공하고 테이블 접근에서 거부**된다. 위 `ICEBERG_S3_*` 함정과 같은 형태의 부분 성공이다.
 - **`.dockerignore` 패턴은 빌드 컨텍스트 루트 기준이다** — 코드는 `src/` 아래에 있으므로
   접두어 없는 패턴은 **아무것도 매칭하지 않는다**. 에러가 없어 조용하다.
-  2026-08-27까지 `src/.venv`(1.2GB)가 이미지에 들어가 있었다. 고친 뒤에는 **이미지 크기로 확인**한다.
+  실제로 `src/.venv`(1.2GB)가 통째로 이미지에 들어간 적이 있다. 고친 뒤에는 **이미지 크기로 확인**한다.
 - **SeaweedFS는 버킷(collection)마다 볼륨 슬롯을 쓴다** — `-volume.max`가 차면 **새 버킷에만**
   `PutObject`가 `InternalError`로 실패한다. 기존 버킷은 멀쩡해서 자격증명·체크섬 문제로 오진하기 쉽다.
   판정은 `weed shell`의 `volume.list` 첫 줄(`free:0`)과 서버 로그의

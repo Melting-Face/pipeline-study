@@ -150,7 +150,7 @@ COMPOSE_PROFILES=monitoring docker compose up -d   # 프로필 고정
 > ([../architectures/trino.md](../architectures/trino.md)). 상시 기동만 끊어 자원(3 CPU / 6G)을
 > 회수하고 대조할 때만 올린다 — **"중단"과 "삭제"를 분리**하면 자원은 즉시 회수되면서
 > 롤백 비용이 0으로 유지된다.
-> **`seaweedfs`도 2026-08-19에 같은 처리를 했다** — 오브젝트 스토리지 정본이 K8s로 이전됐고
+> **`seaweedfs`도 같은 처리를 했다** — 오브젝트 스토리지 정본이 K8s로 이전됐고
 > ([../redesign.md](../redesign.md) Phase 1) 원천 csv.gz까지 전량 이관·CRC 검증을 마쳐 상시 기동
 > 이유가 사라졌다. 로컬 데이터 `./seaweedfs/data`(309MB)는 바인드 마운트라 남아 사실상 원본 백업이다.
 
