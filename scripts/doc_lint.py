@@ -45,6 +45,7 @@ import os
 import re
 import sys
 import unicodedata
+from collections.abc import Iterable
 from pathlib import Path
 
 # --- 규약 상한 (정본은 docs/conventions/general.md §문서 작성 규약) ---
@@ -67,7 +68,19 @@ EMPHASIS_MARKER = "🔴"
 #         `--dates`는 이 축만 따로 볼 때 쓴다.
 #      🔴 **유입을 막는 게이트가 없으면 잔여를 0으로 만들어도 다시 는다** —
 #         실제로 정리 중에 main 진행분으로 5건이 새로 들어왔다. 편입이 그 답이다.
-OBSERVATION_DATE_RE = re.compile(r"\b20\d{2}-\d{2}-\d{2}\b")
+#   🔴 **`\b`가 아니라 lookaround인 이유** — 파이썬 `\b`는
+#      **유니코드 워드 문자** 기준이라 한글 조사 앞에서 경계가 서지 않는다.
+#      즉 구 패턴은 **조사가 붙은 날짜를 통째로 놓쳤고**, 그 상태로
+#      `--dates`가 **0건**을 냈다(실사각 `docs/` 4건).
+#      **게이트가 초록인 것과 게이트가 옳은 것은 다른 축**이고,
+#      뒤엣것은 *일부러 위반시켜야* 보인다.
+#      ⇒ **숫자 인접만** 배제한다. 한글·영문 인접은 잡아야 한다.
+#      ⚠️ 프로브는 반드시 **조사가 붙은 형태**로 한다 — 공백 뒤 형태는
+#         구 패턴도 잡으므로 아무것도 증명하지 않는다.
+#      ⚠️ **시제 축(`TENSE_*`)과 방향이 반대인 것은 의도다** — 거기서는
+#         영문만 배제하고 숫자는 잡는다(`TODO2`는 TODO의 변형).
+#         날짜는 숫자 인접이 오탐이다.
+OBSERVATION_DATE_RE = re.compile(r"(?<!\d)20\d{2}-\d{2}-\d{2}(?!\d)")
 
 # 예외 — 출처 인용 문서와, 독자·통제가 다른 위키 산출물.
 DATE_EXEMPT_FILES = ("docs/references.md",)
@@ -163,6 +176,19 @@ DEFAULT_TARGETS = (
     "notebooks/README.md",
     "wiki",
 )
+
+# 일자 축만 넓힌 대상 — **가독성 4축·시제 축은 넓히지 않았다.**
+#   🔴 워커 지시문의 🔴는 `docs/`의 강조와 **목적이 다르다** — 매 배정마다 컨텍스트에
+#      실리는 **단서 표식**이라 상한 5개를 걸면 13개 중 10개가 즉시 위반이다
+#      (표 셀 상한을 크게 넘는 셀이 실재한다).
+#      **전원이 매번 위반하는 규칙은 규칙이 아니다.**
+#   🔴 반대로 **낡은 일자는 지시문에서 비용이 더 크다** — `docs/`는 읽을 때 한 번이지만
+#      워커 지시문은 **배정마다** 컨텍스트에 실린다.
+#      ⇒ 넓히는 단위는 **디렉터리가 아니라 축**이다.
+#   ⚠️ 링크 축은 이미 `LINK_SCAN_DIRS`가 보고 있었다.
+#      **세 목록의 모집단은 셋 다 다르다** — 한 축의 초록을 다른 축으로 읽지 마라.
+#      정본은 `docs/doc-sync.md` §변경 유형별 동기화 체인의 3목록 표다.
+DATE_TARGETS = (*DEFAULT_TARGETS, ".claude/agents")
 
 # 링크 검사는 **저장소 전역 1회**로 돈다.
 #   🔴 분업하면 경계에 사각이 생긴다 — 2026-08-24 실측에서 두 관측자가 각자
@@ -437,6 +463,25 @@ def check_vault_refs(repo_root: Path) -> list[str] | None:
     return findings
 
 
+def collect(targets: Iterable[str | Path], repo_root: Path) -> list[Path]:
+    """대상 열거를 파일 목록으로 편다 — 디렉터리는 재귀, 제외 경로는 걸러낸다.
+
+    🔴 **두 모집단이 이 함수 하나를 쓴다**(`DEFAULT_TARGETS`·`DATE_TARGETS`).
+       복제하면 축마다 제외 규칙이 조용히 갈린다 — `check_dates`를 재사용하는 것과
+       같은 이유이고, 이 저장소가 반복해 데인 함정이다.
+    """
+    files: list[Path] = []
+    for target in targets:
+        path = Path(target)
+        if not path.is_absolute():
+            path = repo_root / path if isinstance(target, str) else Path.cwd() / path
+        if path.is_dir():
+            files.extend(sorted(path.rglob("*.md")))
+        elif path.is_file():
+            files.append(path)
+    return [f for f in files if not any(part in f.parts for part in EXCLUDE_PARTS)]
+
+
 def main() -> int:
     """대상 문서를 훑어 규약 위반을 출력하고, 위반이 있으면 종료코드 1을 낸다."""
     parser = argparse.ArgumentParser(description="마크다운 가독성 규약 검사")
@@ -475,28 +520,23 @@ def main() -> int:
         return 1 if link_findings or vault_findings else 0
 
     repo_root = Path(__file__).resolve().parent.parent
-    targets = (
-        [Path(p) for p in args.paths]
-        if args.paths
-        else [repo_root / t for t in DEFAULT_TARGETS]
-    )
 
-    # 대상 파일 수집 — 디렉터리는 재귀, 제외 경로는 걸러낸다.
-    files: list[Path] = []
-    for target in targets:
-        path = target if target.is_absolute() else Path.cwd() / target
-        if path.is_dir():
-            files.extend(sorted(path.rglob("*.md")))
-        elif path.is_file():
-            files.append(path)
-    files = [f for f in files if not any(part in f.parts for part in EXCLUDE_PARTS)]
+    # 🔴 **모집단이 둘이다.** 명시 경로가 주어지면 **두 축 모두** 그 경로를 본다 —
+    #    사람이 범위를 지목했는데 도구가 상수로 되돌리면 "왜 안 나오지"가 된다.
+    #    상수는 **기본값일 때만** 쓴다.
+    if args.paths:
+        files = collect([Path(p) for p in args.paths], repo_root)
+        date_files = files
+    else:
+        files = collect(DEFAULT_TARGETS, repo_root)  # 가독성 4축 + 시제
+        date_files = collect(DATE_TARGETS, repo_root)  # 일자 축(상위집합)
 
-    if not files:
+    if not files and not date_files:
         print("검사 대상 없음", file=sys.stderr)
         return 2
 
     if args.dates:
-        date_findings = check_dates(files, repo_root)
+        date_findings = check_dates(date_files, repo_root)
         if not args.summary:
             for finding in date_findings:
                 print(finding)
@@ -507,7 +547,8 @@ def main() -> int:
             for rel, count in sorted(counts.items(), key=lambda item: -item[1]):
                 print(f"{count:5d}  {rel}")
         print(
-            f"\n일자 표기 {len(date_findings)}건 / 문서 {len(files)}개", file=sys.stderr
+            f"\n일자 표기 {len(date_findings)}건 / 문서 {len(date_files)}개",
+            file=sys.stderr,
         )
         return 1 if date_findings else 0
 
@@ -532,14 +573,23 @@ def main() -> int:
 
     total = 0
     per_file: list[tuple[Path, int]] = []
+    default_set = set(files)
 
-    for path in files:
+    # 🔴 루프는 **상위집합**(`date_files`)을 돈다. 가독성 4축·시제는 `default_set`
+    #    안에서만 본다 — **넓힌 것이 일자 축 하나뿐임이 코드에서 읽혀야** 한다.
+    for path in date_files:
         lines = path.read_text(encoding="utf-8").splitlines()
         rel = path.relative_to(repo_root) if path.is_relative_to(repo_root) else path
         findings: list[str] = []
+        is_default = path in default_set
+
+        # 관측 일자 — **두 모집단 공통**. 함수를 재사용해 `--dates`와 같은 판정을 쓴다.
+        #   🔴 여기서 로직을 복제하면 두 경로의 모집단이 갈린다
+        #      (이 저장소가 반복해 데인 함정).
+        findings.extend(check_dates([path], repo_root))
 
         # 문서 길이 — 문서당 1건
-        if len(lines) > MAX_FILE_LINES:
+        if is_default and len(lines) > MAX_FILE_LINES:
             findings.append(
                 f"{rel}: file-length {len(lines)}줄 "
                 f"(상한 {MAX_FILE_LINES}) — 주제별 분할 대상"
@@ -554,14 +604,12 @@ def main() -> int:
         # 🔴 아래 본 루프와 **별도 패스**다 — 본 루프는 줄 단위 위반을 `lineno`와 함께
         #    내지만 이 규칙은 문서당 1건이라 집계가 먼저 끝나야 한다. 펜스 판정은
         #    같은 `FENCE_RE`를 쓰므로 두 패스가 갈리지 않는다.
-        # 관측 일자 — 줄 단위. 별도 함수를 재사용해 `--dates`와 **같은 판정**을 쓴다.
-        #   🔴 여기서 로직을 복제하면 두 경로의 모집단이 갈린다
-        #      (이 저장소가 반복해 데인 함정).
-        findings.extend(check_dates([path], repo_root))
         # 시제 어휘 — 같은 이유로 함수를 재사용한다. **기본 검사는 잔여 0 등급만**
         #   본다(`strict_only`). 넓은 진단 패턴을 여기 넣으면 잔여가 즉시 빨간불이
         #   되고, 그 순간 이 도구는 통째로 무시되기 시작한다.
-        findings.extend(check_tense([path], repo_root))
+        #   ⚠️ **일자 축과 모집단이 다르다** — 시제는 `DEFAULT_TARGETS` 한정이다.
+        if is_default:
+            findings.extend(check_tense([path], repo_root))
 
         marker_count = 0
         counting_fence = False
@@ -571,7 +619,7 @@ def main() -> int:
                 continue
             if not counting_fence:
                 marker_count += line.count(EMPHASIS_MARKER)
-        if marker_count > MAX_EMPHASIS_MARKERS:
+        if is_default and marker_count > MAX_EMPHASIS_MARKERS:
             findings.append(
                 f"{rel}: emphasis {EMPHASIS_MARKER} {marker_count}개 "
                 f"(상한 {MAX_EMPHASIS_MARKERS}) — 강조는 희소해야 작동한다"
@@ -579,7 +627,10 @@ def main() -> int:
 
         in_fence = False
         in_frontmatter = False
-        for lineno, line in enumerate(lines, start=1):
+        # ⚠️ 일자 축만 넓힌 대상은 **줄 단위 검사를 통째로 건너뛴다**(빈 열거).
+        #    `is_default`를 각 규칙에 붙이는 대신 여기서 한 번에 끊어, "넓힌 것은
+        #    일자 축뿐"이라는 선언과 구현이 한 지점에서 만나게 둔다.
+        for lineno, line in enumerate(lines if is_default else [], start=1):
             # 프론트매터는 1행의 --- 로만 연다(본문 구분선과 구별).
             if lineno == 1 and line.strip() == "---":
                 in_frontmatter = True
@@ -643,7 +694,11 @@ def main() -> int:
             if count:
                 print(f"{count:5d}  {rel}")
 
-    print(f"\n위반 {total}건 / 문서 {len(files)}개", file=sys.stderr)
+    # 🔴 **모집단을 한 숫자로 적으면 그 자체가 거짓이 된다** — 축마다 대상이 다르다.
+    print(
+        f"\n위반 {total}건 / 가독성·시제 {len(files)}개 · 일자 {len(date_files)}개",
+        file=sys.stderr,
+    )
     return 1 if total else 0
 
 

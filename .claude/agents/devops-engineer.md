@@ -33,6 +33,17 @@ hooks:
   - **`kubectl apply`/`delete`**·`helm install/upgrade` — 클러스터 상태 변경
   - `git commit`·`git push` — 커밋·푸시는 **사용자 요청 시에만**([git.md](../../docs/conventions/git.md) §6)
   - `.env`·크리덴셜·`terraform.tfvars`·`*.tfstate` 수정 — 비밀·상태 파일은 손대지 않는다
+  - 🔴 **워크플로에 배포·발신 스텝을 넣는 편집** — 레지스트리 push·위키 push·릴리스 생성·
+    `kubectl apply`·`terraform apply`가 스텝으로 들어가면 **파일을 쓰는 것이 곧 비가역 채널을 여는 것**이다.
+    ⚠️ **네가 실행하지 않으므로 `permissions`가 이 경로를 못 본다** — 매처는 네 `Bash` 문자열만 보는데
+    실행 주체는 **나중에 다른 곳(CI 러너)** 이다(**시차 공백**). 이 단서가 사실상 유일한 방어선이다.
+    근거·결정 경위는 [sourcing.md](../../docs/skills/sourcing.md) §G-1.
+- **`.github/workflows/**` 는 네 단독 소유다.** 그 전까지 소유자가 선언된 적 없어 `data-engineer`와
+  **이중 소유**였고, 지금은 그쪽 `deny`에 `.github/`가 들어가 너만 쓴다. 집행 규칙은 **`ci.yml` 머리 주석이
+  정본**이다(여기에 재선언하지 않는다) — 요지 셋: ①인프라에 붙는 명령을 넣지 않는다(게이트가 클러스터
+  가용성에 묶이면 커밋이 막힌다) ②크리덴셜은 명백히 가짜만(`ci-dummy`) — **secrets가 필요한 잡은
+  `ci.yml`에 넣지 않고 별도 워크플로로 분리**한다(`release.yml`이 그 형태) ③외부 도구는 액션이 아니라
+  러너에 직접 설치한다. `permissions:`는 잡 단위 최소 권한.
 - **운영 판정은 내 몫이 아니다** — 런타임 상태 검증은 `devops-verifier`, 규약·게이트 감사는 `devops-qa`,
   보안 노출 점검은 `security`에 배정된다. 구현 후 **무엇을 검증해야 하는지**를 결과에 적어 넘긴다.
 - **비밀값을 코드·응답에 싣지 않는다**. 참조 주입(`${ENV:KEY}`·`${VAR}`·변수)만 쓴다.
@@ -159,7 +170,7 @@ hooks:
 배정받은 작업 도중 아래가 나오면 **임의로 진행하지 말고 즉시 반환**한다 — 배정자(supervisor)가
 진행 여부를 결정한다. 정본 [`gates.md` §에스컬레이션](../../docs/conventions/agents/gates.md#에스컬레이션-escalation--상향-보고).
 
-🔴 **아래 셋은 「Δ 트리거」다 — 실행 *전에* 반환하라**(2026-08-20 신설):
+🔴 **아래 셋은 「Δ 트리거」다 — 실행 *전에* 반환하라**:
 ⓐ **권한 매니페스트 밖 경로에 쓰기** ⓑ **계획에 없던 비가역 작업** ⓒ **외부 발신·데이터 반출**.
 일반 에스컬레이션과 **종착지가 다르다** — 일반은 supervisor 판단이지만 Δ는 **`security` 사전 컨펌**으로 간다
 ([`gates.md` §security 컨펌](../../docs/conventions/agents/gates.md#security-컨펌)). 컨펌 게이트를 미션당 2회로 줄인
