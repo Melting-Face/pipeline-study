@@ -1,6 +1,6 @@
 # 카탈로그 Postgres 백업 — Barman Cloud 플러그인(CNPG-I) + SeaweedFS(S3)
 #
-# 전제: `INSTALL_CNPG_BACKUP=true ./scripts/k8s-operators.sh` (플러그인 + cert-manager)
+# 전제: `./scripts/k8s-operators.sh` (Barman Cloud 플러그인 + cert-manager)
 #       `scripts/k8s-poc-storage.sh`가 `pg-backup` 버킷을 만든다.
 # 참조: Cluster(k8s/catalog-postgres.yaml)의 `spec.plugins[].parameters.barmanObjectName`
 #

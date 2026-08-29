@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # PoC 스토리지 배포: Secret(크리덴셜) → SeaweedFS(S3) + Catalog Postgres(CNPG) → warehouse 버킷
 # 사용: ./scripts/k8s-poc-storage.sh
-# 전제: ./scripts/k8s-operators.sh 로 CloudNativePG 오퍼레이터가 먼저 설치돼 있어야 한다.
+# 전제: CRD 두 개가 **출처를 달리해** 먼저 있어야 한다(2026-08-28 이관).
+#         clusters.postgresql.cnpg.io  ← CNPG 차트 = **terraform apply**(lakehouse-platform)
+#         objectstores.barmancloud…    ← Barman 플러그인 = **./scripts/k8s-operators.sh**
+#       아래 §2 가 둘을 갈라서 확인하고 각각 맞는 명령을 안내한다.
 # 크리덴셜은 로컬 PoC 기본값(env override 가능). 실인프라는 외부 시크릿 매니저 사용.
 set -euo pipefail
 
@@ -154,7 +157,8 @@ kubectl apply -f "${REPO_ROOT}/k8s/catalog-postgres.yaml"
 kubectl -n default wait --for=condition=Ready \
     cluster.postgresql.cnpg.io/catalog-postgres --timeout=300s
 
-log "완료. 다음: 러너 이미지 빌드·push → ./scripts/k8s-dagster.sh (Dagster 배포)"
-# Flink는 오퍼레이터(k8s-operators.sh)까지만 부트스트랩이고 세션 클러스터는 **워크로드**라 여기서 띄우지 않는다
+log "완료. 다음: terraform -chdir=${REPO_ROOT}/terraform/lakehouse-platform apply"
+log "  (매니페스트 18종 — 로컬 CA·워크로드 RBAC·Dagster. 그 뒤 ./scripts/k8s-dagster.sh 로 이미지)"
+# Flink는 오퍼레이터(terraform apply)까지만 부트스트랩이고 세션 클러스터는 **워크로드**라 여기서 띄우지 않는다
 # — 부트스트랩에 넣으면 클러스터를 올릴 때마다 JM이 자동 상주해 "안 쓰는 컴퓨트 유출"을 구조적으로 재생산한다.
 log "Flink: kubectl apply -f k8s/flink/flinkdeployment-session.yaml (필요할 때만, 사용 후 delete)"
