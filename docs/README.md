@@ -10,12 +10,6 @@
 > 스펙·계정명은 담지 않는다. 저장소를 **모르는 사람**이 읽는 [`posts/`](posts/README.md)와
 > `wiki/`는 독자도 반출 통제도 다르다([publishing](conventions/publishing.md)).
 
-> **담지 않는 것 — 진행 상태 · 관측 일자 · 실측 수치**
-> *지금 무엇이 열려 있는지*는 공개 가능분이 [GitHub Issues](https://github.com/Melting-Face/pipeline-study/issues),
-> 나머지가 저장소 밖 `$OBSIDIAN_VAULT/status/`에 있다.
-> **관측 일자와 실측 수치도 여기 두지 않는다** — 볼트가 갖고 `docs/`에는 인과와 처방만 남는다.
-> 판정 축은 [doc-sync](doc-sync.md) §실무 규칙 7. 낡는 문장을 규칙 옆에 두면 규칙까지 신뢰를 잃기 때문이다.
-
 ## 처음 왔다면
 
 1. [**환경 세팅**](setup.md) — 사전 요구 도구부터 검증·회수까지. 절차의 정본이다

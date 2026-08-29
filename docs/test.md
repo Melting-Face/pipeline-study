@@ -9,11 +9,6 @@
 dbt 기본 타깃은 **`spark_connect`** 다. 아래 명령의 `--target dev`는 **trino 경로**를 뜻한다
 ([conventions/dbt.md](conventions/dbt.md) §dbt-spark 타깃).
 
-> **이 문서가 담지 않는 것 — 계층별 현황.**
-> 어느 계층에 테스트가 몇 개 있는지, 무엇이 아직 안 돌았는지는 **저장소 밖**
-> `$OBSIDIAN_VAULT/status/observations.md` §테스트 계층별 현황에 있다.
-> 여기 두면 테스트를 하나 추가할 때마다 낡는다.
-
 ## 테스트 계층 (우선순위 순)
 
 전역 규칙(**효율·비용·리스크·정확성**)에 따라 **비용 대비 회귀 방어 효과가 큰 순서**로 나열한다.
