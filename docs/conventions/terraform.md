@@ -43,6 +43,24 @@
 - 인증·비밀값은 **변수/환경변수로 주입**한다(하드코딩 금지, [operations.md](../operations.md) 전파 원칙).
 - 장기적으로 **원격 backend**(예: OCI Object Storage) + state 암호화를 검토한다([security.md](../security.md)).
 
+### 🔴 state는 **정규 워크트리에서만** 다룬다 (로컬 backend의 함정)
+
+backend 블록이 없으면 state는 **실행 디렉터리**에 놓인다. 그런데 `.gitignore` 대상이라
+`git worktree`로 만든 트리에는 **따라오지 않는다** — 결과적으로 **state가 워크트리마다 갈리고,
+그중 하나만 진짜**가 된다. 그 트리를 `git worktree remove` 하면 유일본이 사라지고, 라이브
+리소스를 통째로 재-import해야 한다(이 저장소는 21건이 그 상태로 있었다).
+
+⇒ `terraform init`·`plan`·`apply`는 **정규 워크트리(저장소 루트)에서만** 실행한다. 병렬 세션용
+워크트리에서는 Terraform을 돌리지 않는다.
+
+**`.gitignore`가 막아 주지 않는다** — 오히려 gitignore 때문에 생기는 문제다. 기계적 방어가 없으니
+규율로 남으며, 대신 사고를 조기에 드러내는 성질이 있다: 다른 트리에서 apply하면 빈 state로
+시작해 **"already exists"로 시끄럽게 실패**한다(조용히 갈리지 않는다).
+
+옮겨야 한다면 backend가 같은 local이라 **파일을 옮기고 `plan`으로 `No changes.`를 확인**하면
+된다(`init -migrate-state`는 backend 종류가 바뀔 때만 필요하다). 옮긴 뒤 원본은 지우기 전에
+접미사를 붙여 무력화하면, 실수로 그 트리에서 apply해도 위의 시끄러운 실패로 걸린다.
+
 ## 5. 변수·기본값
 
 - 모든 입력은 `variable`로 선언하고 `description`·`type`을 명시한다.
