@@ -81,6 +81,7 @@
 | **dignified-python** | `dagster-io/skills` (**B**) | 범용 프로덕션 Python 표준. **A가 아니다** — 본문이 *"Not Dagster-specific"* 이라 명시하고 Dagster Labs는 Python의 벤더가 아니다(§등급은 스킬 단위). **본 프로젝트 컨벤션이 우선** |
 | **sql-optimization** | `github/awesome-copilot` (B) | 범용 SQL 성능 튜닝(실행계획·인덱스·페이지네이션). ✅ **lock 등재로 출처가 규명**됐다 — 한때 D등급("출처 미상")이었다 |
 | **multi-stage-dockerfile** | `github/awesome-copilot` (B) | 멀티스테이지 Dockerfile 작성. 문서 1파일·실행 파일 없음 |
+| **github-issues** | `github/awesome-copilot` (B) | ❌ **미등재**(게이트 탈락) — 워커 배선은 [agents.md](conventions/agents.md) §미션 개시가 금지. 읽기는 MCP 의존(미채택)이라 죽은 참조, 쓰기는 [issue.md](conventions/issue.md) §5의 폼 우회 경로다 |
 | **terraform-style-guide** | `hashicorp/agent-skills` (**A**) | HCL 스타일·베스트프랙티스. `SKILL.md`+`SECURITY.md`, 실행 파일 0 |
 | **terraform-test** | `hashicorp/agent-skills` (**A**) | `.tftest.hcl` 작성·실행, `run` 블록·assertion·프로바이더 모킹. 4파일, 실행 파일 0 |
 | **terraform-stacks** | `hashicorp/agent-skills` (**A**) | Terraform Stacks(`.tfcomponent.hcl`·`.tfdeploy.hcl`). 7파일, 실행 파일 0 |
@@ -88,6 +89,15 @@
 | **spark-engineer** | `jeffallan/claude-skills` (**C**) | Spark 잡 작성·튜닝. ⚠️ **"위험 패턴 0건"은 철회**(재스캔 — 그 스윕이 Spark writer 계열을 아예 안 봤다). **미등재**(★1)이고 등재하려면 패턴 기반 단서가 **선행**이다 |
 | **spark-optimization** | `wshobson/agents` (**C**) | Spark 성능 최적화. ✅ **검토 완료·조건부 승인**(K-1 — [skills/sourcing.md](skills/sourcing.md)). ⚠️ 이 칸은 한때 "미검토"로 남아 **같은 문서 안에서 모순**이었다(구판 스냅샷 미갱신) |
 | **brainstorming** | `obra/superpowers` (**C**) | 🔁 **「분리안」 채택** — 마크다운 절차만 참조, `scripts/**` 실행 금지. **단서 필수** |
+
+> ⚠️ **이 표는 lock 전량이 아니다.** `skills-lock.json` **18종** 중 여기 있는 것은 **13행**이고
+> `adding-dbt-unit-test`·`documentation`·`find-skills`·`running-dbt-commands`·
+> `using-dbt-for-analytics-engineering` **5종이 빠져 있다**(실측 — lock 키와 표 행 대조).
+> 아래 §②의 고정 표기도 갈린다 — **4종**(dbt 3종 + `kubernetes-specialist`)이 ⚙️로 적혀 있으나
+> 전부 lock에 있어 **🔒가 맞다**. 특히 `kubernetes-specialist`는 §①에서 🔒인데 §②에서 ⚙️라
+> **같은 문서 안에서 갈린다**. 바로 아래 문단의 "9건" 같은 계수도 함께 낡았다.
+> **목록·계수·고정 표기를 lock에서 다시 뽑는 것은 별도 작업으로 연다** — 여기서 고치면
+> 이번 미션(스킬 1종 배선 판정)의 범위를 넘고, 부분 교정은 "고쳤다고 믿는" 상태를 만든다.
 
 > **이 표를 "검증된 스킬 목록"으로 읽지 않는다.** 9건 중 **5건이 C등급**이고, `security` 검토를
 > 통과한 것은 **A등급 3종 + `jeffallan` 2종뿐**이며 1종은 **거부**됐다.
@@ -129,6 +139,7 @@
 | Spark 배치·성능 튜닝 | `spark-engineer` · `spark-optimization` | 🔒 **(C등급)** — 둘 다 lock 등재. **전역/프로젝트 버전 상이** |
 | SQL 성능 최적화 | `sql-optimization` | 🔒 — 전역·프로젝트 중복이나 **내용 동일** |
 | Docker 이미지 빌드 | `multi-stage-dockerfile` | 🔒 — [conventions/docker.md](conventions/docker.md) 태그 고정 규약이 스킬 예시보다 우선 |
+| GitHub Issue 관리(등록·수정·라벨) | **스킬 없음**(`github-issues` 검토 후 미등재) | ✅ supervisor 1회 조회 + 사람 승인으로 푼다 → [conventions/issue.md](conventions/issue.md) · [conventions/agents.md](conventions/agents.md) §미션 개시 |
 | 설계·기획(구현 전 대화) | **스킬 없음** | ✅ 하네스로 푼다 — 아래 ⓐ |
 | 분석·애드혹 질의 | `answering-natural-language-questions-with-dbt` · `duckdb` | ⚙️ |
 | 차트·시각화(리포트 그림) | `dataviz` | 🌐 **워커 등재 불가** — 디스크에 없어 `Read` 불가. supervisor 전용 |
