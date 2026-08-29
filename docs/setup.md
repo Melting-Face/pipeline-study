@@ -3,15 +3,6 @@
 이 저장소를 **처음부터 굴러가는 상태까지** 만드는 절차의 **정본**이다.
 루트 [`README.md`](../README.md)에는 빠른 시작만 두고, 단계별 상세·전제·함정은 여기 있다.
 
-> **이 문서가 담지 않는 것**
-> - **현행 진행 상태·미해결·실측 수치** — 저장소 밖 `$OBSIDIAN_VAULT/status/`에 있다.
->   여기 적힌 절차가 *지금 어디까지 돌아가는지*는 이 문서의 관심사가 아니다.
-> - **규칙의 근거** — 왜 이렇게 정했는지는 [`conventions/`](conventions/README.md) 각 문서에 있다.
-> - **설정값의 정본** — 값은 항상 설정 파일이 사실이다.
->   [`scripts/k8s-env.sh`](../scripts/k8s-env.sh) · [`.env.example`](../.env.example) ·
->   [`.pre-commit-config.yaml`](../.pre-commit-config.yaml) · [`compose.yml`](../compose.yml).
->   이 문서는 **순서와 전제**만 설명하고 값을 중복 정의하지 않는다.
-
 ## 전체 그림
 
 이 환경은 **"compose up 하나"가 아니다.** 네 덩어리를 순서대로 올린다.
