@@ -215,8 +215,8 @@
   `.ipynb` 셀 출력은 원천 데이터를 박제하고 `gitleaks`가 잡지 못하므로 **`nbstripout` 훅**과
   `.ipynb_checkpoints/` 무시로 이중 방어한다. 상세 [`notebooks/README.md`](notebooks/README.md).
 - **로컬 K8s(현행 검증 환경)**: **kind on Podman**(rootful 머신 필수) 클러스터 `lakehouse` +
-  로컬 레지스트리 `localhost:5001`. 기동은 `scripts/k8s-up.sh` → `k8s-operators.sh` → `k8s-poc-storage.sh`
-  → `k8s-dagster.sh`(설정 단일 출처 `k8s-env.sh`). **Dagster도 in-cluster**다(구 규약 폐기).
+  로컬 레지스트리 `localhost:5001`. 기동은 `k8s-up.sh` → `k8s-operators.sh` → **`terraform apply`**
+  → `k8s-poc-storage.sh` → `terraform apply` → `k8s-dagster.sh`. **Dagster도 in-cluster**다.
   규칙 [`docs/conventions/k8s.md`](docs/conventions/k8s.md), 예산·배분 [`docs/resource-sizing.md`](docs/resource-sizing.md).
   클러스터에는 **Spark Operator**(배치)·**Spark Connect**(dbt-spark 접속용 상주)가 있고,
   Spark·Flink가 **같은 Iceberg JDBC 카탈로그**를 공유한다.

@@ -295,11 +295,20 @@ kubectl exec catalog-postgres-1 -c postgres -- pg_dump -U iceberg iceberg > <저
 ### 4-4. 재생성과 복구
 
 ```shell
-./scripts/k8s-down.sh          # kind + 레지스트리 삭제 (podman machine은 보존)
+./scripts/k8s-down.sh          # kind + 레지스트리 컨테이너 삭제 (machine·이미지 볼륨은 보존)
 ./scripts/k8s-up.sh
 ./scripts/k8s-operators.sh
+terraform -chdir=terraform/lakehouse-platform apply \
+    -target=helm_release.spark_operator -target=helm_release.flink_operator -target=helm_release.cnpg
 ./scripts/k8s-poc-storage.sh
+terraform -chdir=terraform/lakehouse-platform apply
+./scripts/k8s-dagster.sh
 ```
+
+⚠️ **`terraform apply`를 빼면 이 경로는 깨진다** — `k8s-poc-storage.sh`가 요구하는 CNPG CRD를
+Terraform이 만든다. 클러스터를 지우면 CRD도 함께 사라지므로 여기서는 **최초 구축과 같은 2단계**가
+필요하다(빈 클러스터에서 단일 apply가 안 되는 이유는 [setup.md §3](setup.md#3-로컬-kubernetes)).
+state에 남은 구 리소스는 refresh가 소멸을 감지해 재생성 계획에 넣으므로 손댈 것이 없다.
 
 ⚠️ **복구 순서는 SeaweedFS(S3 객체) → 카탈로그 PG(메타)** 다. 반대로 하면 **테이블은 보이는데
 읽기가 실패**한다 — 메타가 가리키는 객체가 아직 없기 때문이다. 이 저장소가 두 번 겪은

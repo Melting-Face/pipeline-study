@@ -37,9 +37,13 @@
 ```shell
 ./scripts/k8s-up.sh
 ./scripts/k8s-operators.sh
+terraform -chdir=terraform/lakehouse-platform apply
 ./scripts/k8s-poc-storage.sh
 ./scripts/k8s-dagster.sh
 ```
+
+오퍼레이터·RBAC·Dagster 매니페스트는 **Terraform이 소유**한다. **빈 클러스터에서 처음 올릴 때는
+`terraform apply`가 두 번**이며(CRD가 있어야 나머지가 계획된다) 순서와 이유는 아래 링크가 정본이다.
 
 Dagster UI는 `http://dagster.localtest.me:8080`에서 연다. 컴퓨트 워크로드는 사용할 때만 기동하고
 검증이 끝나면 회수한다. Spark Connect·Flink 기동 명령과 접속 주소는
