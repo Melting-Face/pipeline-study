@@ -29,39 +29,19 @@ REGISTRY_NAME="${REGISTRY_NAME:-kind-registry}"
 REGISTRY_PORT="${REGISTRY_PORT:-5001}"
 REGISTRY_IMAGE="${REGISTRY_IMAGE:-docker.io/library/registry:2.8.3}"
 
-# --- Spark 오퍼레이터 (Apache 공식 — apache/spark-kubernetes-operator) ---
-# Kubeflow spark-operator에서 이전. CRD는 apiVersion: spark.apache.org/v1 (sparkConf 중심).
-# v1beta1도 served지만 storage 버전이 v1이라 v1이 정본이다(docs/conventions/k8s.md §9).
-SPARK_OPERATOR_NS="${SPARK_OPERATOR_NS:-spark-operator}"
-SPARK_OPERATOR_RELEASE="${SPARK_OPERATOR_RELEASE:-spark-kubernetes-operator}"
-SPARK_OPERATOR_REPO="${SPARK_OPERATOR_REPO:-spark}"
-SPARK_OPERATOR_REPO_URL="${SPARK_OPERATOR_REPO_URL:-https://apache.github.io/spark-kubernetes-operator}"
-SPARK_OPERATOR_CHART="${SPARK_OPERATOR_CHART:-spark-kubernetes-operator}"
-# 주의: chart 버전 ≠ appVersion. GA appVersion 1.0.0 = **chart 1.8.0**(chart 1.0.0은 appVersion 0.2.0).
-# 확인: helm search repo spark/spark-kubernetes-operator --versions
-SPARK_OPERATOR_CHART_VERSION="${SPARK_OPERATOR_CHART_VERSION:-1.8.0}"
-# Spark 잡을 띄울 네임스페이스. 차트 기본값은 비어 있고 overrideWatchedNamespaces=true라,
-# 비워두면 **감시 네임스페이스가 없고 workload SA/rolebinding도 안 생긴다** → 반드시 지정한다.
-SPARK_JOB_NS="${SPARK_JOB_NS:-default}"
-# driver가 쓰는 ServiceAccount (차트 workloadResources.serviceAccount.name 기본값)
-SPARK_JOB_SA="${SPARK_JOB_SA:-spark}"
-
-# 🔴 기본값을 true로 둔다(2026-08-21) — opt-in으로 남기면 "문서엔 있는데 기본 기동엔 없는"
-#    드리프트를 재생산한다(현 Trino가 그 상태다). cert-manager 의존은 ensure_cert_manager가 보장한다.
-INSTALL_FLINK="${INSTALL_FLINK:-true}"               # 끄려면 INSTALL_FLINK=false ./scripts/k8s-operators.sh
-FLINK_OPERATOR_NS="${FLINK_OPERATOR_NS:-flink-operator}"
-FLINK_JOB_NS="${FLINK_JOB_NS:-default}"                # FlinkDeployment가 뜨는 ns(=SA·RBAC 생성 대상)
-
-# --- CloudNativePG (Iceberg JDBC 카탈로그 Postgres) ---
+# --- 오퍼레이터 3종(Spark · Flink · CloudNativePG)의 설정은 여기 없다 ---
+# 🔴 **정본은 `terraform/lakehouse-platform/variables.tf`** 다(2026-08-28 이관).
+#    ns·릴리스명·차트 좌표·차트 버전·자원값이 전부 그쪽으로 갔고, 여기 남아 있던 껍데기
+#    17개는 **아무도 읽지 않는 죽은 값**이었다 — 값이 두 벌이면 한쪽만 고쳐도 눈치채지 못한다.
+#    차트 버전 ≠ appVersion 함정, downloads.apache.org 404 함정, Spark workload SA 함정은
+#    전부 `variables.tf`·`operators.tf` 주석으로 옮겨 두었다.
+#    이 스크립트가 오퍼레이터에 대해 하는 일은 **네임스페이스 3종을 만드는 것뿐**이다
+#    (helm 과 Barman 매니페스트가 요구만 하고 아무도 안 만들기 때문 — k8s-operators.sh §1).
+#
+# --- CloudNativePG 관련해 셸에 남는 값 ---
 # 카탈로그 PG를 오퍼레이터로 관리한다(구 Deployment+emptyDir 교체). Cluster CR은 k8s/catalog-postgres.yaml.
-# 🔴 **chart 버전 ≠ appVersion** — Spark 오퍼레이터와 같은 함정이다.
-# chart **0.29.0** = CNPG **1.30.0**. 대조: `helm search repo cnpg/cloudnative-pg --versions`
+# `CNPG_NS`는 아래 barman 플러그인 rollout 대상이라 살아 있다(오퍼레이터 설치용이 아니다).
 CNPG_NS="${CNPG_NS:-cnpg-system}"
-CNPG_RELEASE="${CNPG_RELEASE:-cloudnative-pg}"
-CNPG_REPO="${CNPG_REPO:-cnpg}"
-CNPG_REPO_URL="${CNPG_REPO_URL:-https://cloudnative-pg.github.io/charts}"
-CNPG_CHART="${CNPG_CHART:-cloudnative-pg}"
-CNPG_CHART_VERSION="${CNPG_CHART_VERSION:-0.29.0}"
 # 백업·PITR — Barman Cloud **플러그인**(CNPG-I). in-tree barman-cloud는 CNPG **1.31.0에서 제거 예정**이라
 # 처음부터 플러그인으로 간다. 전제: CNPG ≥ 1.26 + cert-manager(Flink 웹훅과 공용 — ensure_cert_manager).
 #
@@ -77,11 +57,6 @@ INSTALL_INGRESS="${INSTALL_INGRESS:-true}"
 INGRESS_NGINX_VERSION="${INGRESS_NGINX_VERSION:-v1.15.1}"
 # kind-cluster.yaml의 extraPortMappings와 **반드시 일치**해야 한다(안내 출력용).
 INGRESS_HTTP_PORT="${INGRESS_HTTP_PORT:-8080}"
-# Flink Operator는 차트 버전 = appVersion(Spark 오퍼레이터처럼 어긋나지 않는다).
-# downloads.apache.org는 **현행 릴리스만** 보관한다 — 구버전은 404가 되어 설치가 깨진다
-# (2026-08-18 실측: 1.10.0 → 404. 당시 제공분 1.12.1·1.13.0·1.14.0·1.15.0).
-# 설치 전 `curl -s https://downloads.apache.org/flink/ | grep flink-kubernetes-operator`로 확인한다.
-FLINK_OPERATOR_CHART_VERSION="${FLINK_OPERATOR_CHART_VERSION:-1.15.0}"
 # cert-manager는 Flink Operator 웹훅 의존. k8s 버전과의 호환 때문에 최신 계열을 쓴다
 # (클러스터가 k8s v1.36이라 2024년대 1.16.x는 검증 범위 밖).
 CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-v1.21.1}"
