@@ -1,14 +1,18 @@
 # Terraform / IaC 규칙 (도입)
 
-> **상태**: 🔎 **도입(학습·확장 경로)**. 첫 스택은 **OCI Always Free A1 + k3s 부트스트랩**
-> ([`terraform/oci-k3s/`](../../terraform/oci-k3s/README.md)). 결정 배경·대안 비교는
+> **상태**: ✅ **채택**. 운영 중인 스택은 **로컬 K8s 플랫폼**
+> ([`terraform/lakehouse-platform/`](../../terraform/lakehouse-platform/) — 오퍼레이터·RBAC·Dagster,
+> 재구축과 destroy→apply 검증 완료)이고, **OCI Always Free A1 + k3s**
+> ([`terraform/oci-k3s/`](../../terraform/oci-k3s/README.md))는 ⏸ 보류다(A1 용량 부족).
+> 결정 배경·대안 비교는 [architectures/terraform.md](../architectures/terraform.md)·
 > [architectures/oci.md](../architectures/oci.md).
 > 아래 규칙은 [docker.md](docker.md)·[k8s.md](k8s.md)의 원칙(버전 고정·비밀 참조·최소 개방)을
 > **인프라 코드(IaC)** 로 옮긴 것이다.
 
 ## 1. 디렉터리·파일 구조 — 스택 단위로 분리
 
-- 인프라는 **스택 단위 서브디렉터리** `terraform/<stack>/`에 둔다(예: `terraform/oci-k3s/`).
+- 인프라는 **스택 단위 서브디렉터리** `terraform/<stack>/`에 둔다
+  (예: `terraform/lakehouse-platform/`·`terraform/oci-k3s/`).
 - 파일은 **역할별 표준 이름**으로 나눈다(추적성 — grep/점프 용이):
   - `versions.tf` — `required_version`·`required_providers`(버전 고정)
   - `provider.tf` — 프로바이더 설정(인증은 변수 참조)
