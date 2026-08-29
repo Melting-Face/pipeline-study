@@ -172,6 +172,38 @@ git push origin v0.1.0
 
 > 워크플로우는 **`main`(기본 브랜치)에 있어야** 태그 이벤트로 동작한다.
 
+## CI 워크플로 (`.github/workflows/`)
+
+**집행 규칙의 정본은 [`ci.yml`](../../.github/workflows/ci.yml) 머리 주석**이다.
+여기서 재선언하지 않고 요지만 가리킨다.
+
+1. **인프라에 붙는 명령을 넣지 않는다** — 게이트가 클러스터 가용성에 묶이면 커밋이 막힌다.
+2. **크리덴셜은 명백히 가짜만 쓴다**(`ci-dummy`). ⇒ **secrets가 필요한 잡은 `ci.yml`에 넣지 않고
+   별도 워크플로로 분리한다** — [`release.yml`](../../.github/workflows/release.yml)이 그 형태다.
+3. **외부 도구는 액션이 아니라 러너에 직접 설치한다.**
+
+### 소유자와 판정자
+
+| 축 | 담당 | 근거 |
+| --- | --- | --- |
+| 구현 — 워크플로 파일 편집 | `devops-engineer` **단독** | `data-engineer`의 경로 `deny`에 `.github/`를 넣어 확정 |
+| 판정 — 실행 결과 | `devops-verifier` | `gh run` 결과가 어느 워커의 관측 범위에도 없었다 |
+
+**구현 소유자만 정하고 판정자를 안 정하면 "돌았다"를 "통과했다"로 읽는 자리가 생긴다**
+([`../philosophy.md`](../philosophy.md) 원칙 7). 경로 경계의 축과 그 한계는
+[`agents/permissions.md`](agents/permissions.md) §경로 경계.
+
+### 실행 발화는 파일 편집과 다른 축이다
+
+`gh workflow run`·`enable`·`disable`과 `gh run rerun`·`cancel`·`delete`·`download`·`watch`는
+**`permissions.ask` 대상**이다. 급소는 [`wiki.yml`](../../.github/workflows/wiki.yml)의
+`workflow_dispatch:`다 — **`gh workflow run wiki.yml` 한 줄이 공개 위키 push를 발화**시킨다.
+
+⚠️ **파일을 쓰는 축은 이것으로 닫히지 않는다.** 에이전트가 워크플로를 쓰고 실행은 나중에
+**다른 주체인 CI 러너**가 하므로, 에이전트의 `Bash` 문자열만 보는 매처는 원리상 그 경로를
+볼 수 없다. `.github/workflows/**`를 [`../../scripts/protected_paths_guard.py`](../../scripts/protected_paths_guard.py)의
+보호 경로에 넣지 않은 근거와 잔여 위험은 [`../skills/sourcing.md`](../skills/sourcing.md) G-1 행에 있다.
+
 ## 문서 작성 규약
 
 `README.md`·`docs/**`·`CLAUDE.md`는 **AI와 사람이 함께 읽는다.** 두 독자는 같은 이유로 막힌다 —
