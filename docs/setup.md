@@ -21,11 +21,16 @@
 2.   .env                              (호스트)
 3.   로컬 Kubernetes — 컴퓨트·스토리지  (kind on Podman)
 4.   러너 이미지                        (로컬 레지스트리)
-5.   Dagster                           (호스트 · 메타 DB만 compose)
+5.   Dagster                           (in-cluster)
 ```
 
-Dagster는 **클러스터 밖 호스트**에서 돌며 K8s를 원격 컴퓨트로 트리거한다.
-스토리지(SeaweedFS)·카탈로그(Postgres)·컴퓨트(Spark·Flink)만 클러스터에 있다.
+**Dagster도 클러스터 안에서 돈다**(구 규약은 호스트 실행이었다 — 폐기).
+스토리지(SeaweedFS)·카탈로그(Postgres)·컴퓨트(Spark·Flink)와 같은 클러스터에 있다.
+
+**선언의 소유자가 둘로 갈린다.** 오퍼레이터 3종·로컬 CA·워크로드 RBAC·Dagster 매니페스트는
+**Terraform**(`terraform/lakehouse-platform/` = 스택 C)이 소유하고, 클러스터·레지스트리·스토리지·
+카탈로그 DB는 **셸 스크립트**가 소유한다. 그래서 §3의 순서에 `terraform apply`가 끼어든다.
+가르는 기준은 **destroy 가 무엇을 파괴하는가**다([`architectures/terraform.md`](architectures/terraform.md)).
 
 ---
 
@@ -33,9 +38,14 @@ Dagster는 **클러스터 밖 호스트**에서 돌며 K8s를 원격 컴퓨트�
 
 ```shell
 brew install podman kind kubectl helm
+brew install terraform                     # §3의 플랫폼 스택 + pre-commit의 terraform_fmt 훅
 brew install hadolint                      # pre-commit의 hadolint 훅이 로컬 바이너리를 쓴다
 uv tool install pre-commit
 ```
+
+> ⚠️ **`terraform`은 선택이 아니다.** §3에서 플랫폼 스택을 올리는 데 쓰이고, 그와 별개로
+> `terraform_fmt` 훅이 **로컬 바이너리를 호출**하므로 없으면 **커밋이 막힌다**
+> (`.pre-commit-config.yaml`). 문서만 고치는 작업에서도 걸린다.
 
 `uv` 자체는 [Astral 설치 안내](https://docs.astral.sh/uv/getting-started/installation/)를 따른다.
 
@@ -112,32 +122,84 @@ kubectl get secret spark-grpc-tls  -o jsonpath='{.data.ca\.crt}'      | base64 -
 설정 단일 출처는 [`scripts/k8s-env.sh`](../scripts/k8s-env.sh)이고, 모든 값이 `${VAR:-기본값}`이라
 환경변수로 덮을 수 있다.
 
+### 빈 클러스터에서 처음 올릴 때 — **6단계**
+
 ```shell
 ./scripts/k8s-up.sh          # podman machine + kind 클러스터 + 레지스트리 + ingress-nginx
-./scripts/k8s-operators.sh   # cert-manager + Spark/Flink Operator + CloudNativePG + 로컬 CA
-./scripts/k8s-poc-storage.sh # Secret 2종 + SeaweedFS + 버킷 + CNPG Cluster(카탈로그 DB)
+./scripts/k8s-operators.sh   # 네임스페이스 3종 + cert-manager + Barman Cloud 플러그인
+
+# ⚠️ 최초 1회만 — 오퍼레이터를 먼저 만든다(아래 "왜 두 번인가")
+terraform -chdir=terraform/lakehouse-platform apply \
+    -target=helm_release.spark_operator \
+    -target=helm_release.flink_operator \
+    -target=helm_release.cnpg
+
+./scripts/k8s-poc-storage.sh # Secret 3종 + SeaweedFS + 버킷 3개 + CNPG Cluster(카탈로그 DB)
+terraform -chdir=terraform/lakehouse-platform apply   # 매니페스트 18종(로컬 CA·RBAC·Dagster)
+./scripts/k8s-dagster.sh     # Dagster 이미지 빌드·push + ConfigMap + 수렴 대기
 ```
 
-각 스크립트는 끝에 **다음 단계를 출력**한다. 단계별로 무엇이 생기는지:
+### 이미 있는 클러스터를 다시 올릴 때
 
-**`k8s-up.sh`** — 클러스터 바닥을 깐다.
-전용 podman machine(rootful) → 레지스트리 컨테이너 → kind 클러스터 `lakehouse` →
-각 노드에 `certs.d` 주입 → 레지스트리를 kind 네트워크에 연결 → ingress-nginx.
+CRD가 남아 있으므로 `terraform apply`가 **한 번으로 합쳐진다.**
 
-**`k8s-operators.sh`** — 컨트롤 플레인을 얹는다.
-Spark Operator와 cleanup RBAC → cert-manager와 Flink Operator → CloudNativePG와
-Barman Cloud 플러그인 → `k8s/local-ca.yaml`의 gRPC TLS 발급 체인.
+```shell
+./scripts/k8s-up.sh && ./scripts/k8s-operators.sh
+terraform -chdir=terraform/lakehouse-platform apply
+./scripts/k8s-poc-storage.sh && ./scripts/k8s-dagster.sh
+```
 
-**`k8s-poc-storage.sh`** — 데이터가 앉을 자리를 만든다.
-Secret `lakehouse-creds`·`catalog-pg-app` → SeaweedFS StatefulSet →
-버킷 `warehouse`·`pg-backup` → 백업 구성 → `Cluster/catalog-postgres`.
+### 왜 `terraform apply`가 두 번인가
+
+빈 클러스터에서 **한 번으로는 안 된다.** 스택 C가 적용하는 매니페스트 18개 중
+`Database/default/dagster` 하나만 `postgresql.cnpg.io/v1`인데, 그 CRD를 **같은 apply의
+`helm_release.cnpg`가 만든다.** `kubernetes_manifest`는 plan 시점에 `/apis`로 GVK를 해석하므로
+`depends_on`(apply 순서만 보장)으로는 못 미루고, plan이 이렇게 죽는다.
+
+```
+Error: API did not recognize GroupVersionKind from manifest (CRD may not be installed)
+  no matches for kind "Database" in group "postgresql.cnpg.io"
+```
+
+⚠️ 나머지 20개는 정상 계획되어 **`Plan: 20 to add`를 띄운 채 실패**한다 — 부분 성공처럼 보이니
+"거의 됐다"로 읽지 않는다. CRD가 생긴 뒤로는 단일 apply로 돈다.
+
+### 각 단계가 무엇을 만드는가
+
+**`k8s-up.sh`** — 클러스터 바닥. podman machine(rootful) → 레지스트리 컨테이너(이미지는
+**명명 볼륨**에 남아 `k8s-down.sh`로 사라지지 않는다) → kind 클러스터 → 각 노드에 `certs.d`
+주입 → 레지스트리를 kind 네트워크에 연결 → ingress-nginx.
+
+**`k8s-operators.sh`** — **Terraform의 선행 조건**만 만든다. 오퍼레이터는 여기서 설치하지 않는다.
+네임스페이스 `cnpg-system`·`spark-operator`·`flink-operator` → cert-manager → Barman Cloud 플러그인.
+
+> ⚠️ **네임스페이스 3종은 아무도 안 만들기 때문에 여기서 만든다.** Barman 플러그인의 원격
+> 매니페스트는 `cnpg-system`을 **참조만 하고 `kind: Namespace`를 담지 않으며**, helm 릴리스 3종은
+> `create_namespace = false`다. 이 단계를 빼면 Barman `kubectl apply`가
+> `namespaces "cnpg-system" not found`로 죽는데, **클러스터 스코프(CRD·ClusterRole)는 먼저
+> 생성되어 부분 성공처럼 보인다.**
+
+**`terraform apply`** — 오퍼레이터 3종(Spark·Flink·CNPG) + 로컬 CA 발급 체인 + 워크로드 RBAC +
+Dagster(ConfigMap·SA·Role·Deployment 2·Service·Ingress·`Database` CR).
+
+**`k8s-poc-storage.sh`** — 데이터가 앉을 자리. Secret `lakehouse-creds`·`catalog-pg-app`·
+`dagster-meta-pg-app` → SeaweedFS StatefulSet → 버킷 `warehouse`·`pg-backup`·`dagster-logs` →
+백업 구성(ObjectStore·ScheduledBackup) → `Cluster/catalog-postgres`.
+
+**`k8s-dagster.sh`** — 이미지 빌드·push + `spark-app-manifests` ConfigMap + rollout 대기.
+매니페스트는 적용하지 않는다(Terraform 소유).
+
+> ✅ **`terraform apply`가 `k8s-dagster.sh`보다 먼저라 Dagster 파드는 이미지 없이 먼저 생긴다** —
+> `Init:ErrImagePull`을 한 번 거치는 것이 정상이다. 이미지를 push하면 **kubelet이 스스로 재시도해
+> 같은 파드가 그대로 올라오므로** `rollout restart`는 필요 없다.
 
 주요 다이얼 — 전부 환경변수로 덮는다.
 
-- `INSTALL_FLINK=false` — Flink Operator 제외
 - `INSTALL_INGRESS=false` — ingress-nginx 제외
 - `MACHINE_CPUS` · `MACHINE_MEMORY_MIB` · `MACHINE_DISK_GIB` — VM 자원.
   예산 근거는 [`resource-sizing.md`](resource-sizing.md)
+- 오퍼레이터 쪽 값(ns·차트 좌표·버전·자원)은 셸이 아니라
+  [`terraform/lakehouse-platform/variables.tf`](../terraform/lakehouse-platform/variables.tf)가 정본이다
 
 정리는 이렇다. **podman machine은 기본 보존**된다.
 
@@ -203,6 +265,7 @@ podman push --tls-verify=false localhost:5001/flink-runner:0.3.0
 #   podman push --tls-verify=false localhost:5001/dagster:0.1.0
 
 # 최초 1회: Spark Connect Deployment·Service·Ingress·Certificate 생성
+# (이 파일은 온디맨드 컴퓨트라 Terraform 스택 밖이다 — 그래서 kubectl apply 가 맞다)
 kubectl apply -f k8s/spark/spark-connect-server.yaml
 kubectl scale deploy/spark-connect --replicas=0  # 평시 자원 회수
 ```
@@ -221,11 +284,17 @@ kubectl scale deploy/spark-connect --replicas=0  # 평시 자원 회수
 ## 5. Dagster (in-cluster — 정본)
 
 ```shell
-./scripts/k8s-dagster.sh                   # 이미지 빌드·push → 메타 DB → RBAC → Deployment → Ingress 대조
+./scripts/k8s-dagster.sh                   # 이미지 빌드·push → ConfigMap → rollout·Ingress 대조
 # UI: http://dagster.localtest.me:8080
 ```
 
-스크립트는 **적용 전에** 매니페스트의 `image:` 태그와 `DAGSTER_IMAGE_TAG`를 대조하고,
+**메타 DB·RBAC·Deployment·Service·Ingress는 이 스크립트가 만들지 않는다** — 전부
+`terraform/lakehouse-platform/`이 소유하며 §3의 `terraform apply`에서 이미 생겼다. 여기 남은 것은
+Terraform이 다루지 않는 둘, **이미지**와 `spark-app-manifests` **ConfigMap**이다. 매니페스트를
+고쳤다면 `kubectl apply`가 아니라 `terraform apply`를 돌린다(서버사이드 apply의 필드 소유권이
+`kubectl`로 넘어가면 Terraform이 drift를 보고도 못 덮는다).
+
+스크립트는 **빌드 전에** 매니페스트의 `image:` 태그와 `DAGSTER_IMAGE_TAG`를 대조하고,
 마지막에 `/server_info`가 **버전 JSON을 돌려주는지**까지 본다(상태코드 200으로 닫지 않는다).
 이미 빌드된 이미지를 재사용하려면 `--skip-build`.
 
