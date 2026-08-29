@@ -42,6 +42,12 @@
       "skillPath": "skills/find-skills/SKILL.md",
       "computedHash": "b146008599c31057cef1c145774cea5d5afb30e8f43fa802e47a4b461419aaaf"
     },
+    "github-issues": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "skillPath": "skills/github-issues/SKILL.md",
+      "computedHash": "9917c1e0908f0fd9ae0910acf07e3f779091ceddb910ce6a03453add92a6a876"
+    },
     "kubernetes-specialist": {
       "source": "jeffallan/claude-skills",
       "sourceType": "github",
