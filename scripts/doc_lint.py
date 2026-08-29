@@ -9,6 +9,7 @@
     uv run scripts/doc_lint.py                    # 저장소 전체(기본 대상)
     uv run scripts/doc_lint.py docs/setup.md      # 특정 파일
     uv run scripts/doc_lint.py --summary          # 파일별 위반 수만(진척 측정용)
+    uv run scripts/doc_lint.py --tense            # 시제 어휘 진단(넓은 패턴 포함)
 
 왜 이 스크립트인가:
     `README.md`·`docs/`·`CLAUDE.md`는 **AI와 사람이 함께 읽는 문서**인데
@@ -25,6 +26,9 @@
     - `emphasis`     : **문서당 1건**(개수 초과 여부이지 🔴 총수가 아니다)
     - `file-length`  : **문서당 1건**
     - `nested-paren` : **위반한 줄 수**
+    - `tense-word`   : **매치 수**(한 줄에 두 어휘가 있으면 2건)
+      🔴 기본 검사가 세는 것은 **잔여 0 등급뿐**이다. `--tense`는 넓은 패턴까지
+         켜므로 **두 명령의 수치를 같은 단위로 비교하지 않는다.**
 
     ⇒ 총 위반 수는 "고쳐야 할 곳의 수"이지 "문제가 있는 문서 수"가 아니다.
 
@@ -79,6 +83,64 @@ DATE_EXEMPT_DIRS = ("wiki",)
 #   ⚠️ 이 마커는 **면제이지 검증이 아니다** — 붙이면 그 줄은 아무도 안 본다.
 #      관측 일자에 붙이면 조용히 통과하므로, **외부 출처에만** 쓴다.
 DATE_OPT_OUT = "<!-- date-ok -->"
+
+# 진행 상태를 말하는 **시제 어휘**도 문서에 두지 않는다(같은 §실무 규칙 7 — 축 2).
+#   날짜 축과 **막는 것이 다르다** — 날짜는 *"언제 봤는가"*, 시제는 날짜 없이
+#   저절로 낡는 *"아직 ~없다"* 를 잡는다. 후자는 `OBSERVATION_DATE_RE`의 관측 범위
+#   밖이라, 그 검사가 0건이어도 이 축은 열린 채 남아 있었다.
+#   🔴 **두 등급으로 가른다 — 기준은 「엄격함」이 아니라 「현재 잔여」다.**
+#      날짜 축이 잔여 300건대로 배운 그대로다: 고칠 수 없는 위반이 쌓이면 도구가
+#      통째로 무시된다. ⇒ **지금 잔여 0인 패턴만 기본 검사**에 넣어 유입 게이트로
+#      바로 쓰고, 잔여가 있는 넓은 패턴은 `--tense` 진단 모드로만 돌린다.
+#      잔여가 정리로 0이 되면 그때 기본으로 올린다(날짜 축이 밟은 경로).
+#   🔴 파일·디렉터리 예외는 두지 않는다 — `DATE_EXEMPT_*`를 물려받지 않는다.
+#      `wiki/`를 날짜 축에서 뺀 이유는 독자·통제가 다르다는 것인데, 시제 축은
+#      **낡는 문장이 저장소 밖으로 나가는 것**을 막으므로 위키야말로 대상이다
+#      (미러는 단방향이라 저장소 쪽에서 못 막으면 막을 곳이 없다).
+#      잔여도 위키 포함 0건이라 넣는 비용이 없다.
+
+# 잔여 0건 — 즉시 기본 검사에 편입한다. 상태 표지가 명시적이라 오탐이 낮다.
+#   🔴 **`\b`를 쓰지 않는다 — 한글 앞뒤에서 서지 않는다.** 파이썬 `re`의 `\b`는
+#      유니코드 워드 문자 기준이라 한글도 워드 문자다. 그래서 `\bTODO\b`는
+#      `TODO를`·`TBD로`·`TODO다`를 **못 잡는데**, 한국어 문서에서는 그쪽이
+#      오히려 자연스러운 표기다. 잔여가 0이라 증상이 없고 **미래 유입만 조용히
+#      새는** 죽은 규칙이 된다(원칙 7 — "잡는다"와 "잡을 수 있다"는 다른 축).
+#      ⇒ 경계를 **ASCII 문자로만** 세운다. 영문 연접(`TODOS`·`FIXMEs`)은 계속 제외다.
+#   🔴 **숫자는 경계에서 빼지 않는다 — 의도한 비대칭이다.** `TODO2`·`3TODO`는
+#      잡히는 편이 맞다(TODO의 변형이지 다른 낱말이 아니다). 같은 파일의 날짜 축은
+#      **반대로** 가야 한다(숫자 인접은 거기서 오탐이다). 두 축이 달라 보인다고
+#      **"통일"하지 마라** — 경계 규칙은 축마다 무엇이 오탐인지에 따라 갈린다.
+TENSE_STRICT_RES = (
+    re.compile(r"(?<![A-Za-z])(TODO|TBD|FIXME)(?![A-Za-z])"),
+    # 🔴 **한글 어휘에는 경계(`\b`)를 두르지 마라 — 두르면 조사·어미에서 샌다.**
+    #    한국어는 낱말 뒤에 조사·어미가 그대로 이어 붙는데 `\b`는 그 자리에서
+    #    서지 않는다: `\b아직까지\b`는 `아직까지 안 했다`는 잡고
+    #    **`아직까지는`·`아직까지의`·`지금까지였다`를 놓친다**(실측 확인).
+    #    ⚠️ 깨지는 **방향이 날짜 축과 반대**라 헷갈린다 — 날짜는 *뒤에 붙는 조사*
+    #       때문에 경계가 필요하고, 한글 어휘는 *이어지는 어미* 때문에 경계가 해가 된다.
+    #    ⇒ 여기서 `\b`가 없는 것은 **빠뜨린 것이 아니라 결정**이다. 오탐을 줄이려고
+    #       나중에 두르면 위 형태들이 **에러 없이 조용히** 검사에서 빠진다.
+    re.compile(r"아직까지|지금까지"),
+    re.compile(r"예정이다|할 예정|될 예정"),
+)
+
+# 잔여 있음 — `--tense`로만 돈다. 넓은 만큼 규칙 문서의 **자기 인용**과 부딪힌다
+#   (아래 면제 마커). 🔴 **잔여 건수를 여기 적지 않는다** — 정리가 진행되면 저절로
+#   거짓이 되고, 낡은 수치가 규칙 옆에 있으면 규칙까지 신뢰를 잃는다(축 2 그 자체).
+#   지금 몇 건인지는 `--tense`를 돌려서 본다. 그것이 이 플래그의 용도다.
+TENSE_DIAGNOSTIC_RES = (
+    re.compile(r"아직[^.。\n]{0,20}?(없다|없고|없으|않다|않고|않으|못한다|못했|안 )"),
+    re.compile(r"미해소"),
+    re.compile(r"이번에"),
+)
+
+# 줄 단위 예외 — 규칙 문서가 **자기 규칙을 설명하려고 위반 예시를 인용**하는 자리.
+#   `DATE_OPT_OUT`과 같은 구조의 규칙 충돌이다: 그 줄에서 시제 어휘를 지우면
+#   "무엇이 위반인지"를 못 적어 **다른 규칙을 어긴다**(`general.md`의 상태 어휘 표,
+#   `doc-sync.md`의 인용문이 실제 그 자리다).
+#   ⚠️ 이 마커는 **면제이지 검증이 아니다** — 붙이면 그 줄은 아무도 안 본다.
+#      진짜 상태 서술에 붙이면 조용히 통과하므로, **인용·예시에만** 쓴다.
+TENSE_OPT_OUT = "<!-- tense-ok -->"
 
 # 기본 검사 대상 — 사람과 AI가 함께 읽는 문서만. 벤더·생성물은 제외한다.
 #   🔴 `wiki/`는 **저장소 밖으로 나가는 원본**이라 반드시 여기 있어야 한다.
@@ -256,6 +318,54 @@ def check_dates(files: list[Path], repo_root: Path) -> list[str]:
     return findings
 
 
+def check_tense(
+    files: list[Path], repo_root: Path, strict_only: bool = True
+) -> list[str]:
+    """문서 본문에 **진행 상태를 말하는 시제 어휘**가 남아 있는지 본다.
+
+    `strict_only`가 참이면 **잔여 0인 패턴만**(기본 검사·유입 게이트),
+    거짓이면 진단 패턴까지 함께 본다(`--tense`). 🔴 두 등급이 **한 함수·한 루프**를
+    쓰는 것이 요점이다 — 스캔 규율을 복제하면 두 경로의 모집단이 갈린다.
+
+    스캔 규율은 `check_dates`와 같다(프론트매터·펜스 제외, 링크는 표시 텍스트만).
+    잡는 것은 *"이 자리에 상태 어휘가 있다"* 까지다. 그것이 실제 상태 서술인지
+    규칙을 설명하는 인용인지 기계는 가르지 못하므로 **예외를 줄 단위로** 둔다.
+    🔴 그래서 이 검사가 **0건이어도 「낡는 문장이 없다」는 뜻이 아니다** —
+    어휘를 쓰지 않고 쓴 상태 서술(*"현재 3종만 등재"*)은 관측 범위 **밖**이다.
+    """
+    patterns = (
+        TENSE_STRICT_RES if strict_only else TENSE_STRICT_RES + TENSE_DIAGNOSTIC_RES
+    )
+    findings: list[str] = []
+    for path in files:
+        rel = path.relative_to(repo_root) if path.is_relative_to(repo_root) else path
+
+        in_fence = False
+        in_frontmatter = False
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if lineno == 1 and line.strip() == "---":
+                in_frontmatter = True
+                continue
+            if in_frontmatter:
+                if line.strip() == "---":
+                    in_frontmatter = False
+                continue
+            if FENCE_RE.match(line):
+                in_fence = not in_fence
+                continue
+            if in_fence or TENSE_OPT_OUT in line:
+                continue
+            # 링크는 표시 텍스트만 남긴다 — URL 안의 `TODO` 같은 경로는 문장이 아니다.
+            prose = LINK_TEXT_RE.sub(r"\1", line)
+            findings.extend(
+                f"{rel}:{lineno}: tense-word {m.group(0)} "
+                f"— 상태는 볼트/Issue로 (doc-sync §실무 규칙 7 축 2)"
+                for pattern in patterns
+                for m in pattern.finditer(prose)
+            )
+    return findings
+
+
 def check_vault_refs(repo_root: Path) -> list[str] | None:
     """`docs/`가 가리키는 볼트 파일·절이 실재하는지 본다.
 
@@ -333,6 +443,11 @@ def main() -> int:
     parser.add_argument(
         "--dates", action="store_true", help="관측·결정 일자 표기만 검사"
     )
+    # 🔴 기본 검사는 **잔여 0 등급만** 본다. 이 플래그는 잔여가 있는 넓은 패턴까지
+    #    켜는 **진단 모드**다 — 위반 수를 재는 용도이지 커밋 게이트가 아니다.
+    parser.add_argument(
+        "--tense", action="store_true", help="시제 어휘만 검사(진단 패턴 포함)"
+    )
     args = parser.parse_args()
 
     if args.links:
@@ -389,6 +504,25 @@ def main() -> int:
         )
         return 1 if date_findings else 0
 
+    if args.tense:
+        # 진단 모드라 두 등급을 함께 본다(`strict_only=False`).
+        tense_findings = check_tense(files, repo_root, strict_only=False)
+        if not args.summary:
+            for finding in tense_findings:
+                print(finding)
+        else:
+            tense_counts: dict[str, int] = {}
+            for finding in tense_findings:
+                key = finding.split(":")[0]
+                tense_counts[key] = tense_counts.get(key, 0) + 1
+            for rel, count in sorted(tense_counts.items(), key=lambda item: -item[1]):
+                print(f"{count:5d}  {rel}")
+        print(
+            f"\n시제 어휘 {len(tense_findings)}건 / 문서 {len(files)}개",
+            file=sys.stderr,
+        )
+        return 1 if tense_findings else 0
+
     total = 0
     per_file: list[tuple[Path, int]] = []
 
@@ -417,6 +551,10 @@ def main() -> int:
         #   🔴 여기서 로직을 복제하면 두 경로의 모집단이 갈린다
         #      (이 저장소가 반복해 데인 함정).
         findings.extend(check_dates([path], repo_root))
+        # 시제 어휘 — 같은 이유로 함수를 재사용한다. **기본 검사는 잔여 0 등급만**
+        #   본다(`strict_only`). 넓은 진단 패턴을 여기 넣으면 16건이 즉시 빨간불이
+        #   되고, 그 순간 이 도구는 통째로 무시되기 시작한다.
+        findings.extend(check_tense([path], repo_root))
 
         marker_count = 0
         counting_fence = False
