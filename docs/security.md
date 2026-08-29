@@ -319,7 +319,7 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO trino_ro;
 
 | 대상 | 백업 | 복구 |
 | --- | --- | --- |
-| 카탈로그 Postgres(K8s, CNPG) | **Barman Cloud 플러그인**(CNPG-I)으로 base backup + WAL 아카이브 → SeaweedFS S3. `INSTALL_CNPG_BACKUP=true`로 opt-in | CNPG `Cluster`의 `bootstrap.recovery`로 복원(PITR 지원) |
+| 카탈로그 Postgres(K8s, CNPG) | **Barman Cloud 플러그인**(CNPG-I)으로 base backup + WAL 아카이브 → SeaweedFS S3. opt-in이 아니라 뼈대(`isWALArchiver`가 참조) | CNPG `Cluster`의 `bootstrap.recovery`로 복원(PITR 지원) |
 | 메타 Postgres(compose, Dagster DB) | 논리 백업 `pg_dump`(정기 cron) 또는 물리 백업 `pg_basebackup` + **WAL 아카이브**(PITR) | `pg_restore`(논리) / base backup + WAL 재생(물리) |
 | SeaweedFS `s3://warehouse` | 버킷 객체 복제(다른 호스트/버킷) 또는 볼륨 백업 | 복제본에서 복원 후 카탈로그 정합 확인 |
 

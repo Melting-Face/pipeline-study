@@ -1,5 +1,16 @@
 # 매니페스트 — **YAML 이 정본이고 Terraform 은 적용자다.**
 #
+# 🔴 **빈 클러스터에서는 이 파일 때문에 최초 apply 가 2단계다**(2026-08-29 실측).
+#    아래 18 개 중 `Database/default/dagster` 만 `postgresql.cnpg.io/v1` 이고, 그 CRD 를
+#    **같은 apply 의 `helm_release.cnpg` 가 만든다.** `kubernetes_manifest` 는 plan 시점에
+#    `/apis` 로 GVK 를 해석하므로 `depends_on`(apply 순서만 보장)으로는 못 미룬다 —
+#    plan 이 `no matches for kind "Database" in group "postgresql.cnpg.io"` 로 죽는다.
+#    다른 20 개는 정상 계획되므로 **`Plan: 20 to add` 를 띄운 채 실패**한다(부분 성공처럼 보인다).
+#    ⇒ 최초 1회만:  terraform apply -target=helm_release.spark_operator \
+#                     -target=helm_release.flink_operator -target=helm_release.cnpg
+#       그 뒤로는 CRD 가 남아 있어 단일 `terraform apply` 로 돈다.
+#    (같은 메커니즘의 다른 사례 — 클러스터 불통 시 plan 실패: docs/architectures/terraform.md)
+#
 # `k8s/**` 의 주석에는 "왜 이 값인가"가 들어 있다(aws-chunked 함정 · S3FileIO 와 S3A 의
 # 역할 분담 · probe 가 보증하지 않는 것 · 관측 경로 선언 …). HCL 타입 리소스로 재작성하면
 # 그 지식이 사라지므로 파일을 그대로 두고 여기서 읽는다.

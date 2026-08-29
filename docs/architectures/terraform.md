@@ -9,7 +9,7 @@ Terraform은 **선언형 인프라 프로비저닝** 도구다. 리소스의 목
 
 - 이 저장소 고정: Terraform **1.15.8** · 스택별 프로바이더는 `versions.tf`에 `~>`로 핀
 
-## 이 프로젝트에서의 위치 — 🚧 채택·이행중
+## 이 프로젝트에서의 위치 — ✅ 채택(스택 C 운영 중)
 
 스택은 둘이다. 클라우드 축 [`terraform/oci-k3s/`](oci.md)는 **⏸ 보류**(A1 용량 부족)이고,
 이 문서가 다루는 것은 **로컬 K8s 플랫폼을 셸에서 Terraform으로 옮기는** 축이다.
@@ -50,10 +50,12 @@ Terraform의 리소스 모델은 create/read/update가 기본이라 같은 실�
 | --- | --- | --- | --- |
 | **A. cluster** | podman machine · kind · 로컬 레지스트리 · ingress-nginx | 실데이터 유실 | 셸 유지 |
 | **B. data** | SeaweedFS · CNPG Cluster · Secret · 버킷 | 실데이터 유실 | 셸 유지 |
-| **C. platform** | 오퍼레이터·컨트롤러 5종 · 로컬 CA · 워크로드 RBAC · Dagster | 안전(재생성 가능) | **Terraform으로 이행**(미구현) |
+| **C. platform** | 오퍼레이터·컨트롤러 5종 · 로컬 CA · 워크로드 RBAC · Dagster | 안전(재생성 가능) | **Terraform**(구현·검증 완료) |
 
-⚠️ **현재 구현된 것은 없다.** 이 문서는 설계와 스파이크 실측이며, 스택 C는 아직 만들지 않았다 —
-지금 도는 것은 전부 `scripts/k8s-*.sh`다. 진행 상태를 이 문서에서 읽지 않는다.
+✅ **스택 C는 구현돼 돌고 있다** — `terraform/lakehouse-platform/`, 리소스 21개
+(`helm_release` 3 + `kubernetes_manifest` 18). 빈 클러스터에서의 **처음부터 재구축**과
+**일괄 `destroy` → `apply` 재생성**을 버리는 클러스터에서 실측으로 통과했다.
+A(cluster)와 B(data)는 셸에 남아 있어, 부트스트랩은 둘이 번갈아 나온다([`../setup.md`](../setup.md) §3).
 
 C만 옮겨도 목적 둘이 **데이터 위험 없이** 충족된다. A는 클러스터를 재생성해야 할 일이
 자연히 생기는 시점에 합류시킨다 — 그때는 재생성이 비용이 아니라 **이미 치를 값**이기 때문이다.
@@ -75,21 +77,24 @@ C만 옮겨도 목적 둘이 **데이터 위험 없이** 충족된다. A는 클�
 ⇒ `kubernetes_manifest { manifest = yamldecode(file(...)) }` 형태로 **YAML을 정본으로 유지**하고
 HCL은 배선만 담는다. 스파이크에서 CNPG `Database` CR로 `plan` 통과를 확인했다.
 
-### 예정 구성
+### 실제 구성
 
 ```text
 terraform/lakehouse-platform/
 ├── versions.tf     required_version · 프로바이더 핀 · .terraform.lock.hcl 커밋
 ├── provider.tf     kubernetes·helm — config_context 고정
-├── variables.tf    차트 버전·이미지 태그·Ingress 호스트(k8s-env.sh 값 이관)
+├── variables.tf    ns · 차트 좌표 · 차트 버전 · 자원값(k8s-env.sh 값 이관 — 그쪽 껍데기는 제거됨)
 ├── operators.tf    helm_release ×3 (아래 주의)
-├── security.tf     로컬 CA · 워크로드 RBAC
-├── dagster.tf      k8s/dagster/*.yaml 을 yamldecode 로 적용
-└── outputs.tf
+└── manifests.tf    k8s/**의 7파일(18문서)을 yamldecode 로 적용 — 로컬 CA·RBAC·Dagster
 ```
 
-이행이 끝나면 `scripts/k8s-operators.sh`는 사라지고 `terraform apply`가 그 자리를 대신한다.
-`k8s-dagster.sh`에는 **이미지 빌드·push만** 남는다.
+설계 초안의 `security.tf`·`dagster.tf`·`outputs.tf`는 만들지 않았다. **YAML이 정본이고 Terraform은
+적용자**라는 결론에 따라 셋이 `manifests.tf` 하나로 합쳐졌다.
+
+`k8s-dagster.sh`에는 예고대로 **이미지 빌드·push(+ConfigMap·수렴 대기)만** 남았다. 다만
+`scripts/k8s-operators.sh`는 **사라지지 않았다** — 원격 매니페스트 둘(cert-manager·Barman)과,
+그 둘·helm이 요구만 하고 아무도 만들지 않는 **네임스페이스 3종**을 만드는 자리로 남았다.
+⇒ 그래서 이 스크립트의 정체는 "오퍼레이터 설치"가 아니라 **스택 C의 선행 조건**이다.
 
 ⚠️ **C의 5종이 전부 helm은 아니다**(실측 — 이 문서 초판이 "helm 5종"으로 적었던 것은 틀렸다).
 
@@ -113,7 +118,27 @@ import 시 둘 다 HCL로 옮겨야 `plan`이 `0 to change`가 된다.
 
 C를 "안전하게 destroy 가능"으로 두려면 **오퍼레이터 uninstall이 CRD를 지우지 않아야 한다.**
 CNPG 차트가 CRD를 함께 제거하면 `Cluster` CR이 사라지고 **B의 PVC가 따라간다.**
-선언으로 닫지 말고 **일부러 `destroy`를 돌려 PVC가 살아남는지 확인**한다.
+
+✅ **일부러 `destroy`를 돌려 확인했다**(버리는 클러스터). 21개가 파괴된 직후:
+
+- **PVC 2개의 UID가 불변**이고 `Cluster/catalog-postgres`(스택 B)가 healthy로 남았다
+- CNPG 오퍼레이터 Deployment는 **사라졌다**(C의 것이므로 정상)
+- `clusters`·`databases` CRD는 **남았다** — 근거는 `helm.sh/resource-policy: keep`
+- `Database/dagster` CR이 사라졌는데도 **`dagster` DB와 그 안의 데이터는 살아남았다**
+  (`databaseReclaimPolicy: retain`)
+
+> **부정 결과에는 관측 경로 생존을 함께 본다.** "PVC가 살아남았다"는 아무 일도 안 일어난 상태라
+> 관측이 죽어도 똑같이 보인다. 그래서 같은 순간에 ① `get pvc`가 응답하고 ② `get database`가
+> **정확히 `NotFound`를 보고하며**(=API가 살아 있고 삭제는 실제로 일어났다) ③ DB 안의 행을
+> **실제로 `SELECT`해 읽는다**(=볼륨이 마운트돼 데이터가 읽힌다). 셋이 함께여야 성립한다.
+
+이어서 `apply`로 **21개가 단일 단계로 복구**됐다(`-target` 불필요 — CRD가 남아 GVK가 해석된다).
+⇒ **2단계 apply는 빈 클러스터 최초 1회 한정**이라는 명제가 닫혔다.
+그리고 `ensure: present`는 기존 DB를 **재초기화하지 않고 인수**했다(재생성 후에도 같은 행이 읽혔다).
+
+⚠️ **이 안전은 우리 설정이 아니라 업스트림 차트가 준 것**이다. `keep` 애노테이션은 확인한 차트
+버전에 한하므로 **버전을 올릴 때 다시 본다.** 또 destroy 구간에는 오퍼레이터가 없어
+**failover·백업·WAL 아카이빙이 죽어 있다** — "안전하다"가 "아무 손실이 없다"는 뜻은 아니다.
 
 ### `helm_release` 인수는 `0 to change`에 도달하지 못한다
 

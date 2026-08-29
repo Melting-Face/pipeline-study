@@ -28,7 +28,8 @@ resource "helm_release" "spark_operator" {
   # 🔴 import 는 `create_namespace` 를 state 에 기록하지 않는다(프로바이더 측 플래그).
   #    `true` 로 두면 인수 직후 plan 이 항상 update-in-place 를 계획하고, 그 여파로
   #    metadata 전체가 known after apply 로 표시돼 **진짜 diff 가 묻힌다**(2026-08-28 실측).
-  #    네임스페이스는 셸이 이미 만들었으므로 `false` 가 사실에 맞다.
+  #    ⇒ 네임스페이스는 **`scripts/k8s-operators.sh` 가 만든다(계약)**. 그 스크립트에서 빼면
+  #    빈 클러스터에서 이 릴리스가 `namespaces "..." not found` 로 죽는다(2026-08-29 실측).
   create_namespace = false
 
   set = [
@@ -48,7 +49,11 @@ resource "helm_release" "spark_operator" {
       name  = "operatorDeployment.operatorPod.operatorContainer.resources.limits.memory"
       value = var.operator_resources["spark"].limits.memory
     },
-    # 잡 네임스페이스·SA 는 오퍼레이터가 만들지 않는다(셸이 이미 만든 것을 쓴다).
+    # 잡 네임스페이스·SA 는 오퍼레이터가 만들지 않는다(`default` 를 그대로 쓴다).
+    # 🔴 **`namespaces.data` 를 비워 두면 안 된다** — 차트 기본값이 비어 있고
+    #    `overrideWatchedNamespaces=true` 라, 비우면 **감시 네임스페이스가 없고
+    #    workload SA·rolebinding 도 안 생긴다**(잡이 조용히 안 뜬다).
+    #    아래 `namespaces.data[0]` 과 `serviceAccount.name` 은 그래서 필수 값이다.
     {
       name  = "workloadResources.namespaces.create"
       value = "false"
@@ -78,7 +83,8 @@ resource "helm_release" "flink_operator" {
   # 🔴 import 는 `create_namespace` 를 state 에 기록하지 않는다(프로바이더 측 플래그).
   #    `true` 로 두면 인수 직후 plan 이 항상 update-in-place 를 계획하고, 그 여파로
   #    metadata 전체가 known after apply 로 표시돼 **진짜 diff 가 묻힌다**(2026-08-28 실측).
-  #    네임스페이스는 셸이 이미 만들었으므로 `false` 가 사실에 맞다.
+  #    ⇒ 네임스페이스는 **`scripts/k8s-operators.sh` 가 만든다(계약)**. 그 스크립트에서 빼면
+  #    빈 클러스터에서 이 릴리스가 `namespaces "..." not found` 로 죽는다(2026-08-29 실측).
   create_namespace = false
 
   values = [file("${path.module}/../../k8s/flink/operator-values.yaml")]
@@ -141,7 +147,8 @@ resource "helm_release" "cnpg" {
   # 🔴 import 는 `create_namespace` 를 state 에 기록하지 않는다(프로바이더 측 플래그).
   #    `true` 로 두면 인수 직후 plan 이 항상 update-in-place 를 계획하고, 그 여파로
   #    metadata 전체가 known after apply 로 표시돼 **진짜 diff 가 묻힌다**(2026-08-28 실측).
-  #    네임스페이스는 셸이 이미 만들었으므로 `false` 가 사실에 맞다.
+  #    ⇒ 네임스페이스는 **`scripts/k8s-operators.sh` 가 만든다(계약)**. 그 스크립트에서 빼면
+  #    빈 클러스터에서 이 릴리스가 `namespaces "..." not found` 로 죽는다(2026-08-29 실측).
   create_namespace = false
 
   set = [

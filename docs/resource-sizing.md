@@ -121,8 +121,10 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu:8, mem
   [conventions/k8s.md](conventions/k8s.md) §2 예외). 상주 부하가 작아 예산 영향은 미미하지만 상한이 없다.
 ³ **Flink Operator 차트는 자원을 선언하지 않는다** — `helm show values` 실측 결과
   **`operatorPod.resources: {}` · `operatorPod.webhook.resources: {}`** 로 **둘 다 비어 있다.**
-  `scripts/k8s-operators.sh`의 helm 호출에 **`--set` 8종**(`operatorPod.resources.{requests,limits}.{cpu,memory}`
-  4종 + `operatorPod.webhook.resources.*` 4종)을 넣지 않으면 이 표의 두 행이 **처음부터 거짓**이 된다.
+  `terraform/lakehouse-platform/operators.tf`의 `helm_release.flink_operator`에
+  **`set` 8종**(`operatorPod.resources.{requests,limits}.{cpu,memory}` 4종 +
+  `operatorPod.webhook.resources.*` 4종)이 없으면 이 표의 두 행이 **처음부터 거짓**이 된다
+  (구 `scripts/k8s-operators.sh`의 helm 호출에서 이관됨).
   이는 Spark Operator에서 이미 밟은 함정의 **거울상**이다 — 그쪽은 차트 기본값 `1000m/2048Mi`가
   **조용히 적용**됐고(과대), 이쪽은 **0으로 잡혀 BestEffort가 된다**(과소). 방향만 반대이고
   **"helm은 값을 안 줘도 에러를 내지 않는다"** 는 원인은 같다.

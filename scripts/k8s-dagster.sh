@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
-# Dagster in-cluster 배포: 이미지 빌드·push → 메타 DB → RBAC → Deployment/Service/Ingress
+# Dagster 이미지 빌드·push + ConfigMap + 수렴 대기.
 # 사용: ./scripts/k8s-dagster.sh [--skip-build]
-# 전제: ./scripts/k8s-up.sh → k8s-operators.sh → k8s-poc-storage.sh 가 먼저 끝나 있어야 한다
-#       (Secret `dagster-meta-pg-app`·버킷 `dagster-logs`·CNPG Cluster가 그 단계에서 생긴다).
+#
+# 🔴 **매니페스트는 이 스크립트가 적용하지 않는다**(2026-08-28 이관 — 아래 §2 참고).
+#    메타 DB·RBAC·Deployment/Service/Ingress 는 `terraform/lakehouse-platform/` 이 소유한다.
+#    여기 남은 것은 **Terraform 이 다루지 않는 둘**이다 — 이미지와 ConfigMap.
+#
+# 전제: k8s-up.sh → k8s-operators.sh → terraform apply → k8s-poc-storage.sh → terraform apply
+#       가 먼저 끝나 있어야 한다(Secret `dagster-meta-pg-app`·버킷 `dagster-logs`·CNPG Cluster 는
+#       `k8s-poc-storage.sh`, Deployment 는 Terraform 이 만든다).
+# ✅ 이미지가 없어 파드가 `Init:ErrImagePull` 로 대기 중이어도 **여기서 push 하면 kubelet 이
+#    스스로 재시도해 올라온다** — `rollout restart` 는 필요 없다(2026-08-29 실측: 같은 파드가
+#    restartCount 0 으로 Running 전이).
 #
 # 이 스크립트는 절차형이다 — 선언은 위, 실행은 아래, 보조 함수로 쪼개지 않는다
 # (CLAUDE.md §scripts 규칙: 실행 순서 = 읽는 순서).

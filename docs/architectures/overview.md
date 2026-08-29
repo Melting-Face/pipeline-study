@@ -12,10 +12,10 @@
 > **실제로 도는 구성**: kind 클러스터 하나 — Dagster(webserver·daemon) ·
 > Spark Operator · SeaweedFS · 카탈로그/메타 Postgres(CNPG) · Flink Operator · ingress-nginx.
 > **compose는 기본 `up`으로 아무것도 띄우지 않는다**(전부 profile opt-in이 됐다).
-> **Flink Operator는 ⏸ 미설치**다 — 채택은 했으나 잡 없는 세션 클러스터가 상주 자원을 점유해
-> 내렸고, `scripts/k8s-operators.sh`로 **오퍼레이터만** 복구한다(기본값이 `true`라 지정 없이 설치되며
-> 제외는 `INSTALL_FLINK=false` — [`scripts/k8s-env.sh`](../../scripts/k8s-env.sh); 잡을 돌리려면 세션
-> 클러스터를 따로 세운다 — [flink.md](flink.md)). trino와 같은 **"중단"과 "삭제"의 분리**다.
+> **Flink Operator는 설치돼 상주한다** — `terraform/lakehouse-platform/`이 소유하며 부트스트랩에
+> 항상 포함된다. 상주하는 것은 **오퍼레이터까지**이고, 자원을 먹는 **세션 클러스터(JM/TM)는 띄우지
+> 않는다** — 잡을 돌릴 때 따로 세우고 끝나면 내린다([flink.md](flink.md)).
+> trino와 같은 **"중단"과 "삭제"의 분리**가 여기서는 오퍼레이터/워크로드 경계로 나타난다.
 > 클러스터 UI는 `*.localtest.me:8080` 고정 URL, 데이터 접속은 `port-forward`
 > ([../conventions/k8s.md](../conventions/k8s.md) §10).
 
@@ -320,11 +320,17 @@ def admissions(s3: S3Resource) -> pa.Table:
 🔴 **절차의 정본은 [`../setup.md`](../setup.md)** 다. 여기서는 순서만 요약하고
 명령을 중복 정의하지 않는다(단일 출처 — [`../doc-sync.md`](../doc-sync.md)).
 
-재설계 이후 기동은 **"전체 스택 `compose up`" 하나가 아니라 세 단계**이며 **compose는 등장하지 않는다**.
+재설계 이후 기동은 **"전체 스택 `compose up`" 하나가 아니라 여러 단계**이며 **compose는 등장하지 않는다**.
+셸과 Terraform이 **선언을 나눠 소유**해서 둘이 번갈아 나온다.
 
 1. **`.env` 작성** — `.env.example` 복사([`../operations.md`](../operations.md) §1-2)
-2. **로컬 K8s 기동**(컴퓨트·스토리지) — `scripts/k8s-up.sh` → `k8s-operators.sh` → `k8s-poc-storage.sh`
-3. **Dagster 배포** — `scripts/k8s-dagster.sh` → http://dagster.localtest.me:8080
+2. **클러스터·선행 조건** — `scripts/k8s-up.sh` → `k8s-operators.sh`(네임스페이스·cert-manager·Barman)
+3. **플랫폼 스택** — `terraform -chdir=terraform/lakehouse-platform apply`(오퍼레이터·RBAC·Dagster)
+4. **스토리지·카탈로그** — `scripts/k8s-poc-storage.sh`
+5. **Dagster 이미지** — `scripts/k8s-dagster.sh` → http://dagster.localtest.me:8080
+
+> **빈 클러스터 최초 구축은 3이 두 번으로 갈린다**(오퍼레이터 `-target` → 스토리지 → 전체 apply).
+> CRD가 없으면 `Database` CR의 GVK 해석이 실패해 plan이 죽기 때문이다 — 절차 정본은 `../setup.md` §3.
 
 > 호스트 `uv run dg dev`(http://localhost:3000)는 **개발 루프 대안**으로 남는다 —
 > 메타 DB·S3에 port-forward가 전제이고, **in-cluster와 동시에 띄우지 않는다**

@@ -4,7 +4,8 @@
 # S3의 parquet은 남지만 "테이블"이 사라져 복구 = 재적재이므로, 상태 저장 규칙
 # (docs/conventions/k8s.md §1 StatefulSet+PVC)을 오퍼레이터로 충족한다.
 #
-# 오퍼레이터 설치: scripts/k8s-operators.sh · 크리덴셜 시크릿 생성: scripts/k8s-poc-storage.sh
+# 오퍼레이터 설치: terraform/lakehouse-platform (helm_release.cnpg)
+# 크리덴셜 시크릿 생성 + 이 CR 적용: scripts/k8s-poc-storage.sh
 # 서비스 이름은 CNPG가 만든다 → **catalog-postgres-rw**(쓰기)·`-ro`(읽기 전용)·`-r`(전체).
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
