@@ -82,6 +82,7 @@
 | **sql-optimization** | `github/awesome-copilot` (B) | 범용 SQL 성능 튜닝(실행계획·인덱스·페이지네이션). ✅ **lock 등재로 출처가 규명**됐다 — 한때 D등급("출처 미상")이었다 |
 | **multi-stage-dockerfile** | `github/awesome-copilot` (B) | 멀티스테이지 Dockerfile 작성. 문서 1파일·실행 파일 없음 |
 | **github-issues** | `github/awesome-copilot` (B) | ❌ **미등재**(게이트 탈락) — 워커 배선은 [agents.md](conventions/agents.md) §미션 개시가 금지. 읽기는 MCP 의존(미채택)이라 죽은 참조, 쓰기는 [issue.md](conventions/issue.md) §5의 폼 우회 경로다 |
+| **git-commit** | `github/awesome-copilot` (B) | ❌ **미등재**(게이트 탈락) — 워커 9종 전원이 커밋을 「계획만 반환」·「권한 밖」으로 금지한다. 절차도 [git.md](conventions/git.md) §2·§7과 충돌. 문서 1파일·실행 파일 0. 상세 아래 ⓑ |
 | **terraform-style-guide** | `hashicorp/agent-skills` (**A**) | HCL 스타일·베스트프랙티스. `SKILL.md`+`SECURITY.md`, 실행 파일 0 |
 | **terraform-test** | `hashicorp/agent-skills` (**A**) | `.tftest.hcl` 작성·실행, `run` 블록·assertion·프로바이더 모킹. 4파일, 실행 파일 0 |
 | **terraform-stacks** | `hashicorp/agent-skills` (**A**) | Terraform Stacks(`.tfcomponent.hcl`·`.tfdeploy.hcl`). 7파일, 실행 파일 0 |
@@ -90,7 +91,7 @@
 | **spark-optimization** | `wshobson/agents` (**C**) | Spark 성능 최적화. ✅ **검토 완료·조건부 승인**(K-1 — [skills/sourcing.md](skills/sourcing.md)). ⚠️ 이 칸은 한때 "미검토"로 남아 **같은 문서 안에서 모순**이었다(구판 스냅샷 미갱신) |
 | **brainstorming** | `obra/superpowers` (**C**) | 🔁 **「분리안」 채택** — 마크다운 절차만 참조, `scripts/**` 실행 금지. **단서 필수** |
 
-> ⚠️ **이 표는 lock 전량이 아니다.** `skills-lock.json` **18종** 중 여기 있는 것은 **13행**이고
+> ⚠️ **이 표는 lock 전량이 아니다.** `skills-lock.json` **19종** 중 여기 있는 것은 **14행**이고
 > `adding-dbt-unit-test`·`documentation`·`find-skills`·`running-dbt-commands`·
 > `using-dbt-for-analytics-engineering` **5종이 빠져 있다**(실측 — lock 키와 표 행 대조).
 > 아래 §②의 고정 표기도 갈린다 — **4종**(dbt 3종 + `kubernetes-specialist`)이 ⚙️로 적혀 있으나
@@ -140,6 +141,7 @@
 | SQL 성능 최적화 | `sql-optimization` | 🔒 — 전역·프로젝트 중복이나 **내용 동일** |
 | Docker 이미지 빌드 | `multi-stage-dockerfile` | 🔒 — [conventions/docker.md](conventions/docker.md) 태그 고정 규약이 스킬 예시보다 우선 |
 | GitHub Issue 관리(등록·수정·라벨) | **스킬 없음**(`github-issues` 검토 후 미등재) | ✅ supervisor 1회 조회 + 사람 승인으로 푼다 → [conventions/issue.md](conventions/issue.md) · [conventions/agents.md](conventions/agents.md) §미션 개시 |
+| git 커밋 작성(메시지·스테이징) | **스킬 없음**(`git-commit` 검토 후 미등재) | ✅ 정본은 [conventions/git.md](conventions/git.md) §2·§6·§7 + [conventions/general.md](conventions/general.md) §커밋 메시지. **supervisor도 호출하지 않는다** — 아래 ⓑ |
 | 설계·기획(구현 전 대화) | **스킬 없음** | ✅ 하네스로 푼다 — 아래 ⓐ |
 | 분석·애드혹 질의 | `answering-natural-language-questions-with-dbt` · `duckdb` | ⚙️ |
 | 차트·시각화(리포트 그림) | `dataviz` | 🌐 **워커 등재 불가** — 디스크에 없어 `Read` 불가. supervisor 전용 |
@@ -156,6 +158,25 @@
 [`conventions/agents.md`](conventions/agents.md) §설계 게이트다(`director` 폐기로 거처가
 옮겨졌고, 질의 상대는 이제 **사용자**다). **스킬은 이 자리를 채울 수 없다** —
 스킬은 **모델이 고르는 안내문이지 실행을 멈추는 장치가 아니다**. `brainstorming`은 제거됐다.
+
+ⓑ **`git-commit`에 「분리안」을 쓰지 않는 이유 — 그리고 미등재가 덮지 못하는 축.**
+`brainstorming`의 분리안이 성립한 것은 **위험한 일부(`scripts/**` 실행)를 잘라내도 나머지
+(설계 대화 절차)가 독자적 가치를 유지**했기 때문이다. `git-commit`은 4단계 워크플로 전체가
+**"커밋을 실행한다"** 하나로 수렴해 **잘라낼 일부가 없다**. 스테이징 절차를 빼면 남는 것은
+type 표·Conventional Commits 포맷뿐인데 그건 [conventions/general.md](conventions/general.md)
+§커밋 메시지가 이미 정본으로 갖고 있다 ⇒ **채점 축3(대체 불가)이 구조적으로 0**이라
+단서를 붙여도 ★3 임계를 넘지 못한다. **위반이 「일부 문장」이 아니라 「존재 이유」일 때
+분리안은 성립하지 않는다.**
+
+**그리고 「9종 미등재」는 「아무도 못 쓴다」가 아니다.**
+[`skill_gate_guard.py`](../scripts/skill_gate_guard.py)는 **각 워커 프론트매터의 `hooks:`에만**
+배선돼 있고 `.claude/settings.json`의 `PreToolUse` 매처에는 **`Skill`이 없다**(실측).
+⇒ **최상위 세션(supervisor)의 `Skill` 호출은 가드 밖**이다. 미등재는 *배선* 판정이지
+*도달 범위* 판정이 아니다 — supervisor는 이미 `Bash`로 커밋할 수 있으므로 권한 상승은
+아니지만, 이 스킬을 호출하면 [git.md](conventions/git.md) §2가 금지한 `git add -p`와
+§7이 요구하는 pathspec(`git commit -- <경로…>`, `git add`와 섞지 않는다)을 **정면으로
+어기는 절차가 여과 없이 컨텍스트에 들어온다**.
+막을 기계가 없으므로 **이 방침의 실효는 규율 100%**이고, 그래서 여기 적는다.
 
 - **워크플로 스킬**(도메인 아님, 슬래시 커맨드): `code-review` · `simplify` · `security-review` · `run` ·
   `find-skills` · `auditing-skills` · 프로젝트 자체 커맨드 `journal` — 검토·검증·실행 보조에 쓴다.
