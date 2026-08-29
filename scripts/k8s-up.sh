@@ -63,8 +63,13 @@ elif podman container exists "${REGISTRY_NAME}"; then
     podman start "${REGISTRY_NAME}"
 else
     log "로컬 레지스트리 기동: ${REGISTRY_NAME} → 127.0.0.1:${REGISTRY_PORT}"
+    # 🔴 **명명 볼륨**이다. 익명 볼륨으로 두면 `k8s-down.sh`의 `podman rm -f` 한 번에
+    #    푸시해 둔 이미지가 전부 사라지고, 그걸 되돌리는 유일한 길이 전량 재빌드다.
+    #    이름을 붙이면 컨테이너를 지워도 볼륨이 남아 다음 `podman run`이 그대로 이어받는다
+    #    (정말 지우려면 `podman volume rm ${REGISTRY_NAME}-data`).
     podman run -d --restart=always \
         -p "127.0.0.1:${REGISTRY_PORT}:5000" \
+        -v "${REGISTRY_NAME}-data:/var/lib/registry" \
         --name "${REGISTRY_NAME}" "${REGISTRY_IMAGE}"
 fi
 
@@ -90,6 +95,12 @@ else
         sleep 5
     done
 fi
+
+# 3-1) 🔴 컨텍스트를 고정한다 — 아래 단계들(ConfigMap·ingress-nginx)은 `--context`를 주지 않아
+#      **current-context 로 나간다**. 신규 생성 경로는 kind 가 컨텍스트를 자동 전환해 우연히
+#      맞지만, **위의 "중지된 클러스터 재기동" 분기에는 전환이 없다** — kubeconfig 에 다른 kind
+#      클러스터가 함께 있으면 엉뚱한 클러스터에 깔린다. 나머지 k8s-*.sh 셋은 이미 이 줄이 있다.
+kubectl config use-context "kind-${CLUSTER_NAME}"
 
 # 4) 각 노드에 레지스트리 hosts.toml 주입 (localhost:5001 → kind-registry:5000)
 log "노드 registry certs.d 설정: ${REGISTRY_DIR}"
@@ -133,6 +144,6 @@ else
     log "ingress-nginx 건너뜀 (INSTALL_INGRESS=true 로 활성화)"
 fi
 
-log "완료. 다음: ./scripts/k8s-operators.sh"
+log "완료. 다음: ./scripts/k8s-operators.sh (네임스페이스 3종 + cert-manager + Barman)"
 [ "${INSTALL_INGRESS}" = "true" ] && log "Ingress 진입점: http://<host>.localtest.me:${INGRESS_HTTP_PORT}"
 log "확인: kubectl cluster-info --context kind-${CLUSTER_NAME}"
