@@ -3,8 +3,10 @@
 > [k8s.md](../k8s.md) §12에서 분리(상위 문서가 doc_lint 500줄 상한에 닿았다).
 > 상위 규칙은 [k8s.md](../k8s.md), 자원 수치는 [../../resource-sizing.md](../../resource-sizing.md)에 있다.
 
-- **오퍼레이터**: [CloudNativePG](https://cloudnative-pg.io/)(CNCF). `scripts/k8s-operators.sh`가 Helm으로
-  `ns=cnpg-system`에 설치하고, `Cluster` CR은 `k8s/catalog-postgres.yaml`(적용은 `k8s-poc-storage.sh`).
+- **오퍼레이터**: [CloudNativePG](https://cloudnative-pg.io/)(CNCF). **`terraform/lakehouse-platform/`**
+  (`helm_release.cnpg`)가 `ns=cnpg-system`에 설치한다 — 그 **네임스페이스는 `k8s-operators.sh`가**
+  미리 만들고(`create_namespace = false`), `Cluster` CR은 `k8s/catalog-postgres.yaml`(적용은
+  `k8s-poc-storage.sh`). 즉 CNPG 하나에 세 주체가 걸쳐 있어 **순서가 곧 전제**다([`../../setup.md`](../../setup.md) §3).
 - **차트 버전 ≠ appVersion**(§9 Spark 오퍼레이터와 같은 함정): chart **0.29.0** = CNPG **1.30.0**.
   `helm search repo cnpg/cloudnative-pg --versions`로 대조하고 `k8s-env.sh`의 `CNPG_CHART_VERSION`에 핀한다.
 - **서비스 이름에 접미사가 붙는다** — `<cluster>-rw`(쓰기)·`-ro`(읽기 전용)·`-r`(전체)만 생기고
@@ -45,8 +47,9 @@
   (실측: 직후 플러그인 apply가 3건 실패). `ensure_cert_manager`는 **설치 여부와 무관하게**
   self-signed `Issuer`의 `--dry-run=server`가 통과할 때까지 폴링한다("이미 설치됨"도 준비를 뜻하지 않는다).
   백업 대상은 클러스터 내부 **SeaweedFS(S3)** 로 두어 외부 비용을 만들지 않는다.
-  `INSTALL_CNPG_BACKUP=true`로 opt-in한다(§`profiles`와 같은 "뼈대는 항상 / 옵션은 opt-in" 원칙).
-  ⚠️ **현재 백업은 미구성**이다(기본값 `false`, cert-manager도 부재).
+  🔴 **opt-in이 아니라 뼈대다** — `Cluster` CR이 이 플러그인을 `isWALArchiver: true`로 참조하므로
+  없으면 **WAL 아카이빙이 실패해 WAL이 무한정 쌓인다**(PVC가 찬다). 그래서 옵션을 없앴고,
+  `k8s-poc-storage.sh`가 `ObjectStore`·`ScheduledBackup`을 **항상** 적용한다.
   **이 백업은 DR이 아니다** — 백업본이 원본과 **같은 노드·같은 호스트 디스크**에 놓이므로
   노드/PVC 유실 시 함께 사라진다. 목적은 **논리 오류·실수 복구**로 한정한다. 또 SeaweedFS S3는 `http://`
   평문이라 WAL·base backup이 평문 전송·저장된다(카탈로그 DB는 테이블 식별자·메타 포인터만 담아

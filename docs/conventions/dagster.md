@@ -252,7 +252,7 @@ dbt_all_schedule = ScheduleDefinition(
 ## 실행
 
 ```bash
-./scripts/k8s-dagster.sh                    # 정본 — in-cluster 배포 (http://dagster.localtest.me:8080)
+./scripts/k8s-dagster.sh                    # 정본 — 이미지·수렴 (http://dagster.localtest.me:8080)
 dg dev                                      # 개발 루프 대안 (일체형, http://localhost:3000)
 ```
 
@@ -261,8 +261,11 @@ dg dev                                      # 개발 루프 대안 (일체형, h
 
 ## K8s in-cluster 배포
 
-Dagster는 2026-08-27부터 **kind 클러스터 안**에서 돈다(구 "호스트 유지" 규약 폐기 —
-[k8s.md](k8s.md) §8). 선언은 `k8s/dagster/` 3파일, 배포는 `scripts/k8s-dagster.sh`.
+Dagster는 **kind 클러스터 안**에서 돈다(구 "호스트 유지" 규약 폐기 — [k8s.md](k8s.md) §8).
+선언은 `k8s/dagster/` 3파일이고 **적용은 `terraform/lakehouse-platform/`**(`manifests.tf`)이다.
+`scripts/k8s-dagster.sh`가 맡는 것은 **이미지 빌드·push와 ConfigMap, 그리고 수렴 대기**다.
+🔴 이 3파일을 `kubectl apply`로 다시 넣지 않는다 — 서버사이드 apply의 필드 소유권이 `kubectl`로
+넘어가면 Terraform이 drift를 감지하고도 덮지 못한다.
 
 ### 토폴로지
 
