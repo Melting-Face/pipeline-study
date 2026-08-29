@@ -44,7 +44,25 @@ docker inspect <container>             # RestartCount·State.OOMKilled·Mounts·
 kubectl get pods -A                    # 파드 상태 (CrashLoopBackOff·Pending·Evicted)
 kubectl describe pod <pod>             # Events (OOMKilled·스케줄 실패·probe 실패)
 kubectl top pod / node                 # 실사용 (metrics-server 필요)
+
+gh run list --workflow=ci.yml --limit 10   # CI 실행 이력 (conclusion: success/failure/cancelled)
+gh run view <run-id>                       # 잡·스텝별 성패
+gh run view <run-id> --log-failed          # 실패 스텝 로그만
+gh workflow list                           # 워크플로 활성 상태
 ```
+
+🔴 **`--log` 계열은 `ci.yml` 런에만 쓴다.** `ci.yml`은 크리덴셜이 전부 `ci-dummy` 가짜이고
+`permissions: contents: read`라 로그가 안전하지만, 같은 저장소의 나머지 둘은 다르다 —
+`wiki.yml`은 `secrets.GITHUB_TOKEN`을, `release.yml`은 `github.token`을 쓰고 **둘 다 `contents: write`** 다.
+값은 GitHub이 `***`로 마스킹하지만 **우리 쪽 통제는 그 마스킹 하나뿐**이라, 로그 본문을 응답·저널로
+옮기는 경로에서는 우리가 가진 방어선이 0이다. 런 ID를 고를 때 **어느 워크플로의 런인지 먼저 확인**한다.
+
+🔴 **조회 계열만 쓴다.** `gh run rerun`·`gh run cancel`·`gh run delete`(상태 변경) ·
+`gh run download`(작업 트리에 **쓴다** — `disallowedTools`의 `Write` 금지를 `Bash` 축으로 우회한다) ·
+**`gh workflow run`**(=워크플로 발화. `wiki.yml`에 `workflow_dispatch:`가 실재해 **공개 위키 push를
+발동**시킨다 — `gh workflow list`와 한 단어 차이다)는 **호출하지 않는다**.
+⚠️ 이것들은 `permissions.ask` 대상이지만, **`Bash` 축의 `ask`는 실제 위험 호출로 분류돼야 발동**한다 —
+규칙이 있다고 프롬프트가 반드시 뜨는 것은 아니다. **이 단서를 최종 방어선으로 삼는다.**
 
 - 대조 기준 선언: `compose.yml`(+`docker compose config` 결과) · `k8s/*.yaml` · `dagster.yaml` · `trino/etc/` ·
   수치 정본 [`resource-sizing.md`](../../docs/resource-sizing.md).
@@ -62,6 +80,7 @@ kubectl top pod / node                 # 실사용 (metrics-server 필요)
 | 5 | **선언 ↔ 실제 드리프트** | `docker compose config` 결과와 **실행 중 컨테이너**의 이미지 태그·포트·볼륨·환경변수 **키**가 일치하는지(수동 변경·구 이미지 잔존) | [docker.md](../../docs/conventions/docker.md) |
 | 6 | **의존 서비스 연결** | Trino → Postgres(Iceberg JDBC 카탈로그)·SeaweedFS(S3) 연결이 실제로 서는지(로그의 연결 실패·재시도), Dagster → Postgres 메타 | [overview.md](../../docs/architectures/overview.md) |
 | 7 | **k8s 워크로드** | 파드 requests/limits 적용 상태, probe 실패 이벤트, `Pending`(스케줄 불가 = 노드 자원 부족) | [k8s.md](../../docs/conventions/k8s.md) §2·§3 |
+| 8 | **CI 실행 결과** | `.github/workflows/**`의 잡이 **실제로 돌아 결론이 났는지**(`conclusion`), 실패 스텝이 무엇인지. 선언(워크플로 파일)과 실행(run)의 대조는 compose 선언↔컨테이너 대조와 **같은 축**이다 | [general.md](../../docs/conventions/general.md) §CI |
 
 - 배정 범위가 좁으면(예: "trino만") **그 범위만** 본다. 범위 밖 발견은 "범위 외 참고"로 분리한다.
 - **검증하지 않는 것**: 외부 시스템 내부 동작·소스 코드 로직·데이터 값의 정합성(→ `data-verifier`).
