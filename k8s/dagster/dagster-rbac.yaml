@@ -1,8 +1,19 @@
-# Dagster ServiceAccount·RBAC — `SparkApplication` 제출 경로 전용
+# Dagster ServiceAccount·RBAC — **컴퓨트 잡 제출 경로**(Spark·Flink 공용)
+#
+# 🔴 Role 이름이 `dagster-spark-submit`이었다. Flink 배선이 들어오면서 담는 권한이
+#   Spark를 넘어섰고(`flinkdeployments`·`configmaps`·**`pods/exec`**), 이름이 내용을
+#   속이게 됐다. 특히 `pods/exec`는 이 Role에서 **가장 넓은 권한**(파드 안 임의 명령 실행)인데
+#   권한 감사에서 가장 먼저 보여야 할 항목이 가장 눈에 안 띄는 이름 뒤에 숨는 상태였다.
+#   ⇒ `dagster-compute-submit`으로 개명한다("무엇을 하는 Role인가"를 이름이 말한다).
+#   개명은 `terraform/lakehouse-platform/manifests.tf`의 리소스 키(`kind/ns/name`)를 바꾸므로
+#   `terraform apply`가 **구 객체 destroy + 신 객체 create**로 처리한다 — 고아가 남지 않는다.
+#   🔴 단 이는 `terraform apply`로 적용할 때만 성립한다. `kubectl apply -f`로 넣으면 구 Role이
+#   그대로 남아 SA에 옛 권한이 계속 붙는다.
 #
 # 왜 RBAC이 필요한가: run launcher는 `DefaultRunLauncher`라 **run 실행 자체에는 k8s API가 필요 없다**
-#   (run은 daemon 파드 안의 서브프로세스로 돈다). 권한이 필요한 것은 `defs/poc/`의
-#   `SparkOperatorResource` 하나뿐이다 — 이 자산이 `SparkApplication` CR을 제출하고 상태를 폴링한다.
+#   (run은 daemon 파드 안의 서브프로세스로 돈다). 권한이 필요한 것은 원격 컴퓨트를 제출하는
+#   자산들이다 — `defs/poc/`의 `SparkOperatorResource`(SparkApplication CR 제출·폴링)와
+#   `defs/flink/`의 `FlinkSessionResource`(FlinkDeployment CR + `sql-client` exec).
 #   호스트 Dagster 시절에는 사람의 kubeconfig를 빌려 썼고, in-cluster에서는 이 SA가 그 자리를 대신한다.
 #
 # 🔴 verb는 **코드가 실제로 부르는 것만** 넣는다(defs/poc/resources.py):
@@ -17,6 +28,15 @@
 #   kubectl auth can-i --as=system:serviceaccount:default:dagster create sparkapplications  # yes
 #   kubectl auth can-i --as=system:serviceaccount:default:dagster delete pods               # no
 #   kubectl auth can-i --as=system:serviceaccount:default:dagster get secrets               # no
+#
+# Flink 경로 추가분(2026-08-30). 🔴 **넓힌 권한(`pods/exec`)일수록 반증 셀이 중요하다** —
+# "생겼다"보다 "그 옆이 안 생겼다"를 확인해야 범위가 의도대로인지 알 수 있다:
+#   kubectl auth can-i --as=system:serviceaccount:default:dagster create pods/exec          # yes (신규)
+#   kubectl auth can-i --as=system:serviceaccount:default:dagster create flinkdeployments   # yes (신규)
+#   kubectl auth can-i --as=system:serviceaccount:default:dagster list configmaps           # yes (신규)
+#   kubectl auth can-i --as=system:serviceaccount:default:dagster create pods               # no  (유지)
+#   kubectl auth can-i --as=system:serviceaccount:default:dagster get configmaps            # no  (list만 줬다)
+#   kubectl auth can-i --as=system:serviceaccount:default:dagster create pods/exec -n kube-system  # no (Role은 default 한정)
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -26,7 +46,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-    name: dagster-spark-submit
+    name: dagster-compute-submit
     namespace: default
 rules:
     # Spark Operator CRD. apiVersion은 `spark.apache.org/v1`이 storage 정본이다
@@ -41,11 +61,35 @@ rules:
     - apiGroups: [""]
       resources: ["pods/log"]
       verbs: ["get"]
+    # ── Flink 배치 잡 경로 (defs/flink/resources.py) ─────────────────────────
+    # CRD 버전은 클러스터에서 읽었다 — `flinkdeployments.flink.apache.org`는
+    # **v1beta1 단일**(served·storage 둘 다 true)이라 선택지가 없다(2026-08-30 실측).
+    # Spark 쪽(v1beta1+v1 병존)과 다르므로 같은 규칙을 복사하지 않는다.
+    - apiGroups: ["flink.apache.org"]
+      resources: ["flinkdeployments"]
+      verbs: ["get", "create", "delete"]
+    # 🔴 **`list`이지 `get`이 아니다.** `ensure_configmaps()`는 이름별로 조회하지 않고
+    #   네임스페이스를 **한 번 나열해 차집합**을 낸다. `get`만 주면 그 호출이 403으로
+    #   죽는데, 증상은 "ConfigMap이 없다"가 아니라 API 예외라 오진하기 쉽다.
+    #   verb는 코드가 실제로 부르는 것에 맞춘다(이 Role의 설계 원칙).
+    - apiGroups: [""]
+      resources: ["configmaps"]
+      verbs: ["list"]
+    # 🔴 **`pods/exec`는 이 Role에서 가장 넓은 권한**이다 — Flink 파드 안에서 임의 명령을
+    #   실행할 수 있다는 뜻이고, 위의 읽기 전용 verb들과 성격이 다르다.
+    #   그럼에도 필요한 이유: conventions/k8s.md §C5 조건 2가 JDBC 카탈로그 DDL 실행을
+    #   **`kubectl exec` 스트림으로만** 허용한다(stdout이 컨테이너 로그가 되는 Job/파드
+    #   형태 금지 — 로그로 나가면 회수 불가). 즉 이 권한은 편의가 아니라 **그 조건의 대가**다.
+    #   범위는 `default` 네임스페이스 Role에 갇혀 있고(ClusterRole 아님),
+    #   파드 생성·삭제 권한은 여전히 없다(아래 반증 셀로 확인).
+    - apiGroups: [""]
+      resources: ["pods/exec"]
+      verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-    name: dagster-spark-submit
+    name: dagster-compute-submit
     namespace: default
 subjects:
     - kind: ServiceAccount
@@ -53,5 +97,5 @@ subjects:
       namespace: default
 roleRef:
     kind: Role
-    name: dagster-spark-submit
+    name: dagster-compute-submit
     apiGroup: rbac.authorization.k8s.io
