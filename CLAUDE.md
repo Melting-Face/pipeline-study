@@ -222,7 +222,7 @@
   Spark·Flink가 **같은 Iceberg JDBC 카탈로그**를 공유한다.
   **Flink Operator**(기본 설치)와 세션 클러스터로 **Iceberg 배치 왕복이 실증**됐다.
   예산 규약은 **시분할 → 동시 기동**으로 개정됐고(급소는 **CPU 축**·실측은 볼트) 경계가 셋이다 — Flink 상주는
-  **JM만**(TM은 잡 제출 시 온디맨드·수명 1분 미만), **`spark.executor.instances` ≤ 1**, Redpanda 미도입.
+  **JM만**(TM은 잡 제출 시 온디맨드·잡 종료와 함께 회수), **`spark.executor.instances` ≤ 1**, Redpanda 미도입.
   **검증용으로 띄운 상주 컴퓨트는 그 자리에서 내린다** — 회수 시점을 트리거하는 주체가 없으면
   문서에만 있는 규약은 조용히 샌다(반나절 넘게 샜고, 발견 경로는 성능 이상이 아니라 "안 쓰는 것 정리"였다).
   **카탈로그 Postgres는 CloudNativePG(CNPG)** 가 관리한다(`Cluster` CR — 구 `Deployment`+`emptyDir`는
