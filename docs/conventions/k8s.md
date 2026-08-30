@@ -133,16 +133,12 @@ resources:
   (이전 시 누락돼 자산이 죽어 있었다).
 - **오퍼레이터 watch는 장시간 후 죽는다 — 상태 필드만 믿지 않는다**(실측).
   `SparkApplication`의 `currentStateSummary`가 driver 파드 `Succeeded` 이후에도 **`DriverReady`에
-  영구 고착**하는 현상을 확인했다(최장 **4시간 32분**). 오퍼레이터 파드는 재시작 0에 GC 로그도
-  정상이라 **살아 있는 것처럼 보인다** — 죽은 것은 `SparkApplication` **watch**다.
+  영구 고착**하는 현상을 확인했다. 오퍼레이터 파드는 재시작 0에 GC 로그도 정상이라
+  **살아 있는 것처럼 보인다** — 죽은 것은 `SparkApplication` **watch**다.
+  **기동 직후에는 감지되고, 오래 떠 있을수록 전이가 오지 않으며, `rollout restart` 직후 다시 감지된다** —
+  즉 고착은 잡이 아니라 **오퍼레이터의 상주 시간**에 딸린다.
 
-  | 오퍼레이터 기동 후 경과 | 완료 감지 |
-  | --- | --- |
-  | 5분 | ✅ 2.5분 뒤 `within retention` 로그 |
-  | 13.7시간 · 27시간 | ❌ 전이 없음 |
-  | `rollout restart` 직후 20초 | ✅ 2.5분 뒤 정상 전이 |
-
-  관측 일자와 전체 타임라인은 `$OBSIDIAN_VAULT/status/observations.md`에 있다.
+  관측 일자와 경과별 전이 타임라인은 `$OBSIDIAN_VAULT/status/observations.md`에 있다.
 
   **기각한 가설 2개**(둘 다 실측으로): ① `delete`→즉시 `create` 경합 — 간격을 60초 둔 대조군도
   동일하게 실패했다. ② retain이 전이를 지연시킨다 — `Application is within retention ...`
@@ -155,8 +151,9 @@ resources:
 
   **대응**: 글루가 `currentStateSummary`와 **driver 파드 `status.phase`를 함께** 본다.
   파드가 종료 상태(`Succeeded`/`Failed`)가 된 뒤 유예(`pod_terminal_grace_s`, 기본 180초) 안에
-  오퍼레이터 전이가 없으면 **파드 기준으로 판정**한다. 정상 경로(전이 2.5분)는 그대로 두고
-  watch 사멸 시에만 탈출하는 설계다. 회복은 `kubectl -n spark-operator rollout restart deploy`.
+  오퍼레이터 전이가 없으면 **파드 기준으로 판정**한다. 정상 경로의 전이는 이 유예 안에 들어오므로
+  그대로 두고 watch 사멸 시에만 탈출하는 설계다.
+  회복은 `kubectl -n spark-operator rollout restart deploy`.
   근본 해결은 업스트림(apache/spark-kubernetes-operator) 몫이다.
 
   **이 방어는 뒤늦게야 실동작이 확인됐다**(그전까지는 **작성됐을 뿐 발동한 적이 없었다** —
@@ -296,7 +293,7 @@ resources:
    잡 종료와 함께 자동 회수된다. 이 전제가 성립하기 때문에 동시 기동이 허용된다 —
    **TM을 상주시키면 전제가 무너진다.**
 2. 🔴 **`spark.executor.instances` ≤ 1**(Flink 세션이 떠 있는 동안).
-   하나를 더 붙이면 Allocatable의 97%로 여유가 사라진다.
+   하나를 더 붙이면 Allocatable에 여유가 사라진다.
    executor를 늘려야 하면 **Flink 세션을 먼저 내린다** — 둘 중 하나만 확장한다.
 3. **허용은 Redpanda까지 확장되지 않는다.** 도입하면 STREAM 피크가 올라가므로
    배분표와 이 경계를 **함께 재계산**한다. 재계산 전에는 허용 범위가 넓어지지 않는다.
@@ -326,9 +323,9 @@ resources:
 ### 경계 ④ — Dagster 상주는 회수 다이얼이 듣지 않는다
 
 Spark Connect는 `--replicas=0`, Flink 세션은 `delete`로 회수되지만 **오케스트레이터는 회수 대상이 아니다**
-(내리면 스케줄·센서·런큐가 함께 멈춘다). 그래서 Dagster의 **350m/1792Mi**(`describe node` 실측)는
-경계 ①~③의 **모든 시나리오에 상시 더해지는 첫 워크로드**다. BATCH+STREAM 동시 피크에 얹으면 CPU **89%**이고,
-`spark.executor.instances`를 2로 올리면 **101%로 스케줄 자체가 실패**한다 — 경계 ②는 이제
+(내리면 스케줄·센서·런큐가 함께 멈춘다). 그래서 Dagster 상주분은
+경계 ①~③의 **모든 시나리오에 상시 더해지는 첫 워크로드**다. BATCH+STREAM 동시 피크에 이것이 얹힌 상태에서
+`spark.executor.instances`를 2로 올리면 **Allocatable을 넘겨 스케줄 자체가 실패**한다 — 경계 ②는 이제
 "여유가 없다"가 아니라 **"안 된다"** 이다. 확장이 필요하면 늘리는 쪽이 아니라 **Flink 세션을 먼저 내린다.**
 Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 메모리와 강결합이다.
 
