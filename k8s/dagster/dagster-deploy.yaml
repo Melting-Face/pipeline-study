@@ -74,6 +74,13 @@ data:
     # (COPY src/ 가 한 겹을 벗겨낸다) → in-cluster에서는 이 override가 **필수**다.
     # 매니페스트 실체는 ConfigMap `spark-app-manifests`(scripts/k8s-dagster.sh가 레포 파일에서 생성).
     POC_SPARKAPP_MANIFEST: "/etc/dagster/sparkapps/sparkapplication-poc.yaml"
+    # ── Flink 배치 잡 경로 (defs/flink) ──
+    FLINK_NAMESPACE: "default"
+    # 🔴 POC_SPARKAPP_MANIFEST와 **같은 이유로 필수**다 — defs/flink/constants.py의
+    # parents[7] 계산이 이미지 레이아웃에서 "/"로 떨어진다. 두 경로가 같은 함정을 공유하므로
+    # 한쪽만 고치면 다른 쪽이 조용히 남는다.
+    # 매니페스트 실체는 ConfigMap `flink-manifests`(scripts/k8s-dagster.sh가 레포 파일에서 생성).
+    FLINK_SESSION_MANIFEST: "/etc/dagster/flinkapps/flinkdeployment-session.yaml"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -320,6 +327,10 @@ spec:
                       # SparkApplication 매니페스트(레포 파일에서 생성된 ConfigMap).
                       # 이미지에 굽지 않는 이유: 고칠 때마다 태그를 올려야 하고 레포 사본과 갈린다.
                       - {name: spark-app-manifests, mountPath: /etc/dagster/sparkapps, readOnly: true}
+                      # FlinkDeployment 매니페스트. ConfigMap을 **분리**한 이유는 이름이
+                      # 내용을 말해야 하기 때문이다 — `spark-app-manifests`에 Flink 파일을
+                      # 넣으면 이름이 내용을 속인다. 마운트 경로도 함께 나눈다.
+                      - {name: flink-manifests, mountPath: /etc/dagster/flinkapps, readOnly: true}
                   # daemon은 포트를 열지 않아 HTTP·TCP probe가 불가능하다 → exec.
                   # 🔴 주기를 짧게 두면 안 된다 — 이 명령은 매 실행마다 DagsterInstance를 새로 열어
                   # Postgres 접속을 만든다. CNPG max_connections=100이라 10초 주기면 쌓인다.
@@ -347,3 +358,5 @@ spec:
                 - {name: tmp, emptyDir: {}}
                 - name: spark-app-manifests
                   configMap: {name: spark-app-manifests}
+                - name: flink-manifests
+                  configMap: {name: flink-manifests}
