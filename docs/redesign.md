@@ -67,7 +67,7 @@
 - **Trino는 제거**한다. dbt는 **dbt-spark**로 이관하고, ad-hoc 조회는 Spark SQL로 대체한다.
 - 자원 배분(**8 CPU / 26,702 MiB** VM — `scripts/k8s-env.sh`가 정본, **동시 기동 허용**)은
   [resource-sizing.md](resource-sizing.md) "Kubernetes 재설계 시나리오"와 [conventions/k8s.md](conventions/k8s.md) §9-3.
-  🔴 백분율의 분모는 VM 총량이 아니라 **노드 Allocatable**(`8000m` / `26679964Ki` = 26054Mi 내림)이다.
+  🔴 백분율의 분모는 VM 총량이 아니라 **노드 Allocatable**이다(둘은 다른 축이고, 값은 읽어서 쓴다).
   **수치의 정본은 [resource-sizing.md](resource-sizing.md) §(A)** 이고 여기는 요약이다 —
   자원을 바꾸면 **양쪽을 한 벌로** 갱신한다(상향 시 이 줄이 낡은 채 남아 있었다).
 
