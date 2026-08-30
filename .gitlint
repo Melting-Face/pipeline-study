@@ -6,6 +6,12 @@
 contrib=contrib-title-conventional-commits
 # 짧은 커밋엔 본문이 없을 수 있어 허용
 ignore=body-is-missing
+# 🔴 빈 범위를 조용히 통과시키지 않는다. 기본값 False에서는 0커밋을 검사한 통과와
+#    N커밋을 검사한 통과가 **출력이 같아** 로그로 갈리지 않는다(둘 다 무출력 exit 0).
+#    범위 모드(`--commits`)에만 걸리므로 commit-msg 훅(`--msg-filename`)에는 영향이 없다.
+#    ⚠️ 막는 것은 「범위가 빈다」 축뿐이다 — 커밋은 있는데 전부 ignore-* 규칙에 걸려
+#    0건이 되는 축은 이 옵션으로 막히지 않는다(.github/workflows/ci.yml §commit-msg 주석).
+fail-without-commits=true
 
 [title-max-length]
 line-length=72

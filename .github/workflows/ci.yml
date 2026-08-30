@@ -122,6 +122,21 @@ jobs:
       # gitlint는 commit-msg 스테이지 훅이라 `pre-commit run --all-files`가 **건너뛴다**.
       # 규칙 정본은 루트 .gitlint(contrib-title-conventional-commits).
       # 🔴 실행 파일은 `gitlint-core`가 제공한다 — `uvx gitlint`는 실행 파일을 못 찾는다.
+      #
+      # 🔴 **보증 범위 — 「빈 입력이면 조용히 통과」 축이 둘인데 하나만 막힌다.**
+      #    ⓐ **범위가 빈다** → `.gitlint`의 `fail-without-commits=true`가 막는다.
+      #       그 값이 없으면 0커밋 통과와 N커밋 통과가 **출력이 같다**(둘 다 무출력 exit 0).
+      #       체크아웃 방식·기본 브랜치 이름·fetch-depth가 바뀌어 `origin/<base>..HEAD`가
+      #       빈 범위로 떨어지는 순간 이 게이트는 아무 신호 없이 통과했을 것이다.
+      #    ⓑ **커밋은 있는데 전부 무시 규칙에 걸린다** → **막지 못한다.** `ignore-merge-commits`
+      #       등 5종이 기본 True라, 머지 커밋만 담긴 범위는 `fail-without-commits=true`
+      #       에서도 exit 0이다. **이 축은 열려 있고, 닫지 않기로 한 결정이다** —
+      #       PR 체크아웃이 머지 커밋을 HEAD로 쓰므로 그 커밋을 무시하는 것이 정상 동작이고,
+      #       "전부 무시됐다"와 "무시할 것만 있었다"를 여기서 가를 수단이 없다.
+      #    ⚠️ 규칙은 여기 재선언하지 않는다(머리 주석 원칙 3) — 정본은 루트 `.gitlint`다.
+      #       CI 스텝에 `rev-list --count` 가드를 더하지 않는 이유도 같다(+ 그것도 ⓑ는 못 잡는다).
+      #    참고: 같은 파일 `terraform` 잡은 `found -eq 0`으로 같은 계열을 이미 막고 있었다 —
+      #    **한쪽만 막혀 있었다.** 게이트가 초록인 것과 게이트가 옳은 것은 다른 축이다.
       - name: PR 커밋 전수 검사
         run: |
           git fetch --no-tags origin "${{ github.base_ref }}"
