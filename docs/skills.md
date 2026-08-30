@@ -79,6 +79,11 @@
 | **dagster-expert** | `dagster-io/skills` (**A**) | Dagster·`dg` CLI 관련 모든 작업 — 프로젝트 구조 파악, 에셋/스케줄/센서/잡 정의·검색, 디버깅, 개념 질의 |
 | **dagster-integrations** | `dagster-io/skills` (**A**) | `dagster-*` 통합 라이브러리 탐색·이해(S3·Iceberg·dbt·k8s 등 연동) |
 | **dignified-python** | `dagster-io/skills` (**B**) | 범용 프로덕션 Python 표준. **A가 아니다** — 본문이 *"Not Dagster-specific"* 이라 명시하고 Dagster Labs는 Python의 벤더가 아니다(§등급은 스킬 단위). **본 프로젝트 컨벤션이 우선** |
+| **using-dbt-for-analytics-engineering** | `dbt-labs/dbt-agent-skills` (**A**) | dbt 모델 작성·수정, `ref()`/`source()` SQL, 테스트 작성, `dbt show` 검증. **[conventions/dbt.md](conventions/dbt.md)의 방언 규약이 우선** — 매크로·`fqn:` 셀렉터는 이 저장소 규칙을 따른다 |
+| **adding-dbt-unit-test** | `dbt-labs/dbt-agent-skills` (**A**) | dbt 단위 테스트 YAML — upstream 입력을 모킹하고 기대 출력을 검증. [test.md](test.md) 계층 우선순위상 **스키마 테스트 다음**이다 |
+| **running-dbt-commands** | `dbt-labs/dbt-agent-skills` (**A**) | dbt CLI 실행·파라미터 구성. ⚠️ 이 저장소의 타깃은 `spark_connect`이고 카탈로그 설정은 **서버 측**에 있다 |
+| **documentation** | `anthropics/knowledge-work-plugins` (**B**, 잠정) | 기술 문서·README·런북 작성. **조직 계정이되 기술 글쓰기의 벤더는 아니다**([skills/sourcing.md](skills/sourcing.md) §등급은 스킬 단위). 문서 규약이 우선 |
+| **find-skills** | `vercel-labs/skills` (**B**) | 스킬 탐색·설치 안내. ⚠️ **안내까지만 쓴다** — 설치·`skills-lock.json` 편집은 **공급망·비가역**이라 계획만 내고 `security` 컨펌 → 사용자 승인을 거친다 |
 | **sql-optimization** | `github/awesome-copilot` (B) | 범용 SQL 성능 튜닝(실행계획·인덱스·페이지네이션). ✅ **lock 등재로 출처가 규명**됐다 — 한때 D등급("출처 미상")이었다 |
 | **multi-stage-dockerfile** | `github/awesome-copilot` (B) | 멀티스테이지 Dockerfile 작성. 문서 1파일·실행 파일 없음 |
 | **github-issues** | `github/awesome-copilot` (B) | ❌ **미등재**(게이트 탈락) — 워커 배선은 [agents.md](conventions/agents.md) §미션 개시가 금지. 읽기는 MCP 의존(미채택)이라 죽은 참조, 쓰기는 [issue.md](conventions/issue.md) §5의 폼 우회 경로다 |
@@ -91,17 +96,29 @@
 | **spark-optimization** | `wshobson/agents` (**C**) | Spark 성능 최적화. ✅ **검토 완료·조건부 승인**(K-1 — [skills/sourcing.md](skills/sourcing.md)). ⚠️ 이 칸은 한때 "미검토"로 남아 **같은 문서 안에서 모순**이었다(구판 스냅샷 미갱신) |
 | **brainstorming** | `obra/superpowers` (**C**) | 🔁 **「분리안」 채택** — 마크다운 절차만 참조, `scripts/**` 실행 금지. **단서 필수** |
 
-> ⚠️ **이 표는 lock 전량이 아니다.** `skills-lock.json` **19종** 중 여기 있는 것은 **14행**이고
-> `adding-dbt-unit-test`·`documentation`·`find-skills`·`running-dbt-commands`·
-> `using-dbt-for-analytics-engineering` **5종이 빠져 있다**(실측 — lock 키와 표 행 대조).
-> 아래 §②의 고정 표기도 갈린다 — **4종**(dbt 3종 + `kubernetes-specialist`)이 ⚙️로 적혀 있으나
-> 전부 lock에 있어 **🔒가 맞다**. 특히 `kubernetes-specialist`는 §①에서 🔒인데 §②에서 ⚙️라
-> **같은 문서 안에서 갈린다**. 바로 아래 문단의 "9건" 같은 계수도 함께 낡았다.
-> **목록·계수·고정 표기를 lock에서 다시 뽑는 것은 별도 작업으로 연다** — 여기서 고치면
-> 이번 미션(스킬 1종 배선 판정)의 범위를 넘고, 부분 교정은 "고쳤다고 믿는" 상태를 만든다.
+✅ **이 표는 `skills-lock.json` 전량과 1:1이다.** 구판은 5종이 빠지고 §②의 고정 표기 4종이
+⚙️로 갈려 있었다. ⚠️ **여기에 「N종」을 적지 않는다** — lock은 움직이고, 박아 둔 계수는
+**다음 드리프트를 조용히 통과시킨다**. 구판이 정확히 그랬다: 표가 14행이 된 뒤에도
+본문은 *"9건"* 을 말하고 있었다. **대조는 세지 말고 뽑아서 한다.**
 
-> **이 표를 "검증된 스킬 목록"으로 읽지 않는다.** 9건 중 **5건이 C등급**이고, `security` 검토를
-> 통과한 것은 **A등급 3종 + `jeffallan` 2종뿐**이며 1종은 **거부**됐다.
+```bash
+python3 - <<'PY' > /tmp/lock.txt
+import json
+with open('skills-lock.json') as f: d = json.load(f)
+for k in sorted(d['skills']): print(k)
+PY
+grep -oP '^\| \*\*\K[a-z0-9-]+' docs/skills.md | sort -u > /tmp/doc.txt   # §① 표의 스킬명
+diff /tmp/lock.txt /tmp/doc.txt   # 빈 출력 = 정합
+```
+
+**빈 출력을 그대로 믿지 마라** — 한 종을 일부러 빼서 `diff`가 그것을 잡는지 먼저 본다
+([philosophy.md](philosophy.md) 원칙 7).
+
+> **이 표를 "검증된 스킬 목록"으로 읽지 않는다.** 등급은 **A~C가 섞여 있고**, `security` 본문
+> 검토를 실제로 통과한 것은 **C등급 중 일부**뿐이다(어느 것인지는 각 행의 ✅/⚠️가 말한다).
+> ⚠️ **여기에 등급별 계수를 적지 않는다** — 구판은 *"9건 중 5건이 C등급"* 이라 적고 있었는데
+> **표가 14행일 때도 그 문장은 9를 말하고 있었다.** 계수를 본문에 박으면 표가 자라도 문장은
+> 안 자란다. 등급 분포가 필요하면 **표에서 그 자리에 센다**(`grep -c` 대상은 위 §① 표뿐이다).
 > ✅ 해시는 **재계산·대조가 가능해졌다**(볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md`의 해시 재계산 절).
 > 다만 이 표의 한계는 **그대로**다 — 무결성이 검증돼도 **출처 신뢰성과 `security` 검토는 별개 축**이고,
 > 이 표가 말하는 것은 여전히 **"받아온 뒤 바뀌지 않았다"** 까지다. **"안 바뀜"은 "안전함"이 아니다.**
@@ -134,7 +151,8 @@
 | --- | --- | --- |
 | Dagster 오케스트레이션·에셋 | `dagster-expert` · `dagster-integrations` | 🔒 |
 | Python 코드 품질 | `dignified-python`(프로젝트 컨벤션 우선) | 🔒 |
-| dbt 모델링·테스트·실행 | `using-dbt-for-analytics-engineering` · `adding-dbt-unit-test` · `running-dbt-commands` · `building-dbt-semantic-layer` · `troubleshooting-dbt-job-errors` · `fetching-dbt-docs` | ⚙️ |
+| dbt 모델링·테스트·실행 | `using-dbt-for-analytics-engineering` · `adding-dbt-unit-test` · `running-dbt-commands` | 🔒 **A등급** — 셋 다 lock 등재(§①) |
+| dbt 부가 기능(lock 밖) | `building-dbt-semantic-layer` · `troubleshooting-dbt-job-errors` · `fetching-dbt-docs` | ⚙️ |
 | dbt 엔진·플랫폼 이행(저빈도) | `migrating-dbt-core-to-fusion` · `migrating-dbt-project-across-platforms` | ⚙️ **★3 이하** — 워커 지시문 미등재(§③ 임계) |
 | dbt MCP 서버 설정 | `configuring-dbt-mcp-server` | ⚙️ **★3 이하** — 본 저장소는 dbt MCP 미사용 |
 | Spark 배치·성능 튜닝 | `spark-engineer` · `spark-optimization` | 🔒 **(C등급)** — 둘 다 lock 등재. **전역/프로젝트 버전 상이** |
@@ -146,9 +164,10 @@
 | 분석·애드혹 질의 | `answering-natural-language-questions-with-dbt` · `duckdb` | ⚙️ |
 | 차트·시각화(리포트 그림) | `dataviz` | 🌐 **워커 등재 불가** — 디스크에 없어 `Read` 불가. supervisor 전용 |
 | 외부 1차 출처 확인(범용) | **전용 스킬 없음** → [.claude/agents/researcher.md](../.claude/agents/researcher.md) §출처 등급 | — |
-| 기술 글쓰기·매체 포맷(공개물) | **전용 스킬 없음** → [conventions/publishing.md](conventions/publishing.md) | — |
+| 기술 문서·README·런북 작성 | `documentation` | 🔒 — lock 등재(§①). ⚠️ **매체 포맷·공개 판정은 덮지 않는다** — 그쪽 정본은 [conventions/publishing.md](conventions/publishing.md)이고 스킬보다 우선한다 |
 | 컨테이너·Compose | `docker-expert` | ⚙️ |
-| Kubernetes·k3s·Helm | `kubernetes-specialist` · `helm-chart-scaffolding` | ⚙️ |
+| Kubernetes 워크로드·매니페스트 | `kubernetes-specialist` | 🔒 **(C등급)** — lock 등재(§①), **단서 필수**([skills/caveats.md](skills/caveats.md)) |
+| Helm 차트 스캐폴딩 | `helm-chart-scaffolding` | ⚙️ — **단서 필수**([skills/caveats.md](skills/caveats.md)) |
 | CI/CD(GitHub Actions) | `github-actions-templates` | ⚙️ |
 | 쉘 스크립트 품질 | `shellcheck-configuration` | ⚙️ |
 | Terraform/IaC | `terraform-style-guide` · `terraform-test` · `terraform-stacks` | 🔒 **A등급** — 정본이 *"전용 스킬 없음"* 이라 적어둔 **갭을 메웠다**. [conventions/terraform.md](conventions/terraform.md)가 여전히 우선 |
@@ -179,7 +198,7 @@ type 표·Conventional Commits 포맷뿐인데 그건 [conventions/general.md](c
 막을 기계가 없으므로 **이 방침의 실효는 규율 100%**이고, 그래서 여기 적는다.
 
 - **워크플로 스킬**(도메인 아님, 슬래시 커맨드): `code-review` · `simplify` · `security-review` · `run` ·
-  `find-skills` · `auditing-skills` · 프로젝트 자체 커맨드 `journal` — 검토·검증·실행 보조에 쓴다.
+  `find-skills`(🔒 — §① 등재) · `auditing-skills` · 프로젝트 자체 커맨드 `journal` — 검토·검증·실행 보조에 쓴다.
   ⚠️ 이전 문서에 있던 **`verify`는 세션 목록·디스크 어디에도 없다** — 죽은 참조로 판단해 제거했다.
 - **주의**: ⚙️ 스킬은 `skills-lock.json`에 고정되지 않아 **무결성(`computedHash`)이 검증되지 않으며**,
   하네스가 제공하는 슬래시 커맨드는 **세션마다 가용성이 다를 수 있다**.

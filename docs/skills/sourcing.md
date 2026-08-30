@@ -82,6 +82,7 @@ dbt Labs는 **dbt의 벤더**이므로 `running-dbt-commands` 같은 것은 A여
 | `dignified-python` | `dagster-io` | **범용 Python** — 본문이 *"Not Dagster-specific"* 이라 명시 | **B** |
 | `running-dbt-commands` | `dbt-labs` | **dbt** = 그 벤더의 제품 | **A** |
 | `auditing-skills` | `dbt-labs` | **Agent Skills** — dbt가 아니다 | **B** |
+| `documentation` | `anthropics` | **기술 글쓰기** — Claude의 벤더이지 그것의 벤더는 아니다 | **B**(잠정) |
 
 | 등급 | 정의 | 통제 | 현재(29종) |
 | --- | --- | --- | --- |
