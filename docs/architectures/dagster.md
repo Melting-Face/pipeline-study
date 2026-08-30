@@ -50,6 +50,29 @@ BestEffort로 떠 예산표가 처음부터 거짓이 되는데, 그 함정은 F
 **오퍼레이터는 없다.** Spark·Flink·CNPG는 오퍼레이터를 Helm으로 설치하고 워크로드는 raw YAML로 두는데,
 Dagster에는 오퍼레이터라는 층이 아예 없어 **워크로드 축 하나**로만 존재한다.
 
+### 원격 컴퓨트 트리거 — 경로가 셋이고 이유가 다 다르다
+
+`DefaultRunLauncher`라 **run 실행 자체에는 k8s API가 필요 없다**(run = daemon 파드의 서브프로세스).
+API 권한이 필요한 것은 **원격 컴퓨트를 부르는 자산들**뿐이고, 그 호출 방식이 셋으로 갈린다.
+
+| 경로 | 수단 | 왜 이 형태인가 |
+| --- | --- | --- |
+| **Spark 세션** | `dagster-pyspark`의 `LazyPySparkResource` (`spark.remote`) | 공식 통합. `Lazy~`라서 `spark_session` **접근 시점**에만 붙어, 무관한 run이 Connect 가용성에 묶이지 않는다 |
+| **Spark 배치** | 자체 `SparkOperatorResource` — `SparkApplication` CR 제출·폴링 | 🔴 오퍼레이터 watch가 죽어 상태가 영구 고착한 전례(실측 4시간 32분)가 있어 **driver 파드 phase를 보조 신호로 병행**한다 |
+| **Flink 배치** | 자체 `FlinkSessionResource` — `FlinkDeployment` 기동 + `sql-client` **exec 스트림** + 회수 | 잡이 jar가 아니라 SQL이라 CRD 제출 경로가 없고, `PipesK8sClient`는 §C5 조건 2와 충돌한다 |
+
+🔴 **`PipesK8sClient`는 쓰지 않는다.** `dagster-k8s`는 **미설치**이고, Pipes가 띄우는 K8s Job/Pod
+형태는 [conventions/k8s.md](../conventions/k8s.md) §C5 조건 2(*"stdout이 컨테이너 로그가 되는
+Job/파드 형태로 만들지 않는다"*)와 정면 충돌한다. [redesign.md](../redesign.md) §3의 종전 서술은
+**착수 전 계획이 남아 있던 것**이며 교정됐다.
+
+⚠️ **Flink 경로만 세션 클러스터의 수명까지 진다** — 자산의 `finally`가 `teardown()`을 부른다.
+Spark 배치는 잡 1회가 곧 CR 1개라 그 축이 없다. **같은 "제출·폴링"으로 뭉쳐 읽지 않는다.**
+
+권한은 Role **`dagster-compute-submit`** 하나에 모인다(`k8s/dagster/dagster-rbac.yaml`).
+🔴 그중 **`pods/exec`가 가장 넓다** — Flink 파드 안에서 임의 명령을 실행할 수 있다는 뜻이고,
+편의가 아니라 위 §C5 조건 2의 **대가**다. 범위는 `default` 네임스페이스 Role에 갇혀 있다(ClusterRole 아님).
+
 ## 운영 메모
 
 ### run 고아 — `run_monitoring`을 켤 수 없다

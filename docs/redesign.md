@@ -12,35 +12,39 @@
   Dagster가 in-process/subprocess로 실행하고, dbt-on-Trino가 모든 변환을 담당한다([overview.md](architectures/overview.md)).
 - **한계**: 단일 노드 자원 상한(Trino 메모리 제약·[resource-sizing.md](resource-sizing.md)), 스케일아웃 경로 부재.
 - **목표 지향점**: **학습/포트폴리오**. 실제 프로덕션 패턴인 **오케스트레이터(컨트롤 플레인) ↔ 원격 컴퓨트 분리**를
-  로컬에서 재현한다. Dagster는 **호스트 PC**에 두고, 컴퓨트는 **로컬 K8s의 Spark Operator**로 옮긴다.
+  로컬에서 재현한다. **분리는 프로세스 경계이지 머신 경계가 아니다** — Dagster도 같은 클러스터의
+  워크로드로 두되(Deployment ×2), 컴퓨트는 **오퍼레이터가 띄우는 별도 파드**로 옮긴다.
 - **로드맵의 종착지는 인프라가 아니라 분석이다.** Phase 0~4는 수단을 세우고, **Phase 5에서 gold 마트·
   리포트로 닫힌다**(§4). 인프라가 "도는 것"은 완료 조건이 아니다.
 
 ## 2. 목표 아키텍처 (토폴로지)
 
 ```
-┌───────────────── 호스트 PC (control plane) ─────────────────────┐
-│  Dagster webserver + daemon   (uv run dg dev)                    │
-│    • 배치: PipesK8sClient로 SparkApplication(CRD) 제출·폴링         │
-│    • 스트림: FlinkDeployment(CRD) 제출·수명주기 관리                 │
-│    • dbt CLI(dbt-spark) → Spark Connect 대상 실행 (※ 아래 주 참조)  │
-│  Dagster 메타 Postgres (호스트/compose 유지)                       │
-└───────────────┬──────────────── kubeconfig ────────────────────┘
-                │ k8s API · (필요 시) port-forward
-┌───────────────▼─────────── 로컬 K8s (kind on Podman) ───────────┐
-│  Spark Operator (Helm) → SparkApplication → driver/executor      │  [BATCH]
-│  Flink Operator (Helm) → FlinkDeployment → JobManager/TaskManager│  [STREAM]
-│  Iceberg bronze 테이블 ← 스트림 소스(changelog 읽기)             │  [STREAM]
+┌─────────────────── 로컬 K8s (kind on Podman) ────────────────────┐
+│  Dagster webserver + daemon (Deployment ×2) — 컨트롤 플레인        │
+│    • 배치(Spark) : SparkApplication(CRD) 제출·폴링                 │  [BATCH]
+│    • 배치(Flink) : FlinkDeployment 기동 → sql-client exec → 회수   │  [BATCH]
+│    • 스트림(Flink): 잡 수명주기 관리 — 아직 목표(미착수)           │  [STREAM]
+│    • dbt CLI(dbt-spark) → Spark Connect 대상 실행 (※ 아래 주 참조) │
+│  ── 이하 컴퓨트·데이터(같은 클러스터) ──                           │
+│  Spark Operator (Helm) → SparkApplication → driver/executor       │  [BATCH]
+│  Flink Operator (Helm) → FlinkDeployment → JobManager/TaskManager │  [BATCH·STREAM]
+│  Iceberg bronze 테이블 ← 스트림 소스(changelog 읽기)              │  [STREAM]
 │  SeaweedFS  (StatefulSet+PVC) ← S3(path-style)·IB 웨어하우스·체크포인트│
-│  CloudNativePG (Helm) → Cluster(CRD) → Catalog Postgres(+PVC)     │
-│                                       ← Iceberg JDBC 카탈로그      │
+│  CloudNativePG (Helm) → Cluster(CRD) → Postgres(+PVC)             │
+│      ← Iceberg JDBC 카탈로그(iceberg DB) · Dagster 메타(dagster DB) │
 │  로컬 레지스트리 (kind local-registry)                             │
 └──────────────────────────────────────────────────────────────────┘
-   Iceberg 공유:  Spark(batch write) ↔ dbt-spark(마트) ↔ Flink(stream r/w)
+   Iceberg 공유:  Spark(batch write) ↔ dbt-spark(마트) ↔ Flink(batch·stream r/w)
    ※ BATCH(Spark)·STREAM(Flink)은 동시 기동 허용(실측 — 경계 3개는 conventions/k8s.md §9-3)
    ※ 스트림 소스는 Redpanda → Iceberg bronze로 변경(결정·같은 날 이행). Redpanda는 미도입 유지
    ※ [STREAM] 경로는 실증됨 — Spark append → Flink 스트리밍 읽기 → Iceberg 싱크 → Spark 되읽기
-      체크포인트(SeaweedFS)·RocksDB 배포 완료. 단 Dagster의 스트림 잡 수명주기 관리는 아직 목표(미착수)
+      체크포인트(SeaweedFS)·RocksDB 배포 완료.
+   ※ **[BATCH] Flink는 Dagster 자산으로 배선됐다**(`defs/flink/`) — 세션 클러스터 기동 → SQL 실행 →
+      **회수까지 자산 하나가 진다**(`finally`의 `teardown()`). ⚠️ 단 **선언이지 실측이 아니다**:
+      코드는 main에 있으나 `terraform apply`·이미지 재빌드 전이라 클러스터는 아직 안 움직였다.
+   ※ **스트림 잡 수명주기 관리는 여전히 미착수다.** 배치에서 성립한 것을 일반화하지 않는다 —
+      TM이 잡 수명 내내 상주해 동시 기동 허용의 전제가 깨진다([architectures/flink.md](architectures/flink.md)).
 ```
 
 > **※ dbt 경로는 아직 "클러스터 대상 실행"이 아니다**(실측). Spark Connect 서버는
@@ -53,8 +57,12 @@
 > ⚠️ **배치 경로(`SparkApplication`)는 이와 별개로 오퍼레이터가 driver/executor를 띄운다.**
 > 그림에서 두 경로가 같은 "Spark"로 보이지만 **실행 모델이 다르다.**
 
-- **Dagster는 클러스터 밖(호스트)** 에서 컨트롤 플레인 역할만 한다. Databricks/EMR을 트리거하는 것과
-  동일한 패턴이며, `dg dev` 기반 **빠른 개발 루프**를 유지한다.
+- **Dagster도 클러스터 안(in-cluster)** 에서 컨트롤 플레인 역할을 한다. 오케스트레이터와 컴퓨트를
+  가르는 것은 **프로세스·수명 경계**이지 머신 경계가 아니다 — Databricks/EMR을 트리거하는 패턴은
+  그대로이고, 다만 트리거하는 쪽이 같은 클러스터에 산다.
+  🔴 **종전 서술("호스트 PC에 두고 `dg dev`로 돈다")은 폐기됐다.** 호스트 시절에는 클러스터에 닿기 위해
+  port-forward 2개와 TLS Ingress + 로컬 CA 신뢰 주입이 필요했고, in-cluster에서 그 우회가 전부
+  **서비스 DNS 직결**로 사라졌다. 정본은 [architectures/dagster.md](architectures/dagster.md).
 - **컴퓨트·데이터 서비스는 K8s로 통일**한다(하이브리드 이중관리 회피). 컴퓨트는 **Spark(배치)+Flink(스트림)**.
 - **Trino는 제거**한다. dbt는 **dbt-spark**로 이관하고, ad-hoc 조회는 Spark SQL로 대체한다.
 - 자원 배분(**8 CPU / 26,702 MiB** VM — `scripts/k8s-env.sh`가 정본, **동시 기동 허용**)은
@@ -101,13 +109,22 @@ lineage(스트림): **Iceberg bronze(changelog 스트리밍 읽기) → Flink(�
 | 로컬 K8s 배포판 | **kind on Podman(rootful)** | Docker Desktop 탈피. kind Podman provider는 experimental이라 rootful 머신 필수([conventions/k8s.md](conventions/k8s.md) §10) |
 | 컴퓨트 엔진 | **Spark(배치) + Flink(스트림)**, **Trino 제거** | 배치=Spark(bronze+dbt-spark), 스트림=Flink(실시간 경보). 역할 분리 |
 | dbt 실행 엔진 | **dbt-spark**(← dbt-trino) | Trino 제거 대응. dbt-spark는 dbt Labs 유지보수 어댑터 |
-| Dagster↔컴퓨트 트리거 | **PipesK8sClient + SparkApplication/FlinkDeployment 제출·폴링** | Pipes가 로그·materialization 회수. `K8sRunLauncher`는 in-cluster 배포용이라 부적합 |
+| Dagster↔컴퓨트 트리거 | **자체 리소스**(← `PipesK8sClient`, 개정) | Spark=CRD 제출·폴링 / Flink=CRD 기동 + `exec` 스트림. 아래 주 참조 |
 | 오브젝트 스토어 | **SeaweedFS 유지** + `path-style` 강제 | Spark·Flink S3A 모두 `fs.s3a.path.style.access=true` 필수 |
 | 스트림 소스 | **Iceberg bronze 테이블**(changelog 스트리밍 읽기) | 신규 상주 인프라 0 — 브로커·소스DB·Debezium이 불요하다. Redpanda는 미도입 유지 |
 | 데이터 서비스 위치 | SeaweedFS·카탈로그 Postgres **K8s로 이전** | 단일 패러다임(K8s) 통일 |
 | 카탈로그 Postgres 관리 | **CloudNativePG 오퍼레이터**(← Deployment+emptyDir) | PVC·failover·PITR·튜닝이 CR 한 장. Spark·Flink 오퍼레이터와 **같은 선언형 패러다임**. 이전 구성은 재기동만으로 카탈로그가 소멸했다 |
 | SeaweedFS 관리 | **StatefulSet 유지**(오퍼레이터 미채택 🔎) | 오퍼레이터는 master/volume/filer 분리로 **+500m/+1Gi** 상주 순증인데, 이미 PVC라 막을 유실 급소가 없다. Phase 2 이후 재검토 |
 | Dagster 실행 위치 | **in-cluster**(개정 — 구 판정은 "호스트 유지") | 우회 경로(port-forward 2개 + TLS Ingress + CA 주입)가 서비스 DNS 직결로 대체된다. 호스트 headroom 회수는 예산 설계의 전제였다. run launcher는 `DefaultRunLauncher` 유지 |
+
+> **※ 트리거 행 개정 — `PipesK8sClient`를 쓰지 않는다.**
+> Pipes는 K8s Job/Pod를 띄우는 방식인데, Flink SQL 경로는
+> [conventions/k8s.md](conventions/k8s.md) §C5 조건 2가 *"stdout이 컨테이너 로그가 되는
+> Job/파드 형태로 만들지 않는다"* 로 못 박아 **정면 충돌**한다(로그로 나가면 크리덴셜 회수 불가).
+> Spark 경로도 실제로는 Pipes가 아니라 자체 `SparkOperatorResource`이고 `dagster-k8s`는 **미설치**다 —
+> 종전 서술은 **착수 전 계획이 그대로 남아 있던 것**이며, Spark 배선 시점에 이미 사실과 달랐다.
+> `K8sRunLauncher`는 축이 다르다(run 자체를 파드로 띄우는 옵션이라 트리거 수단이 아니다).
+> 경로별 비교는 [architectures/dagster.md](architectures/dagster.md) §원격 컴퓨트 트리거.
 
 ## 4. 이행 플랜
 
@@ -148,6 +165,9 @@ lineage(스트림): **Iceberg bronze(changelog 스트리밍 읽기) → Flink(�
 - Apache Spark Kubernetes Operator(GA 1.0.0, Kubeflow에서 이전): https://apache.github.io/spark-kubernetes-operator/ · 릴리스: https://github.com/apache/spark-kubernetes-operator/releases
 - Apache Flink Kubernetes Operator: https://nightlies.apache.org/flink/flink-kubernetes-operator-docs-main/
 - Dagster Pipes / dagster-k8s(PipesK8sClient): https://docs.dagster.io/api/python-api/libraries/dagster-k8s
+  — 🔎 **검토 후 미채택**(§3 트리거 행). 링크는 기각 근거를 확인할 수 있도록 남긴다.
+- Kubernetes API — Pod exec(`connect_get_namespaced_pod_exec`): https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/#proxy
+- Apache Flink SQL Client(`-i` init 파일·옵션): https://nightlies.apache.org/flink/flink-docs-release-2.1/docs/dev/table/sqlclient/
 - Dagster & Spark: https://docs.dagster.io/integrations/libraries/spark
 - dbt-spark 어댑터: https://docs.getdbt.com/docs/core/connect-data-platform/spark-setup
 - Spark on Kubernetes: https://spark.apache.org/docs/latest/running-on-kubernetes.html
