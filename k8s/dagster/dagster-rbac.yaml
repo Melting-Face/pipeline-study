@@ -1,8 +1,19 @@
-# Dagster ServiceAccount·RBAC — `SparkApplication` 제출 경로 전용
+# Dagster ServiceAccount·RBAC — **컴퓨트 잡 제출 경로**(Spark·Flink 공용)
+#
+# 🔴 Role 이름이 `dagster-spark-submit`이었다. Flink 배선이 들어오면서 담는 권한이
+#   Spark를 넘어섰고(`flinkdeployments`·`configmaps`·**`pods/exec`**), 이름이 내용을
+#   속이게 됐다. 특히 `pods/exec`는 이 Role에서 **가장 넓은 권한**(파드 안 임의 명령 실행)인데
+#   권한 감사에서 가장 먼저 보여야 할 항목이 가장 눈에 안 띄는 이름 뒤에 숨는 상태였다.
+#   ⇒ `dagster-compute-submit`으로 개명한다("무엇을 하는 Role인가"를 이름이 말한다).
+#   개명은 `terraform/lakehouse-platform/manifests.tf`의 리소스 키(`kind/ns/name`)를 바꾸므로
+#   `terraform apply`가 **구 객체 destroy + 신 객체 create**로 처리한다 — 고아가 남지 않는다.
+#   🔴 단 이는 `terraform apply`로 적용할 때만 성립한다. `kubectl apply -f`로 넣으면 구 Role이
+#   그대로 남아 SA에 옛 권한이 계속 붙는다.
 #
 # 왜 RBAC이 필요한가: run launcher는 `DefaultRunLauncher`라 **run 실행 자체에는 k8s API가 필요 없다**
-#   (run은 daemon 파드 안의 서브프로세스로 돈다). 권한이 필요한 것은 `defs/poc/`의
-#   `SparkOperatorResource` 하나뿐이다 — 이 자산이 `SparkApplication` CR을 제출하고 상태를 폴링한다.
+#   (run은 daemon 파드 안의 서브프로세스로 돈다). 권한이 필요한 것은 원격 컴퓨트를 제출하는
+#   자산들이다 — `defs/poc/`의 `SparkOperatorResource`(SparkApplication CR 제출·폴링)와
+#   `defs/flink/`의 `FlinkSessionResource`(FlinkDeployment CR + `sql-client` exec).
 #   호스트 Dagster 시절에는 사람의 kubeconfig를 빌려 썼고, in-cluster에서는 이 SA가 그 자리를 대신한다.
 #
 # 🔴 verb는 **코드가 실제로 부르는 것만** 넣는다(defs/poc/resources.py):
@@ -35,7 +46,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-    name: dagster-spark-submit
+    name: dagster-compute-submit
     namespace: default
 rules:
     # Spark Operator CRD. apiVersion은 `spark.apache.org/v1`이 storage 정본이다
@@ -78,7 +89,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-    name: dagster-spark-submit
+    name: dagster-compute-submit
     namespace: default
 subjects:
     - kind: ServiceAccount
@@ -86,5 +97,5 @@ subjects:
       namespace: default
 roleRef:
     kind: Role
-    name: dagster-spark-submit
+    name: dagster-compute-submit
     apiGroup: rbac.authorization.k8s.io
