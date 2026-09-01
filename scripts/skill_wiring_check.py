@@ -65,6 +65,26 @@ r"""워커 지시문의 §참고 스킬 표와 `docs/skills.md` §③의 **배�
        `analyst`+`sql-optimization` → allow / `analyst`+`kubernetes-specialist` → deny
        (등재분 나열이 이 검사기의 `analyst` 집합과 일치) / `tech-writer` → 빈 표 deny
        🔴 이 대조가 없으면 "두 파서가 같은 표를 읽는다"는 **주장일 뿐**이다.
+
+R7·R8 검증 (전용 worktree · 합성 디렉터리로 격리):
+    🔴 실제 설치분을 건드리면 공유 트리의 피어에게 그대로 보인다. 그래서 합성했다.
+    P-b R7 — `LOCK_REQUIRED_KEYS`에 `skillPath`를 한시 추가(실데이터에 결손 1건)
+       → `R7 dagster-integrations: ... `skillPath`가 없다` · exit 1. 원복 확인.
+       🔴 lock 파일을 프로브 대상으로 삼지 않았다 — 공급망 정본이라
+          변인을 검사기 쪽에 뒀다.
+    P-c R8 불일치 — 합성 19종 중 1종 rename
+       → `lock 등재인데 디스크에 없다` + `디스크에 있는데 lock 밖이다` · exit 1
+    P-c2 R8 역방향 — lock 밖 디렉터리 1종 추가 → `고정되지 않은 설치다` · exit 1
+    P-d R8 **오탐 방어** — `.claude/skills/` 부재
+       → `R8 미확인(디스크 부재)` **stderr** · findings 0 · **exit 0**
+       ✅ worktree가 이 상태라 별도 조작 없이 실증됐다. 19건 오탐이 아니다.
+
+⚠️ R8의 실효 범위 — **커밋 축에서는 거의 안 돈다.**
+    `.claude/skills/`는 gitignore라 **디스크 설치분만 바뀌면 pre-commit 훅의 `files:`
+    트리거가 안 걸려 훅 자체가 실행되지 않는다**(`.pre-commit-config.yaml`이 이미 자인).
+    R8이 실제로 발동하는 경로는 ① `/skill-audit` 수동 실행 ② `files:`에 걸린 다른
+    파일을 함께 커밋할 때 뿐이다.
+    🔴 이걸 적지 않으면 "디스크 드리프트를 기계화했다"가 거짓이 된다.
 """
 
 import json
@@ -107,6 +127,14 @@ MAPPING_HEADER = "| 워커 | 주 스킬 | 제약 |"
 #    갈려 동시에 죽지 않는다. ⚠️ 어휘 필터를 **양쪽에** 걸어야 성립한다 —
 #    워커 측에만 걸었을 때 P3에서 실제로 틀린 처방이 나왔다(2026-08-24 프로브).
 NONE_MARKERS = ("**없음**", "없음")
+
+# R7이 요구하는 lock 항목의 필수 키.
+# 🔴 `skillPath`는 **일부러 뺐다.** 19종 중 `dagster-integrations` 1종이 이 키가 없는데,
+#    `skillPath`는 로컬 경로가 아니라 **출처 저장소 내부 경로**라 디스크에서 역산할 수
+#    없고 그 스킬은 업스트림이 소멸해 확인하러 갈 원본도 없다. 형제 항목의 패턴을
+#    복사해 넣으면 **검산을 통과하는 틀린 값**이 된다 — 없는 것보다 나쁘다.
+#    ⇒ 확정 가능한 3키만 게이트로 걸고, 결손 1건은 Issue로 연다.
+LOCK_REQUIRED_KEYS = frozenset({"source", "sourceType", "computedHash"})
 
 
 def cells_of(row: str) -> list[str]:
@@ -207,12 +235,41 @@ def main() -> int:
 
     # 3) 어휘 목록 — lock 등재분 + 디스크 설치분(오탐 방어 2겹의 재료)
     lock = json.loads((root / LOCK_FILE).read_text(encoding="utf-8"))
-    lock_names = set(lock.get("skills", {}))
+    lock_entries = lock.get("skills", {})
+    lock_names = set(lock_entries)
     disk = root / SKILLS_DISK
+    disk_present = disk.is_dir()
     disk_names = (
-        {p.name for p in disk.iterdir() if p.is_dir()} if disk.is_dir() else set()
+        {p.name for p in disk.iterdir() if p.is_dir()} if disk_present else set()
     )
     vocabulary = lock_names | disk_names
+
+    # 3-1) R7 lock 스키마 — 항목마다 필수 키가 있는가
+    findings += [
+        f"R7 {name}: `skills-lock.json` 항목에 `{key}`가 없다"
+        for name in sorted(lock_entries)
+        for key in sorted(LOCK_REQUIRED_KEYS - set(lock_entries[name]))
+    ]
+
+    # 3-2) R8 디스크 드리프트 — lock 등재분 ↔ 실제 설치분
+    # 🔴 「디렉터리 부재」와 「불일치」를 가른다. 부재는 worktree·CI·클론 직후의
+    #    정상 상태이고, 순진하게 대칭차를 내면 lock 전종이 오탐으로 뜬다. 그러면
+    #    "전원이 매번 위반하는 규칙"이 되어 훅이 통째로 무시된다.
+    if not disk_present:
+        print(
+            f"R8 미확인(디스크 부재) — {SKILLS_DISK}/ 가 없다"
+            "(worktree·CI·클론 직후). 드리프트를 판정하지 않는다.",
+            file=sys.stderr,
+        )
+    else:
+        findings += [
+            f"R8 `{s}`: lock 등재인데 디스크에 없다"
+            for s in sorted(lock_names - disk_names)
+        ]
+        findings += [
+            f"R8 `{s}`: 디스크에 있는데 lock 밖이다 — 고정되지 않은 설치다"
+            for s in sorted(disk_names - lock_names)
+        ]
 
     # 4) 어휘 필터를 **양쪽에** 걸어 「스킬」과 「스킬이 아닌 코드스팬」을 가른다.
     #    🔴 R2(집합 일치) 판정에는 어휘 안의 것만 넣는다 — 유령 이름을 R2에 흘리면
