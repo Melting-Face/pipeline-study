@@ -19,7 +19,7 @@
 | `archivist` | `Read, Write, Edit, Grep, Glob, Bash` | — | `sonnet` | O — 저널·MOC만 |
 | `researcher` | `Read, Grep, Glob, Bash, WebSearch, WebFetch` | `Write, Edit, NotebookEdit` | `sonnet` | ✕ |
 | `security` | `Read, Grep, Glob, Bash` | `Write, Edit, NotebookEdit` | `inherit` | ✕ |
-| `*-verifier`·`*-qa`·`skill-matcher` | `Read, Grep, Glob, Bash` | `Write, Edit, NotebookEdit` | `sonnet` | ✕ |
+| `*-verifier`·`*-qa` | `Read, Grep, Glob, Bash` | `Write, Edit, NotebookEdit` | `sonnet` | ✕ |
 | `general-purpose`(내장) | **`*` = All tools** | — | 상속 | O |
 
 **비가역 작업은 전 워커 공통으로 계획만 반환**한다 — 커밋·푸시·`terraform`/`kubectl apply`·
@@ -89,10 +89,13 @@
 | --- | --- |
 | `tools:`에 `Skill` — 표에 적힌 스킬만 호출한다(**규율**) | 구현·판정 워커 9종 |
 | 미부여 — **등재 스킬이 0건이라 열어도 쓸 게 없다** | `researcher` · `tech-writer` · `archivist` |
-| 미부여 — **열면 안 된다.** 감사자가 스킬을 호출하면 그 본문이 자기 컨텍스트에 주입돼 **감사 대상이 감사자를 오염**시킨다 | `skill-matcher` |
 
-**뒤 둘을 "미부여 4종"으로 합쳐 세지 않는다** — 값이 같아도 **사유가 다르고 대응이 다르다.**
-앞은 스킬이 생기면 열 수 있고, 뒤는 스킬이 생겨도 열지 않는다.
+⚠️ **한때 미부여 사유가 둘이었다.** 폐기된 `skill-matcher`는 **감사자**라 스킬을 호출하면
+그 본문이 자기 컨텍스트에 주입돼 **감사 대상이 감사자를 오염**시켰다 — "열어도 쓸 게 없다"가
+아니라 **"열면 안 된다"** 였고, 앞은 스킬이 생기면 열 수 있지만 뒤는 생겨도 열지 않았다.
+**값이 같아도 사유가 다르면 합쳐 세지 않는다**는 규칙의 실사례로 남긴다.
+⚠️ 그 축은 `/skill-audit`로 옮겨졌는데 **커맨드는 supervisor 컨텍스트에서 돌아
+같은 오염이 최상위에 착지할 수 있다** — 도구 축 강제가 없고 커맨드 §제약이 유일한 방어선이다.
 
 ⚠️ **`tools:`의 `Skill`은 전체 접근이다.** 지시문의 표는 **규율**이고
 기계 강제는 `disallowedTools`뿐이며 그것도 **스킬 단위가 아니라 도구 단위**다.
@@ -227,6 +230,6 @@
 | 워커 | `model` | 이유 |
 | --- | --- | --- |
 | `*-engineer` · `analyst` · `security` | `inherit` | **결정을 만드는 쪽** |
-| `*-verifier` · `*-qa` · `archivist` · `skill-matcher` | `sonnet` | 판정·기록은 정해진 기준을 적용한다 |
+| `*-verifier` · `*-qa` · `archivist` | `sonnet` | 판정·기록은 정해진 기준을 적용한다 |
 
 **생략하면 전원이 `inherit`** 이라 비용 제어가 사라진다 — 전원 명시가 규칙인 이유다.

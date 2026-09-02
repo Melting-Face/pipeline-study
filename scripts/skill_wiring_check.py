@@ -33,7 +33,7 @@ r"""워커 지시문의 §참고 스킬 표와 `docs/skills.md` §③의 **배�
     - **표의 3열(제약·단서·대체)** — 코드스팬이 많지만 죽은 참조 이름·금지 명령이라
       스킬 등재가 아니다. 2열만 본다.
     - **스킬 본문(`.claude/skills/<name>/SKILL.md`)의 내용** — 등재 여부만 보고
-      단서가 지켜지는지는 보지 않는다(그건 `skill-matcher` 감사 축이다).
+      단서가 지켜지는지는 보지 않는다(그건 `/skill-audit` 감사 축이다).
     - **`docs/skills.md`의 출처 등급(A~D)·프리로드 조건·lock 관리** — 그 정본은
       `docs/skills.md` 자신이고 워커 지시문에 사본이 없다. 대조할 상대가 없다.
     - **3상태(S0/S1/S2)의 옳고 그름** — 「빠뜨린 것」과 「안 둔다」의 구분은 설계
@@ -65,6 +65,26 @@ r"""워커 지시문의 §참고 스킬 표와 `docs/skills.md` §③의 **배�
        `analyst`+`sql-optimization` → allow / `analyst`+`kubernetes-specialist` → deny
        (등재분 나열이 이 검사기의 `analyst` 집합과 일치) / `tech-writer` → 빈 표 deny
        🔴 이 대조가 없으면 "두 파서가 같은 표를 읽는다"는 **주장일 뿐**이다.
+
+R7·R8 검증 (전용 worktree · 합성 디렉터리로 격리):
+    🔴 실제 설치분을 건드리면 공유 트리의 피어에게 그대로 보인다. 그래서 합성했다.
+    P-b R7 — `LOCK_REQUIRED_KEYS`에 `skillPath`를 한시 추가(실데이터에 결손 1건)
+       → `R7 dagster-integrations: ... `skillPath`가 없다` · exit 1. 원복 확인.
+       🔴 lock 파일을 프로브 대상으로 삼지 않았다 — 공급망 정본이라
+          변인을 검사기 쪽에 뒀다.
+    P-c R8 불일치 — 합성 19종 중 1종 rename
+       → `lock 등재인데 디스크에 없다` + `디스크에 있는데 lock 밖이다` · exit 1
+    P-c2 R8 역방향 — lock 밖 디렉터리 1종 추가 → `고정되지 않은 설치다` · exit 1
+    P-d R8 **오탐 방어** — `.claude/skills/` 부재
+       → `R8 미확인(디스크 부재)` **stderr** · findings 0 · **exit 0**
+       ✅ worktree가 이 상태라 별도 조작 없이 실증됐다. 19건 오탐이 아니다.
+
+⚠️ R8의 실효 범위 — **커밋 축에서는 거의 안 돈다.**
+    `.claude/skills/`는 gitignore라 **디스크 설치분만 바뀌면 pre-commit 훅의 `files:`
+    트리거가 안 걸려 훅 자체가 실행되지 않는다**(`.pre-commit-config.yaml`이 이미 자인).
+    R8이 실제로 발동하는 경로는 ① `/skill-audit` 수동 실행 ② `files:`에 걸린 다른
+    파일을 함께 커밋할 때 뿐이다.
+    🔴 이걸 적지 않으면 "디스크 드리프트를 기계화했다"가 거짓이 된다.
 """
 
 import json
@@ -98,8 +118,11 @@ CODESPAN_RE = re.compile(r"`([a-z0-9][a-z0-9-]*)`")
 MAPPING_HEADER = "| 워커 | 주 스킬 | 제약 |"
 
 # 등재 0건을 뜻하는 셀 표기. 이것으로 **시작하면** 코드스팬을 스캔하지 않는다.
-# 🔴 오탐 방어 1겹이다 — `skill-matcher` 행은 `**없음** — 후보 탐색은 **`researcher`
-#    릴레이**` 라 셀 안에 코드스팬이 있는데 그것은 스킬이 아니라 **워커 이름**이다.
+# 🔴 오탐 방어 1겹이다 — `researcher` 행은 `**없음** — 후보 조사 요청은 `skill-audit`가
+#    낸다` 라 셀 안에 코드스팬이 있는데 그것은 스킬이 아니라 **커맨드 이름**이다.
+#    ⚠️ 이 사례는 **의도적으로 유지한다.** 원래 실사례는 폐기된 `skill-matcher` 행이었고
+#    (셀 안 코드스팬이 **워커 이름**이었다) 그 행이 사라지면 방어를 검증할 데이터가
+#    저장소에서 없어져 **코드는 남고 프로브만 재현 불가**가 된다.
 # 🔴 2겹은 어휘 필터(lock 등재분 + 디스크 설치분)이고 **두 겹이 막는 것이 다르다**:
 #    1겹은 발견 자체를 막고, 2겹은 **틀린 처방을 막는다**. 1겹이 깨지면 `researcher`가
 #    유령 등재가 되는데, 어휘에 없으므로 "§③에만 있다 → 지시문에 추가하라"(틀린 처방)가
@@ -107,6 +130,33 @@ MAPPING_HEADER = "| 워커 | 주 스킬 | 제약 |"
 #    갈려 동시에 죽지 않는다. ⚠️ 어휘 필터를 **양쪽에** 걸어야 성립한다 —
 #    워커 측에만 걸었을 때 P3에서 실제로 틀린 처방이 나왔다(2026-08-24 프로브).
 NONE_MARKERS = ("**없음**", "없음")
+
+# R7이 요구하는 lock 항목의 필수 키.
+# 🔴 `skillPath`는 **일부러 뺐다.** 19종 중 `dagster-integrations` 1종이 이 키가 없는데,
+#    `skillPath`는 로컬 경로가 아니라 **출처 저장소 내부 경로**라 디스크에서 역산할 수
+#    없고 그 스킬은 업스트림이 소멸해 확인하러 갈 원본도 없다. 형제 항목의 패턴을
+#    복사해 넣으면 **검산을 통과하는 틀린 값**이 된다 — 없는 것보다 나쁘다.
+#    ⇒ 확정 가능한 3키만 게이트로 걸고, 결손 1건은 Issue로 연다.
+LOCK_REQUIRED_KEYS = frozenset({"source", "sourceType", "computedHash"})
+
+# R9가 추적하는 루브릭 어휘 — 게이트 2축 + 채점 3축 + 임계.
+AUDIT_CMD = Path(".claude") / "commands" / "skill-audit.md"
+RUBRIC_TOKENS = (
+    "권한 정합",
+    "정본 무충돌",
+    "스택 일치",
+    "호출 빈도",
+    "대체 불가",
+    "★3",
+)
+
+# 워커 지시문이 「루브릭을 재등장시켰다」고 볼 임계.
+# 🔴 축 이름 1개 인용은 위반이 아니다 — `data-verifier`·`researcher`·`data-extractor`는
+#    *"내 등재가 0건인 이유는 축1 탈락"* 처럼 **자기 판정 사유**를 적으며 축을 부른다.
+#    문제는 **판정 절차 전체의 복제**다. 관측 분포가 이 둘을 명확히 가른다 —
+#    폐기 전 `skill-matcher.md`가 6/6이었고 나머지 셋은 각 1/6이었다.
+#    ⇒ 임계 3. 값이 아니라 **분포의 간격**이 근거다(6 vs 1 사이 어디를 잘라도 같다).
+RUBRIC_ECHO_THRESHOLD = 3
 
 
 def cells_of(row: str) -> list[str]:
@@ -207,12 +257,65 @@ def main() -> int:
 
     # 3) 어휘 목록 — lock 등재분 + 디스크 설치분(오탐 방어 2겹의 재료)
     lock = json.loads((root / LOCK_FILE).read_text(encoding="utf-8"))
-    lock_names = set(lock.get("skills", {}))
+    lock_entries = lock.get("skills", {})
+    lock_names = set(lock_entries)
     disk = root / SKILLS_DISK
+    disk_present = disk.is_dir()
     disk_names = (
-        {p.name for p in disk.iterdir() if p.is_dir()} if disk.is_dir() else set()
+        {p.name for p in disk.iterdir() if p.is_dir()} if disk_present else set()
     )
     vocabulary = lock_names | disk_names
+
+    # 3-1) R7 lock 스키마 — 항목마다 필수 키가 있는가
+    findings += [
+        f"R7 {name}: `skills-lock.json` 항목에 `{key}`가 없다"
+        for name in sorted(lock_entries)
+        for key in sorted(LOCK_REQUIRED_KEYS - set(lock_entries[name]))
+    ]
+
+    # 3-2) R8 디스크 드리프트 — lock 등재분 ↔ 실제 설치분
+    # 🔴 「디렉터리 부재」와 「불일치」를 가른다. 부재는 worktree·CI·클론 직후의
+    #    정상 상태이고, 순진하게 대칭차를 내면 lock 전종이 오탐으로 뜬다. 그러면
+    #    "전원이 매번 위반하는 규칙"이 되어 훅이 통째로 무시된다.
+    if not disk_present:
+        print(
+            f"R8 미확인(디스크 부재) — {SKILLS_DISK}/ 가 없다"
+            "(worktree·CI·클론 직후). 드리프트를 판정하지 않는다.",
+            file=sys.stderr,
+        )
+    else:
+        findings += [
+            f"R8 `{s}`: lock 등재인데 디스크에 없다"
+            for s in sorted(lock_names - disk_names)
+        ]
+        findings += [
+            f"R8 `{s}`: 디스크에 있는데 lock 밖이다 — 고정되지 않은 설치다"
+            for s in sorted(disk_names - lock_names)
+        ]
+
+    # 3-3) R9 루브릭 문안 드리프트 — 정본 2곳에 다 있고, 워커 지시문에는 없어야 한다
+    # 🔴 폐기된 `skill-matcher` 워커가 루브릭 정본이던 시절, 같은 루브릭이 4곳에
+    #    서술돼 있었고 **문안 정합을 대조하는 기계가 없었다.** 그래서 감사자를
+    #    없애면서 이 축을 기계로 내린다.
+    cmd_path = root / AUDIT_CMD
+    if not cmd_path.is_file():
+        findings.append(f"R9 {AUDIT_CMD} 가 없다 — 루브릭 정본이 사라졌다")
+    else:
+        cmd_text = cmd_path.read_text(encoding="utf-8")
+        findings += [
+            f"R9 루브릭 어휘 `{t}`가 {where}에 없다 — 두 정본이 갈렸다"
+            for t in RUBRIC_TOKENS
+            for where, body in ((AUDIT_CMD, cmd_text), (SKILLS_DOC, doc_text))
+            if t not in body
+        ]
+    for path in worker_files:
+        echoed = [t for t in RUBRIC_TOKENS if t in path.read_text(encoding="utf-8")]
+        if len(echoed) >= RUBRIC_ECHO_THRESHOLD:
+            findings.append(
+                f"R9 {path.stem}: 워커 지시문에 루브릭이 재등장했다 "
+                f"({len(echoed)}/{len(RUBRIC_TOKENS)}: {' '.join(echoed)}) "
+                f"— 판정 절차의 정본은 {AUDIT_CMD} 하나다"
+            )
 
     # 4) 어휘 필터를 **양쪽에** 걸어 「스킬」과 「스킬이 아닌 코드스팬」을 가른다.
     #    🔴 R2(집합 일치) 판정에는 어휘 안의 것만 넣는다 — 유령 이름을 R2에 흘리면
