@@ -234,6 +234,26 @@ repos:
         files: '^(\.claude/agents/.*\.md|\.claude/commands/.*\.md|docs/skills\.md|docs/skills/.*\.md|skills-lock\.json|scripts/skill_wiring_check\.py)$'
         stages: [pre-commit]
 
+  # 워커 경로 경계의 **정의(`BOUNDARIES`) ↔ 배선(프론트매터 인자)** 정합 (Issue #35).
+  # 🔴 런타임 가드와 **시점도 관측 범위도 다르다.** `worker_path_guard.py`는 미정의 워커를
+  #    `deny`하지만 **워커가 쓰기를 시도해야** 발동한다 — 오타난 워커가 한동안 안 불리면
+  #    그 사이 경계가 없다. 그리고 배선 인자가 **다른 유효 워커명**이면 런타임은 아예
+  #    그 분기에 닿지 못한다(엉뚱한 경계가 조용히 적용된다) — 그 축은 여기만 잡는다.
+  # 🔴 `pass_filenames: false` — 위 훅과 같은 이유다. 두 집합의 대조라 한쪽 파일만
+  #    받아서는 판정이 성립하지 않는다. `files:`는 트리거일 뿐 스코프가 아니다.
+  # ⚠️ 모집단은 「워커 파일 전량」이 아니라 **「이 가드를 배선한 파일」** 이다 —
+  #    읽기 전용 워커는 배선이 없어 모집단 밖이다. 워커를 늘리거나 줄여도 안 깨진다.
+  # 근거: docs/conventions/agents/permissions.md §배선 정합 검사
+  - repo: local
+    hooks:
+      - id: worker-wiring
+        name: worker_path_guard 경계 정의 ↔ 프론트매터 배선 정합
+        language: system
+        entry: python3 scripts/worker_wiring_check.py
+        pass_filenames: false
+        files: '^(\.claude/agents/.*\.md|scripts/worker_(path_guard|wiring_check)\.py)$'
+        stages: [pre-commit]
+
   # 문서 가독성 규약 검사 (2026-08-24 신설 — 위반 0건이 된 뒤에 건다).
   # 🔴 **초록인 시점에만 건다.** 이 훅은 위 두 훅보다 늦게 등록됐다 — 신설 당시 위반이
   #    50건이라, 먼저 걸었으면 그 뒤 **모든 문서 커밋이 막혔을** 것이다.
@@ -263,7 +283,14 @@ repos:
         language: system
         entry: python3 scripts/doc_lint.py
         pass_filenames: false
-        files: '\.md$'
+        # 🔴 **검사기 자신을 모집단에 넣는다.** `\.md$`만 두면 `doc_lint.py`만 고치는
+        #    커밋에서 이 훅이 통째로 `Skipped`가 된다 — 하필 **게이트를 바꾸는 커밋**에서
+        #    게이트가 안 돈다(`8d3867d`·`c605c73`이 그런 형태였다).
+        #    ⚠️ 이 사각은 **모집단에 gitignore 경로가 섞였는가**와 **다른 축**이다.
+        #    저쪽은 규칙 일부가 안 돌지만 이쪽은 **훅 전체**가 안 돈다.
+        #    ⇒ 로컬 훅을 추가할 때 `files:`에 **자기 `entry` 스크립트**가 걸리는지 본다
+        #    (관측 3건: 이 훅 · `skill-wiring` · `worker-wiring`).
+        files: '(\.md$|^scripts/doc_lint\.py$)'
         stages: [pre-commit]
 
   # Terraform 포매터 — conventions/terraform.md §3이 요구하던 게이트의 집행 수단

@@ -97,6 +97,36 @@ class JournalGuardTest(unittest.TestCase):
             text=True,
         )
 
+    def _run_claude_path_guard(
+        self, worker: str, target: str, **payload: object
+    ) -> subprocess.CompletedProcess[str]:
+        """Claude 경로 가드를 임의의 배선 인자로 호출한다.
+
+        `_run_path_guard`가 `archivist`를 박아 두고 있어 워커명 축을 못 흔든다.
+        """
+        arguments = [sys.executable, str(CLAUDE_PATH_GUARD)]
+        if worker:
+            arguments.append(worker)
+        hook_payload = {
+            "tool_name": "Edit",
+            "tool_input": {"file_path": str(self.repository / target)},
+            **payload,
+        }
+        return subprocess.run(  # noqa: S603
+            arguments,
+            input=json.dumps(hook_payload),
+            env=self.environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    def _decision(self, result: subprocess.CompletedProcess[str]) -> dict[str, str]:
+        """가드 출력에서 결정과 사유를 뽑는다. 무출력이면 통과다."""
+        if not result.stdout.strip():
+            return {}
+        return json.loads(result.stdout)["hookSpecificOutput"]
+
     def _run_inferred_codex_path_guard(
         self, payload: dict[str, object]
     ) -> subprocess.CompletedProcess[str]:
@@ -275,6 +305,69 @@ class JournalGuardTest(unittest.TestCase):
             == "deny"
         )
         assert read_only_exec.stdout == ""
+
+    def test_claude_path_guard_fails_closed_for_undefined_worker(self) -> None:
+        """배선 인자가 `BOUNDARIES`에 없으면 차단한다(오타·삭제 누락).
+
+        대조군을 같은 테스트에 둔다 — 「전부 막힌다」와 「선별 차단」이 갈려야
+        이 단정이 의미를 갖는다.
+        """
+        allowed = self._decision(
+            self._run_claude_path_guard("tech-writer", "docs/setup.md")
+        )
+        assert allowed == {}, "대조군: 정상 배선의 허용 경로는 통과해야 한다"
+
+        for wired in ("devps-engineer", "tech_writer", "director", ""):
+            denied = self._decision(self._run_claude_path_guard(wired, "docs/setup.md"))
+            assert denied.get("permissionDecision") == "deny", wired
+            assert "경계가 정의되지 않은 워커" in denied["permissionDecisionReason"]
+
+    def test_claude_path_guard_routes_known_elsewhere_to_its_own_reason(self) -> None:
+        """정본이 다른 가드인 워커는 차단하되 **다른 사유**를 낸다.
+
+        같은 문구를 내면 다음 사람이 일반 처방(`BOUNDARIES`에 등재)을 따라
+        중복 정의를 되살린다 — 두 분기가 갈리는 것 자체가 검사 대상이다.
+        """
+        elsewhere = self._decision(
+            self._run_claude_path_guard("analyst", "notebooks/probe.ipynb")
+        )
+        undefined = self._decision(
+            self._run_claude_path_guard("devps-engineer", "notebooks/probe.ipynb")
+        )
+
+        assert elsewhere.get("permissionDecision") == "deny"
+        assert undefined.get("permissionDecision") == "deny"
+        assert "analyst_path_guard.py" in elsewhere["permissionDecisionReason"]
+        assert (
+            elsewhere["permissionDecisionReason"]
+            != undefined["permissionDecisionReason"]
+        )
+
+    def test_claude_path_guard_denies_argument_mismatched_with_agent_type(self) -> None:
+        """배선 인자와 하네스가 알려주는 실제 워커가 다르면 차단한다.
+
+        둘 다 유효한 이름이라 미정의 축에는 걸리지 않는다 — 이 축만 잡는다.
+        급소는 **인자가 더 느슨한 경계를 주는 방향**이라 그 셀을 넣는다.
+        """
+        loosened = self._decision(
+            self._run_claude_path_guard(
+                "tech-writer", "docs/probe.md", agent_type="archivist"
+            )
+        )
+        assert loosened.get("permissionDecision") == "deny"
+        assert "배선 인자와 실제 워커가 다르다" in loosened["permissionDecisionReason"]
+
+        matched = self._decision(
+            self._run_claude_path_guard(
+                "tech-writer", "docs/probe.md", agent_type="tech-writer"
+            )
+        )
+        assert matched == {}, "대조군: 인자와 실제가 같으면 평소대로 통과한다"
+
+        absent = self._decision(
+            self._run_claude_path_guard("tech-writer", "docs/probe.md")
+        )
+        assert absent == {}, "`agent_type` 부재는 통과다(명시된 fail-open sub-축)"
 
     def test_codex_exec_patch_fails_closed_for_unknown_subagent_role(self) -> None:
         """역할을 식별할 수 없는 서브에이전트 patch는 차단한다."""
