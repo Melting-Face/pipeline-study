@@ -133,7 +133,6 @@ Python 변경은 `ruff check`, SQL 변경은 `sqlfluff lint`, Terraform 변경�
 | `researcher` | 외부 1차 출처 조사 | read-only |
 | `tech-writer` | `docs/**`·`README.md` 문서화 | 제한된 workspace write |
 | `archivist` | 저장소 밖 미션 저널·MOC 정합성 | 저장소 쓰기 금지 |
-| `skill-matcher` | 워커↔스킬 배선·무결성 감사 | read-only |
 
 ### 위임 규칙
 
