@@ -313,6 +313,16 @@ def main() -> None:
                 "서브에이전트 역할을 식별하지 못해 patch를 차단했다(fail-closed)."
             )
         return
+    # 🔴 이 분기가 짝 가드보다 **먼저** 옳았다. Claude 쪽
+    #    `scripts/worker_path_guard.py`는 같은 자리에서 오래 fail-open이었고
+    #    (배선 오타를 신호 없이 통과시켰다), Issue #35로
+    #    여기와 같은 `deny`로 맞췄다. **둘은 짝으로 유지한다** — 한쪽만 고치면 같은 축이
+    #    런타임에 따라 갈린다. 다만 저쪽에는 「정본이 다른 가드」를 구분하는
+    #    `KNOWN_ELSEWHERE` 분기가 더 있다(이쪽은 `analyst`를 직접 갖고 있어 불필요).
+    # ⚠️ **두 파일의 `BOUNDARIES`는 지금 갈려 있다** — 이쪽에만 `analyst`가 있고(저쪽은
+    #    전용 가드가 정본이라 지웠다), 이쪽 `tech-writer`에는 `wiki/`가 없다.
+    #    Codex에는 `analyst_path_guard.py` 대응물이 없어 **지우는 것이 정답이 아닐 수
+    #    있다** — 런타임 배선을 따로 조사해야 하므로 별건으로 남긴다.
     if worker not in BOUNDARIES:
         emit_deny(f"정의되지 않은 Codex 워커 경계다: `{worker}`.")
         return

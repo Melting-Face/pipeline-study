@@ -18,12 +18,55 @@
 | [`research_gate_guard.py`](../../../scripts/research_gate_guard.py) | 미승인 `WebFetch` · 질의문 로깅 | **`researcher.md` 프론트매터** |
 | [`plan_mirror_guard.py`](../../../scripts/plan_mirror_guard.py) | (통제 아님) 계획서 볼트 미러 | `settings.json` |
 
-전부 의존성 없음·PEP 723. 경로 가드는 **fail-open**(가드 실패가 작업을 막지 않는다),
-조사 게이트만 **fail-closed**다.
+전부 의존성 없음·PEP 723. **fail 방향은 가드 단위가 아니라 축 단위다**(아래 §fail 방향) —
+*"경로 가드는 fail-open"* 처럼 파일 단위로 적으면 그 안에서 축이 갈릴 때 문장이 거짓이 된다.
 
 🔴 **배선처가 둘이라 "가드가 N종 있다"는 서술로는 강제 여부를 알 수 없다** —
 강제되는 것은 **배선된 (가드 × 워커) 쌍**이다.
 워커별 범위는 `settings.json`으로 걸 수 없어 프론트매터에 둔다.
+
+### fail 방향
+
+**같은 가드 안에서도 축마다 방향이 다르다.** 한 축이 fail-closed라고 그 파일이
+fail-closed인 것이 아니고, 반대도 아니다.
+
+| 가드 | 입력 파싱 실패 | 대상(워커) 미식별 | 판정 키 부재 |
+| --- | --- | --- | --- |
+| `worker_path_guard.py` | 통과 | **`deny`** | 통과 |
+| `analyst_path_guard.py` | 통과 | *(축 없음 — 인자를 안 받는다)* | 통과 |
+| `skill_gate_guard.py` | `deny` | `deny` | `deny` |
+| `research_gate_guard.py` | `deny` | *(축 없음)* | `deny` |
+| `.codex/hooks/worker_path_guard.py` | `deny` | `deny` | `deny` |
+
+- **「미식별」 축이 급소다.** 프론트매터에 `worker_path_guard.py devps-engineer`처럼
+  오타를 한 글자 내면 그 워커의 경로 경계가 **통째로 사라지는데**, 이 가드가 워커별 경로
+  강제의 **유일한** 수단이라 알려주는 다른 층이 없었다. 그래서 이 축만 `deny`로 올렸다.
+- ⚠️ **「경고」는 선택지가 아니었다.** 결정값은 `allow`·`deny`·`ask`·`defer` 넷뿐이고,
+  경고에 해당하는 `ask`는 auto 모드 분류기가 **파일 도구에서 흡수**한다. `ask`를 고르면
+  *"신호를 냈다고 믿는데 안 나는"* 상태가 되어 **갭의 동어반복**이 된다.
+- ⚠️ **나머지 두 축의 통과는 그대로 둔다** — 범위 밖이지 빠뜨린 것이 아니다.
+- `analyst_path_guard.py`가 *"fail-closed"* 로 알려져 있던 것은 **틀렸다**. 판정 *결과*가
+  `deny` 위주일 뿐 입력 파싱 실패는 통과한다. **결과의 엄격함과 실패 방향은 다른 축이다.**
+
+#### 배선 인자 ↔ 실제 워커
+
+인자는 사람이 적고 `agent_type`은 하네스가 넣는다. **둘 다 읽어 대조**한다 —
+인자가 **다른 유효 워커명**이면 위 「미식별」 축에 걸리지 않아 **엉뚱한 경계가
+조용히 적용**되기 때문이다(예: 실제 `archivist`인데 인자가 `tech-writer`면
+저장소 안 쓰기 0인 워커가 `docs/` 전체를 쓰게 된다).
+
+- `agent_type`이 파일 도구 payload에 실재하는 것은 **`tech-writer`의 `Edit` 프로브로
+  프로덕션 hook 경로에서 확인**했다(값이 인자와 일치). ⚠️ **`Edit` 기준이다** —
+  `Write`·`NotebookEdit`은 재지 않았다. 관측 상세는 Issue #35.
+- **인자를 없애지 않는다.** 하나로 줄이면 대조할 상대가 사라진다.
+  (`skill_gate_guard.py`는 배선처가 인자를 주지 않아 이 축 자체가 없다.)
+- ⚠️ `agent_type`이 **없으면 통과**시킨다 — 서브에이전트 밖 호출일 수 있다. 이 sub-축은
+  fail-open이고, 적어 두어 「빠뜨린 것」과 구분한다.
+
+**커밋 시점의 짝**은 `scripts/worker_wiring_check.py`다
+([`permissions.md`](permissions.md) §배선 정합 검사). 런타임은 **워커가 쓰기를 시도해야**
+발동하므로 오타난 워커가 안 불리는 동안 경계가 없다 — 그 시간차를 그쪽이 닫는다.
+**한쪽이 초록이라고 다른 쪽이 초록인 것이 아니다.**
 
 ### 인용 규칙이 배선처마다 다르다
 
@@ -131,6 +174,8 @@
 | 워커 · 축 | 프로브 | 결과 |
 | --- | --- | --- |
 | `data-extractor` · 저장소 안 쓰기 | `Write`로 `notebooks/`에 쓰기 | `deny`. 차단 문구가 `worker_path_guard.py` f-string의 **완전 치환**임을 소스 대조로 확정 |
+| `tech-writer` · 워커 미식별 | `BOUNDARIES`에서 그 워커를 한시 제거하고 `Edit` 시도 | `deny` + **파일 내용 미변경**까지 확인. 문구에 `classifier`가 없고 hook payload 키(`hook_event_name`·`tool_use_id`)를 담고 있어 **가드 원문**으로 확정 |
+| 〃 · 대조군 | 같은 워커·같은 파일, `BOUNDARIES` 정상 | **성공**. 이 셀이 없으면 위 `deny`가 「선별 차단」인지 「전부 차단」인지 갈리지 않는다 |
 
 ⚠️ 마지막 칸이 이 표의 존재 이유다 — **문구 출처를 대조하지 않으면 "가드가 막았다"가
 거짓이 될 수 있다.** 분류기가 막은 것과 가드가 막은 것은 **결과가 같고 원인이 다르다**
