@@ -70,7 +70,7 @@ SKILL_CELL_RE = re.compile(r"^\| [^|]+ \| `([a-z0-9][a-z0-9-]*)` \|", re.MULTILI
 
 ESCALATE = (
     "표 밖 스킬이 필요하면 호출하지 말고 배정자(supervisor)에게 에스컬레이션하라 "
-    "— 등재 여부 판정은 `skill-matcher` 소관이다."
+    "— 등재 여부 판정은 `/skill-audit` 소관이다."
 )
 
 

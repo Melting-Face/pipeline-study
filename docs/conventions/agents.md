@@ -51,7 +51,6 @@ flowchart TB
     subgraph outside["게이트·기록 · 자기 판정 대상을 배정·수정하지 않는다"]
         SEC["security<br/>컨펌 게이트 · 읽기 전용"]
         ARC["archivist<br/>기록 전담"]
-        SKM["skill-matcher<br/>배선 감사 · 읽기 전용"]
         TW["tech-writer<br/>docs/** · README · 쓰기 O<br/>발행 금지"]
     end
 
@@ -88,10 +87,15 @@ flowchart TB
 | **worker** | `Agent` 툴 서브에이전트 | 배정받은 **단일 작업**을 승인 아래 수행하고 결과를 반환 | 다른 워커 배정 · 무승인 실행 |
 | **security**(게이트) | 읽기 전용 워커 | supervisor 결정의 **최종 컨펌** — 노출·규제·거버넌스 판정 | 직접 수정·실행 |
 | **archivist**(계층 밖) | 워커 | **모든 결정·액션의 기록 주체** — 저널·MOC 유지 | 판단·실행 |
-| **skill-matcher**(계층 밖) | 읽기 전용 워커 | **스킬↔워커 배선 감사** — 채점·드리프트 판정, 조사 요청서 설계 | 설치·lock 편집·배선 · 직접 웹 검색 |
 
-- **「계층 밖」은 `archivist`·`skill-matcher` 2종**이다 — 도메인 작업을 하지 않고
-  **계층 자체를 감사·기록**한다. `security`는 게이트지만 도메인 산출물을 다루므로 계층 밖이 아니다.
+- **「계층 밖」은 `archivist` 1종**이다 — 도메인 작업을 하지 않고 **계층 자체를 기록**한다.
+  `security`는 게이트지만 도메인 산출물을 다루므로 계층 밖이 아니다.
+  ⚠️ **한때 2종이었다** — `skill-matcher`(스킬↔워커 배선 감사)가 폐기되면서 그 축은
+  **워커가 아니라 기계 + 커맨드**로 갈렸다: `scripts/skill_wiring_check.py`(R1~R9)와
+  [`/skill-audit`](../../.claude/commands/skill-audit.md).
+  🔴 **감사자와 구현자의 도구 축 분리가 이 축에서만 사라졌다** — 커맨드는 supervisor
+  컨텍스트에서 돌아 채점한 주체가 그 자리에서 배선할 수 있다. 커맨드 §제약이 유일한 방어선이다.
+  옛 저널·문서의 "계층 밖 2종"은 폐기 전 판본이다.
 - 🔴 **판정자는 자기 판정 대상을 배정·수정하지 않는다.** 배정 주체가 supervisor 하나뿐이라
   "누가 배정하는가"로는 이 원칙을 표현할 수 없다 — **강제는 도구 축**에 있다
   ([`agents/permissions.md`](agents/permissions.md)).

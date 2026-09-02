@@ -152,7 +152,7 @@ hooks:
   `terraform-test`·`terraform-stacks`(관행·제품을 **채택한 적이 없다**) ·
   `sql-optimization`·`dignified-python`(SQL·Python **저작**은 네 산출물이 아니다 —
   대상은 compose·Dockerfile·manifest·HCL이다). Helm 패키징·CI 게이트·`scripts/*.sh` 품질은
-  **정본 문서를 직접 준수**한다(스킬이 없다). 필요해지면 `skill-matcher`가 갭으로 올린다.
+  **정본 문서를 직접 준수**한다(스킬이 없다). 필요해지면 `/skill-audit`가 갭으로 올린다.
 
 ## 결과 반환 (기록관 저널용) — 단일 기록자 원칙
 저널 파일을 **직접 쓰지 않는다.** 최종 응답에 아래를 구조화해 반환하면 supervisor가 저널에 옮겨 적는다.
