@@ -59,7 +59,7 @@
   인덱스는 세션 간 **공유 자원**이라, 내가 `git add` 한 것만 인덱스에 있다는 보장이 없다.
   pathspec을 주면 커밋 대상이 **명령 안에서 확정**되고 다른 세션의 스테이징분이 딸려갈 수 없다.
   ```bash
-  git commit -- docs/skills.md .claude/agents/skill-matcher.md   # ✅ 대상이 명령에 박힌다
+  git commit -- docs/skills.md .claude/agents/researcher.md   # ✅ 대상이 명령에 박힌다
   git add <내 파일> && git commit                                  # ❌ 인덱스의 남의 것까지 간다
   ```
 - 공유 트리에서 불가피하게 커밋할 때는 **스테이징 후 `git diff --cached --stat`으로 내 파일만

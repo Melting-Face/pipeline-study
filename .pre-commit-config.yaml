@@ -206,7 +206,23 @@ repos:
   #    판정이 성립하지 않는다. `files:`는 **트리거일 뿐 스코프가 아니다**(스코프는
   #    스크립트가 글롭한다) — 그래서 목록이 두 벌이 되지 않는다.
   # ⚠️ `.claude/skills/`는 gitignore라 스테이징되지 않는다 ⇒ 디스크 설치분만 바뀌면
-  #    이 훅은 안 돈다. 실재성(R6)은 커밋 축이 아니라 **감사 축**(`skill-matcher`)에서도 본다.
+  #    이 훅은 안 돈다. 실재성(R6)·디스크 드리프트(R8)는 커밋 축이 아니라
+  #    **감사 축**(`/skill-audit` 수동 실행)에서도 본다.
+  #    ⚠️ **이 사각의 축은 하나가 아니라 둘이다** — 처음에 「모집단에 gitignore 경로가
+  #    섞였는가」 하나로 단정했는데 **그렇게 적으면 추적 파일만 있는 훅을 안전하다고 읽는다.**
+  #      ⓐ 모집단에 **gitignore 경로**가 섞임 → 디스크만 바뀌면 트리거 안 됨 (R6·R8)
+  #      ⓑ 모집단에 **자기 검사기**가 빠짐 → 검사기만 바뀌면 **훅 전체가 Skipped** (아래 규칙)
+  #    ⓑ가 더 나쁘다 — ⓐ는 규칙 일부가 안 돌지만 ⓑ는 훅 전체가, 하필 **그 훅을 고치는
+  #    커밋에서** 안 돈다. R1~R5·R7·R9는 ⓐ에 안 걸리지만 ⓑ에는 걸려 있었다.
+  # 🔴 `files:`에 **검사기 자신을 넣는다** — 안 넣으면 스크립트만 고치는 커밋에서
+  #    `(no files to check)Skipped`가 되어 **게이트를 만든 커밋에서 그 게이트가 안 돈다.**
+  #    실제로 났다: R7·R8을 신설한 커밋이 검사기 파일 단독이라 이 훅이 건너뛰어졌다.
+  #    `.claude/commands/`도 같은 이유로 넣는다(R9의 루브릭 정본이 거기 산다).
+  #    🔴 **ⓑ는 이 훅만의 문제가 아니다 — 관측자 셋이 각각 3건을 찾았다**(`worker-wiring`·
+  #    `skill-wiring`·`doc-lint`). Rule of Three가 성립하므로 개별 수정이 아니라
+  #    **로컬 훅의 `files:`가 자기 `entry` 스크립트를 담는지 기계로 세는 검사**가 답이다.
+  #    ⚠️ `doc-links`는 사각이 없는데 사유가 다르다 — `files:` 없이 `always_run: true`라
+  #    **면제가 아니라 모집단이 전체**다. 「사각 없음」을 같은 이유로 세지 마라.
   # 근거: docs/skills.md §③ · docs/doc-sync.md
   - repo: local
     hooks:
@@ -215,7 +231,7 @@ repos:
         language: system
         entry: python3 scripts/skill_wiring_check.py
         pass_filenames: false
-        files: '^(\.claude/agents/.*\.md|docs/skills\.md|docs/skills/.*\.md|skills-lock\.json)$'
+        files: '^(\.claude/agents/.*\.md|\.claude/commands/.*\.md|docs/skills\.md|docs/skills/.*\.md|skills-lock\.json|scripts/skill_wiring_check\.py)$'
         stages: [pre-commit]
 
   # 문서 가독성 규약 검사 (2026-08-24 신설 — 위반 0건이 된 뒤에 건다).

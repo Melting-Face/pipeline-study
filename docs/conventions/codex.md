@@ -45,7 +45,7 @@ OpenAI는 Claude Code의 지침·설정·스킬·hook·슬래시 명령·subagen
 | --- | --- | --- |
 | 부모 모델 상속 | `analyst`, `data-engineer`, `data-extractor`, `devops-engineer`, `security`, `tech-writer` | 구현·판정·모호한 작업의 정확성 우선 |
 | `gpt-5.6-terra`, `high` | `data-qa`, `data-verifier`, `devops-qa`, `devops-verifier`, `researcher` | 읽기·대조 중심이며 정확성과 비용 균형 |
-| `gpt-5.6-luna`, `medium` | `archivist`, `skill-matcher` | 반복적 기록·인벤토리 작업의 효율 우선 |
+| `gpt-5.6-luna`, `medium` | `archivist` | 반복적 기록·인벤토리 작업의 효율 우선 |
 
 판정·감사 워커는 `sandbox_mode = "read-only"`다. 구현 워커는
 `workspace-write`를 사용하고 프로젝트 `PreToolUse` hook이 `transcript_path`에서 활성 역할을
