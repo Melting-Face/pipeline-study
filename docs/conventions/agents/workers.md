@@ -14,7 +14,7 @@
 | **외부 근거**(공통) | `researcher` | `researcher` | `researcher` | `researcher` | 주장이 **1차 출처**와 같은가 |
 | **노출·규제**(공통) | `security` | `security` | `security` | `security` | 새어나가는가 · 규제를 지키는가 |
 | **관측·기록**(계층 밖) | `archivist` | `archivist` | `archivist` | `archivist` | 기록이 사실과 맞는가 |
-| **스킬 배선**(계층 밖) | `skill-matcher` | `skill-matcher` | `skill-matcher` | `skill-matcher` | 맞는 스킬을 물고 있는가 |
+| **스킬 배선**(워커 아님) | `/skill-audit` | `/skill-audit` | `/skill-audit` | `/skill-audit` | 맞는 스킬을 물고 있는가 |
 | **데이터 반출**(축 아님·예외) | `data-extractor` | — | `data-extractor` | — | 명세대로 뽑았는가 · **새지 않는가** |
 
 ## 축을 늘리지 않는 이유
@@ -55,9 +55,14 @@
   단일 소유자를 흐리지 않기 위함이다. `analyst`의 쓰기는 `notebooks/**`·`docs/analyses/**` 뿐이다.
 - **`security`(노출·규제) ↔ `devops-qa`(운영 신뢰성·재현성)** 는 관점이 다르다 — 중첩 금지.
   겹치는 항목은 `devops-qa`가 중복 제기하지 않고 **`security` 확인 요청으로 넘긴다**.
-- **`skill-matcher`(계층 밖)는 `archivist`와 대칭**이다 — `archivist`가 "저널 정합",
-  `skill-matcher`가 "스킬 배선 정합"을 본다. `*-qa`와의 경계: `*-qa`는 **도메인의 검증 체계**,
-  `skill-matcher`는 **워커에 물린 스킬**을 본다. 스킬 **설치·lock 편집은 하지 않는다**(공급망·비가역).
+- **스킬 배선 축은 워커가 아니다** — `scripts/skill_wiring_check.py`(R1~R9·매 커밋)와
+  [`/skill-audit`](../../../.claude/commands/skill-audit.md)(사람 판단 4축)로 갈려 있다.
+  `*-qa`와의 경계: `*-qa`는 **도메인의 검증 체계**, 이쪽은 **워커에 물린 스킬**을 본다.
+  스킬 **설치·lock 편집은 하지 않는다**(공급망·비가역).
+  ⚠️ **한때 `skill-matcher` 워커가 `archivist`와 대칭인 계층 밖 축이었다.** 폐기 사유는
+  **역할이 틀려서가 아니라 비용 비대칭**이다 — 호출당 최고가인데 자동 발동 경로가 0건이었고,
+  기계가 이미 잡는 것을 다시 보면서 기계가 못 잡는 것은 수동 배정을 기다리고 있었다.
+  ⚠️ **잃은 것**: 감사자=구현자의 **도구 축 분리**. 커맨드는 supervisor 컨텍스트에서 돈다.
 - **`researcher`는 도메인 공통 축**이다. 경계는 **안/밖** — 저장소 **안** 탐색은 각 도메인 워커,
   저장소 **밖** 1차 출처는 `researcher`.
 
@@ -111,7 +116,7 @@
 | **빌드·설치 계열**(`podman push`·`uv`·`helm`) | 통제 대상 아님(빌드 파이프라인) | **원래부터 그 문장 밖이었다** |
 
 - **두 번째 축을 "워커가 있다"고 쓰지 않는다.** 구현 워커 신설이 검토됐으나 **`security` 반려 + 철회**됐다.
-  현행 통제는 `skill-matcher`의 `researcher` 릴레이 경로다 — **그 칸은 비어 있지 않았다.**
+  현행 통제는 `/skill-audit` → `researcher` 릴레이 경로다 — **그 칸은 비어 있지 않았다.**
 - **세 번째 축을 "통제 대상 아님"으로 적는 것은 면제가 아니라 *경계의 명시*다.**
   이 축이 위험해지면(신뢰할 수 없는 레지스트리·차트 소스) 두 번째 축으로 승격시켜 다룬다.
 
@@ -186,7 +191,6 @@
 | `tech-writer.md` | 저장소의 **문서 소유자**. **발행 금지** |
 | `researcher.md` | 외부 **1차 출처**를 제목·URL·절과 함께 반환(**읽기 전용**) |
 | `archivist.md` | 저널 정합성·누락 점검, MOC 유지(관측·기록만) |
-| `skill-matcher.md` | **스킬↔워커 배선 감사**(**읽기 전용**), 재배선 계획만 반환 |
 
 - **전문 워커 = 읽기 전용 원칙**: 판정이 목적인 워커에는 `Write`/`Edit`를 주지 않고,
   나아가 `disallowedTools`로 **명시 거부**한다(미부여는 상속 경로가 생기면 뚫린다).
