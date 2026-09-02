@@ -49,14 +49,16 @@
   (볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md` — `computedHash` 재현 가능).
   **전역 제거 이후 락의 무게가 달라졌다** — `.agents`·`.claude/skills`가 gitignore라
   **클론에 실체가 따라오지 않으므로**, 재현성을 지는 것은 `skills-lock.json` **하나뿐**이다.
-- **배선 감사 주기**: 스킬 추가·제거 후, 워커 신설·개편 시 **[`skill-matcher`](../../.claude/agents/skill-matcher.md)** 를 배정한다.
+- **배선 감사 주기**: 스킬 추가·제거 후, 워커 신설·개편 시 **[`/skill-audit`](../../.claude/commands/skill-audit.md)** 를 돌린다.
+  ⚠️ **기계 축은 매 커밋 돈다**(`scripts/skill_wiring_check.py` R1~R9). 이 조항이 부르는 것은
+  **기계가 못 보는 4축**(출처·라이선스 / 권한 충돌 / 미충족 갭 / 재채점)이다 — 둘을 같이 세지 마라.
 
 ## 출처 등급별 통제
 
 > **왜 바꿨나** — 이전 조항은 "신뢰 출처(`dagster-io/skills`)만 사용한다"였는데, 실측상
 > **24개 중 21개가 이 조항을 위반**하는 상태였다. 전원이 위반하는 규칙은 규칙이 아니다.
 > 개인 저장소 2종만 떼어내 금지하는 것도 **위험 감소 없이 형식만 맞추는 것**이라
-> `security` 판정([미션 13](../../.claude/agents/skill-matcher.md))에서 **등급별 통제로의 개정**이 상신됐다.
+> `security` 판정에서 **등급별 통제로의 개정**이 상신됐다.
 > 급소는 "출처가 개인이냐"가 아니라 **"고정되지 않아 조용히 바뀔 수 있느냐"** 다.
 
 > 🔴 **재개정 — 등급은 "출처"만 판정한다. lock 등재는 등급이 아니다.**

@@ -136,6 +136,25 @@ NONE_MARKERS = ("**없음**", "없음")
 #    ⇒ 확정 가능한 3키만 게이트로 걸고, 결손 1건은 Issue로 연다.
 LOCK_REQUIRED_KEYS = frozenset({"source", "sourceType", "computedHash"})
 
+# R9가 추적하는 루브릭 어휘 — 게이트 2축 + 채점 3축 + 임계.
+AUDIT_CMD = Path(".claude") / "commands" / "skill-audit.md"
+RUBRIC_TOKENS = (
+    "권한 정합",
+    "정본 무충돌",
+    "스택 일치",
+    "호출 빈도",
+    "대체 불가",
+    "★3",
+)
+
+# 워커 지시문이 「루브릭을 재등장시켰다」고 볼 임계.
+# 🔴 축 이름 1개 인용은 위반이 아니다 — `data-verifier`·`researcher`·`data-extractor`는
+#    *"내 등재가 0건인 이유는 축1 탈락"* 처럼 **자기 판정 사유**를 적으며 축을 부른다.
+#    문제는 **판정 절차 전체의 복제**다. 관측 분포가 이 둘을 명확히 가른다 —
+#    폐기 전 `skill-matcher.md`가 6/6이었고 나머지 셋은 각 1/6이었다.
+#    ⇒ 임계 3. 값이 아니라 **분포의 간격**이 근거다(6 vs 1 사이 어디를 잘라도 같다).
+RUBRIC_ECHO_THRESHOLD = 3
+
 
 def cells_of(row: str) -> list[str]:
     """표 행을 셀 목록으로 가른다(양끝 빈 칸 제거·공백 정리)."""
@@ -270,6 +289,30 @@ def main() -> int:
             f"R8 `{s}`: 디스크에 있는데 lock 밖이다 — 고정되지 않은 설치다"
             for s in sorted(disk_names - lock_names)
         ]
+
+    # 3-3) R9 루브릭 문안 드리프트 — 정본 2곳에 다 있고, 워커 지시문에는 없어야 한다
+    # 🔴 폐기된 `skill-matcher` 워커가 루브릭 정본이던 시절, 같은 루브릭이 4곳에
+    #    서술돼 있었고 **문안 정합을 대조하는 기계가 없었다.** 그래서 감사자를
+    #    없애면서 이 축을 기계로 내린다.
+    cmd_path = root / AUDIT_CMD
+    if not cmd_path.is_file():
+        findings.append(f"R9 {AUDIT_CMD} 가 없다 — 루브릭 정본이 사라졌다")
+    else:
+        cmd_text = cmd_path.read_text(encoding="utf-8")
+        findings += [
+            f"R9 루브릭 어휘 `{t}`가 {where}에 없다 — 두 정본이 갈렸다"
+            for t in RUBRIC_TOKENS
+            for where, body in ((AUDIT_CMD, cmd_text), (SKILLS_DOC, doc_text))
+            if t not in body
+        ]
+    for path in worker_files:
+        echoed = [t for t in RUBRIC_TOKENS if t in path.read_text(encoding="utf-8")]
+        if len(echoed) >= RUBRIC_ECHO_THRESHOLD:
+            findings.append(
+                f"R9 {path.stem}: 워커 지시문에 루브릭이 재등장했다 "
+                f"({len(echoed)}/{len(RUBRIC_TOKENS)}: {' '.join(echoed)}) "
+                f"— 판정 절차의 정본은 {AUDIT_CMD} 하나다"
+            )
 
     # 4) 어휘 필터를 **양쪽에** 걸어 「스킬」과 「스킬이 아닌 코드스팬」을 가른다.
     #    🔴 R2(집합 일치) 판정에는 어휘 안의 것만 넣는다 — 유령 이름을 R2에 흘리면
