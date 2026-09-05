@@ -17,6 +17,7 @@
 | [`git/worktree.md`](git/worktree.md) | 병렬 세션 | worktree 격리와 그 부작용 · **pathspec 의무** · 겹침 4축 · 귀속/리뷰 주체 |
 | [`dagster.md`](dagster.md) | Dagster 정의 | **함수+데코레이터**(클래스 지양) · 에셋 명시 분리 · 머티리얼라이즈 메타데이터 |
 | [`dbt.md`](dbt.md) | dbt 모델 | `source()` 매핑 · 메달리온은 kind/tag로 · `fqn:` 셀렉터 |
+| [`data-quality.md`](data-quality.md) | 데이터 품질 | 품질 **6차원**과 강제 지점 · 실패 시 **차단/경고/관측** 3등급 · **보증하지 않는 것**을 함께 선언 |
 | [`analysis.md`](analysis.md) | 분석(gold·노트북·리포트) | **3층 분리**(gold/노트북/리포트) · 결론 수치는 모델 경유 · 셀 출력 커밋 금지 |
 | [`publishing.md`](publishing.md) | 외부 공개(블로그·공유자료) | **공개는 커밋보다 강한 기준** · 소규모 셀(<5) 마스킹 · **발행은 사람이** · `security` 컨펌 게이트 |
 | [`docker.md`](docker.md) | Compose·Dockerfile | YAML 앵커 · `latest` 금지 · healthcheck + `depends_on` · `profiles` |

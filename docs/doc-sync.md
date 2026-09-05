@@ -23,6 +23,8 @@
 | 프로젝트 구조 | `docs/conventions/dagster.md` | `CLAUDE.md` 구조 섹션 |
 | 운영·리소스 | `docs/operations.md` · `docs/resource-sizing.md` | `CLAUDE.md` · `compose.yml` 주석 |
 | 관측·모니터링 | `docs/conventions/monitoring.md` | `docs/architectures/monitoring.md`(실태) · `CLAUDE.md` · `docs/README.md` |
+| 리스크 분류·등급·대응 | `docs/risk.md` | `CLAUDE.md` · `AGENTS.md` · `docs/README.md` · `docs/references.md` · `docs/operations.md`(§7의 복구 수단).<br/>**개별 항목은 이 체인 밖** — 아래 「열린 작업」·「진행 상태」 행. |
+| 데이터 품질 규칙 | `docs/conventions/data-quality.md` | `CLAUDE.md` · `docs/README.md` · `docs/conventions/README.md` · `docs/test.md`(계층 링크) · `docs/risk.md` §1 축① |
 | 보안·거버넌스 **정책** | `docs/security.md` | `CLAUDE.md` 운영 섹션 · `docs/references.md`(규제 출처) · `.claude/agents/security.md`(점검 항목) · `docs/README.md` 목차 |
 | 보안 **현행 실태**(비공개) | `$OBSIDIAN_VAULT/security/posture.md` | `docs/security.md`(정책 — **한 벌로 갱신**: 한쪽만 고치면 정책이 실태를 앞질러 "다 됐다"로 읽힌다) |
 | 환경 세팅 **절차** | `docs/setup.md` | 루트 `README.md`(빠른 시작만) · `docs/architectures/overview.md`(순서 요약) |

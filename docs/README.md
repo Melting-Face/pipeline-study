@@ -44,6 +44,7 @@
 | [Python](conventions/python.md) | ruff·타입 힌트·예외·의존성·스크립트 절차형 |
 | [Dagster](conventions/dagster.md) | 함수형 에셋 정의·메타데이터·잡·스케줄 · **K8s in-cluster 배포** |
 | [dbt](conventions/dbt.md) | 레이어링·네이밍·테스트·sqlfluff·**방언 흡수** |
+| [데이터 품질](conventions/data-quality.md) | 품질 6차원·실패 시 **차단/경고/관측** 3등급·보증 범위 |
 | [분석](conventions/analysis.md) | gold / 노트북 / 리포트 **3층 분리**와 배치 기준 |
 | [외부 공개](conventions/publishing.md) | 공개는 커밋보다 강한 기준. 소규모 셀 마스킹·DUA·출처 등급 |
 | [타임존](conventions/timezone.md) | 저장 UTC / 표시·스케줄 KST |
@@ -78,6 +79,7 @@
 | [환경 세팅](setup.md) | 절차 정본 — 사전 요구·기동·검증·회수·함정 |
 | [환경변수·운영 정책](operations.md) | `.env`→compose→`EnvVar` 전파 체인, 보존 정책, 토큰 비용 계측, 클러스터 재생성 |
 | [리소스 산정](resource-sizing.md) | 호스트 자원에 따른 서비스 옵션 조정 |
+| [리스크 관리 규약](risk.md) | 분류 4축·등급의 **가역성 축**·비가역 작업 한 벌·**사후 인시던트 대응** |
 | [보안·데이터 거버넌스 **정책**](security.md) | ISMS-P·의료데이터 규제 매핑, 통제 방침과 보증 범위 |
 | [Agent Skills](skills.md) | Claude/Codex 공용 스킬 카탈로그와 통제 규칙 (허브) |
 | ↳ [출처 등급·통제](skills/sourcing.md) | A~D 등급 정의·C등급 통제·lock 관리의 **정본** |
