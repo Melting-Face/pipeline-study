@@ -106,6 +106,12 @@ jobs:
 
       # 🔴 repo 루트에서 실행한다 — sqlfluff `library_path`(sqlfluff_libs)가 CWD 기준이다.
       # --show-diff-on-failure: 수정형 훅(ruff-format·sqlfluff-fix 등)이 무엇을 바꾸려 했는지 보여준다.
+      #
+      # 🔴 **이 한 줄이 가드 단위 테스트도 돌린다**(훅 `guard-tests` — Issue #54). 별도 잡을
+      #    두지 않은 것은 누락이 아니다: 로컬 훅은 `files:` 매치 시에만 돌지만 `--all-files`는
+      #    모집단이 전체라 **여기서는 항상** 트리거된다. 선언이 `.pre-commit-config.yaml`
+      #    한 곳이라 로컬 게이트와 서버 게이트가 갈리지 않는다(머리 주석 원칙 3).
+      #    ⇒ CI 로그에서 가드 테스트를 찾으려면 이 스텝 안을 본다. 정본 docs/test.md §7.
       - run: pre-commit run --all-files --show-diff-on-failure
 
   commit-msg:
