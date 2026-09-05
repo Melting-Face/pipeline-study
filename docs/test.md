@@ -31,6 +31,11 @@ dbt 기본 타깃은 **`spark_connect`** 다. 아래 명령의 `--target dev`는
 > 이미 §5-1로 깨졌고 이번에 §5-3이 더해졌다 — **예외는 계층이 아니라 *관문 시점*으로 구분**한다.
 > 셋 다 "무엇을 하기 직전에 통과시키는가"가 다르고, 그것이 이 예외들을 정당화하는 유일한 축이다.
 
+**위 표에 §7이 없는 것은 누락이 아니다.** 1~6번은 **파이프라인의 값**을 방어하는 계층이라 한 축에
+줄 세울 수 있다. **§7 가드 단위 테스트는 대상이 다르다** — 방어하는 것이 데이터가 아니라
+**통제 배선**(hook·경로 경계)이라 같은 축에 순위를 매기면 두 종류를 한 숫자로 세게 된다.
+비용은 1.9초(로컬 실측)이고 상시 게이트다.
+
 ---
 
 ## 1. dbt 스키마(데이터) 테스트 — ★★★★★
@@ -345,6 +350,56 @@ uv run --group notebook jupyter nbconvert --to notebook --execute \
 > `load_table()`만 `ACCESS_DENIED`로 죽는 **부분 성공**(카탈로그는 Postgres, `metadata.json`은 S3).
 > 컴파일·로드 검증으로는 절대 드러나지 않는 층이다([`operations.md`](operations.md) §1-2).
 
+## 7. 가드 단위 테스트 — ★★★★☆
+
+**대상이 데이터가 아니라 통제 배선이다.** 1~6번이 파이프라인의 값을 방어한다면 이 계층은
+**가드가 실제로 막는가**를 방어한다. `scripts/tests/test_journal_guard.py`가 임시 Git 저장소와
+임시 볼트를 만들어 hook의 입출력을 실제로 주고받는다.
+
+```bash
+# repo 루트에서 — pre-commit 훅 `guard-tests`가 부르는 것과 같은 명령이다
+python3 scripts/tests/run_guard_tests.py
+```
+
+**어디서 도는가**: 로컬 훅 `guard-tests` 하나로 두 곳이 덮인다 — 로컬은 `files:`가 매치할 때
+(가드·테스트를 고칠 때만), CI는 `lint` 잡의 `pre-commit run --all-files`가 모집단을 전체로
+넘기므로 **항상** 돈다. 선언이 한 곳이라 두 게이트가 갈리지 않는다.
+
+**왜 `python3 -m unittest`를 직접 걸지 않는가**: `unittest`의 종료 코드는 **0건 실행과 skip을
+통과로 읽는다.** 실측 대조 — 테스트 하나에 `skipTest`를 넣은 같은 상태에서
+`python3 -m unittest scripts.tests.test_journal_guard`는 **exit 0**, 러너는 **exit 1**이었다.
+게이트에 걸어 둔 채 skip되면 **게이트가 없는 지금과 같은 상태인데 초록으로 보인다**.
+그래서 러너가 `실행 N개 · skip M개 · 실패 K개`를 갈라 찍고 앞의 둘을 각각 실패로 친다.
+같은 이유로 `setUp`의 `git` 미검출은 `skipTest`가 아니라 **실패**다(*"면제는 검증이 아니다"*).
+
+**계측 단위**: 위 `실행 N개`는 **테스트 메서드 수**이지 *검증되는 가드 수*가 아니다.
+현재 가드 3종을 13개 메서드가 나눠 본다. 러너는 이 수를 **고정값과 대조하지 않는다** —
+막고 싶은 것은 「13이 아님」이 아니라 **「0건」** 이다.
+
+**이 계층이 보증하지 않는 것 — 가드 9종 중 3종만 본다.**
+
+| 축 | 가드 |
+| --- | --- |
+| 테스트 있음(이 계층) | `journal_guard` · Claude/Codex `worker_path_guard` · `plan_mirror_guard`(일부) |
+| **테스트 0건** | `analyst_path_guard` · `skill_gate_guard` · `research_gate_guard` · `protected_paths_guard` · `session_sync_guard` · `commit_manifest_guard` |
+
+이 훅의 초록을 **「가드 전부가 검증됐다」로 읽지 않는다**. 잔여 6종은 별도 항목이다(Issue #55).
+
+### 게이트가 언제 도는가도 검사 대상이다
+
+로컬 훅의 `files:`에 그 훅이 실행하는 스크립트가 빠져 있으면, **그 스크립트만 고치는 커밋에서
+훅이 통째로 `Skipped`** 가 된다 — 하필 게이트를 바꾸는 커밋에서 게이트가 안 돈다.
+`scripts/hook_files_check.py`(훅 `hook-files`)가 `.pre-commit-config.yaml`을 파싱해 이것을 전수한다.
+사례가 셋이고 **관측자도 셋**이라(각각 하나씩 찾았다) 개별 수정이 아니라 검사기로 닫았다.
+
+`always_run: true`인 훅은 **면제가 아니라 모집단이 전체**라 사각이 없다 — 검사기는 이것을
+통과와 합치지 않고 **`전체모집단`** 으로 따로 센다. 「사각 없음」을 한 숫자로 적으면
+다음 사람이 *"면제받은 훅이 있다"* 로 읽는다.
+
+⚠️ 이 검사기가 보는 축은 **「모집단에 자기 검사기가 빠짐」 하나**다(훅 *전체*가 안 돎).
+「모집단에 gitignore 경로가 섞임」(규칙 *일부*가 안 돎)은 **다른 축**이고 감사 축(`/skill-audit`)이 본다.
+`.claude/settings.json`의 hook은 `files:` 축 자체가 없어 여기서 보지 않는다.
+
 ## 위치·네이밍 규칙
 
 | 테스트 유형 | 위치 | 네이밍 |
@@ -352,6 +407,7 @@ uv run --group notebook jupyter nbconvert --to notebook --execute \
 | dbt 스키마/단위 테스트 | 모델과 같은 `models/<dataset>/**/schema.yml`(또는 `_<dataset>__models.yml`) | dbt 표준 키(`data_tests:`·`unit_tests:`) |
 | dbt singular 테스트 | `dbt_pipelines/tests/*.sql` | 검증 대상이 드러나게 (`assert_<불변식>.sql`) |
 | Dagster pytest | `dagster/dockerfile.d/src/tests/` | `test_*.py` · 함수 `test_*` |
+| 가드 단위 테스트 | `scripts/tests/` (러너 `run_guard_tests.py`) | `test_*.py` — 러너의 글롭 패턴이 이 이름을 전제한다 |
 
 - 테스트 코드는 ruff `per-file-ignores`로 `ANN`·`D`·`S101`(assert)·`ARG` 면제
   (설정은 루트 `pyproject.toml`의 `"**/tests/**"`, 상세 [python.md](conventions/python.md#테스트)).
@@ -371,6 +427,12 @@ dg check
 
 # 정적 검사 (pre-commit이 커밋 시 자동 실행 — repo 루트에서)
 ruff check . && sqlfluff lint dagster/dockerfile.d/src/dbt_pipelines/
+
+# 가드 단위 테스트 (§7) — 훅 `guard-tests`가 부르는 것과 같은 명령
+python3 scripts/tests/run_guard_tests.py
+
+# 로컬 훅의 files: 자기 검사기 포함 검사 (§7) — 훅 `hook-files`가 부르는 것과 같은 명령
+python3 scripts/hook_files_check.py
 
 # 타입 정합성 (훅에 없다 — 수동)
 uv run --project dagster/dockerfile.d/src --with mypy mypy dagster/dockerfile.d/src/src

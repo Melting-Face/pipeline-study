@@ -36,10 +36,30 @@ class JournalGuardTest(unittest.TestCase):
             ".codex/.claims\n", encoding="utf-8"
         )
 
+        # 🔴 `skipTest`가 아니라 **실패**다(Issue #54). 이 테스트를 게이트에 올린 뒤로는
+        #    skip이 곧 **「초록인데 안 돈 상태」** 이고, 그것은 게이트가 없는 지금과
+        #    같다 — 오히려 검증됐다고 믿게 만들어 더 나쁘다.
+        #    `git`은 클론 자체의 전제이고
+        #    GitHub 러너에도 항상 있으므로 면제를 둘 자리가 아니다
+        #    (*"면제는 검증이 아니다"* — 선언된 예외와 미검사는 다른 상태다).
         git = shutil.which("git")
         if git is None:
-            self.skipTest("git 실행 파일이 필요하다")
+            self.fail("git 실행 파일이 필요하다 — 이 테스트는 skip하지 않고 실패한다")
         self.git = git
+
+        # 🔴 `GIT_*`를 걷어낸다 — **이 테스트를 게이트에 올리자마자 드러난 결함**이다.
+        #    git hook 안에서 돌면 부모 git이 `GIT_INDEX_FILE`·`GIT_DIR`을 자식에게
+        #    물려주고, 그러면 아래 임시 저장소의 git 명령이 **바깥 저장소의 인덱스**를
+        #    쓴다. 단일 변인 실험: `GIT_INDEX_FILE` 하나만 넣으면 13/13 통과가
+        #    13/13 에러로 뒤집힌다.
+        #    ⚠️ 손으로 돌 때는 이 변수가 없어 **영영 안 드러난다** — 「통과했다」가
+        #    아니라 「그 환경에서만 통과했다」였다(Issue #54가 잡으라던 것 자체다).
+        self.environment = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith("GIT_")
+        }
+
         self._run_git("init", "--quiet")
         self._run_git("config", "user.name", "Journal Guard Test")
         self._run_git("config", "user.email", "journal-guard@example.invalid")
@@ -47,7 +67,8 @@ class JournalGuardTest(unittest.TestCase):
         self._run_git("commit", "--quiet", "-m", "test: 기준점")
 
         self.session_id = "11111111-2222-3333-4444-555555555555"
-        self.environment = os.environ.copy()
+        # 위에서 만든 `GIT_*` 제거본에 얹는다 — `os.environ.copy()`로 다시 뜨면
+        # 가드 서브프로세스가 부모 인덱스를 보게 되어 같은 결함이 되살아난다.
         self.environment.update(
             {
                 "CLAUDE_PROJECT_DIR": str(self.repository),
@@ -65,6 +86,7 @@ class JournalGuardTest(unittest.TestCase):
         """테스트 저장소에서 Git 명령을 실행한다."""
         subprocess.run(  # noqa: S603
             [self.git, "-C", str(self.repository), *arguments],
+            env=self.environment,  # 🔴 `GIT_*` 제거본 — 상속하면 부모 인덱스를 쓴다
             check=True,
             capture_output=True,
             text=True,
