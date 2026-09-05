@@ -293,6 +293,71 @@ repos:
         files: '(\.md$|^scripts/doc_lint\.py$)'
         stages: [pre-commit]
 
+  # 가드 단위 테스트 (Issue #54 — 있는 테스트가 어느 게이트에서도 안 돌던 것을 닫는다).
+  # 🔴 **테스트를 더하는 것을 「게이트를 걸었다」로 읽지 않는다.** `scripts/tests/`는 저장소
+  #    유일의 가드 테스트인데 손으로만 돌았다 — 테스트 3종을 더한 커밋의 CI는 초록이었지만
+  #    **그 테스트는 CI에서 한 번도 돌지 않았다.**
+  # 🔴 **CI 잡을 따로 만들지 않는다.** `lint` 잡이 `pre-commit run --all-files`를 돌리므로
+  #    이 훅 하나로 두 곳이 다 덮인다 — 로컬은 `files:` 매치 시(가드·테스트를 고칠 때만,
+  #    1.9초 실측), CI는 모집단이 전체라 **항상** 트리거된다.
+  #    ⇒ 선언이 한 곳이라 두 게이트가 갈리지 않는다(ci.yml 머리 주석 원칙 3).
+  # 🔴 `entry`가 `python3 -m unittest`가 아니라 **러너**인 이유: `unittest`의 종료 코드는
+  #    **0건 실행과 skip을 통과로 읽는다.** 실측 대조 — 테스트 하나에 `skipTest`를 넣은 같은
+  #    상태에서 `python3 -m unittest …`는 **exit 0**, 러너는 **exit 1**이었다.
+  #    걸어놓고 skip되면 **지금과 같은 상태인데 초록으로 보인다**(더 나쁘다).
+  # 🔴 `uv run`을 쓰지 않는다 — CI `lint` 잡에 **uv가 없다**(`setup-uv`는 `commit-msg`·`defs`
+  #    잡에만 있다). 위 훅들과 같은 `language: system` + 호스트 `python3` 형태다.
+  # ⚠️ **보증 범위는 가드 3종까지다** — `journal_guard` · Claude/Codex `worker_path_guard` ·
+  #    `plan_mirror_guard` 일부. 나머지 6종(`analyst_path_guard`·`skill_gate_guard`·
+  #    `research_gate_guard`·`protected_paths_guard`·`session_sync_guard`·
+  #    `commit_manifest_guard`)은 **테스트 0건**이다(Issue #55). 이 훅의 초록을
+  #    「가드 전부가 검증됐다」로 읽지 마라.
+  # ⚠️ `files:`에 `.codex/hooks/**`를 넣는 것은 **Codex 짝을 고치면 테스트가 돌게** 하기
+  #    위해서다(Issue #53의 사전 조건) — 두 런타임의 같은 가드는 짝으로 유지된다.
+  # 근거: docs/test.md §가드 단위 테스트
+  - repo: local
+    hooks:
+      - id: guard-tests
+        name: 가드 단위 테스트 (journal · worker_path · plan_mirror)
+        language: system
+        entry: python3 scripts/tests/run_guard_tests.py
+        pass_filenames: false
+        # 🔴 러너와 테스트 파일 자신을 담는다 — 아래 `hook-files` 훅이 강제하는 규칙이다.
+        files: '^(scripts/tests/.*\.py|scripts/.*_guard\.py|\.codex/hooks/.*\.py)$'
+        stages: [pre-commit]
+
+  # 로컬 훅 `files:`의 자기 검사기 포함 검사 (Issue #56 — 위 세 훅이 각각 밟은 사각).
+  # 🔴 **Rule of Three가 성립해서 만든 검사기다.** `worker-wiring`(security 컨펌)·
+  #    `skill-wiring`(병렬 세션 — 커밋 `9dcb412`가 실물)·`doc-lint`(세션 관측) 셋을
+  #    **각각 다른 관측자**가 하나씩 찾았다. 한 사람이 전수했으면 세 번 만에 안 나왔다 —
+  #    **개별 수정으로는 네 번째를 못 막는다.**
+  # 🔴 **위반 0건인 지금 건다.** `doc-lint` 주석이 적어 둔 *"초록인 시점에만 건다"* 와 같은
+  #    이유다 — 네 번째 사례가 쌓인 뒤면 게이트 신설과 잔여 정리가 한 커밋에 묶인다.
+  # 🔴 `always_run: true`를 **면제로 두지 않는다.** `doc-links`는 사각이 없는데 **사유가
+  #    다르다**(모집단이 전체라서다). 검사기는 이것을 통과가 아니라 별도 상태
+  #    **`전체모집단`** 으로 세어 따로 찍는다 — 「사각 없음」을 한 숫자로 합치면
+  #    다음 사람이 *"면제받은 훅이 있다"* 로 읽는다(*"면제는 검증이 아니다"*).
+  # ⚠️ **이 검사기가 보는 축은 ⓑ 하나다** — 「모집단에 자기 검사기가 빠짐」(훅 *전체*가 안 돎).
+  #    ⓐ 「모집단에 gitignore 경로가 섞임」(규칙 *일부*가 안 돎, `skill-wiring`의 R6·R8)은
+  #    **다른 축**이고 감사 축(`/skill-audit`)이 본다. 한 세션이 ⓐ를 *"사각의 축은 이것
+  #    하나"* 로 일반화했다가 정정한 이력이 있다 — 섞지 마라.
+  # ⚠️ `.claude/settings.json`의 hook은 **`files:` 축 자체가 없다**(배선이 정의 로드 시점
+  #    스냅샷이라 다른 형태의 사각이다). 여기서 보지 않는다.
+  # 근거: docs/test.md §가드 단위 테스트 · scripts/hook_files_check.py 머리 주석
+  - repo: local
+    hooks:
+      - id: hook-files
+        # 값 안의 `files:`는 콜론+공백이라 인용하지 않으면 YAML 매핑으로 읽힌다
+        # (`mapping values are not allowed in this context` — 실측으로 걸렸다).
+        name: "로컬 훅 files: 자기 검사기 포함 검사"
+        language: system
+        entry: python3 scripts/hook_files_check.py
+        pass_filenames: false
+        # 🔴 **검사기 자신을 담는다** — 안 담으면 이 Issue가 고치려는 결함을 검사기가
+        #    그대로 갖는다(재귀). 이 훅은 자기가 강제하는 규칙의 첫 적용 대상이다.
+        files: '^(\.pre-commit-config\.yaml|scripts/hook_files_check\.py)$'
+        stages: [pre-commit]
+
   # Terraform 포매터 — conventions/terraform.md §3이 요구하던 게이트의 집행 수단
   # (규약은 있었으나 훅이 없어 terraform/oci-k3s 는 한 번도 검사받은 적이 없었다).
   #
