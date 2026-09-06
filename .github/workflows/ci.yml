@@ -221,10 +221,18 @@ jobs:
 
       # 🔴 repo 루트에서 실행한다 — [tool.mypy] 설정이 **루트** pyproject.toml에 있다
       #    (`disallow_untyped_defs = true`). src에서 돌리면 설정을 못 읽는다.
-      # types-PyYAML은 `--with`로 붙인다 — .pre-commit-config.yaml §미포함이 적어둔
+      # types-* 스텁은 `--with`로 붙인다 — .pre-commit-config.yaml §미포함이 적어둔
       # 수동 명령과 같은 형태이고, uv.lock을 건드리지 않는다.
+      #
+      # 🔴 `types-requests`가 필요한 이유: 루트 pyproject의 `ignore_missing_imports = true`는
+      #    **스텁이 아예 없는 모듈**(dagster·pyiceberg 등)만 덮는다. `requests`는 typeshed에
+      #    스텁이 **존재하는데 설치만 안 된** 경우라 mypy가 `[import-untyped]`로 따로 분류하고,
+      #    그 옵션으로는 눌리지 않는다. 두 상황이 같은 "스텁 없음"으로 보이지만 축이 다르다.
       - name: mypy
-        run: uv run --project dagster/dockerfile.d/src --with types-PyYAML mypy dagster/dockerfile.d/src/src
+        run: >-
+          uv run --project dagster/dockerfile.d/src
+          --with types-PyYAML --with types-requests
+          mypy dagster/dockerfile.d/src/src
 
       # dg check defs는 manifest.json을 요구한다 — `prepare_if_dev()`는 비-dev에서 no-op이라
       # 여기서 미리 만들어야 한다(common/dbt.py §manifest가 명시).

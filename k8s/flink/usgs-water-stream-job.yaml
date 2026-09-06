@@ -1,0 +1,131 @@
+# ConfigMap — Flink SQL **축 A 실데이터** 잡 (Iceberg bronze 스트리밍 읽기 → Iceberg 싱크)
+#
+# 목적: datagen 대조군(iceberg-datagen-job.yaml)이 닫은 계산 축 위에 **소스 축**을 얹는다.
+#   대조군이 워터마크·윈도우·체크포인트·싱크 커밋을 이미 증명했으므로, 여기서 결과가 비면
+#   남은 원인은 **Iceberg 스트리밍 읽기 하나**다(계획서가 노린 "변인 하나").
+#
+# 🔴 **잡을 둘로 나눈 이유도 같다.** 읽기와 조인을 한 잡에 넣으면 실패 원인이 다시 둘이 된다.
+#   03(echo)이 통과한 뒤에만 04(join)를 제출한다.
+#     - 03-usgs-echo.sql : 스트리밍 읽기**만**. 소스 = `usgs_water.water_iv_raw`(append-only)
+#     - 04-usgs-join.sql : 03 통과 후 관측소 차원과 조인. regular join의 상태 증가를 관측한다.
+#
+# 소스 적격성은 실측으로 닫혀 있다(2026-09-06 `scripts/iceberg_changelog_probe.py`):
+#   `usgs_water.water_iv_raw` — 6,667행 / 계보 2(고아 0) / ops=append / flink_stream=**가능**
+#   2회 머티리얼라이즈 뒤에도 append만 남아 C4 함정(첫 회는 적격처럼 보이고 두 번째에 자격 상실)을
+#   통과했다. **1회 관측으로 판정하지 않았다.**
+#
+# 🔴 마운트 경로는 `/opt/flink/sql-usgs`다 — ConfigMap 볼륨은 마운트 경로를 통째로 덮으므로
+#   기존 넷(sql-catalog·sql·sql-stream·sql-datagen)과 겹치면 뒤엣것이 앞엣것을 가린다.
+#
+# 🔴 회수 — 이 잡들은 **끝나지 않는다.** 순서가 규칙이다(2026-09-06 실측):
+#     1) `flink cancel <job-id>`  2) `kubectl delete -f flinkdeployment-session.yaml`
+#   순서를 뒤집으면 오퍼레이터가 `CLEANUPFAILED | The session cluster has non terminated jobs
+#   ... that should be cancelled first`로 15초마다 재시도하며 CR이 DELETING에 고착한다.
+#   ⚠️ 이것은 오퍼레이터 고장이 아니다 — 정확한 진단을 내며 기다리는 정상 동작이다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: usgs-water-stream-job
+    namespace: default
+    labels:
+        app: flink-session
+data:
+    # --- 잡 ①: 스트리밍 읽기만. 크리덴셜 0 ---
+    03-usgs-echo.sql: |
+        SET 'execution.runtime-mode' = 'streaming';
+
+        -- 🔴 `table.dml-sync`는 켜지 않는다 — 스트리밍 INSERT는 끝나지 않으므로
+        --   동기 실행하면 sql-client가 반환하지 않고 kubectl exec 세션이 물린다.
+        SET 'table.local-time-zone' = 'UTC';
+
+        CREATE DATABASE IF NOT EXISTS `iceberg`.`usgs_water`;
+
+        -- 싱크. `processed_at`은 스트리밍이 "나중에" 처리했음을 **데이터로** 남기는 증거다
+        -- (로그가 아니라 테이블에서 판별한다). `ingested_at`(적재 시각)과 나란히 두면
+        -- 적재→처리 지연이 두 컬럼의 차로 직접 나온다.
+        --
+        -- ⚠️ 타입은 소스와 맞춰야 한다. bronze의 date_time·ingested_at은 pyarrow
+        --   timestamp("us", tz="UTC") → Iceberg timestamptz → Flink TIMESTAMP(6) WITH LOCAL TIME ZONE.
+        --   TIMESTAMP(3)으로 받으면 정밀도가 어긋나 INSERT가 거부된다.
+        -- 🔴 `value`는 Flink SQL **예약어**라 백틱이 없으면
+        --   `SqlParseException: Encountered "value"`로 파싱이 죽는다(2026-09-06 실측).
+        --   bronze 스키마가 원본 필드명을 그대로 쓰기 때문에 여기서 부딪힌다.
+        CREATE TABLE IF NOT EXISTS `iceberg`.`usgs_water`.`iv_stream_echo` (
+            site_no STRING,
+            parameter_cd STRING,
+            `value` STRING,
+            date_time TIMESTAMP(6) WITH LOCAL TIME ZONE,
+            ingested_at TIMESTAMP(6) WITH LOCAL TIME ZONE,
+            processed_at TIMESTAMP(3)
+        );
+
+        -- `starting-strategy` = TABLE_SCAN_THEN_INCREMENTAL:
+        --   기존 스냅샷을 **먼저 전부 훑고** 증분을 따라간다. 기본값
+        --   INCREMENTAL_FROM_LATEST_SNAPSHOT을 쓰면 이미 적재된 6,667행이 안 나와
+        --   "아무것도 안 나오는 것"과 "아직 안 온 것"이 구분되지 않는다.
+        --   ⇒ 기대값이 "기존 6,667행 + 이후 새 적재분"으로 명확해진다.
+        -- `monitor-interval` = 10s: 소스 스냅샷 폴링. 체크포인트(10s)와 같은 주기라
+        --   "커밋이 안 된 것"과 "아직 못 본 것"이 겹치지 않게 하려면 더 짧아야 하지만,
+        --   bronze 적재가 15분 주기라 10s로도 충분히 촘촘하다.
+        INSERT INTO `iceberg`.`usgs_water`.`iv_stream_echo`
+        SELECT
+            site_no,
+            parameter_cd,
+            `value`,
+            date_time,
+            ingested_at,
+            CAST(CURRENT_TIMESTAMP AS TIMESTAMP(3)) AS processed_at
+        FROM `iceberg`.`usgs_water`.`water_iv_raw`
+            /*+ OPTIONS(
+                'streaming' = 'true',
+                'monitor-interval' = '10s',
+                'starting-strategy' = 'TABLE_SCAN_THEN_INCREMENTAL'
+            ) */;
+
+    # --- 잡 ②: 조인. **03이 통과한 뒤에만 제출한다** ---
+    04-usgs-join.sql: |
+        SET 'execution.runtime-mode' = 'streaming';
+        SET 'table.local-time-zone' = 'UTC';
+
+        CREATE DATABASE IF NOT EXISTS `iceberg`.`usgs_water`;
+
+        CREATE TABLE IF NOT EXISTS `iceberg`.`usgs_water`.`iv_joined` (
+            site_no STRING,
+            station_nm STRING,
+            huc_cd STRING,
+            parameter_cd STRING,
+            `value` STRING,
+            date_time TIMESTAMP(6) WITH LOCAL TIME ZONE,
+            processed_at TIMESTAMP(3)
+        );
+
+        -- 🔴 **regular join이다** — interval·temporal join이 아니다. 그래서 상태가
+        --   무한히 자란다: "it requires to keep both sides of the join input in Flink
+        --   state forever"(Flink 2.1 Joins 문서). `table.exec.state.ttl` 기본값은 **0**
+        --   ("never clean up state")이므로 TTL을 걸지 않는 한 정리되지 않는다.
+        --
+        --   ⚠️ 이것은 결함이 아니라 **관측 대상**이다. 체크포인트 state_size가 시간에 따라
+        --   커지는 것을 보는 것이 목표 ③(조인·상태 관리)의 실습이고, TTL을 넣었을 때
+        --   문서가 경고한 "might affect the correctness of the query result"가 실제로
+        --   어떻게 나타나는지가 그다음 축이다.
+        --
+        --   조인 상대(`water_sites`)는 스트리밍 힌트를 주지 않아 **유계(bounded) 스캔**으로
+        --   한 번 읽혀 상태에 들어간다. 관측소 797개 × site_no 1행이라 폭발하지 않는다
+        --   (2026-09-06 실측: IV 관측소 146개가 차원 797개와 **100% 매칭**).
+        INSERT INTO `iceberg`.`usgs_water`.`iv_joined`
+        SELECT
+            i.site_no,
+            s.station_nm,
+            s.huc_cd,
+            i.parameter_cd,
+            i.`value`,
+            i.date_time,
+            CAST(CURRENT_TIMESTAMP AS TIMESTAMP(3)) AS processed_at
+        FROM `iceberg`.`usgs_water`.`water_iv_raw`
+            /*+ OPTIONS(
+                'streaming' = 'true',
+                'monitor-interval' = '10s',
+                'starting-strategy' = 'TABLE_SCAN_THEN_INCREMENTAL'
+            ) */ AS i
+        JOIN `iceberg`.`usgs_water`.`water_sites` AS s
+            ON i.site_no = s.site_no;
