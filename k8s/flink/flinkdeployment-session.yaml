@@ -135,6 +135,12 @@ spec:
                       - name: iceberg-datagen-job
                         mountPath: /opt/flink/sql-datagen
                         readOnly: true
+                      # 축 A 실데이터(usgs_water bronze 스트리밍 읽기 → 조인).
+                      # 잡 파일이 둘(03-echo·04-join)이지만 ConfigMap은 하나다 —
+                      # 같은 데이터셋의 같은 축이라 이름이 내용을 속이지 않는다.
+                      - name: usgs-water-stream-job
+                        mountPath: /opt/flink/sql-usgs
+                        readOnly: true
             volumes:
                 - name: iceberg-catalog-init
                   configMap:
@@ -148,6 +154,9 @@ spec:
                 - name: iceberg-datagen-job
                   configMap:
                       name: iceberg-datagen-job
+                - name: usgs-water-stream-job
+                  configMap:
+                      name: usgs-water-stream-job
     jobManager:
         resource:
             memory: "2048m"

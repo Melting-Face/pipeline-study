@@ -38,7 +38,7 @@ _DEFAULT_MANIFEST = (
 )
 SESSION_MANIFEST = os.environ.get("FLINK_SESSION_MANIFEST", str(_DEFAULT_MANIFEST))
 
-# 세션 클러스터가 참조하는 SQL ConfigMap 4종.
+# 세션 클러스터가 참조하는 SQL ConfigMap 5종.
 # 🔴 **전부 먼저 존재해야 JM 파드가 뜬다** — FlinkDeployment의 podTemplate이 전부를
 #   volume으로 참조하므로, 하나라도 없으면
 #   `CreateContainerConfigError`로 기동하지 않는다.
@@ -48,6 +48,7 @@ REQUIRED_CONFIGMAPS = (
     "iceberg-batch-job",
     "iceberg-stream-job",
     "iceberg-datagen-job",
+    "usgs-water-stream-job",
 )
 
 # 파드 안의 SQL 파일 경로(ConfigMap 마운트 지점).
