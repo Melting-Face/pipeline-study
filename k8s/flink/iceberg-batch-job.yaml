@@ -3,12 +3,14 @@
 # 목적: Spark·Flink가 **같은 Iceberg JDBC 카탈로그 + SeaweedFS**를 공유함을 "읽기"뿐 아니라
 #   **쓰기까지** 실증한다(2026-08-18 검증은 읽기까지였다 — docs/conventions/k8s.md §Flink).
 #
-# 🔴 이 파일에는 **비밀값이 없다.** 값은 전부 `${VAR}` 플레이스홀더이며, 이름은
-#   `flinkdeployment-session.yaml`의 podTemplate이 Secret→env로 넣는 것과 동일하다.
-#   확장은 **파드 안에서** 한다(호스트로 크리덴셜을 가져오지 않는다):
+# 🔴 카탈로그 init(`01-catalog.sql`)은 이 파일에 없다 — `iceberg-catalog-init.yaml`이 정본이며
+#   `/opt/flink/sql-catalog/01-catalog.sql`로 마운트된다(사본이 3벌이 되면서 Rule of Three 성립).
+#
+# 🔴 이 파일에는 **비밀값이 없다.** 잡 파일은 크리덴셜 0이고, 플레이스홀더를 가진 것은
+#   공용 init 쪽이다. 확장은 **파드 안에서** 한다(호스트로 크리덴셜을 가져오지 않는다):
 #
 #     kubectl exec -n default <jm-pod> -- sh -c '
-#       envsubst < /opt/flink/sql/01-catalog.sql > /tmp/01-catalog.sql
+#       envsubst < /opt/flink/sql-catalog/01-catalog.sql > /tmp/01-catalog.sql
 #       /opt/flink/bin/sql-client.sh -i /tmp/01-catalog.sql -f /opt/flink/sql/02-batch-job.sql
 #     '
 #
@@ -27,26 +29,6 @@ metadata:
     labels:
         app: flink-session
 data:
-    # --- init 파일(-i): 카탈로그 등록. 🔴 크리덴셜 플레이스홀더를 포함한다 ---
-    01-catalog.sql: |
-        -- Iceberg JDBC 카탈로그. 이름은 전 엔진 공통 `iceberg`여야 한다 —
-        -- JDBC 카탈로그는 catalog_name으로 레지스트리를 분할해, 이름이 다르면
-        -- 같은 DB를 봐도 서로의 테이블이 보이지 않는다(k8s.md §11).
-        --
-        -- S3 키는 여기에 쓰지 않는다: S3FileIO(AWS SDK v2)가 기본 자격증명 체인을 타므로
-        -- 파드 env(AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY)만으로 충분하다.
-        CREATE CATALOG `iceberg` WITH (
-            'type' = 'iceberg',
-            'catalog-impl' = 'org.apache.iceberg.jdbc.JdbcCatalog',
-            'uri' = '${ICEBERG_JDBC_URI}',
-            'jdbc.user' = '${PG_USER}',
-            'jdbc.password' = '${PG_PASSWORD}',
-            'warehouse' = '${ICEBERG_WAREHOUSE}',
-            'io-impl' = 'org.apache.iceberg.aws.s3.S3FileIO',
-            's3.endpoint' = '${S3_ENDPOINT}',
-            's3.path-style-access' = 'true'
-        );
-
     # --- 잡 파일(-f): 크리덴셜 0. 출력을 그대로 관측해도 안전하다 ---
     02-batch-job.sql: |
         -- Flink는 스트림이 기본이라 명시하지 않으면 INSERT가 **끝나지 않는 잡**이 된다.

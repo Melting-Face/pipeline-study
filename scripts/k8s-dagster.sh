@@ -85,7 +85,8 @@ kubectl create configmap spark-app-manifests -n default \
 #      🔴 ConfigMap을 합치지 않고 나눈다 — `spark-app-manifests`라는 이름이 Flink 파일을
 #      담으면 이름이 내용을 속인다. 마운트 경로도 /etc/dagster/flinkapps로 갈린다.
 #      ⚠️ 이것은 **Dagster가 읽는 사본**이고, 세션 클러스터가 마운트하는
-#      `iceberg-batch-job`·`iceberg-stream-job` ConfigMap과는 **다른 것**이다.
+#      `iceberg-catalog-init`·`iceberg-batch-job`·`iceberg-stream-job`·`iceberg-datagen-job`
+#      ConfigMap과는 **다른 것**이다.
 #      후자는 `kubectl apply -f k8s/flink/iceberg-*.yaml`로 따로 적용한다.
 log "ConfigMap flink-manifests 갱신 (정본 = 레포 파일)"
 kubectl create configmap flink-manifests -n default \

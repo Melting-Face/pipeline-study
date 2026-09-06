@@ -38,17 +38,27 @@ _DEFAULT_MANIFEST = (
 )
 SESSION_MANIFEST = os.environ.get("FLINK_SESSION_MANIFEST", str(_DEFAULT_MANIFEST))
 
-# 세션 클러스터가 참조하는 SQL ConfigMap 2종.
-# 🔴 **둘 다 먼저 존재해야 JM 파드가 뜬다** — FlinkDeployment의 podTemplate이 둘을
+# 세션 클러스터가 참조하는 SQL ConfigMap 4종.
+# 🔴 **전부 먼저 존재해야 JM 파드가 뜬다** — FlinkDeployment의 podTemplate이 전부를
 #   volume으로 참조하므로, 하나라도 없으면
 #   `CreateContainerConfigError`로 기동하지 않는다.
-#   스트림 잡을 쓰지 않아도 마운트 대상이라 **함께** 확인한다.
-REQUIRED_CONFIGMAPS = ("iceberg-batch-job", "iceberg-stream-job")
+#   스트림·datagen 잡을 쓰지 않아도 마운트 대상이라 **함께** 확인한다.
+REQUIRED_CONFIGMAPS = (
+    "iceberg-catalog-init",
+    "iceberg-batch-job",
+    "iceberg-stream-job",
+    "iceberg-datagen-job",
+)
 
 # 파드 안의 SQL 파일 경로(ConfigMap 마운트 지점).
-# 배치=/opt/flink/sql, 스트림=/opt/flink/sql-stream 으로 **경로가 갈린다** —
+# init=/opt/flink/sql-catalog, 배치=/opt/flink/sql, 스트림=/opt/flink/sql-stream,
+# datagen=/opt/flink/sql-datagen 으로 **경로가 전부 갈린다** —
 # 한 경로에 ConfigMap 2개를 겹쳐 마운트하면 뒤엣것이 앞엣것을 통째로 가리기 때문이다.
-SQL_INIT_PATH = "/opt/flink/sql/01-catalog.sql"
+#
+# 🔴 init만 잡 ConfigMap 밖에 있다 — `CREATE CATALOG` 한 벌을 배치·스트림·datagen이
+#   공유하며, 사본이 3벌이 되면서 Rule of Three가 성립해 추출했다
+#   (정본 `k8s/flink/iceberg-catalog-init.yaml`).
+SQL_INIT_PATH = "/opt/flink/sql-catalog/01-catalog.sql"
 SQL_JOB_PATH = "/opt/flink/sql/02-batch-job.sql"
 
 # JobManager 파드를 찾는 라벨. 오퍼레이터가 붙이는 표준 라벨이다.
