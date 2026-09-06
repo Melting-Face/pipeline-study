@@ -34,6 +34,7 @@ from dagster_project.common.dbt import build_dbt_resource
 from dagster_project.common.trino import TrinoResource
 from dagster_project.defs.eicu.constants import NAMESPACE as EICU_NS
 from dagster_project.defs.mimic_iv.constants import NAMESPACE as MIMICIV_NS
+from dagster_project.defs.usgs_water.constants import NAMESPACE as USGS_WATER_NS
 
 
 @dg.definitions
@@ -133,6 +134,45 @@ def resources() -> dg.Definitions:
                 name=CATALOG_NAME,
                 namespace=EICU_NS,
                 table="nurse_charting",
+                config=IcebergCatalogConfig(
+                    properties={
+                        "type": "sql",
+                        "uri": ICEBERG_CATALOG_URI,
+                        "warehouse": WAREHOUSE,
+                        "s3.endpoint": S3_ENDPOINT,
+                        "s3.access-key-id": S3_ACCESS_KEY_ID,
+                        "s3.secret-access-key": S3_SECRET_ACCESS_KEY,
+                        "s3.region": AWS_REGION,
+                        "s3.path-style-access": "true",
+                    }
+                ),
+            ),
+            # USGS 수문 bronze 두 벌. 🔴 순간값은 **append 전용**이라 IO 매니저를
+            # 쓰지 않고 테이블 바인딩으로 직접 적재한다 — Iceberg Flink 스트리밍
+            # 소스는 IncrementalAppendScan 기반이라 overwrite 스냅샷이 한 번이라도
+            # 생기면 소스 자격을 잃고, 그 실패는 에러가 아니라 조용한 누락이다.
+            "usgs_water_iv_table": IcebergTableResource(
+                name=CATALOG_NAME,
+                namespace=USGS_WATER_NS,
+                table="water_iv_raw",
+                config=IcebergCatalogConfig(
+                    properties={
+                        "type": "sql",
+                        "uri": ICEBERG_CATALOG_URI,
+                        "warehouse": WAREHOUSE,
+                        "s3.endpoint": S3_ENDPOINT,
+                        "s3.access-key-id": S3_ACCESS_KEY_ID,
+                        "s3.secret-access-key": S3_SECRET_ACCESS_KEY,
+                        "s3.region": AWS_REGION,
+                        "s3.path-style-access": "true",
+                    }
+                ),
+            ),
+            # 관측소 메타(조인 차원)는 스트리밍 소스가 아니라 replace로 갱신한다.
+            "usgs_water_sites_table": IcebergTableResource(
+                name=CATALOG_NAME,
+                namespace=USGS_WATER_NS,
+                table="water_sites",
                 config=IcebergCatalogConfig(
                     properties={
                         "type": "sql",
