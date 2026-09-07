@@ -58,7 +58,7 @@ API 권한이 필요한 것은 **원격 컴퓨트를 부르는 자산들**뿐이
 | 경로 | 수단 | 왜 이 형태인가 |
 | --- | --- | --- |
 | **Spark 세션** | `dagster-pyspark`의 `LazyPySparkResource` (`spark.remote`) | 공식 통합. `Lazy~`라서 `spark_session` **접근 시점**에만 붙어, 무관한 run이 Connect 가용성에 묶이지 않는다 |
-| **Spark 배치** | 자체 `SparkOperatorResource` — `SparkApplication` CR 제출·폴링 | 🔴 오퍼레이터 watch가 죽어 상태가 영구 고착한 전례(실측 4시간 32분)가 있어 **driver 파드 phase를 보조 신호로 병행**한다 |
+| **Spark 배치** | 자체 `SparkOperatorResource` — `SparkApplication` CR 제출·폴링 | 🔴 오퍼레이터 watch가 죽어 상태가 **영구 고착**한 전례가 있어 **driver 파드 phase를 보조 신호로 병행**한다 |
 | **Flink 배치** | 자체 `FlinkSessionResource` — `FlinkDeployment` 기동 + `sql-client` **exec 스트림** + 회수 | 잡이 jar가 아니라 SQL이라 CRD 제출 경로가 없고, `PipesK8sClient`는 §C5 조건 2와 충돌한다 |
 
 🔴 **`PipesK8sClient`는 쓰지 않는다.** `dagster-k8s`는 **미설치**이고, Pipes가 띄우는 K8s Job/Pod
@@ -97,7 +97,7 @@ numpy 1.26.x에는 cp313 휠이 없어 소스 빌드로 떨어지고 `-slim`에 
 
 패턴은 **빌드 컨텍스트 루트 기준**인데 이 저장소의 코드는 전부 `src/` 아래에 있다.
 그래서 `.venv/`·`logs/`·`storage/` 같은 접두어 없는 패턴은 **아무것도 매칭하지 않았고**,
-호스트 venv 1.2GB가 이미지에 들어가 있었다(3.64GB → 수정 후 1.37GB).
+그 결과 **호스트 venv가 통째로 이미지에 들어갔다.**
 규칙이 *있다*는 것과 *매칭된다*는 것은 다른 축이다 — 고친 뒤에는 **이미지 크기로 효과를 확인**한다.
 
 ### 두 DB, 두 계정

@@ -44,7 +44,7 @@
   `k8s-env.sh`의 `ensure_cert_manager` 헬퍼가 있으면 재사용·없으면 설치한다(멱등).
   **`rollout status` 완료 ≠ 웹훅 서빙 준비** — cainjector가 CA 번들을 주입하기 전에는
   cert-manager 리소스 생성이 `x509: certificate signed by unknown authority`로 거부된다
-  (실측: 직후 플러그인 apply가 3건 실패). `ensure_cert_manager`는 **설치 여부와 무관하게**
+  (실제로 **직후 플러그인 apply가 실패**했다). `ensure_cert_manager`는 **설치 여부와 무관하게**
   self-signed `Issuer`의 `--dry-run=server`가 통과할 때까지 폴링한다("이미 설치됨"도 준비를 뜻하지 않는다).
   백업 대상은 클러스터 내부 **SeaweedFS(S3)** 로 두어 외부 비용을 만들지 않는다.
   🔴 **opt-in이 아니라 뼈대다** — `Cluster` CR이 이 플러그인을 `isWALArchiver: true`로 참조하므로

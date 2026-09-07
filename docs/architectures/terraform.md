@@ -53,8 +53,9 @@ Dagster 메타**이고, 그 합은 `du` 값보다 **두 자릿수 작다.**
 | **B. data** | SeaweedFS · CNPG Cluster · Secret · 버킷 | 실데이터 유실 | 셸 유지 |
 | **C. platform** | 오퍼레이터·컨트롤러 5종 · 로컬 CA · 워크로드 RBAC · Dagster | 안전(재생성 가능) | **Terraform**(구현·검증 완료) |
 
-✅ **스택 C는 구현돼 돌고 있다** — `terraform/lakehouse-platform/`, 리소스 21개
-(`helm_release` 3 + `kubernetes_manifest` 18). 빈 클러스터에서의 **처음부터 재구축**과
+✅ **스택 C는 구현돼 돌고 있다** — `terraform/lakehouse-platform/`(`helm_release` +
+`kubernetes_manifest`). 리소스 수는 `terraform state list | wc -l`로 그 시점에 센다 —
+스택이 자라는 값이라 여기 박으면 안 자란다. 빈 클러스터에서의 **처음부터 재구축**과
 **일괄 `destroy` → `apply` 재생성**을 버리는 클러스터에서 실측으로 통과했다.
 A(cluster)와 B(data)는 셸에 남아 있어, 부트스트랩은 둘이 번갈아 나온다([`../setup.md`](../setup.md) §3).
 
@@ -120,7 +121,7 @@ import 시 둘 다 HCL로 옮겨야 `plan`이 `0 to change`가 된다.
 C를 "안전하게 destroy 가능"으로 두려면 **오퍼레이터 uninstall이 CRD를 지우지 않아야 한다.**
 CNPG 차트가 CRD를 함께 제거하면 `Cluster` CR이 사라지고 **B의 PVC가 따라간다.**
 
-✅ **일부러 `destroy`를 돌려 확인했다**(버리는 클러스터). 21개가 파괴된 직후:
+✅ **일부러 `destroy`를 돌려 확인했다**(버리는 클러스터). 스택 C가 통째로 파괴된 직후:
 
 - **PVC 2개의 UID가 불변**이고 `Cluster/catalog-postgres`(스택 B)가 healthy로 남았다
 - CNPG 오퍼레이터 Deployment는 **사라졌다**(C의 것이므로 정상)
@@ -133,7 +134,7 @@ CNPG 차트가 CRD를 함께 제거하면 `Cluster` CR이 사라지고 **B의 PV
 > **정확히 `NotFound`를 보고하며**(=API가 살아 있고 삭제는 실제로 일어났다) ③ DB 안의 행을
 > **실제로 `SELECT`해 읽는다**(=볼륨이 마운트돼 데이터가 읽힌다). 셋이 함께여야 성립한다.
 
-이어서 `apply`로 **21개가 단일 단계로 복구**됐다(`-target` 불필요 — CRD가 남아 GVK가 해석된다).
+이어서 `apply`로 **전량이 단일 단계로 복구**됐다(`-target` 불필요 — CRD가 남아 GVK가 해석된다).
 ⇒ **2단계 apply는 빈 클러스터 최초 1회 한정**이라는 명제가 닫혔다.
 그리고 `ensure: present`는 기존 DB를 **재초기화하지 않고 인수**했다(재생성 후에도 같은 행이 읽혔다).
 

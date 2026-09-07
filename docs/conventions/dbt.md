@@ -253,13 +253,14 @@ dbt-spark의 기본 `file_format`은 iceberg가 아니며, **없으면 아래 �
 | --- | --- |
 | **매 실행 DROP + CREATE** | Iceberg **스냅샷 히스토리 소멸**, 테이블 UUID 변경 |
 | 같은 원인 | DROP과 CREATE 사이에 **테이블이 존재하지 않는 창**이 생긴다(`table.sql:19,27-30`) |
-| **컬럼 `description` 244건이 통째로 무시** | `adapters.sql:365`가 `file_format in ['delta','hudi','iceberg']`일 때만 `ALTER TABLE`로 코멘트를 반영한다 |
+| **컬럼 `description`이 통째로 무시** | `adapters.sql:365`가 `file_format in ['delta','hudi','iceberg']`일 때만 `ALTER TABLE`로 코멘트를 반영한다 |
 
 **셋째가 가장 위험하다 — 에러도 경고도 나지 않는다.** `dbt run`은 성공하고, `dbt docs`도
-생성되며, 다만 **컬럼 설명이 비어 있을 뿐**이다. 244건을 적어 넣고도 하나도 반영되지 않는 상태가
+생성되며, 다만 **컬럼 설명이 비어 있을 뿐**이다. 전량을 적어 넣고도 하나도 반영되지 않는 상태가
 조용히 유지된다([philosophy.md](../philosophy.md) 원칙 7 — "통과"가 *검사했다*인지 확인한다).
 
-- ⚠️ **244는 `description` 항목 수**이지 파일 줄 수가 아니다(`schema.yml`은 626줄).
+- ⚠️ **세는 단위는 `description` 항목 수**이지 파일 줄 수가 아니다 —
+  둘을 섞으면 값이 맞는 채로 라벨이 어긋난다.
 - **dbt-trino는 이 config를 무시**하므로 **Trino 경로에는 무해**하다 — 값 대조를 깨지 않는다.
 
 ### dbt-spark 어댑터가 ANSI 모드를 강제로 끈다
