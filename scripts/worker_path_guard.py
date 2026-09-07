@@ -37,6 +37,7 @@ r"""워커 경로 경계 가드 — 에이전트 스코프 PreToolUse hook.
     **완전한 봉쇄가 아니라 도구 경로의 확정적 차단**이다.
 """
 
+import importlib.util
 import json
 import os
 import re
@@ -44,151 +45,91 @@ import sys
 from pathlib import Path
 from typing import NoReturn
 
-# 워커별 저장소 **안** 경계. 정본은 docs/conventions/agents.md §권한 매트릭스.
-#   allow  — 여기 나열된 접두어만 쓸 수 있다(그 외 전부 거부). 좁은 범위의 워커용.
-#   deny   — 여기 나열된 접두어만 막는다(그 외 허용). 넓은 범위의 구현 워커용.
-#   except — `allow`/`deny` **판정보다 먼저** 평가하는 구멍 막이. 넓은 `allow` 안에
-#            박혀 있는 소수의 금지 항목을 파일 단위로 판다.
-# 🔴 `except`는 왜 필요한가: `allow`는 디렉터리 접두어라 "이 디렉터리는 되는데 그 안의
-#    이 파일만 안 된다"를 표현할 수 없었다. 그래서 그런 항목은 전부 **규율**로 남았고
-#    (docs/security.md §공개물 반출 차단의 잔여 위험 행), 규율은 기계가 집행하지 않는다.
-#    `deny` 축을 쓰면 그 워커의 `allow`가 통째로 사라지므로 별도 축이어야 한다.
-# 🔴 접두어 끝의 `/`는 필수다 — 없으면 `docs/analyses_fake/`가 통과한다(실측 버그).
-#    `allow`에 **파일 하나**를 열 때만 `/` 없이 적고, 그때는 **완전일치**로 본다 —
-#    `README.md`를 접두어로 두면 `README.md.bak`까지 함께 열린다
-#    (2026-08-20 `security` 지적).
-#    `deny`에는 이 분기를 두지 않는다: 막는 쪽은 넓게 걸리는 편이 안전하고
-#    (`.env` 접두어가 `.env.example`까지 막는 것은 의도된 여유다),
-#    좁히면 경계가 조용히 샌다.
-BOUNDARIES = {
-    # 🔴 `analyst`는 여기 두지 않는다 — 정본이 **다른 가드**에 있다.
-    #    사유와 처방은 아래 `KNOWN_ELSEWHERE`에 모여 있다(설명이 곧 그 상수의 정의다).
-    # 데이터 엔지니어 — 인프라 선언은 devops-engineer 소관.
-    # 🔴 `.github/`는 나중에 추가됐다. 그 전까지 **CI 워크플로에 소유자가 없었다** —
-    #    이 표에 `.github/**`가 어느 워커에도 없어 `data-engineer`·`devops-engineer`
-    #    **둘 다 쓸 수 있는 이중 소유**였다(`deny` 축은 열거되지 않으면 통과한다).
-    #    `devops-engineer` 쪽은 손대지 않아 **결과적으로 단독 소유**가 된다.
-    #    ⚠️ 이것은 `deny` 축의 구조적 성질이다 — **넓은 워커에 경계를 더하는 유일한
-    #    방법은 「빼는 쪽」을 적는 것**이라, 새 최상위 디렉터리가 생길 때마다
-    #    소유자를 정하지 않으면 조용히 공유된다. `.github/`는 그 사례 1호다.
-    "data-engineer": {
-        "deny": (
-            "terraform/",
-            "k8s/",
-            "compose.yml",
-            ".env",
-            ".claude/",
-            ".github/",
-        ),
-    },
-    # 데브옵스 엔지니어 — 파이프라인 정의·분석 산출물은 남의 소관.
-    # 🔴 `dagster_project/`·`dbt/`로 적혀 있었으나 **둘 다 추적 파일 0건**이었다
-    #    (2026-08-20 `tech-writer` 반환에서 발견 → `git ls-files`로 재확인).
-    #    실제 코드는 `dagster/dockerfile.d/src/` 아래에 있어 **겨냥이 빗나가 있었다** —
-    #    배선을 이어도 이 두 접두어는 아무것도 막지 못했다.
-    #    "배선됨"과 "겨냥이 맞음"은 다른 층이다
-    #    (이번 미션에서 세 번째 "막았다고 믿는" 형태).
-    #    `Dockerfile`·`.dockerignore`는 devops 소관이라 `src/`만 막는다.
-    "devops-engineer": {
-        "deny": (
-            "dagster/dockerfile.d/src/",
-            "notebooks/",
-            "docs/analyses/",
-            ".env",
-            ".claude/",
-        ),
-    },
-    # 기록관 — 저널은 저장소 **밖** 볼트에 쓴다. 저장소 안에는 쓸 것이 없다.
-    "archivist": {"allow": ()},
-    # 데이터 추출자 — 요구사항 명세대로 데이터를 뽑아 **저장소 밖**으로만 낸다.
-    # 🔴 `analyst`와 방법(읽기 조회·SQL)은 겹치지만 **노출 등급이 다르다.**
-    #    분리의 근거는 업무가 아니라 통제다(2026-08-22 supervisor 결정).
-    #    실측 근거(2026-08-22 `git check-ignore`): `notebooks/out.csv`·
-    #    `notebooks/out.parquet`·`docs/analyses/out.csv`가 **무시되지 않는다.**
-    #    `.gitignore`에는 `data/` 한 줄뿐이었고 `nbstripout`은 `.ipynb` 셀
-    #    출력만 걷어낸다(gitleaks는 헬스 데이터를 못 잡는다).
-    #    ⇒ 추출물이 저장소 안에 착지할 경로를 아예 주지 않는다.
-    "data-extractor": {"allow": ()},
-    # 리서처 — 읽기 전용. `disallowedTools`가 1차 방어이고 이건 2차(심층 방어)다.
-    # 둘 다 두는 이유: `disallowedTools`의 실효는 워커마다 실측해야 확정되는데
-    # (§권한 매트릭스 — 선언한 tools가 전부 실재하지는 않는다), 이 워커는 유일하게
-    # **외부 네트워크에 접촉**하므로 가져온 내용이 파일로 착지하는 경로를 남기지 않는다.
-    "researcher": {"allow": ()},
-    # 테크라이터 — 저장소의 **문서 소유자**. `docs/` 전체와 최상위 `README.md`를 쓴다.
-    # 🔴 이 경계는 기계가 가르지 못하는 두 가지를 **규율**로 남긴다(지시문 §역할 경계):
-    #   ① `docs/analyses/`는 analyst와 **이중 소유**다 — 내부 결론의 저자는 analyst이고
-    #      tech-writer는 표현만 손본다(수치·결론 변경 금지).
-    #   ② `docs/conventions/`는 **규약 정본**이라 supervisor 결정을 받아적을 뿐,
-    #      스스로 규칙을 만들거나 바꾸지 않는다.
-    # 🔴 `README.md`는 디렉터리가 아니라 **파일 단위**다
-    #    — 접두어로 적으면 `.bak`까지 열린다.
-    # 🔴 `except` 2종은 **판정 근거 문서**다(2026-08-22 신설). `docs/security.md`는
-    #    ISMS-P 통제 매핑·반출 금지선, `docs/skills.md`는 스킬 출처 등급을 담는데,
-    #    2026-08-20 쓰기 범위 확대로 **판정 대상이 자기 판정 근거를 고칠 수 있는**
-    #    상태가 됐다(docs/security.md §공개물 반출 차단 ↳ 잔여 위험 행 — 🔴 규율).
-    #    같은 날 정본 게이트(`protected_paths_guard.py` CANON_PATTERNS)에서
-    #    `docs/conventions/**`·`docs/architectures/**`를 뺐으므로, 규율에만 기대는
-    #    면이 늘어난 만큼 **가장 위험한 2종은 기계 강제로 승격**한다.
-    # 🔴 `docs/conventions/**`는 여기 넣지 않는다 — 링크·목차·요약 동기화(doc-sync
-    #    체인)가 이 워커의 정당한 업무라, 막으면 매 교정이 supervisor 왕복이 된다.
-    #    그쪽은 지시문 §역할 경계의 규율로 남는다("규칙 신설·변경은 supervisor").
-    # 🔴 `wiki/`는 2026-08-27 추가. GitHub 위키로 **미러돼 나가는 원본**이라 노출 등급이
-    #    `docs/`보다 높지만 소유 축은 같다 — 독자가 `docs/posts/`와 같은
-    #    "저장소를 모르는 사람"이다.
-    #    CLAUDE.md **"매체는 축이 아니다"** — 새 워커를 만들지 않고 이 워커에 붙인다.
-    #    통제는 워커 축이 아니라 **게이트 축**에서 진다: 커밋 전 `security` 컨펌
-    #    (publishing.md §4-1 — 미러 자동화는 *배달*이지 *승인*이 아니다).
-    "tech-writer": {
-        "allow": ("docs/", "README.md", "wiki/"),
-        # ✅ **라이브 실발동 확인**(2026-08-22 3셀 대조, `Edit` 도구 경로).
-        #    `except`에 프로브 경로를 **한시적으로** 올려 `docs/` 하위인데도 `deny`가
-        #    나는 것과, 그 문구가 `allow` 분기와 **다른 분기**임을 확인한 뒤 내렸다.
-        #    🔴 프로브를 `except`가 아닌 일반 경계로 돌리면 이 축은 관측되지 않는다 —
-        #    `docs/` 하위는 `allow`가 통과시켜 두 분기가 갈리지 않기 때문이다.
-        # ✅ **`permissions.allow`보다 이 hook의 `deny`가 이긴다**(2026-08-22 실측).
-        #    `.claude/settings.json`에 `Edit(docs/**)`를 `allow`로 넣은 상태에서
-        #    `except` 경로를 쳐도 **차단됐고 파일 내용도 안 바뀌었다**(대조군: 같은
-        #    세션의 `docs/` 일반 경로 쓰기는 성공 — 죽은 가드가 아니라 선별 차단).
-        #    🔴 이 순서가 반대였다면 `allow` 한 줄이 **워커 경계 전체를 무력화**했다.
-        #    편의를 위해 `allow`를 넓힐 때는 이 순서를 **다시 실측**하고 넓힌다.
-        # 🔴 `docs/skills/`는 **끝에 `/`가 있어 접두어**다(아래 매칭부) —
-        #    허브 + 하위 4문서로 쪼갤 때 함께 넣었다. 완전일치만 두면 쪼개진 파일이
-        #    경계에서 빠져 **판정 대상이 자기 판정 근거를 쓸 수 있게 된다.**
-        #    링크 검사도 doc_lint도 이 구멍을 못 잡는다 — **조용한 통제 후퇴**다.
-        "except": (
-            "docs/security.md",
-            "docs/skills.md",
-            "docs/skills/",
-        ),
-    },
-}
-# 🔴 **워커를 없애면 이 표에서도 지운다**(2026-08-23 `director` 폐기 시 남을 뻔했다).
-#    반대로 **여기 추가하면 그 워커 정의의 `hooks`도 함께 잇는다**(§배선 감사).
-#    ⇒ 이 양방향을 이제 **커밋 시점에 `scripts/worker_wiring_check.py`가 대조**한다.
-#    예전에는 표와 배선이 갈려도 아무 신호가 없었다 — 죽은 항목은 부를 워커가 없어
-#    조용했고, 반대로 배선만 있고 정의가 없으면 `main()`이 fail-open으로 통과시켰다.
+# 🔴 경계표는 **이 파일에 적지 않는다** — 짝 가드
+#    `.codex/hooks/worker_path_guard.py`와 같은 표를 두 번 적던 형태가 Issue #53의
+#    원인이었다. 단일 출처는 `scripts/worker_boundaries.py`이고 여기서는 조립만 한다.
+# 🔴 **`sys.path`를 건드리지 않는다.** 이 파일은 ⓐ 스크립트로도 ⓑ 모듈로도(테스트
+#    러너) 올라와 `sys.path[0]`이 다르므로 부트스트랩이 필요한데, `scripts/`를
+#    `sys.path`에 넣으면 **워커가 쓸 수 있는 디렉터리가 통제 가드의 임포트 최우선
+#    경로**가 된다(`devops-engineer`가 `scripts/`를 정당하게 소유한다).
+#    그러면 `scripts/fnmatch.py` 같은 파일이 stdlib을 가릴 수 있고, 가려지는지는
+#    **파이썬 판본에 달렸다**(호스트 3.14는 선적재라 안전했지만 CI는 3.12다).
+#    ⇒ 판본 의존을 없애려고 **파일 경로로 직접 로드**한다.
+_BOUNDARIES_PATH = Path(__file__).resolve().parent / "worker_boundaries.py"
 
-# 정본이 **다른 가드**에 있는 워커 → 그 정본 경로.
-# 🔴 여기 걸려도 **통과가 아니라 `deny`** 다.
-#    `analyst`가 여기 있는 사연: `.claude/agents/analyst.md`의 hook은
-#    `analyst_path_guard.py`를 부르므로 `worker_path_guard.py analyst`는
-#    **호출처가 0건**이다. 그런데도 같은 경계(`notebooks/`·`docs/analyses/`)가
-#    `BOUNDARIES`에 중복 선언돼 있었고, 죽은 항목은 아무 신호도 내지 않아
-#    **한쪽만 고치면 "고쳤다고 믿는" 상태**가 됐다.
-#    ⇒ 그 항목을 지운 자리가 여기다: **같은 경계를 두 곳에 정의하지 않는다**
-#    ([permissions.md](../docs/conventions/agents/permissions.md) §경로 경계).
-#    경계를 바꿔야 하면 `analyst_path_guard.py`의 `ALLOWED_PREFIXES`를 고친다.
-# 🔴 **왜 통과가 아니라 `deny`인가**: 이 이름으로 호출이 실제로 왔다면 그것은
-#    **배선이 틀렸다는 뜻**이다(정상 경로라면 전용 가드가 불린다). 통과시키면
-#    이 커밋이 닫으려는 fail-open이 그대로 되살아난다. 그래서 `deny`하되
-#    **사유를 일반 미정의와 다르게** 낸다 — 일반 사유("`BOUNDARIES`에 등재하라")를
-#    그대로 따르면 위에서 지운 중복 정의를 되살리기 때문이다.
-#    **두 분기가 같은 문구를 내면 축이 갈리지 않은 것이다.**
-KNOWN_ELSEWHERE = {
-    "analyst": "scripts/analyst_path_guard.py",
-}
 
-# 저장소 **밖**에서 예외로 허용할 절대경로 접두어. 미지정 워커는 사용자 확인(`ask`).
+def emit(decision: str, reason: str) -> NoReturn:
+    """Hook 결정을 stdout에 내고 종료한다.
+
+    🔴 `decision`의 유효 enum은 `allow`·`deny`·`ask`·`defer` **넷뿐**이다.
+    벗어나면 출력 객체 전체가 검증에 실패해 **결정이 사라진 채 도구가 진행한다**
+    (fail-open, 2026-08-19 실측). 새 값을 넣기 전에 정본을 확인한다.
+
+    ⚠️ 정의가 파일 맨 앞에 있는 것은 **아래 경계표 로더가 이것을 쓰기 때문**이다.
+    로더가 실패를 `deny`로 내야 하는데, 그 시점에 이 함수가 없으면
+    `NameError`가 나 결국 traceback = 조용한 통과가 된다.
+    """
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": decision,
+                    "permissionDecisionReason": reason,
+                },
+            },
+            ensure_ascii=False,
+        )
+    )
+    sys.exit(0)
+
+
+def _deny_unreadable(detail: str) -> NoReturn:
+    """경계표를 못 읽었을 때의 단일 `deny` 출구."""
+    emit(
+        "deny",
+        f"워커 경계표를 읽지 못했다({_BOUNDARIES_PATH}): {detail} — "
+        "경계를 모르는 상태라 통과시키지 않는다(fail-closed). "
+        "`scripts/worker_boundaries.py`가 있는지 확인하라.",
+    )
+
+
+def _load_boundaries() -> object:
+    """경계표를 로드하되 실패하면 `deny`를 내고 끝낸다.
+
+    🔴 여기가 이 저장소에서 `except Exception`을 쓰는 자리다(다른 곳은 0건).
+    이유는 편의가 아니라 **방향**이다 — 로드 실패를 예외로 흘리면
+    traceback + 비-0 종료가 되고, hook 프로토콜에서 그것은 「결정 없음」이라
+    **통과와 같다.** 즉 경계표를 못 읽었다는 사실이 곧 조용한 개방이 된다.
+    잡을 예외를 열거하면 **열거 밖이 다시 통과 방향**이 되므로 넓게 잡는다.
+    (표를 외부 모듈로 뽑으면서 새로 생긴 의존이고 `security` G2가 잡았다.)
+    """
+    spec = importlib.util.spec_from_file_location("worker_boundaries", _BOUNDARIES_PATH)
+    if spec is None or spec.loader is None:
+        _deny_unreadable("spec을 만들지 못했다")
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as error:
+        _deny_unreadable(type(error).__name__)
+    return module
+
+
+worker_boundaries = _load_boundaries()
+
+# 🔴 **워커를 없애면 공용 표에서도 지운다**(`director` 폐기 시 남을 뻔했다).
+#    반대로 **거기 추가하면 그 워커 정의의 `hooks`도 함께 잇는다**(§배선 감사).
+#    ⇒ 이 양방향을 **커밋 시점에 `scripts/worker_wiring_check.py`가 대조**한다.
+# ✅ 아래 매칭부의 **실발동 확인**(3셀 대조·`permissions.allow`와의 우선순위)은
+#    `docs/conventions/agents/enforcement.md` §실발동 확인이 정본이다.
+BOUNDARIES = worker_boundaries.claude_boundaries()
+
+# 정본이 **다른 가드**에 있는 워커 → 그 정본 경로. 사유는 공용 모듈에 있다.
+# 🔴 여기 걸려도 **통과가 아니라 `deny`** 다 — 이 이름으로 호출이 실제로 왔다면
+#    배선이 틀렸다는 뜻이고, 통과시키면 fail-open이 되살아난다. 사유는 일반
+#    미정의와 **다르게** 낸다(두 분기가 같은 문구를 내면 축이 갈리지 않은 것이다).
+KNOWN_ELSEWHERE = worker_boundaries.KNOWN_ELSEWHERE
+
 # archivist는 Claude 전용 저널·템플릿과 공유 MOC만 쓴다. 볼트 전체를 열면
 # Codex 기록이나 보안 posture까지 수정할 수 있어 런타임 분리가 권한 분리가 되지 않는다.
 OBSIDIAN_ROOT = Path(
@@ -197,33 +138,14 @@ OBSIDIAN_ROOT = Path(
 DAY_DIR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 JOURNAL_NAME_RE = re.compile(r"^(\d{2})-[a-z0-9][a-z0-9-]*\.md$")
 
-OUTSIDE_ALLOW = {
-    # 🔴 저널은 접두어로 열지 않는다. 평탄화(2026-08-27) 이후 두 런타임이 **같은
-    #    `agents/<날짜>/`를 공유**하므로, `agents/`를 접두어로 열면 Claude archivist가
-    #    **Codex 기록까지** 쓸 수 있어 런타임 분리가 권한 분리가 되지 않는다.
-    #    ⇒ 경계 축을 **경로에서 내용으로** 옮겨 아래 `is_claude_journal_path()`가 진다.
-    #    (`.codex/hooks/worker_path_guard.py`가 먼저 푼 문제의 거울상 — 그쪽이 이미
-    #     평탄이라 같은 판정을 갖고 있고, 둘은 **짝으로 유지**해야 한다.)
-    "archivist": (
-        str(OBSIDIAN_ROOT / "agents" / "_MOC.md"),
-        str(OBSIDIAN_ROOT / "agents" / "_TEMPLATE.md"),
-    ),
-    # 🔴 추출물은 **원천 진료 데이터**다(DUA·재식별 금지 — docs/security.md).
-    #    저장소 밖 단 한 곳으로만 나간다(그 밖은 아래 `OUTSIDE_STRICT`가 막는다).
-    #    `archivist`와 형태는 같되 성격이 반대다 — 저쪽은 기록을 **남기려고**
-    #    밖에 쓰고, 이쪽은 데이터를 저장소에 **남기지 않으려고** 밖에 쓴다.
-    "data-extractor": (
-        os.environ.get("DATA_EXTRACT_DIR") or str(Path.home() / "extracts"),
-    ),
-}
+OUTSIDE_ALLOW = worker_boundaries.outside_allow(
+    "claude",
+    OBSIDIAN_ROOT,
+    Path(os.environ.get("DATA_EXTRACT_DIR") or str(Path.home() / "extracts")),
+)
 
-# 저장소 밖에서 **허용 목록을 벗어나면 `ask`가 아니라 `deny`** 로 처리할 워커.
-# 🔴 기본값(`ask`)은 auto 모드에서 **막히지 않는다** — 분류기가 파일 도구의 `ask`를
-#    경로 민감도와 무관하게 흡수한다(CLAUDE.md §강제 수단, 2026-08-19 실측).
-#    그래서 "사람이 판단한다"는 문구는 원천 진료 데이터에 대해서는 **죽은 규칙**이 된다.
-#    ⚠️ `archivist`는 여기 넣지 않는다 — 저널은 진료 데이터가 아니고, 볼트 경로가
-#    환경마다 달라 `ask`로 사람에게 묻는 편이 맞다(둘의 성격이 반대다).
-OUTSIDE_STRICT = frozenset({"data-extractor"})
+# 저장소 밖에서 허용 목록을 벗어나면 `ask`가 아니라 `deny`로 처리할 워커.
+OUTSIDE_STRICT = worker_boundaries.OUTSIDE_STRICT
 
 
 def read_journal_agent(path: Path) -> str:
@@ -278,36 +200,16 @@ def is_claude_journal_path(target: Path) -> bool:
 # PreToolUse 입력에서 대상 경로가 담기는 키 — 도구마다 이름이 다르다.
 PATH_KEYS = ("file_path", "notebook_path", "path")
 
-# 🔴 가드 스크립트 자신은 **어느 워커도 고치지 못한다**
+# 🔴 통제 스크립트 자신은 **어느 워커도 고치지 못한다**
 #    (2026-08-20 `data-engineer`의 Δ 반환에서 발견).
 #    경계를 강제하는 스크립트가 정작 경계에 없었다 — `data-engineer`의 deny에는
 #    `scripts/`가 빠져 있고, `devops-engineer`는 `scripts/`를 정당하게 소유하므로
 #    디렉터리를 통째로 막을 수도 없다.
-#    그래서 **접두어가 아니라 접미어**로 건다(`deny`/`allow` 분기보다 먼저 평가).
+#    그래서 **접두어가 아니라 파일 패턴**으로 건다(`deny`/`allow`보다 먼저 평가).
 #    `permissions.ask`의 `Edit(scripts/*_guard.py)`가 2층에 있지만 1층이 비어 있었다.
-GUARD_SUFFIX = "_guard.py"
-
-
-def emit(decision: str, reason: str) -> NoReturn:
-    """Hook 결정을 stdout에 내고 종료한다.
-
-    🔴 `decision`의 유효 enum은 `allow`·`deny`·`ask`·`defer` **넷뿐**이다.
-    벗어나면 출력 객체 전체가 검증에 실패해 **결정이 사라진 채 도구가 진행한다**
-    (fail-open, 2026-08-19 실측). 새 값을 넣기 전에 정본을 확인한다.
-    """
-    print(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": decision,
-                    "permissionDecisionReason": reason,
-                },
-            },
-            ensure_ascii=False,
-        )
-    )
-    sys.exit(0)
+# 🔴 목록은 공용 모듈이 갖는다 — 접미어(`*_guard.py`) 하나에 얹혀 있던 시절
+#    `.codex/hooks/session_start.py`처럼 **이름 규약을 안 따르는 통제 파일**이
+#    통째로 빠져 있었다(Issue #53).
 
 
 def main() -> None:
@@ -433,15 +335,13 @@ def main() -> None:
             f"`{worker}`가 저장소 밖 경로에 쓰려 한다: {target}. "
             "임시 파일이면 승인하고, 아니면 거부하라."
         )
-    elif relative_guard := (
+    elif relative_guard := worker_boundaries.control_path(
         target_text[len(project_text) + 1 :]
-        if target_text.lower().endswith(GUARD_SUFFIX)
-        else ""
     ):
-        # 가드 자신 — 워커 종류와 무관하게 막는다(위 GUARD_SUFFIX 주석).
+        # 통제 스크립트 자신 — 워커 종류와 무관하게 막는다(위 주석).
         decision = "deny"
         reason = (
-            f"`{worker}`는 가드 스크립트 `{relative_guard}`를 고칠 수 없다. "
+            f"`{worker}`는 통제 스크립트 `{relative_guard}`를 고칠 수 없다. "
             "경계를 강제하는 스크립트는 어느 워커의 소관도 아니다 — "
             "변경안을 반환해 supervisor가 `security` 컨펌 후 반영한다."
         )

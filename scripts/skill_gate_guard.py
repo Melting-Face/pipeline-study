@@ -112,7 +112,21 @@ def main() -> None:
         emit("deny", f"워커 지시문을 찾지 못했다({worker_md}) — 허용 목록을 못 읽는다.")
         return
 
-    section = SECTION_RE.search(worker_md.read_text(encoding="utf-8"))
+    # 🔴 읽기 실패도 `deny`다(Issue #55). 이 가드는 파싱 실패·표 부재·값 부재를
+    #    전부 `deny`로 닫아 두었는데 **여기 한 곳만 미보호**였다 — `OSError`가
+    #    나면 traceback + 무출력이 되고, 하네스는 그것을 「결정 없음」으로 읽어
+    #    **통과**시킨다. 한 축만 반대 방향이면 그 축이 그 가드의 실제 방향이다.
+    try:
+        worker_text = worker_md.read_text(encoding="utf-8")
+    except OSError as error:
+        emit(
+            "deny",
+            f"워커 지시문을 읽지 못했다({worker_md}): {error} "
+            "— 허용 목록을 못 읽었으므로 통과시키지 않는다(fail-closed).",
+        )
+        return
+
+    section = SECTION_RE.search(worker_text)
     if section is None:
         emit(
             "deny",

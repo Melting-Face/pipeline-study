@@ -24,16 +24,17 @@ r"""가드 단위 테스트를 돌리고 **「돌지 않은 것」을 통과로 
 
 무엇을 세는가 (계측 단위):
     🔴 아래 `실행`은 **테스트 메서드 수**이지 *검증되는 가드 수*가 아니다.
-    현재 가드 3종(`journal_guard` · Claude/Codex `worker_path_guard` ·
-    `plan_mirror_guard` 일부)을 13개 메서드가 나눠 본다.
     ⇒ **기대값을 고정 숫자로 박제하지 않는다.** 테스트를 늘릴 때마다 무관한 실패가
-    나고, 여기서 막고 싶은 것은 「13이 아님」이 아니라 **「0건」** 이다.
+    나고, 여기서 막고 싶은 것은 **「0건」** 이다.
+    ⚠️ 여기에 「가드 N종을 M개 메서드가 본다」를 적어 두면 **안 자라는 값**이 되어
+    다음 드리프트를 조용히 통과시킨다(박아 둔 계수의 그 형태다).
+    세려면 `python3 scripts/tests/run_guard_tests.py`의 출력을 본다.
 
 보증하지 않는 것:
     이 러너는 `scripts/tests/` 아래 테스트가 **돌았는지**만 본다. 테스트가 없는 가드는
-    여기서도 보이지 않는다 — `analyst_path_guard` · `skill_gate_guard` ·
-    `research_gate_guard` · `protected_paths_guard` · `session_sync_guard` ·
-    `commit_manifest_guard`는 **테스트 0건**이다(Issue #55 범위).
+    여기서도 보이지 않는다 — `analyst_path_guard` · `research_gate_guard` ·
+    `protected_paths_guard` · `session_sync_guard`는 **테스트 0건**이다.
+    가드별 축 전수 현황은 **볼트**가 갖는다(Issue #55 §행선지 — 공백 지도).
 """
 
 import sys

@@ -342,7 +342,8 @@
   분석·공개 도메인(`analyst`·`tech-writer`)의 쓰기 경계·`except` 축·이중 소유 규율은
   [`workers.md`](docs/conventions/agents/workers.md).
   **남은 정본 게이트는 실행 규칙·통제 배선뿐이다**(`CLAUDE.md`·`.claude/agents/**`·`settings.json`·
-  `*_guard.py`·`skills-lock.json`·`compose.yml`) — 문서 편집은 git이 되돌리고 최종 관문은 커밋 `ask` 1회다.
+  `*_guard.py`·`worker_boundaries.py`·`skills-lock.json`·`compose.yml`) — 문서 편집은 git이 되돌리고
+  최종 관문은 커밋 `ask` 1회다.
   🔴 **발행(업로드)은 어느 워커도 하지 않는다** — 외부 발신은 비가역이고 마지막 게이트는 **사람**이 갖는다.
   **공개는 커밋보다 강한 기준**이다(내부 경로·버킷명·소규모 셀 <5·DUA 재배포 제한)
   — [`publishing.md`](docs/conventions/publishing.md).

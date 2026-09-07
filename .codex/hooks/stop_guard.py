@@ -27,16 +27,32 @@ def main() -> None:
     env = os.environ.copy()
     env["CLAUDE_PROJECT_DIR"] = str(root)
     env["JOURNAL_RUNTIME"] = "codex"
-    result = subprocess.run(  # noqa: S603 - 저장소 내부의 고정 가드만 실행한다.
-        [sys.executable, str(guard), "stop"],
-        cwd=root,
-        env=env,
-        input=json.dumps(payload, ensure_ascii=False),
-        capture_output=True,
-        text=True,
-        timeout=8,
-        check=False,
-    )
+    # ⚠️ **타임아웃은 통과다 — 다만 소리를 낸다**(Issue #55). 이 hook은 통제가
+    #    아니라 저널 누락 **알림**이라 막을 것이 없다. 그러나 예전에는
+    #    `TimeoutExpired`를 안 잡아 traceback으로 죽었고, 통과와 고장이
+    #    **관측상 구분되지 않았다**(둘 다 무출력). 검사가 안 돈 사실을 남긴다.
+    try:
+        result = subprocess.run(  # noqa: S603 - 저장소 내부의 고정 가드만 실행한다.
+            [sys.executable, str(guard), "stop"],
+            cwd=root,
+            env=env,
+            input=json.dumps(payload, ensure_ascii=False),
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        print(  # noqa: T201 - hook 프로토콜은 stdout JSON을 사용한다.
+            json.dumps(
+                {
+                    "systemMessage": "저널 누락 검사가 시간 안에 끝나지 않았다 — "
+                    "이번 세션은 **점검되지 않았다**(통과가 아니라 미확인)."
+                },
+                ensure_ascii=False,
+            )
+        )
+        return
     output = result.stdout.strip()
     if not output:
         return

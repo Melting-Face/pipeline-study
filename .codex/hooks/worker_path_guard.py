@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Codex apply_patch에 대한 워커별 쓰기 경계 가드."""
 
+import importlib.util
 import json
 import os
 import re
@@ -8,28 +9,68 @@ import sys
 from collections.abc import Iterator
 from pathlib import Path
 
-BOUNDARIES = {
-    "analyst": {"allow": ("notebooks/", "docs/analyses/")},
-    "data-engineer": {
-        "deny": ("terraform/", "k8s/", "compose.yml", ".env", ".claude/", ".codex/")
-    },
-    "devops-engineer": {
-        "deny": (
-            "dagster/dockerfile.d/src/",
-            "notebooks/",
-            "docs/analyses/",
-            ".env",
-            ".claude/",
-            ".codex/",
+# 🔴 경계표는 **이 파일에 적지 않는다** — 짝 가드 `scripts/worker_path_guard.py`와
+#    같은 표를 두 번 적던 형태가 Issue #53의 원인이었다. 단일 출처는
+#    `scripts/worker_boundaries.py`이고 여기서는 조립만 한다.
+# 🔴 **`sys.path`를 건드리지 않는다.** `scripts/`를 임포트 경로에 넣으면 워커가
+#    쓸 수 있는 디렉터리가 통제 가드의 최우선 임포트 경로가 되고, stdlib이
+#    가려지는지는 파이썬 판본에 달린다. ⇒ **파일 경로로 직접 로드**한다.
+#    (짝 가드 `scripts/worker_path_guard.py`도 같은 방식이다 — 둘은 짝이다.)
+_BOUNDARIES_PATH = (
+    Path(__file__).resolve().parents[2] / "scripts" / "worker_boundaries.py"
+)
+
+
+def emit_deny(reason: str) -> None:
+    """워커 경계를 벗어난 patch를 차단한다.
+
+    ⚠️ 정의가 앞에 있는 것은 **아래 경계표 로더가 이것을 쓰기 때문**이다.
+    """
+    print(  # noqa: T201 - hook 프로토콜은 stdout JSON을 사용한다.
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": reason,
+                }
+            },
+            ensure_ascii=False,
         )
-    },
-    "archivist": {"allow": ()},
-    "data-extractor": {"allow": ()},
-    "tech-writer": {
-        "allow": ("docs/", "README.md"),
-        "except": ("docs/security.md", "docs/skills.md", "docs/skills/"),
-    },
-}
+    )
+
+
+def _deny_unreadable(detail: str) -> None:
+    """경계표를 못 읽었을 때의 단일 `deny` 출구."""
+    emit_deny(
+        f"워커 경계표를 읽지 못했다({_BOUNDARIES_PATH}): {detail} — "
+        "경계를 모르는 상태라 통과시키지 않는다(fail-closed)."
+    )
+    sys.exit(0)
+
+
+def _load_boundaries() -> object:
+    """경계표를 로드하되 실패하면 `deny`를 내고 끝낸다.
+
+    🔴 로드 실패를 예외로 흘리면 traceback + 비-0 종료가 되고, hook 프로토콜에서
+    그것은 「결정 없음」이라 **통과와 같다** — 경계표를 못 읽었다는 사실이 곧
+    조용한 개방이 된다. 잡을 예외를 열거하면 **열거 밖이 다시 통과 방향**이라
+    넓게 잡는다. 짝 가드 `scripts/worker_path_guard.py`도 같은 처방이다.
+    """
+    spec = importlib.util.spec_from_file_location("worker_boundaries", _BOUNDARIES_PATH)
+    if spec is None or spec.loader is None:
+        _deny_unreadable("spec을 만들지 못했다")
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as error:
+        _deny_unreadable(type(error).__name__)
+    return module
+
+
+worker_boundaries = _load_boundaries()
+
+BOUNDARIES = worker_boundaries.codex_boundaries()
 
 WORKER_MARKERS = {worker: f".claude/agents/{worker}.md" for worker in BOUNDARIES}
 
@@ -41,15 +82,11 @@ JOURNAL_NAME_RE = re.compile(r"^(\d{2})-[a-z0-9][a-z0-9-]*\.md$")
 
 # Codex archivist의 날짜 저널은 아래 전용 판정으로 허용한다. `agents/` 전체를
 # 접두어로 열면 Claude 이력과 다른 관리 파일까지 수정할 수 있어 허용하지 않는다.
-OUTSIDE_ALLOW = {
-    "archivist": (
-        str(OBSIDIAN_ROOT / "agents" / "_MOC.md"),
-        str(OBSIDIAN_ROOT / "agents" / "_TEMPLATE.codex.md"),
-    ),
-    "data-extractor": (
-        os.environ.get("DATA_EXTRACT_DIR") or str(Path.home() / "extracts"),
-    ),
-}
+OUTSIDE_ALLOW = worker_boundaries.outside_allow(
+    "codex",
+    OBSIDIAN_ROOT,
+    Path(os.environ.get("DATA_EXTRACT_DIR") or str(Path.home() / "extracts")),
+)
 
 
 def is_codex_journal_path(target: Path) -> bool:
@@ -92,22 +129,6 @@ def read_journal_agent(path: Path) -> str:
         if separator and key.strip() == "agent":
             return value.split("#")[0].strip().strip("\"'")
     return ""
-
-
-def emit_deny(reason: str) -> None:
-    """워커 경계를 벗어난 patch를 차단한다."""
-    print(  # noqa: T201 - hook 프로토콜은 stdout JSON을 사용한다.
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": reason,
-                }
-            },
-            ensure_ascii=False,
-        )
-    )
 
 
 def extract_paths(command: str) -> list[str]:
@@ -276,8 +297,13 @@ def denied_reason(worker: str, raw_path: str, root: Path) -> str | None:
             "Codex hook은 대화형 ask 결정을 지원하지 않으므로 안전하게 거부했다."
         )
 
-    if target.name.endswith("_guard.py"):
-        return f"`{worker}`는 통제 스크립트 `{relative}`를 수정할 수 없다."
+    # 🔴 통제 스크립트 자신은 어느 워커도 못 고친다. 판정은 공용 모듈이 갖고
+    #    **대소문자를 무시**한다 — 여기는 `endswith`로 대소문자를 구분하고 있어
+    #    macOS(대소문자 무시 FS)에서 `..._Guard.PY`가 통과했다(Issue #53).
+    #    접미어 규약에 얹혀 있어 `.codex/hooks/session_start.py`처럼 이름을 안
+    #    따르는 통제 파일도 통째로 빠져 있었다.
+    if control := worker_boundaries.control_path(relative):
+        return f"`{worker}`는 통제 스크립트 `{control}`를 수정할 수 없다."
 
     for excluded in boundary.get("except", ()):
         if matches_prefix(relative, excluded):
@@ -319,15 +345,13 @@ def main() -> None:
     #    여기와 같은 `deny`로 맞췄다. **둘은 짝으로 유지한다** — 한쪽만 고치면 같은 축이
     #    런타임에 따라 갈린다. 다만 저쪽에는 「정본이 다른 가드」를 구분하는
     #    `KNOWN_ELSEWHERE` 분기가 더 있다(이쪽은 `analyst`를 직접 갖고 있어 불필요).
-    # ⚠️ **두 파일의 `BOUNDARIES`는 지금 갈려 있다.** 갈리는 지점의 **정본 목록은
-    #    Issue #53**이다 — 여기에 다시 열거하지 않는다(같은 목록을 두 곳에 두면
-    #    한쪽만 고쳐져 이 파일이 경고하는 형태가 그대로 재현된다).
+    # ✅ **두 파일의 `BOUNDARIES` 드리프트는 해소됐다**(Issue #53) — 이제 둘 다
+    #    `scripts/worker_boundaries.py`를 읽는다. 런타임 고유분은 그 파일의
+    #    `CODEX_ONLY`에 있고 사유는 `ASYMMETRY_REASONS`가 갖는다(둘의 대응은
+    #    `scripts/tests/test_worker_boundaries.py`가 강제한다).
     # 🔴 **눈으로 세지 마라.** 처음 두 세션이 각각 눈으로 비교해 **둘**을 찾고 멈췄는데,
-    #    두 모듈을 import해 기계로 대조하니 **다섯**이었다(그중 하나는 표기 차이가
-    #    아니라 통제 갭이었다). 대조 명령은 #53에 있다.
-    # ⚠️ 갈린 것이 전부 갭은 아니다 — `.codex/` 항목처럼 **의도된 비대칭**이 섞여 있다.
-    #    그리고 Codex에는 `analyst_path_guard.py` 대응물이 없어 저쪽을 따라
-    #    **지우는 것이 정답이 아닐 수 있다.** 판정은 런타임 배선 조사가 선행한다.
+    #    두 모듈을 import해 기계로 대조하니 그보다 많았다(그중 둘은 표기 차이가
+    #    아니라 통제 갭이었다). 값을 다시 이 파일에 적으면 그 형태가 재현된다.
     if worker not in BOUNDARIES:
         emit_deny(f"정의되지 않은 Codex 워커 경계다: `{worker}`.")
         return

@@ -110,6 +110,17 @@ UNCHECKED = (
     "    -->\n"
     "⚠️ 없는 상태로 진행해도 되지만, **그때 커밋 범위를 보증하는 것은 사람뿐**이다."
 )
+# 🔴 위와 **다른 사유**다 — 저쪽은 「계획서에 매니페스트가 없다」이고 이쪽은
+#    「커밋 대상 집합 자체를 못 셌다」다. 문구를 합치면 사용자가 고칠 곳이 갈리지
+#    않는다(계획서를 고쳐도 안 낫는다).
+UNDETERMINED = (
+    "⚠️ 미확인 — 커밋 대상 목록을 만들지 못해 **대조하지 않았다**\n"
+    "{why}\n"
+    "\n"
+    "🔴 이것을 「대상 0건」으로 읽지 마라 — 예전에는 같은 상황이 "
+    "`✅ 대상 0건`으로 찍혀 **통과 신호로 보였다**(Issue #55).\n"
+    "위 명령을 직접 돌려 원인을 본 뒤 커밋한다."
+)
 
 
 def emit_ask(reason: str) -> None:
@@ -143,7 +154,7 @@ def defer() -> None:
     sys.exit(0)
 
 
-def targets_of(command: str, cwd: str) -> list[str]:
+def targets_of(command: str, cwd: str) -> list[str] | str:
     """이 커밋이 담을 파일 목록을 만든다.
 
     🔴 `--` pathspec이 있으면 **그것이 대상**이다(우리 규약의 기본형). 없을 때만
@@ -164,14 +175,23 @@ def targets_of(command: str, cwd: str) -> list[str]:
     args += ["HEAD", "--", *pathspec] if pathspec else ["--cached"]
     # S603: 셸을 안 태우고(리스트 인자) `git diff`는 읽기 전용이다. pathspec은
     # 모델이 낸 문자열이지만 `--` 뒤로만 들어가 옵션으로 해석되지 않는다.
+    # 🔴 **「0건」과 「못 셌다」를 가른다**(Issue #55). 예전에는 실행 실패·비-0
+    #    종료를 똑같이 `[]`로 돌려줬는데, 그러면 아래에서 `outside`가 비어
+    #    **`✅ 대상 0건 … 매니페스트와 일치`** 가 찍혔다. 판정을 못 한 것이
+    #    통과 신호로 둔갑하는 형태이고, 오답보다 **검산을 통과하는 정답 모양**이
+    #    위험하다는 그 사례다. ⇒ 사유 문자열을 돌려 `미확인`으로 올린다.
     try:
         out = subprocess.run(  # noqa: S603
             args, cwd=cwd, capture_output=True, text=True, timeout=10, check=False
         )
-    except (OSError, subprocess.SubprocessError):
-        return []
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"`git diff`를 실행하지 못했다 — {type(exc).__name__}."
     if out.returncode != 0:
-        return []
+        detail = out.stderr.strip().splitlines()
+        return (
+            f"`git diff`가 비정상 종료했다(rc={out.returncode}) — "
+            f"{detail[0][:120] if detail else '표준오류 없음'}"
+        )
     return [ln for ln in out.stdout.splitlines() if ln.strip()]
 
 
@@ -244,6 +264,9 @@ def main() -> None:
     patterns, plan = found
 
     targets = targets_of(command, cwd)
+    if isinstance(targets, str):
+        # 🔴 대상 집합을 못 만든 것은 **통과가 아니라 `미확인`**이다.
+        emit_ask(UNDETERMINED.format(why=targets))
     outside = [f for f in targets if not covered(f, patterns)]
     if outside:
         emit_ask(

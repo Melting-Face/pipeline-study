@@ -177,6 +177,10 @@ Python 변경은 `ruff check`, SQL 변경은 `sqlfluff lint`, Terraform 변경�
 - 금지된 HTTP mutation과 비밀·state 파일 쓰기는 Codex hook이 차단한다.
 - `.codex/rules/*.rules`는 샌드박스 밖 명령의 승인 정책이며, 파일 경계는 sandbox와
   워커별 hook/instructions가 함께 담당한다.
+- 워커별 쓰기 경계표의 정본은 `scripts/worker_boundaries.py` **한 곳**이고
+  `.codex/hooks/worker_path_guard.py`는 그것을 읽는다. Codex 고유분은 그 파일의
+  `CODEX_ONLY`에 두고 **사유를 함께 적는다** — 값을 hook에 다시 적으면
+  두 런타임이 갈리고, 갈렸다는 신호가 나지 않는다(Issue #53).
 
 ## Codex 런타임 한계
 

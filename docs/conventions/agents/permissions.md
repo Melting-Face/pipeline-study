@@ -148,7 +148,15 @@
 
 ## 경로 경계 — `allow` · `deny` · `except`
 
-`scripts/worker_path_guard.py`의 `BOUNDARIES`가 워커별 경계를 갖는다.
+워커별 경계의 **정본은 [`scripts/worker_boundaries.py`](../../../scripts/worker_boundaries.py)
+한 곳**이고, 두 런타임의 `worker_path_guard.py`가 그것을 읽어 자기 표를 조립한다.
+
+⚠️ **한때 이 파일이 규약의 예외였다** — 같은 표가 Claude·Codex 가드에 **두 번** 적혀
+있었고, 예외에 **대조 수단이 없어** 값이 갈린 채 오래 남았다. 런타임 고유분은
+`CLAUDE_ONLY`·`CODEX_ONLY` overlay에 두고 **항목마다 사유를 `ASYMMETRY_REASONS`에
+적는다**(기계 강제 — `scripts/tests/test_worker_boundaries.py`).
+⚠️ 합친 것은 **표**까지다. 매칭 로직은 런타임마다 다르므로
+**표가 같아도 결과가 갈릴 수 있다**(그 축은 대조군 셀로 본다).
 
 | 축 | 방향 | 평가 순서 | 매칭 |
 | --- | --- | --- | --- |
