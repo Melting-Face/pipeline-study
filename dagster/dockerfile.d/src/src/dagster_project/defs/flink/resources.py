@@ -202,9 +202,11 @@ class FlinkSessionResource(dg.ConfigurableResource):
                 description=(
                     f"필수 ConfigMap 부재: {', '.join(missing)} — "
                     "FlinkDeployment의 podTemplate이 volume으로 참조하므로 "
-                    "JM 파드가 뜨지 않는다. `kubectl apply -f "
-                    "k8s/flink/iceberg-batch-job.yaml "
-                    "-f k8s/flink/iceberg-stream-job.yaml` 를 먼저 적용한다."
+                    "JM 파드가 뜨지 않는다. "
+                    "`kubectl apply -f k8s/flink/iceberg-catalog-init.yaml "
+                    "-f k8s/flink/iceberg-batch-job.yaml "
+                    "-f k8s/flink/iceberg-stream-job.yaml "
+                    "-f k8s/flink/iceberg-datagen-job.yaml` 를 먼저 적용한다."
                 )
             )
 
