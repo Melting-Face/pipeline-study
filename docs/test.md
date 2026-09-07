@@ -41,6 +41,9 @@ dbt 기본 타깃은 **`spark_connect`** 다. 아래 명령의 `--target dev`는
 ## 1. dbt 스키마(데이터) 테스트 — ★★★★★
 
 > 상세 규약·패키지는 [`conventions/dbt.md#테스트-필수`](conventions/dbt.md#테스트-필수). 여기서는 **무엇에 다는지**를 정한다.
+>
+> **품질 *차원*과 실패 시 등급의 정본은 [`conventions/data-quality.md`](conventions/data-quality.md)** 다.
+> 이 문서는 *어떻게 테스트하나*를, 그 문서는 *무엇을 품질로 보고 깨지면 무엇을 하나*를 갖는다.
 
 - **모든 모델의 grain 컬럼**(예: `stay_id`·`subject_id`·`hadm_id`·`charttime`)에 `not_null`을 단다.
 - **grain을 이루는 키/키 조합**에 `unique`(단일)·`dbt_utils.unique_combination_of_columns`(복합)를 단다.
