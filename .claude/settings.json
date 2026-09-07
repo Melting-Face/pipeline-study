@@ -55,6 +55,7 @@
       "Edit(AGENTS.md)",
       "Edit(scripts/*_guard.py)",
       "Edit(scripts/**/*_guard.py)",
+      "Edit(scripts/worker_boundaries.py)",
       "Edit(**/.claude/skills/**)",
       "Edit(**/.agents/skills/**)",
       "Edit(~/.claude/skills/**)",

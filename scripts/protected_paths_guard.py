@@ -144,6 +144,12 @@ CANON_PATTERNS = (
     ".claude/agents/**",
     "scripts/*_guard.py",
     "scripts/**/*_guard.py",
+    # 🔴 **접미어 규약 밖이라 명시한다.** 워커 경계표의 단일 출처인데
+    #    `*_guard.py`가 아니어서 위 두 패턴에 안 걸린다 — 표를 가드 밖으로
+    #    뽑아내던 커밋에서 이 축이 조용히 비었고 `security` G2가 잡았다
+    #    (Issue #53). **이름 규약에 얹힌 통제는 규약 밖 파일에서 샌다** —
+    #    이 미션이 닫으려던 형태의 재발이었다.
+    "scripts/worker_boundaries.py",
     "skills-lock.json",
     # 아래 2종은 2026-08-21 추가 — **설계 결정이 박히는 자리**다(규약 정본과 같은 축).
     # 🔴 `terraform/**`·`k8s/**`를 통째로 넣지 않은 이유: 매니페스트 편집은 대부분

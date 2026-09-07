@@ -18,6 +18,9 @@
 | [PEP 8](https://peps.python.org/pep-0008/) · [PEP 257](https://peps.python.org/pep-0257/) | 스타일·docstring | [conventions/python.md](conventions/python.md) |
 | [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) | docstring(Google 스타일) | [conventions/python.md](conventions/python.md) |
 | [Conventional Commits](https://www.conventionalcommits.org/) | 커밋 메시지 규약 | [conventions/general.md](conventions/general.md) |
+| [ISO 31000 — Risk management](https://www.iso.org/iso-31000-risk-management.html) | 리스크 분류·등급·대응 전략의 어휘 | [risk.md](risk.md) |
+| [ISO/IEC 25012 — Data quality model](https://www.iso.org/standard/35736.html) | 데이터 품질 **차원** 구분의 근거 | [conventions/data-quality.md](conventions/data-quality.md) |
+| [DAMA — Body of Knowledge](https://www.dama.org/cpages/body-of-knowledge) | 데이터 거버넌스·품질 관리 체계 | [conventions/data-quality.md](conventions/data-quality.md) |
 
 ## 도구
 
