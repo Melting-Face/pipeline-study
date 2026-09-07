@@ -96,7 +96,7 @@ Chunks cache · Results cache). 끄는 옵션은 그 문서에 없다.
 
 **미확인으로 남은 것**(추측으로 채우지 않는다): Loki 캐시 2종의 `resources` 원문 ·
 Robusta의 기존 Prometheus 연동 모드 파드 차분 · `grafana/loki`와 `grafana-community/helm-charts`의
-차트 정본 관계. 인용 수치는 **`grafana/loki` 기준**이며 그 경로는 이관 발표 5개월 뒤에도
+차트 정본 관계. 인용 수치는 **`grafana/loki` 기준**이며 그 경로는 이관 발표 **이후로도**
 커밋을 받고 있어 동결이 아님을 확인했다.
 
 ## 운영 메모
