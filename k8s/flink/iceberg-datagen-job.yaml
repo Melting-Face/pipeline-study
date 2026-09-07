@@ -1,0 +1,130 @@
+# ConfigMap — Flink SQL **datagen 대조군** 잡 (datagen 소스 → 이벤트타임 윈도우 → Iceberg 싱크)
+#
+# 목적: **소스 축과 계산 축을 갈라 놓는다.**
+#   `iceberg-stream-job.yaml`은 소스도 Iceberg고 싱크도 Iceberg라, 결과가 비면
+#   ⓐ 소스 스냅샷이 안 보인 것인지 ⓑ 워터마크가 안 진행된 것인지 ⓒ 싱크가 커밋을 안 한 것인지
+#   **구분이 안 된다.** 이 잡은 소스를 Flink 내장 `datagen`으로 바꿔 ⓐ를 제거한다.
+#   ⇒ 여기서 통과하면 남은 실패 원인은 ⓐ뿐이므로, 실데이터 잡의 판정이 1변인이 된다.
+#
+# 무엇을 증명하는가:
+#   - 이벤트타임 워터마크가 진행한다 (윈도우가 실제로 닫힌다)
+#   - TUMBLE 윈도우 집계가 append-only 결과를 낸다 (Iceberg 싱크에 upsert가 불필요하다)
+#   - 체크포인트가 돌고 Iceberg 싱크가 커밋한다 (flinkdeployment-session.yaml의
+#     "체크포인트 파일이 온전한지 미확인" 축을 이 잡으로 닫는다)
+#
+# 무엇을 증명하지 **않는가**: Iceberg 스트리밍 **읽기**. 소스가 Iceberg가 아니므로
+#   `IncrementalAppendScan`의 append-only 제약(architectures/flink.md §급소)은 여기서 검증되지 않는다.
+#   그 축은 `iceberg-stream-job.yaml`로만 닫힌다. **두 잡의 통과를 같은 말로 덮지 않는다.**
+#
+# 🔴 카탈로그 init(`01-catalog.sql`)은 이 파일에 없다 — `iceberg-catalog-init.yaml`이 정본이며
+#   `/opt/flink/sql-catalog/01-catalog.sql`로 마운트된다.
+#
+# 🔴 **마운트 경로가 배치·스트림과 다르다** — 이 ConfigMap은 `/opt/flink/sql-datagen`에 붙는다.
+#   같은 경로에 겹쳐 마운트하면 뒤엣것이 앞엣것을 통째로 가린다.
+#
+# 제출(파드 안에서 확장 — 호스트로 크리덴셜을 가져오지 않는다):
+#
+#     kubectl exec -n default <jm-pod> -- sh -c '
+#       umask 077
+#       envsubst < /opt/flink/sql-catalog/01-catalog.sql > /tmp/01-catalog.sql
+#       chmod 600 /tmp/01-catalog.sql
+#       /opt/flink/bin/sql-client.sh --history /tmp/flink-sql-history \
+#         -i /tmp/01-catalog.sql -f /opt/flink/sql-datagen/02-datagen-job.sql
+#       rc=$?; rm -f /tmp/01-catalog.sql /tmp/flink-sql-history; exit $rc
+#     '
+#
+# 🔴 회수 — 이 잡은 **끝나지 않는다.** TaskManager가 잡 수명 내내 상주해
+#   conventions/k8s.md §9-3 경계①의 전제를 깨므로, **검증 창이 닫히면 그 자리에서** 잡을 취소하고
+#   세션 클러스터를 내린다. 취소 전에 상태를 먼저 수집한다(operations.md — 취소하면 체크포인트가 지워진다).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: iceberg-datagen-job
+    namespace: default
+    labels:
+        app: flink-session
+data:
+    # --- 잡 파일(-f): 크리덴셜 0. 출력을 그대로 관측해도 안전하다 ---
+    02-datagen-job.sql: |
+        -- 스트리밍이 기본값이지만, 배치 잡과 나란히 두는 파일이라 **명시**한다.
+        SET 'execution.runtime-mode' = 'streaming';
+
+        -- 🔴 `table.dml-sync`는 **켜지 않는다.** 스트리밍 INSERT는 끝나지 않으므로
+        --   동기 실행하면 sql-client가 영영 반환하지 않고 kubectl exec 세션이 물린다.
+        --   ⇒ 배치 파일을 복사해 만들 때 가장 실수하기 쉬운 한 줄이다. **없는 것이 정상이다.**
+
+        -- 저장은 UTC(docs/conventions/timezone.md). 세션 타임존을 못 박아야
+        -- 워터마크·윈도우 경계가 실행 환경의 JVM 기본 타임존에 흔들리지 않는다.
+        SET 'table.local-time-zone' = 'UTC';
+
+        CREATE DATABASE IF NOT EXISTS `iceberg`.`poc`;
+
+        -- ① 소스: Flink 내장 datagen. **기본 카탈로그(default_catalog)에 만든다** —
+        --    `CREATE CATALOG`는 현재 카탈로그를 바꾸지 않으므로 수식 없는 이름은 default로 간다.
+        --    Iceberg 카탈로그에 넣으면 Iceberg 테이블을 만들려 들어 실패한다.
+        --
+        --    🔴 `max-past`가 이 잡의 핵심 다이얼이다. datagen은 event_time을 지금부터
+        --    과거 `max-past` 구간 안에서 뽑는다 ⇒ **인위적 지연 도착(late arrival)** 이 생긴다.
+        --    워터마크 지연(10s)을 `max-past`(5s)보다 **크게** 잡았으므로 기본값에서는 드롭이 0이어야 한다.
+        --    ⇒ 검증 후 `max-past`를 '60s'로 올리면 드롭이 **생겨야** 한다.
+        --      게이트는 일부러 위반시켜 막히는지 보는 것이 원칙 7이고, 여기서는 이 한 줄이 그 수단이다.
+        CREATE TABLE `datagen_events` (
+            event_id   BIGINT,
+            series_id  INT,
+            val        DOUBLE,
+            event_time TIMESTAMP(3),
+            WATERMARK FOR event_time AS event_time - INTERVAL '10' SECOND
+        ) WITH (
+            'connector' = 'datagen',
+            'rows-per-second' = '20',
+            'fields.event_id.kind' = 'sequence',
+            'fields.event_id.start' = '1',
+            'fields.event_id.end' = '1000000',
+            'fields.series_id.kind' = 'random',
+            'fields.series_id.min' = '1',
+            'fields.series_id.max' = '5',
+            'fields.val.kind' = 'random',
+            'fields.val.min' = '0',
+            'fields.val.max' = '100',
+            'fields.event_time.max-past' = '5s'
+        );
+
+        -- ② 싱크. Flink SQL의 INSERT INTO는 테이블을 자동 생성하지 않으므로 CREATE가 선행한다.
+        --    `ingested_at`(처리 시각)을 함께 남겨 **윈도우 시각과 처리 시각의 차이**를 데이터로 본다
+        --    — 로그가 아니라 테이블에서 판별한다.
+        CREATE TABLE IF NOT EXISTS `iceberg`.`poc`.`datagen_window` (
+            window_start TIMESTAMP(3),
+            window_end   TIMESTAMP(3),
+            series_id    INT,
+            events       BIGINT,
+            max_val      DOUBLE,
+            ingested_at  TIMESTAMP(3)
+        );
+
+        -- ③ 이벤트타임 tumbling 윈도우 → Iceberg 싱크.
+        --
+        --    윈도우 30s인 이유: 체크포인트(10s)보다 충분히 길어야 "윈도우가 아직 안 닫힌 것"과
+        --      "커밋이 아직 안 된 것"이 겹치지 않는다. 시연 창 수 분 안에 여러 번 닫혀야 관측이 된다.
+        --
+        --    🔴 윈도우 집계 결과는 **append-only**다(윈도우가 닫힐 때 한 번만 방출).
+        --      그래서 Iceberg 싱크에 upsert(format v2 + primary key)가 **필요 없다**.
+        --      집계를 GROUP BY만으로 쓰면 갱신 스트림이 되어 upsert가 필요해진다 — 다른 축이다.
+        --
+        --    🔴 Iceberg 싱크는 **체크포인트가 완료돼야 커밋**한다. INSERT를 제출해도
+        --      첫 체크포인트(약 10s) 전에는 행이 보이지 않는다 — 실패가 아니라 정상이다.
+        --
+        --    📌 검증 손잡이: `SUM(events)`가 곧 **윈도우에 담긴 소스 행 수**다.
+        --      드롭된 지연 이벤트는 여기서 빠지므로, 이 합이 소스 방출량보다 작으면
+        --      **에러 없이 조용히 누락된 것**이다(architectures/flink.md §급소의 실패 모드와 같은 형태).
+        INSERT INTO `iceberg`.`poc`.`datagen_window`
+        SELECT
+            window_start,
+            window_end,
+            series_id,
+            COUNT(*) AS events,
+            MAX(val) AS max_val,
+            CAST(CURRENT_TIMESTAMP AS TIMESTAMP(3)) AS ingested_at
+        FROM TABLE(
+            TUMBLE(TABLE `datagen_events`, DESCRIPTOR(event_time), INTERVAL '30' SECONDS)
+        )
+        GROUP BY window_start, window_end, series_id;

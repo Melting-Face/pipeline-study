@@ -26,7 +26,7 @@ locals {
   #      spark/spark-thrift-server.yaml    선언만 있고 미배포
   #      spark/sparkapplication-poc.yaml   잡 — Dagster 가 런타임에 제출한다
   #      flink/flinkdeployment-session.yaml 세션 클러스터 — 회수 다이얼 1번
-  #      flink/iceberg-*-job.yaml    잡 정의(ConfigMap) — 세션 클러스터와 한 벌
+  #      flink/iceberg-*.yaml        잡 정의 + 공용 카탈로그 init(ConfigMap) — 세션 클러스터와 한 벌
   manifest_files = [
     "local-ca.yaml",
     "spark/spark-workload-cleanup-rbac.yaml",

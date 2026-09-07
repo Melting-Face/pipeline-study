@@ -1,0 +1,50 @@
+# ConfigMap — Flink SQL **카탈로그 init 파일**(모든 잡이 공유)
+#
+# 목적: `sql-client.sh -i`로 먹이는 `CREATE CATALOG` 한 벌을 **한 곳에** 둔다.
+#
+# 🔴 왜 이제 추출하는가 — **Rule of Three**.
+#   사본이 배치·스트림 2벌일 때는 "한쪽을 고치면 다른 쪽도 고친다"는 주석으로 결합을 붙들었다
+#   (미달이라 추출하지 않는 것이 옳았다). datagen 잡이 붙으면서 **3벌째**가 되므로
+#   손으로 동기화하는 규율이 더는 성립하지 않는다 ⇒ 별도 ConfigMap으로 뺀다.
+#
+# 🔴 왜 볼륨 하나로 합치지 않고 ConfigMap을 나누는가 —
+#   ConfigMap 볼륨은 마운트 경로를 통째로 덮는다. 잡 파일과 같은 경로에 합치면
+#   배치만 쓸 때도 스트림·datagen SQL이 딸려 오고, 경로가 겹치면 뒤엣것이 앞엣것을 가린다.
+#   ⇒ **잡별 ConfigMap은 그대로 두고, 공유되는 init만 자기 경로(`/opt/flink/sql-catalog`)로 뺀다.**
+#
+# 🔴 이 파일에는 **비밀값이 없다.** 값은 전부 `${VAR}` 플레이스홀더이며, 이름은
+#   `flinkdeployment-session.yaml`의 podTemplate이 Secret→env로 넣는 것과 동일하다.
+#   확장은 **파드 안에서** 한다(호스트로 크리덴셜을 가져오지 않는다) — 렌더 산출물과
+#   `--history`는 반드시 함께 지운다(conventions/k8s.md §9-2 예외 조건 3).
+#
+# 🔴 **ConfigMap이 먼저 존재해야 파드가 뜬다** — `flinkdeployment-session.yaml`이 이 이름을
+#   volume으로 참조하므로, 없으면 JM 파드가 `CreateContainerConfigError`로 기동하지 않는다.
+#   ⇒ apply 순서는 **`k8s/flink/iceberg-*.yaml` 전부 → FlinkDeployment**로 고정이다.
+#   파일명을 `iceberg-`로 시작시킨 것은 기존 글롭(`kubectl apply -f k8s/flink/iceberg-*.yaml`)에
+#   **그대로 잡히게 하려는 것**이다(빠뜨리면 JM이 안 뜨는데 원인이 멀리 보인다).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: iceberg-catalog-init
+    namespace: default
+    labels:
+        app: flink-session
+data:
+    01-catalog.sql: |
+        -- Iceberg JDBC 카탈로그. 이름은 전 엔진 공통 `iceberg`여야 한다 —
+        -- JDBC 카탈로그는 catalog_name으로 레지스트리를 분할해, 이름이 다르면
+        -- 같은 DB를 봐도 서로의 테이블이 보이지 않는다(k8s.md §11).
+        --
+        -- S3 키는 여기에 쓰지 않는다: S3FileIO(AWS SDK v2)가 기본 자격증명 체인을 타므로
+        -- 파드 env(AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY)만으로 충분하다.
+        CREATE CATALOG `iceberg` WITH (
+            'type' = 'iceberg',
+            'catalog-impl' = 'org.apache.iceberg.jdbc.JdbcCatalog',
+            'uri' = '${ICEBERG_JDBC_URI}',
+            'jdbc.user' = '${PG_USER}',
+            'jdbc.password' = '${PG_PASSWORD}',
+            'warehouse' = '${ICEBERG_WAREHOUSE}',
+            'io-impl' = 'org.apache.iceberg.aws.s3.S3FileIO',
+            's3.endpoint' = '${S3_ENDPOINT}',
+            's3.path-style-access' = 'true'
+        );
