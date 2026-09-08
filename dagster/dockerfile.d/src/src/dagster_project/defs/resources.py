@@ -33,6 +33,7 @@ from dagster_project.common.constants import (
 from dagster_project.common.dbt import build_dbt_resource
 from dagster_project.common.trino import TrinoResource
 from dagster_project.defs.eicu.constants import NAMESPACE as EICU_NS
+from dagster_project.defs.frankfurter_fx.constants import NAMESPACE as FRANKFURTER_FX_NS
 from dagster_project.defs.mimic_iv.constants import NAMESPACE as MIMICIV_NS
 from dagster_project.defs.usgs_water.constants import NAMESPACE as USGS_WATER_NS
 
@@ -168,11 +169,34 @@ def resources() -> dg.Definitions:
                     }
                 ),
             ),
-            # 관측소 메타(조인 차원)는 스트리밍 소스가 아니라 replace로 갱신한다.
+            # 관측소 메타(조인 차원)도 append로 갱신한다 — replace는 drop_table이라
+            # 스냅샷 계보를 끊고, "스트리밍 소스가 아니다"와 "잡이 읽지 않는다"는
+            # 다르다(조인 상대도 잡이 읽는다). 상세는 usgs_water/assets.py.
             "usgs_water_sites_table": IcebergTableResource(
                 name=CATALOG_NAME,
                 namespace=USGS_WATER_NS,
                 table="water_sites",
+                config=IcebergCatalogConfig(
+                    properties={
+                        "type": "sql",
+                        "uri": ICEBERG_CATALOG_URI,
+                        "warehouse": WAREHOUSE,
+                        "s3.endpoint": S3_ENDPOINT,
+                        "s3.access-key-id": S3_ACCESS_KEY_ID,
+                        "s3.secret-access-key": S3_SECRET_ACCESS_KEY,
+                        "s3.region": AWS_REGION,
+                        "s3.path-style-access": "true",
+                    }
+                ),
+            ),
+            # Frankfurter 환율 bronze. 🔴 **일자 파티션 자산**이라 IO 매니저를 쓰지 않고
+            # 테이블 바인딩으로 직접 적재한다 — 파티션 범위만 교체해야 재실행이
+            # 멱등해지는데(`replace_partition_in_iceberg`), IO 매니저 경로에는
+            # 그 단위가 없다.
+            "frankfurter_fx_rates_table": IcebergTableResource(
+                name=CATALOG_NAME,
+                namespace=FRANKFURTER_FX_NS,
+                table="fx_rates_daily",
                 config=IcebergCatalogConfig(
                     properties={
                         "type": "sql",

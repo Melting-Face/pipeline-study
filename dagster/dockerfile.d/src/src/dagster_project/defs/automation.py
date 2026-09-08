@@ -6,9 +6,12 @@
 - USGS 수문 적재 잡·스케줄 **2쌍** — 순간값(15분)과 관측소 메타(일 1회)는
   주기가 자릿수로 달라 한 잡으로 묶지 않는다. 그룹 전체를 선택하면 차원
   테이블이 15분마다 재적재된다.
+- Frankfurter 환율 잡·스케줄 1쌍 — **파티션 잡이라 스케줄을 직접 쓰지 않고
+  파티션 정의에서 파생**시킨다(아래).
 """
 
 import dagster as dg
+from dagster_project.defs.frankfurter_fx.constants import SCHEDULE_HOUR_UTC
 
 dbt_all_job = dg.define_asset_job(
     "dbt_all_job",
@@ -69,5 +72,32 @@ usgs_water_sites_schedule = dg.ScheduleDefinition(
     # 관측소 메타는 거의 바뀌지 않는 차원이다. 일 1회로 충분하다.
     cron_schedule="0 4 * * *",
     execution_timezone="Asia/Seoul",
+    default_status=dg.DefaultScheduleStatus.STOPPED,
+)
+
+# ── Frankfurter 환율(Frankfurter) 적재 ───────────────────────────────────────
+# 🔴 위 셋과 **선언 방식이 다르다.** 파티션 자산의 스케줄은 cron도 타임존도
+# 직접 주지 못한다 — `build_schedule_from_partitioned_job`에
+# `cron_schedule`/`execution_timezone`을 넘기면 시간 파티션 잡에서는
+# `CheckError`로 죽는다(실측). 둘 다 `partitions_def`에서 파생되고, 우리가
+# 미는 것은 **발화 시각**뿐이다.
+#
+# 그래서 이 파일의 다른 스케줄과 달리 `execution_timezone="Asia/Seoul"`이
+# 없는데, 규약을 어긴 것이 아니라 **만족 지점이 옮겨간 것**이다:
+# 타임존은 `frankfurter_fx/constants.py`의 `PARTITION_TIMEZONE`이 명시한다.
+# (파생 결과 실측: cron `"0 1 * * *"` · tz `"UTC"`)
+#
+# `partitions_def=`는 `define_asset_job`에 넘기지 않는다 — 선택된 자산에서
+# 추론되므로 중복이고, Dagster가 폐기 예고한 인자다.
+frankfurter_fx_rates_job = dg.define_asset_job(
+    "frankfurter_fx_rates_job",
+    selection=dg.AssetSelection.assets("fx_rates_daily"),
+)
+
+frankfurter_fx_rates_schedule = dg.build_schedule_from_partitioned_job(
+    frankfurter_fx_rates_job,
+    name="frankfurter_fx_rates_schedule",
+    hour_of_day=SCHEDULE_HOUR_UTC,
+    # 외부 API를 주기 호출하므로 기본 정지. 켜는 시점은 사람이 정한다.
     default_status=dg.DefaultScheduleStatus.STOPPED,
 )

@@ -112,6 +112,29 @@ def ensure_table(catalog: Catalog, identifier: str, schema: pa.Schema) -> Table:
         return catalog.create_table(identifier, schema=schema)
 
 
+def _load_iceberg_table(iceberg_table: IcebergTableResource) -> tuple[Catalog, str]:
+    """테이블 바인딩 리소스에서 pyiceberg 카탈로그와 식별자를 복원한다.
+
+    `IcebergTableResource.load()`는 **기존 테이블만** 로드하므로 생성·append·
+    overwrite를 하려면 리소스의 config(properties)로 카탈로그를 재구성해야 한다.
+
+    이 보일러플레이트가 세 번째로 겹쳐 추출했다(Rule of Three). 직전까지는
+    `append_arrow_to_iceberg`가 "2회째라 아직 추출하지 않는다"고 적어뒀고,
+    `replace_partition_in_iceberg`가 3회째다.
+
+    Args:
+        iceberg_table: 대상 테이블 바인딩 리소스(name·config·namespace·table).
+
+    Returns:
+        (카탈로그, `"<namespace>.<table>"` 식별자).
+    """
+    from pyiceberg.catalog import load_catalog
+
+    properties = iceberg_table.config.model_dump()["properties"]
+    catalog = load_catalog(iceberg_table.name, **properties)
+    return catalog, f"{iceberg_table.schema_}.{iceberg_table.table}"
+
+
 def load_heavy_csv_gz_to_iceberg(
     context: dg.AssetExecutionContext,
     *,
@@ -140,11 +163,7 @@ def load_heavy_csv_gz_to_iceberg(
     Returns:
         적재 메타데이터(테이블·원본·행 수)를 담은 MaterializeResult.
     """
-    from pyiceberg.catalog import load_catalog
-
-    properties = iceberg_table.config.model_dump()["properties"]
-    catalog = load_catalog(iceberg_table.name, **properties)
-    identifier = f"{iceberg_table.schema_}.{iceberg_table.table}"
+    catalog, identifier = _load_iceberg_table(iceberg_table)
 
     if mode == "replace" and table_exists(catalog, identifier):
         catalog.drop_table(identifier)
@@ -203,6 +222,12 @@ def _request(
     그 외 4xx는 **즉시 실패**시킨다 — 잘못된 요청을 반복해도 답이 바뀌지 않고
     rate limit 예산만 쓴다. `Retry-After` 헤더가 오면 계산된 백오프보다
     그것을 우선한다.
+
+    ⚠️ **크리덴셜을 쿼리 파라미터로 받는 API에는 이 함수를 그대로 쓰지 않는다.**
+    `requests`의 `HTTPError`·`ConnectionError` 메시지에는 **쿼리스트링을 포함한
+    전체 URL**이 담겨, 4xx 한 번에 키가 Dagster 이벤트 로그에 평문으로 박힌다.
+    현재 호출자(USGS 수문·Frankfurter 환율)는 **둘 다 무인증**이라 이 축이
+    열려 있지 않다 — 키가 필요한 원천을 붙일 때 예외 재포장·마스킹을 함께 넣는다.
     """
     for attempt in range(retries + 1):
         response = requests.get(url, params=params, timeout=timeout_s)
@@ -260,9 +285,9 @@ def append_arrow_to_iceberg(
 ) -> dg.MaterializeResult:
     """완성된 Arrow 테이블을 Iceberg에 적재한다.
 
-    load_heavy_csv_gz_to_iceberg와 카탈로그 재구성 로직이 겹치지만, 원천이
-    스트리밍 리더가 아니라 이미 만들어진 테이블이라 청크 루프가 없다.
-    겹침은 2회째이므로 아직 공통 함수로 추출하지 않는다(Rule of Three).
+    load_heavy_csv_gz_to_iceberg와 달리 원천이 스트리밍 리더가 아니라 이미
+    만들어진 테이블이라 청크 루프가 없다. 겹치던 카탈로그 재구성은 3회째가
+    되면서 `_load_iceberg_table`로 추출됐다(Rule of Three).
 
     Args:
         context: 에셋 실행 컨텍스트.
@@ -282,11 +307,7 @@ def append_arrow_to_iceberg(
     Returns:
         적재 메타데이터를 담은 MaterializeResult.
     """
-    from pyiceberg.catalog import load_catalog
-
-    properties = iceberg_table.config.model_dump()["properties"]
-    catalog = load_catalog(iceberg_table.name, **properties)
-    identifier = f"{iceberg_table.schema_}.{iceberg_table.table}"
+    catalog, identifier = _load_iceberg_table(iceberg_table)
 
     if mode == "replace" and table_exists(catalog, identifier):
         catalog.drop_table(identifier)
@@ -299,6 +320,77 @@ def append_arrow_to_iceberg(
         "table": identifier,
         "rows": arrow.num_rows,
         "mode": mode,
+    }
+    if extra_metadata:
+        metadata.update(extra_metadata)
+    return dg.MaterializeResult(metadata=metadata)
+
+
+def replace_partition_in_iceberg(
+    context: dg.AssetExecutionContext,
+    *,
+    iceberg_table: IcebergTableResource,
+    arrow: pa.Table,
+    partition_column: str,
+    partition_value: str,
+    extra_metadata: dict[str, Any] | None = None,
+) -> dg.MaterializeResult:
+    """한 파티션 범위만 지우고 다시 넣는다(파티션 자산용 멱등 적재).
+
+    **왜 세 번째 모드가 필요한가.** 파티션 자산은 재실행·백필이 전제라
+    `append`면 같은 파티션 키가 실행할 때마다 쌓인다 — 중복 누적이 의도인
+    `usgs_water`와는 축이 반대다. 그렇다고 `replace`를 쓸 수는 없다:
+    그것은 `drop_table` 후 재생성이라 재생성본이 `parent_id = NULL`인 새
+    루트가 되어 **스냅샷 계보가 끊긴다**(`append_arrow_to_iceberg` 참조).
+
+    pyiceberg의 `Table.overwrite(df, overwrite_filter=...)`가 정확히 이
+    중간 지점이다 — 구현이 `delete(filter)` → append이고 **`drop_table`이
+    없어 계보가 이어진다**(pyiceberg 0.11.1 `table/__init__.py:636-653`
+    실측). 다만 한 트랜잭션 안에서 **스냅샷은 여러 개가 날 수 있다**
+    (DELETE·OVERWRITE·APPEND) — "한 커밋 한 스냅샷"으로 읽지 않는다.
+
+    🔴 **Flink 스트리밍 소스로 쓸 테이블에는 이 함수를 쓰지 않는다.**
+    계보는 이어지지만 delete/overwrite 스냅샷이 생기고,
+    `IncrementalAppendScan`은 그것을 다루지 못한다. 계보 보존과
+    append-only는 **다른 축**이다.
+
+    ⚠️ 파티션을 **처음** 적재할 때 pyiceberg가 `UserWarning: Delete operation
+    did not match any records`를 낸다. 지울 행이 아직 없어서 나는 것이므로
+    결함이 아니다 — 로그에서 보고 오진하지 않도록 적어둔다.
+
+    검증: `tests/test_frankfurter_fx_partition_load.py`가 SQLite 카탈로그 +
+    임시 warehouse로 멱등·파티션 격리·계보 단일 루트를 실제로 확인한다
+    (**음성 대조 포함** — append면 행이 두 배가 되는 것을 함께 본다).
+
+    Args:
+        context: 에셋 실행 컨텍스트.
+        iceberg_table: 대상 테이블 바인딩 리소스.
+        arrow: 이 파티션에 넣을 Arrow 테이블. 스키마는 호출부가 명시한다.
+        partition_column: 파티션을 가르는 컬럼명(예: `"rate_date"`).
+        partition_value: 이번 파티션의 값(= Dagster partition_key).
+        extra_metadata: 자산이 덧붙일 관측 메타데이터.
+
+    Returns:
+        적재 메타데이터를 담은 MaterializeResult.
+    """
+    from pyiceberg.expressions import EqualTo
+
+    catalog, identifier = _load_iceberg_table(iceberg_table)
+    table = ensure_table(catalog, identifier, arrow.schema)
+    table.overwrite(arrow, overwrite_filter=EqualTo(partition_column, partition_value))
+
+    context.log.info(
+        "%s ← %d rows 교체 (%s=%s)",
+        identifier,
+        arrow.num_rows,
+        partition_column,
+        partition_value,
+    )
+    metadata: dict[str, Any] = {
+        "table": identifier,
+        "rows": arrow.num_rows,
+        "mode": "replace_partition",
+        "partition": f"{partition_column}={partition_value}",
     }
     if extra_metadata:
         metadata.update(extra_metadata)

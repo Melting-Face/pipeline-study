@@ -257,17 +257,24 @@ S3/Iceberg 연결은 **Dagster 리소스**(`dagster-aws`·`dagster-iceberg`)로 
 | `assets.py`      | 테이블별 **명시적 `@dg.asset`**(bronze; 일반=IO 매니저 / 대용량=청크 append)   |
 | `dbt_assets.py`  | 데이터셋 dbt 모델 소유 `@dbt_assets(select="fqn:<dataset>", project=dbt_project)` |
 
-> 현재 `defs/mimic_iv/`(icu·hosp 11테이블 — 일반=IO 매니저, chartevents·labevents=대용량),
+> S3 파일 원천: `defs/mimic_iv/`(icu·hosp 11테이블 — 일반=IO 매니저, chartevents·labevents=대용량),
 > `defs/eicu/`(3테이블 — patient·diagnosis=일반, nurse_charting=대용량).
+> 공개 API 원천: `defs/usgs_water/`(2테이블 — 순간값·관측소 메타),
+> `defs/frankfurter_fx/`(1테이블 — **일자 파티션**). 이 둘은 `dbt_assets.py`를 두지 않는다(bronze에서 멈춘다).
 > 공유 리소스는 `defs/resources.py`(`@dg.definitions`), 잡·스케줄은 `defs/automation.py`에 두고,
 > 최상위 `definitions.py`의 `load_defs(dagster_project.defs)`가 모두 **단일 `Definitions`** 로 합친다.
 
-### 두 가지 적재 경로
+### 네 가지 적재 경로
 
 | 경로 | 조건 | 방법 | 자산 반환 |
 | --- | --- | --- | --- |
 | **A. 일반** | 부하 없는 CSV | `read_csv_gz_table` → **dagster-iceberg IO 매니저**가 자동 create+write | `pa.Table` |
 | **B. 대용량** | 무거운 csv.gz(예: 3.3GB) | boto3 스트리밍 + **청크 append**(IO 매니저 미사용) | `MaterializeResult` |
+| **C. API 누적** | 창을 겹쳐 받는 스트림 원천 | `fetch_json` → `append_arrow_to_iceberg`(중복 누적이 **의도**) | `MaterializeResult` |
+| **D. 파티션** | 일자별로 나뉘는 원천 | `fetch_json` → `replace_partition_in_iceberg`(재실행 **멱등**) | `MaterializeResult` |
+
+C와 D는 **정반대 방향**이다 — C는 중복을 남겨 dedup 실습 재료로 쓰고, D는 파티션 재실행·백필이
+전제라 중복이 곧 버그다. 같은 "API → Iceberg"라도 갈리는 지점이니 원천의 성격으로 고른다.
 
 ```mermaid
 flowchart LR

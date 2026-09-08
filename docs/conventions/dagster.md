@@ -93,7 +93,7 @@ bronze_assets = [build_csv_to_iceberg_asset(...) for ... in TABLES]   # ← 사�
 > **적재/변환 에셋은 관측 가능한 메타데이터(행 수·미리보기 등)를 남긴다.**
 > Dagster UI에서 결과를 눈으로 확인하고 회귀를 조기에 잡기 위해서다.
 
-이 레포는 적재 경로가 둘이라 메타데이터를 붙이는 방법도 둘이다([../architectures/overview.md](../architectures/overview.md#두-가지-적재-경로)).
+이 레포는 적재 경로가 넷이라 메타데이터를 붙이는 방법도 갈린다([../architectures/overview.md](../architectures/overview.md#네-가지-적재-경로)).
 
 - **일반 경로**(`pa.Table` 반환 → IO 매니저가 write): 반환 타입을 유지한 채
   `context.add_output_metadata(...)`로 메타데이터를 부착한다.
@@ -203,8 +203,10 @@ Iceberg 네임스페이스는 **데이터셋 서브프로젝트 단위**로 만�
 
 1. **`defs/<dataset>/constants.py`** — `NAMESPACE`·`GROUP_NAME`·`SOURCE_BASE` 정의.
    네임스페이스에 `bronze_` 같은 레이어 접두어를 넣지 않는다(`NAMESPACE = "<dataset>"`).
+   원천이 S3가 아니라 외부 API면 `SOURCE_BASE` 대신 엔드포인트·수집 파라미터·HTTP 기본값을 둔다.
 2. **`defs/<dataset>/assets.py`** — 테이블별 **명시적 `@asset`**(팩토리 금지). 일반=IO 매니저 /
    대용량=`load_heavy_csv_gz_to_iceberg`. 메타데이터를 남긴다(위 규약).
+   원천이 **일자별로 나뉘면 `partitions_def`를 건다**(아래 §파티션 — 시작일 리터럴·타임존·멱등).
 3. **`defs/<dataset>/dbt_assets.py`** — `@dbt_assets(select="fqn:<dataset>", project=dbt_project)`로 dbt 모델 소유.
 4. **IO 매니저 리소스 등록** — `defs/resources.py`에 `io_manager_<dataset>`(namespace=`<dataset>`)를
    추가한다. 대용량 테이블이 있으면 해당 `IcebergTableResource`도 함께 등록한다.
@@ -219,6 +221,11 @@ Iceberg 네임스페이스는 **데이터셋 서브프로젝트 단위**로 만�
 > `load_defs(dagster_project.defs)`가 `defs/` 하위 모듈 스코프 정의를 자동 수집하므로,
 > 새 서브프로젝트는 `defs/` 아래 두기만 하면 별도 등록 없이 합쳐진다. **리소스 키**(4번)만
 > 자산의 `io_manager_key`와 일치시키면 된다.
+
+**bronze에서 멈추는 데이터셋은 3·5·6을 건너뛴다** — dbt 모델을 두지 않으면 소유할 것도
+매핑할 것도 없다. 다만 **건너뛴 것은 선언한다**(빠뜨린 것과 구분되도록 데이터셋 문서에 적는다).
+IO 매니저를 쓰지 않는 적재 경로(대용량 청크·API append·파티션 교체)는 4번에서
+`io_manager_<dataset>` 대신 대상 테이블용 `IcebergTableResource`만 등록한다.
 
 ## 잡 / 스케줄
 
@@ -240,6 +247,55 @@ dbt_all_schedule = ScheduleDefinition(
 ```
 
 - **스케줄은 `execution_timezone`을 명시**한다(미지정 시 daemon 시스템 TZ 의존). 상세 [timezone.md](timezone.md).
+  단 **파티션 잡은 이 인자를 받지 않는다** — 아래 §파티션.
+
+## 파티션
+
+원천이 **하루치씩 나뉘는 것**(일자별 API 조회 등)이면 자산에 `partitions_def`를 건다.
+파티션은 백필·재실행·부분 실패 복구의 단위가 되고, UI에서 어느 날짜가 비었는지가 보인다.
+
+```python
+DAILY_PARTITIONS = dg.DailyPartitionsDefinition(
+    start_date=PARTITION_START_DATE,   # 리터럴 상수 — 아래 ①
+    timezone="UTC",                    # 스케줄 타임존도 여기서 정해진다 — 아래 ②
+)
+
+@dg.asset(group_name=GROUP_NAME, partitions_def=DAILY_PARTITIONS, kinds={...})
+def fx_rates_daily(context: dg.AssetExecutionContext, ...) -> dg.MaterializeResult:
+    rate_date = context.partition_key      # "YYYY-MM-DD"
+```
+
+**① 시작일은 리터럴로 고정한다.** `date.today() - timedelta(days=30)` 같은 계산식을 쓰면
+정의를 로드할 때마다 파티션 집합이 하루씩 밀려, **어제 머티리얼라이즈한 파티션이 집합에서
+사라진다.** 이력은 남지만 자산 그래프가 그것을 더는 자기 파티션으로 보지 않는다.
+
+**② 파티션 잡의 스케줄 타임존은 스케줄이 아니라 파티션 정의가 정한다.**
+`build_schedule_from_partitioned_job`에 `execution_timezone`(또는 `cron_schedule`)을 주면
+시간 파티션 잡에서는 `check.failed`로 **죽는다**. 발화 시각은 `hour_of_day`·`minute_of_hour`로
+민다. 위 §잡/스케줄의 "`execution_timezone` 명시" 규약은 **파티션 정의의 `timezone=`이
+대신 만족**시킨다(목적인 "daemon 시스템 TZ 의존 금지"는 그대로 지켜진다).
+
+- **파티션 키가 외부 시스템에 그대로 전달되면 타임존은 그 시스템에 맞춘다.**
+  키를 API의 날짜 파라미터로 보내는데 파티션을 KST로 잡으면 키의 의미(KST 하루)와
+  값의 의미(원천의 달력일)가 어긋난다. 저장은 UTC라는 [timezone.md](timezone.md) 규칙과도 같은 방향이다.
+
+**③ 파티션 자산에 `append`를 쓰면 재실행이 행을 늘린다.** 파티션은 재실행·백필이 전제라
+멱등해야 한다. 그렇다고 `replace`(=`drop_table` 후 재생성)를 쓰면 스냅샷 계보가 끊긴다.
+⇒ 파티션 범위만 지우고 다시 넣는 `replace_partition_in_iceberg`(`common/helper.py`)를 쓴다.
+내부적으로 `Table.overwrite(df, overwrite_filter=...)`이며 `drop_table`이 없어 계보가 이어진다.
+
+🔴 **다만 Flink 스트리밍 소스로 읽는 테이블에는 쓰지 않는다** — 계보는 이어지지만
+delete/overwrite 스냅샷이 생기고 `IncrementalAppendScan`은 그것을 다루지 못한다.
+**계보 보존과 append-only는 다른 축**이다.
+
+**④ 요청한 파티션 키와 원천이 돌려준 값은 다를 수 있다.** 휴장일·결측일에 직전 값을
+조용히 돌려주는 원천이 있고, 그때 **행 수도 값도 정상이라 검산을 통과한다.**
+원천이 날짜를 에코하면 그것을 별도 컬럼으로 함께 저장하고 일치 여부를 메타데이터에 남긴다
+(판정하지 않고 **관측**만 — [data-quality.md](data-quality.md)). 에코 필드가 없으면 그 축은
+`미확인`으로 명시하고, 있는 것처럼 컬럼을 만들지 않는다.
+
+**확인 방법** — 같은 파티션을 **두 번** 머티리얼라이즈해 행 수가 그대로인지 본다.
+"돌았다"는 "맞다"가 아니다([philosophy.md](../philosophy.md) 원칙 7).
 
 ## 그룹 / 네이밍
 
