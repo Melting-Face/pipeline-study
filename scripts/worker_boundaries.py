@@ -174,6 +174,10 @@ JOURNAL_TEMPLATE = {
 #    밖으로 뽑아내면서 이 줄을 빠뜨리면 **뽑아낸 것이 곧 구멍**이 된다.
 CONTROL_GLOBS = (
     "*_guard.py",
+    # 🔴 런타임 hook(`*_guard.py`)만 막고 **커밋 게이트 검사기**(`*_check.py`)를 열어
+    #    두면 통제가 반만 선다 — 워커가 검사기를 고치면 그 규약의 기계 강제가
+    #    조용히 사라진다(고장이 아니라 무효화라 신호가 없다). Issue #33.
+    "*_check.py",
     "scripts/worker_boundaries.py",
     ".codex/hooks/*.py",
 )

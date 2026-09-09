@@ -154,6 +154,11 @@ class WorkerBoundariesTest(unittest.TestCase):
             "scripts/worker_boundaries.py",
             ".codex/hooks/session_start.py",
             ".codex/hooks/journal_pre_write.py",
+            # 커밋 게이트 검사기(`*_check.py`)도 통제 배선이다 — 런타임 hook만 막고
+            # 여기를 열어 두면 워커가 검사기를 고쳐 규약 강제를 무효화할 수 있다
+            # (고장이 아니라 조용한 무효화라 신호가 없다). Issue #33.
+            "scripts/permission_glob_check.py",
+            "scripts/hook_files_check.py",
         )
         for relative in blocked:
             assert worker_boundaries.control_path(relative), relative
