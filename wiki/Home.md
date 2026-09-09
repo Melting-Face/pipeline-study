@@ -18,7 +18,7 @@
 | --- | --- |
 | [Dagster 오케스트레이션](dagster-orchestration.md) | 에셋 정의 방식의 선택과, 에러 없이 사라진 에셋들 |
 | [Dagster 파티션](dagster-partitions.md) | 날짜를 키로 삼으면 네 군데서 따로 어긋난다 |
-| [엔진마다 값이 갈리는 SQL](cross-engine-sql.md) | 같은 SQL이 Trino와 Spark에서 다른 답을 낸다 |
+| [엔진마다 값이 갈리는 SQL](cross-engine-sql.md) | 같은 SQL이 Trino와 Spark에서 다른 답을 낸다 — 그리고 같은 자리에서 두 번 틀렸다 |
 | [Claude Code CLI](claude-code-cli.md) | 세션은 누적만 한다 — 비용은 요청 수 × 컨텍스트 크기 |
 | [Spark를 K8s 위로](spark-on-k8s.md) | 파드가 뜬 것과 계산이 거기서 도는 것은 다르다 |
 
