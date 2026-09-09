@@ -241,7 +241,10 @@
   **메타 Postgres도 같은 CNPG**에 `Database` CR로 둔다(롤·시크릿은 카탈로그와 분리).
   **SeaweedFS는 오퍼레이터 미채택**(상주 +500m/+1Gi인데 이미 PVC라 급소가 아니다).
   엔진 버전은 **최신이 아니라 Iceberg가 지원하는 짝**으로 고정한다(예: `iceberg-flink-runtime`이 2.1까지라 Flink는 2.1).
-  Spark Connect는 유일한 상주 컴퓨트라 미사용 시 `--replicas=0`으로 내린다.
+  Spark Connect는 **`--master k8s://`(client mode)** 로 돌아 **executor 파드 1개가 함께 상주**하므로
+  미사용 시 `--replicas=0`으로 내리고 **executor가 함께 사라지는지 확인**한다
+  (`spark.kubernetes.driver.pod.name`이 그 전제 — 없으면 driver만 내려간다).
+  그래서 **Connect가 떠 있는 동안 `SparkApplication` 배치 잡을 겹쳐 돌리지 않는다**(executor 2 초과).
   **조용히 깨지는 셋** — ⓐ **카탈로그 이름은 전 엔진 `iceberg`로 통일**(JDBC 카탈로그는 `catalog_name`으로
   레지스트리를 분할해, 이름이 다르면 같은 DB를 봐도 서로의 테이블이 안 보인다) ⓑ **SeaweedFS는 aws-chunked
   체크섬을 못 풀어** 객체가 손상되므로 `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` 유지

@@ -179,6 +179,8 @@ find ~/.claude/projects -name '*.jsonl' -mtime +<보존일> | wc -l
 > 자동화했다. 컴팩션·orphan 정리는 **Spark Iceberg 프로시저**로 실행한다(Trino에서 이관 —
 > [architectures/trino.md](architectures/trino.md)). 실행에는 **Spark Connect 접속**이 필요하다:
 > 호스트에서 돌릴 때는 `kubectl port-forward svc/spark-connect 15002:15002`, 주소는 `SPARK_REMOTE`.
+> ⚠️ 서버가 `--master k8s://`라 **`--replicas=1`이면 executor 파드도 함께 뜬다** — 유지보수 잡을
+> 돌리는 동안 `SparkApplication` 배치 잡을 겹치지 않는다([conventions/k8s.md](conventions/k8s.md) §9-3).
 >
 > `remove_orphan_files`는 warehouse를 **Hadoop FileSystem으로 나열**하므로 Spark Connect 서버에
 > `spark.hadoop.fs.s3*` 설정이 있어야 한다(Iceberg S3FileIO로 대체 불가 — 카탈로그가 *모르는* 파일을
