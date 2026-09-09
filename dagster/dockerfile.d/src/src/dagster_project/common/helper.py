@@ -373,11 +373,24 @@ def replace_partition_in_iceberg(
     Returns:
         적재 메타데이터를 담은 MaterializeResult.
     """
-    from pyiceberg.expressions import EqualTo
+    # 🔴 필터를 `EqualTo(...)` 객체가 아니라 **문자열**로 넘긴다.
+    # `overwrite_filter`는 `BooleanExpression | str` 둘 다 받는데(pyiceberg
+    # 0.11.1), 표현식 클래스는 pydantic 모델이면서 커스텀 `__init__`을 갖고 있어
+    # **mypy가 그 `__init__`을 못 보고** 합성 시그니처로 판정한다(오류 4건).
+    # 이 저장소는 `src/`에 `type: ignore`가 0건이고 `warn_unused_ignores`도
+    # 켜져 있어, 선례를 깨는 대신 문서화된 다른 입력 형태를 쓴다.
+    # 두 형태가 같은 결과를 내는 것은 실측으로 확인했다(멱등·격리·루트 1개).
+    #
+    # ⚠️ 값을 문자열에 끼워 넣으므로 따옴표가 섞이면 필터가 깨진다. 파티션 키는
+    # Dagster가 만드는 날짜 문자열이라 실제로는 오지 않지만, **조용히 잘못된
+    # 범위를 지우는 것**이 최악이므로 fail-closed로 막는다.
+    if "'" in partition_value:
+        message = f"파티션 값에 작은따옴표를 쓸 수 없다: {partition_value!r}"
+        raise ValueError(message)
 
     catalog, identifier = _load_iceberg_table(iceberg_table)
     table = ensure_table(catalog, identifier, arrow.schema)
-    table.overwrite(arrow, overwrite_filter=EqualTo(partition_column, partition_value))
+    table.overwrite(arrow, overwrite_filter=f"{partition_column} = '{partition_value}'")
 
     context.log.info(
         "%s ← %d rows 교체 (%s=%s)",

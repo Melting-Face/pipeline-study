@@ -161,3 +161,22 @@ def test_weekend_substitution_is_persisted(catalog) -> None:
     assert {(r["rate_date"], r["source_date"]) for r in rows} == {
         ("2026-09-05", "2026-09-04")
     }
+
+
+def test_quote_in_partition_value_is_rejected(catalog) -> None:
+    """🔴 새로 건 가드를 일부러 위반시켜 막히는지 본다.
+
+    파티션 필터를 문자열로 조립하므로 값에 따옴표가 섞이면 필터가 깨진다.
+    **조용히 잘못된 범위를 지우는 것**이 최악이라 fail-closed로 막는다.
+    Dagster 날짜 파티션에서는 실제로 오지 않지만, 막힌다는 것은 확인해야
+    "막았다"고 쓸 수 있다.
+    """
+    arrow = _rates_json_to_arrow(TUESDAY, "2026-09-01", INGESTED_AT)
+    with pytest.raises(ValueError, match="작은따옴표"):
+        replace_partition_in_iceberg(
+            dg.build_asset_context(),
+            iceberg_table=_FakeTableResource(catalog),
+            arrow=arrow,
+            partition_column="rate_date",
+            partition_value="2026-09-01' OR '1'='1",
+        )
