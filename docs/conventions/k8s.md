@@ -455,6 +455,16 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
   → `AWS_REQUEST_CHECKSUM_CALCULATION=when_required`(+`AWS_RESPONSE_CHECKSUM_VALIDATION`)로 끈다.
   코드에도 `common/constants.py`가 `os.environ.setdefault`로 기본값을 못 박는다(환경 누락 시 조용한 손상 방지).
   Java SDK 경로(Spark·Flink의 iceberg-aws-bundle)는 영향받지 않는다 — 파이썬(pyiceberg/pyarrow·boto3) 경로만 해당.
+  - ⚠️ **증상은 쓰기 경로마다 다르고, 그중 하나는 원인을 틀린 곳으로 가리킨다.**
+    `overwrite(overwrite_filter=...)`는 `delete`+`append`로 풀려 parquet를 다시 쓰는데(copy-on-write),
+    이 경로는 **쓰기 시점에** `AWS Error INVALID_ACCESS_KEY_ID during UploadPart`로 죽는다.
+    **자격증명 문제가 아니다** — 같은 키로 체크섬 모드만 바꾸면 통과한다(변인 하나만 달리한 대조).
+    이 문구를 보면 `.env`·시크릿·롤을 뒤지기 전에 **체크섬 모드를 먼저 본다**.
+    이 저장소가 반복해 적은 *"조용히 잘못된 값"* 과는 다른 축이다 — 관측 경로는 살아 있고
+    시끄럽게 깨지는데 **에러가 거짓 증언**을 한다.
+    미확인 축 셋 — ⓐ 위 대조는 일회용 컨테이너 실측이라 in-cluster 재현은 안 했고
+    ⓑ 다른 쓰기 경로(청크 append·IO 매니저)에서 같은 문구가 나오는지 안 셌으며
+    ⓒ 두 체크섬 변수를 함께 뒤집어 어느 쪽이 원인인지는 안 갈랐다.
 
 ## 12. 카탈로그·메타 Postgres = CloudNativePG(CNPG)
 
