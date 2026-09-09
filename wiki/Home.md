@@ -4,7 +4,8 @@
 재현 가능한 분석 질문까지 연결하는 **학습·포트폴리오 프로젝트**다.
 
 이 위키는 그 과정에서 **배운 것**을 정리한 곳이다.
-잘 된 설계보다 **조용히 깨졌던 것**과 그걸 어떻게 알아챘는지를 주로 적는다.
+잘 된 설계보다 **에러 없이 깨진 것**과 **그럴듯해서 속은 것**,
+그리고 그걸 어떻게 알아챘는지를 주로 적는다.
 
 > ⚠️ **이 위키는 저장소에서 자동 생성된다.**
 > 원본은 [`wiki/`](https://github.com/Melting-Face/pipeline-study/tree/main/wiki)에 있고,
@@ -18,6 +19,7 @@
 | [Dagster 오케스트레이션](dagster-orchestration.md) | 에셋 정의 방식의 선택과, 에러 없이 사라진 에셋들 |
 | [Dagster 파티션](dagster-partitions.md) | 날짜를 키로 삼으면 네 군데서 따로 어긋난다 |
 | [엔진마다 값이 갈리는 SQL](cross-engine-sql.md) | 같은 SQL이 Trino와 Spark에서 다른 답을 낸다 |
+| [Claude Code CLI](claude-code-cli.md) | 세션은 누적만 한다 — 비용은 요청 수 × 컨텍스트 크기 |
 
 ## 이 프로젝트가 궁금하다면
 

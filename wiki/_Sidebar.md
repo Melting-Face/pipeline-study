@@ -7,6 +7,7 @@
 - [Dagster 오케스트레이션](dagster-orchestration.md)
 - [Dagster 파티션](dagster-partitions.md)
 - [엔진마다 값이 갈리는 SQL](cross-engine-sql.md)
+- [Claude Code CLI](claude-code-cli.md)
 
 **정본은 저장소에**
 
