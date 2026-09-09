@@ -19,6 +19,8 @@
 | [oci.md](oci.md) | 🔎 | 클라우드 이행 — OCI Always Free A1(ARM) + Terraform + k3s(학습·확장 경로) |
 | [trino.md](trino.md) | 🔎 | MPP SQL 엔진 — 현행 compose까지 채택, **재설계로 제거**(dbt→dbt-spark) |
 | [monitoring.md](monitoring.md) | 🔎 | 모니터링·관측 — Grafana·Loki·Robusta 등을 **지금 쓰지 않는 이유** |
+| [kafka.md](kafka.md) | 🔎 | 이벤트 스트리밍 — **미도입 유지**(스트림 소스가 Iceberg로 대체). 근거 인덱스 + 재검토 트리거 |
+| [duckdb.md](duckdb.md) | 🔎 | 인프로세스 OLAP — **미채택**. 선언은 남아 있었고 실행 경로가 없었다 |
 
 ## 각 문서 형식
 

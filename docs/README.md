@@ -32,6 +32,8 @@
 | [OCI + Terraform + k3s](architectures/oci.md) | 클라우드 이행 경로 |
 | [Trino](architectures/trino.md) | 현행까지 채택, 재설계로 제거 |
 | [모니터링·관측](architectures/monitoring.md) | Grafana·Loki·Robusta 등을 **지금 쓰지 않는 이유** |
+| [Kafka](architectures/kafka.md) | 이벤트 스트리밍 — 미도입 유지. 근거 인덱스와 재검토 트리거 |
+| [DuckDB](architectures/duckdb.md) | 인프로세스 OLAP — 미채택. 조회 엔진 정본은 Spark Connect |
 
 ## 코딩 규칙 (conventions)
 
