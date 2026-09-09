@@ -1,12 +1,15 @@
 # 데이터셋 원천 스키마 · 피처 레퍼런스
 
 이 문서는 **현재 적재된 데이터셋**의 bronze 원천 테이블과 그 위에 얹은 실버(dbt) 파이프라인의
-스키마·피처 레퍼런스다. 지금 실려 있는 것은 **MIMIC-IV / eICU**이고, 그 위의 분석 질문은
+스키마·피처 레퍼런스다. 분석 질문이 걸린 것은 **MIMIC-IV / eICU**이고, 그 질문은
 **SOFA → Sepsis-3**다. 원천은 Iceberg 테이블 포맷으로 저장되며(네임스페이스 `mimiciv` / `eicu`),
 Dagster `defs/<dataset>` 서브프로젝트가 S3의 `csv.gz`를 읽어 적재한다. dbt는 이 적재분을
 `source()`로 참조(생성이 아님)해 실버 개념 테이블을 만든다.
 여기 기술한 컬럼·itemid는 모두 `source.yml`·실버 `.sql`·`schema.yml`에서 **직접 확인된 것만** 담았다.
 데이터셋을 추가할 때는 이 문서에 `## <dataset> 원천 테이블` 절을 덧붙인다 — 다른 문서를 고칠 일이 아니다.
+
+원천이 파일이 아니라 공개 API인 데이터셋도 있다(**Frankfurter 환율** — 아래). ⚠️ `usgs_water`는
+적재돼 있으나 이 문서에 절이 **없다**(선언된 공백).
 
 > 저장은 UTC, 표시·스케줄은 KST. 저장/조인 흐름·컨테이너 구성은 [architectures/overview.md](architectures/overview.md),
 > source/ref·메달리온 태깅 규칙은 [conventions/dbt.md](conventions/dbt.md) 참고.
@@ -195,6 +198,55 @@ ICU stay 단위 인구통계·재원 정보. eICU의 중심 테이블. **`*time2
 | `nursingchartoffset` | 기록 시점 (ICU 입실 기준 분) |
 | `nursingchartcelltypevallabel` | 측정 항목명 (예: Heart Rate, SBP) |
 | `nursingchartvalue` | 측정값 (문자열, nullable) |
+
+---
+
+## Frankfurter 환율 원천 테이블
+
+Iceberg 네임스페이스 `frankfurter_fx`. 앞의 둘과 성격이 다르다 — 원천이 S3 파일이 아니라 **공개 HTTP API**이고,
+**이 저장소의 첫 일자 파티션 자산**이다. dbt 모델을 두지 않으므로 `source.yml`·`dbt_project.yml` 항목이
+없다(**건너뛴 것이지 빠뜨린 것이 아니다** — [conventions/dagster.md](conventions/dagster.md) 체크리스트 참조).
+
+원천은 **Frankfurter**(환율을 무인증·무쿼터로 제공하는 공개 API)다. 처음 대상이던 상용 API는 **무료 플랜이
+과거 일자 조회를 막아** 원천을 바꿨다 — 일자 파티션은 과거 조회가 전제라 그 제약이 설계를 무효화했다.
+
+🔴 **이름을 상류 기관이 아니라 호출하는 서비스로 붙였다.** 초안은 `ecb_fx`였는데, 공식 문서가
+*"By default, rates are blended across all providers"* 와 *"84 central banks"* 를 말해 **응답이 ECB
+참조환율 그 자체라고 단정할 근거가 없다**(그 서술이 어느 API 판본을 가리키는지도 문서가 가르지 않는다 —
+**미확인**). 실측 응답이 `base: EUR`·29통화라 모양은 맞지만 **모양이 맞는 것과 확인된 것은 다른 축**이고,
+틀린 라벨은 검산을 통과한 채 남는다. 네임스페이스는 나중에 바꾸기 비싸므로 확인된 사실로 짓는다.
+
+⚠️ **출처 표기 의무** — 상류에 ECB가 있고 그 이용조건은 자유 이용을 허용하되
+*"When such information is distributed or reproduced, it must appear accurately and the ECB must be
+cited as the source."* 로 **must**를 쓴다(요청이 아니다). 값을 외부로 내보내는 산출물에는 출처를 적는다.
+거버넌스 판정은 [security.md](security.md) §0.
+
+### frankfurter_fx.fx_rates_daily
+
+응답의 `rates` 객체를 **long 형태로 편** bronze 테이블(통화당 1행). wide로 두면 통화가 늘고 줄 때마다
+스키마가 바뀌어 재적재가 필요해진다.
+
+| 컬럼 | 타입 | 의미 |
+|------|------|------|
+| `rate_date` | string | **우리가 요청한 날짜** = Dagster 파티션 키. 파티션 교체의 필터 대상 |
+| `source_date` | string | **원천이 응답에 에코한 날짜.** `rate_date`와 다를 수 있다(아래) |
+| `base_currency` | string | 기준 통화. 원천 기본값은 `EUR`이며 응답에서 읽는다 |
+| `quote_currency` | string | 상대 통화(ISO 4217) |
+| `rate` | double | `base_currency` 1단위당 `quote_currency` 환율 |
+| `ingested_at` | timestamp(UTC) | 수집 처리시간 |
+
+**왜 날짜가 두 개인가.** 상류 중앙은행은 영업일에만 고시하고, 원천은 **주말 요청에 직전 영업일 값을 조용히
+돌려준다**(대조 실험으로 실측 — 토요일 요청에 HTTP 200, 통화 수는 평일과 동일, `date` 필드만 시프트).
+상태코드로도 행 수로도 값의 범위로도 잡히지 않고 **응답의 날짜 필드 하나만 다르다.** 원천 문서는
+이 동작을 서술하지 않는다.
+그래서 요청값과 응답값을 나란히 두고 일치 여부를 머티리얼라이즈 메타데이터(`date_matches_request`)에
+남긴다 — 판정하지 않고 **관측**만 한다([conventions/data-quality.md](conventions/data-quality.md)).
+⇒ 이 테이블을 소비하는 쪽은 **`rate_date`로 조인하면 주말에 금요일 값이 딸려온다**는 것을 전제해야
+한다. 영업일만 쓰려면 `rate_date = source_date` 조건을 명시적으로 건다.
+
+**적재 모드**는 `replace_partition_in_iceberg`(파티션 범위만 교체)다. `append`는 재실행마다 행이
+늘고, `replace`는 `drop_table`이라 스냅샷 계보를 끊는다. 파티션 시작일·타임존의 근거는
+`defs/frankfurter_fx/constants.py` 주석에 있다(둘 다 조용히 어긋나는 축이다).
 
 ---
 
