@@ -391,6 +391,9 @@
   `deny` > `ask` > `allow` 순으로 **auto 모드 분류기보다 먼저** 평가되고 **서브에이전트에도 동일 적용**된다 —
   비가역 작업(git 커밋·푸시, `terraform/kubectl apply`, `compose down -v`, `dbt --full-refresh`, `DROP`/`TRUNCATE`,
   `.env`·`tfstate` 수정, 외부 발신)은 `ask`로 못 박고, **`allow`에 비가역 명령을 넣지 않는다**.
+  **`Bash` 글롭 스타일은 결정 종류가 정한다** — `deny`·`ask`는 전면 와일드카드(`*a*b*`),
+  `allow`는 접두 앵커. 넓은 매칭은 **방향**이 있어 차단 축에선 과차단(fail-safe)이지만
+  허용 축에선 그대로 구멍이다. 강제는 `scripts/permission_glob_check.py`.
 ### 비용 · 리소스
 
 - **토큰 비용은 `요청 수 × 컨텍스트 크기`다**(실측 — 비용의 대부분이 **캐시 읽기**이고
