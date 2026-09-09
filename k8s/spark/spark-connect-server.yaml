@@ -5,8 +5,12 @@
 #   **Spark Connect**를 쓴다 — gRPC 기반이라 클라이언트가 가볍고(pyspark[connect]),
 #   dbt-spark의 `method: session`에 `spark.remote`만 주면 그대로 원격이 된다(어댑터 변경 불필요).
 #
-# ⚠️ 자원 규칙과의 관계: 이 서버는 **상주**한다. conventions/k8s.md §9-3의 시분할(BATCH/STREAM 교대)과
-#   달리 항상 CPU/메모리를 점유하므로, 쓰지 않을 때는 `kubectl scale deploy/spark-connect --replicas=0`.
+# ⚠️ 자원 규칙과의 관계: 이 서버는 **상주**하고, `--master k8s://` 이후에는 **executor 파드 1개도
+#   함께 상주**한다 — `spark.executor.instances`는 정적 할당이라 세션이 살아 있는 내내 산다.
+#   쓰지 않을 때는 `kubectl scale deploy/spark-connect --replicas=0`.
+#   🔴 그때 **executor가 함께 사라지는지 반드시 확인**한다. 아래 `spark.kubernetes.driver.pod.name`이
+#   빠지면 driver만 내려가고 executor가 남아 **아무 신호 없이 1 CPU를 계속 점유**한다.
+#   경계·배분은 conventions/k8s.md §9-3 · resource-sizing.md.
 #
 # 크리덴셜은 Secret→env로 주입하고 셸에서 확장한다(매니페스트 평문 금지, §4).
 apiVersion: apps/v1
@@ -16,6 +20,11 @@ metadata:
     namespace: default
 spec:
     replicas: 1
+    # 🔴 RollingUpdate(기본)를 쓰지 않는 이유: 롤아웃 중 driver 파드가 잠깐 **2개**가 되고,
+    #   두 driver가 각자 executor를 요청해 그 순간 `spark.executor.instances ≤ 1`(§9-3 경계 ②)이
+    #   **2로 깨진다**. 예산 초과는 에러가 아니라 `Pending`으로 조용히 나타난다.
+    #   local 모드에서는 executor가 없어 무해했으므로 이것은 **k8s:// 전환이 만든 새 요구**다.
+    strategy: {type: Recreate}
     selector:
         matchLabels: {app: spark-connect}
     template:
@@ -25,7 +34,10 @@ spec:
             serviceAccountName: spark
             containers:
                 - name: spark-connect
-                  image: localhost:5001/spark-runner:0.5.0
+                  # 🔴 앵커를 쓰는 이유: executor 이미지(`spark.kubernetes.container.image`)는 driver와
+                  #   **같은 것**이어야 하는데, 값을 두 번 적으면 한쪽만 올리는 드리프트가 생긴다.
+                  #   앵커로 묶어 **단일 출처**로 둔다(아래 env `SPARK_K8S_IMAGE`가 이 값을 받는다).
+                  image: &spark_image localhost:5001/spark-runner:0.5.0
                   imagePullPolicy: Always
                   # `spark.hadoop.fs.*` 가 따로 필요한 이유:
                   #   Iceberg의 S3FileIO(`io-impl`)는 **카탈로그가 아는 파일**만 읽고 쓴다.
@@ -43,13 +55,66 @@ spec:
                   #   이전 주석은 ①만 보고 "무관"으로 닫아 ②의 설정 누락이 잠복했다.
                   #   2026-08-21 실측 — aws-bundle 1.6.1(SDK v2 2.26.20)에서는 문제없었으나
                   #   1.11.0(SDK v2 2.44.4)에서 PUT 객체가 aws-chunked 프레이밍인 채 저장됨.
+                  # 🔴 실행 모드는 **client**다 — `--deploy-mode`를 주지 않는다.
+                  #   `cluster`를 주면 spark-submit이 **별도 driver 파드**를 띄우고 이 파드는 즉시 종료해
+                  #   Service가 gRPC 리스너 없는 대상을 가리킨다. 증상은 "접속 안 됨"이 아니라 **CrashLoop**다.
+                  #   ⇒ driver = **이 Deployment 파드 그 자체**이고, driver 자원 다이얼은
+                  #   `spark.driver.cores/memory`가 아니라 **아래 resources**다.
+                  #
+                  # ⓐ driver 도달 주소는 **Downward API POD_IP**를 쓴다(executor가 driver로 역접속한다).
+                  #   architectures/spark.md는 처방을 "headless Service"로 적었으나 그쪽은
+                  #   `publishNotReadyAddresses: false`가 기본이라 **readiness 통과 전에 A 레코드가 빈다**.
+                  #   executor 요청은 gRPC 바인딩보다 **먼저** 일어나 초기 executor가 driver를 못 찾고,
+                  #   증상이 에러가 아니라 **대기**다. POD_IP는 오브젝트를 안 늘리고 그 결합이 없다.
+                  #
+                  # ⓑ ❌ `spark.kubernetes.authenticate.driver.serviceAccountName`은 **넣지 않는다** —
+                  #   그 키는 cluster mode에서 driver 파드 스펙을 만들 때 쓰인다. client mode의 인증 주체는
+                  #   위 `serviceAccountName: spark`다. sparkapplication-poc.yaml에서 복붙하면
+                  #   "설정했는데 안 먹는" 축이 하나 더 생긴다.
+                  #
+                  # ⓒ 🔴 `spark.kubernetes.driver.pod.name`이 **회수 다이얼의 전제**다. 없으면 executor에
+                  #   ownerReference가 안 붙어 `--replicas=0`이 driver만 내리고 executor를 남긴다.
+                  #   `deleteOnTermination`(기본 true)은 **정상 종료 경로만** 덮으므로 대체재가 아니다.
+                  #
+                  # ⓓ 🔴 체크섬 env 2종은 **executor에도** 간다. 지금까지는 driver=executor가 한 몸이라
+                  #   driver env 하나로 덮였고 k8s:// 전환이 그 우연을 깬다 — 빠지면 SeaweedFS가
+                  #   aws-chunked를 못 풀어 **PUT이 성공한 것처럼 보이면서 객체가 손상**된다(위 주석 ②).
+                  #
+                  # ⓔ PG 크리덴셜은 executor에 **넣지 않고 시작한다** — JdbcCatalog 해석·커밋은 driver에서
+                  #   일어난다. 실패 서명은 executor 로그의 `org.postgresql` ·
+                  #   `password authentication failed`이고, 뜨면 그때 secretKeyRef 2줄을 더한다.
+                  #   넣고 시작하면 필요했는지 영원히 모른다(최소권한 §5 + 원칙 7).
+                  #
+                  # ⓕ ❌ `spark.sql.shuffle.partitions`는 **건드리지 않는다** — architectures/spark.md의
+                  #   "발현하지 않은 성능 문제를 미리 고치지 않는다". 변인은 하나만 올린다.
                   command: ["/bin/bash", "-c"]
                   args:
                       - |
                         exec /opt/spark/bin/spark-submit \
                           --class org.apache.spark.sql.connect.service.SparkConnectServer \
-                          --master "local[2]" \
+                          --master "$SPARK_K8S_MASTER" \
                           --conf spark.connect.grpc.binding.port=15002 \
+                          --conf spark.driver.host="$POD_IP" \
+                          --conf spark.driver.bindAddress=0.0.0.0 \
+                          --conf spark.driver.port=7078 \
+                          --conf spark.blockManager.port=7079 \
+                          --conf spark.kubernetes.driver.pod.name="$POD_NAME" \
+                          --conf spark.kubernetes.namespace=default \
+                          --conf spark.kubernetes.container.image="$SPARK_K8S_IMAGE" \
+                          --conf spark.kubernetes.container.image.pullPolicy=Always \
+                          --conf spark.executor.instances=1 \
+                          --conf spark.executor.cores=1 \
+                          --conf spark.executor.memory=1024m \
+                          --conf spark.executor.memoryOverhead=384m \
+                          --conf spark.kubernetes.executor.request.cores=1 \
+                          --conf spark.kubernetes.executor.limit.cores=1 \
+                          --conf spark.kubernetes.executor.deleteOnTermination=true \
+                          --conf spark.kubernetes.executor.podNamePrefix=spark-connect \
+                          --conf spark.kubernetes.executor.secretKeyRef.AWS_ACCESS_KEY_ID="$S3_KEY_REF" \
+                          --conf spark.kubernetes.executor.secretKeyRef.AWS_SECRET_ACCESS_KEY="$S3_SEC_REF" \
+                          --conf spark.executorEnv.AWS_REGION="$AWS_REGION" \
+                          --conf spark.executorEnv.AWS_REQUEST_CHECKSUM_CALCULATION=when_required \
+                          --conf spark.executorEnv.AWS_RESPONSE_CHECKSUM_VALIDATION=when_required \
                           --conf spark.sql.extensions="$ICEBERG_EXTENSIONS" \
                           --conf spark.sql.catalog.iceberg=org.apache.iceberg.spark.SparkCatalog \
                           --conf spark.sql.catalog.iceberg.catalog-impl=org.apache.iceberg.jdbc.JdbcCatalog \
@@ -67,9 +132,15 @@ spec:
                           --conf spark.hadoop.fs.s3a.path.style.access=true \
                           --conf spark.hadoop.fs.s3a.connection.ssl.enabled=false \
                           spark-internal
+                  # 🔴 `containerPort`는 트래픽을 여닫지 않는다 — 이것은 **기능이 아니라 문서**다.
+                  #   driver-rpc·blockmanager는 **executor가 driver로 역접속**하는 포트이고,
+                  #   위에서 `spark.driver.port`/`spark.blockManager.port`로 **고정**했기 때문에 적을 수 있다
+                  #   (기본값은 임의 포트라 적을 수도, 정책을 걸 수도 없다).
                   ports:
                       - {name: grpc, containerPort: 15002}
                       - {name: ui, containerPort: 4040}
+                      - {name: driver-rpc, containerPort: 7078}
+                      - {name: blockmanager, containerPort: 7079}
                   env:
                       # CNPG가 만드는 쓰기 서비스(`-rw`). 읽기 전용은 `-ro`.
                       - {name: ICEBERG_JDBC_URI, value: "jdbc:postgresql://catalog-postgres-rw:5432/iceberg"}
@@ -77,6 +148,19 @@ spec:
                       # 줄 길이 제한(yamllint 120) 회피 겸 재사용 — Iceberg SQL 확장 FQCN
                       - name: ICEBERG_EXTENSIONS
                         value: "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
+                      # k8s:// 전환 값 — 같은 이유로 env에 뽑는다.
+                      # in-cluster API 주소는 고정이다(fabric8이 SA 토큰·CA를 자동으로 집는다).
+                      - {name: SPARK_K8S_MASTER, value: "k8s://https://kubernetes.default.svc:443"}
+                      - {name: SPARK_K8S_IMAGE, value: *spark_image}
+                      # executor용 Secret 참조는 `<secret>:<key>` 형식이다(driver는 아래 valueFrom).
+                      # ⚠️ 이름이지 값이 아니다 — 평문 금지 규약(§4)에 걸리지 않는다.
+                      - {name: S3_KEY_REF, value: "lakehouse-creds:s3-access-key"}
+                      - {name: S3_SEC_REF, value: "lakehouse-creds:s3-secret-key"}
+                      # Downward API — ⓐ driver 광고 주소 · ⓒ executor ownerReference의 소유자
+                      - name: POD_IP
+                        valueFrom: {fieldRef: {fieldPath: status.podIP}}
+                      - name: POD_NAME
+                        valueFrom: {fieldRef: {fieldPath: metadata.name}}
                       - {name: S3_ENDPOINT, value: "http://seaweedfs:8333"}
                       - {name: AWS_REGION, value: "us-east-1"}
                       # SeaweedFS는 AWS SDK v2의 aws-chunked 프레이밍을 풀지 못해 객체가 조용히 손상된다.

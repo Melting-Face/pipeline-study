@@ -231,6 +231,10 @@ Spark Connect의 `scale` 명령은 §4에서 러너 이미지를 push하고 매�
 kubectl scale deploy/spark-connect --replicas=1
 kubectl scale deploy/spark-connect --replicas=0
 
+# `--master k8s://`라 executor 파드가 driver와 함께 뜨고 함께 내려간다.
+# 🔴 내린 뒤 executor가 남았다면 회수가 안 된 것이다 — 아무 신호 없이 1 CPU를 계속 점유한다.
+kubectl get pods -l spark-role=executor
+
 # Flink 세션 클러스터 — 잡이 없어도 JobManager가 상주 점유한다
 kubectl apply  -f k8s/flink/flinkdeployment-session.yaml
 kubectl delete -f k8s/flink/flinkdeployment-session.yaml

@@ -64,24 +64,70 @@ Thrift(HiveServer2) 대비 클라이언트가 가볍고 어댑터 변경이 없�
 **접속 경로는 TLS Ingress**이고 `port-forward`는 **폴백으로 남긴다**(CA 미배포 환경·컨트롤러 장애).
 ⚠️ **데이터 경로를 Ingress에 묶으면 컨트롤러 가용성에 종속된다** — port-forward에는 없던 결합이다.
 
-### Spark Connect는 `--master local[2]`로 돈다
+### Spark Connect는 `--master k8s://`로 돈다 — client mode다
 
-**클러스터가 아니라 파드 한 개 안의 로컬 모드다.** `SparkApplication`과 달리 executor를 따로 띄우지 않는다.
+**driver는 별도 파드가 아니라 Deployment 파드 그 자체**이고, executor만 K8s가 파드로 띄운다.
+`--deploy-mode`를 주지 않는 것이 그 선택이다 — `cluster`를 주면 spark-submit이 별도 driver 파드를
+만들고 Deployment 파드는 즉시 종료해, Service가 gRPC 리스너 없는 대상을 가리킨다.
+증상은 "접속이 안 된다"가 아니라 **CrashLoop**다.
 
-| 항목 | 값 | 결과 |
+| 항목 | 값 | 따라오는 것 |
 | --- | --- | --- |
-| 병렬도 | **≈ 1** | `local[2]`라고 적혀 있어도 CPU 한도가 2 스레드를 못 준다 |
-| driver 힙 | 1g(기본값) | 이 파드가 곧 driver이자 executor다 |
-| `shuffle.partitions` | 200(기본값) | 데이터 대비 과다 파티션 |
+| driver 자원 다이얼 | **파드의 requests/limits** | `spark.driver.cores/memory`가 아니다 |
+| executor | `instances=1` · `cores=1` · `memory=1024m` + `memoryOverhead=384m` | 합쳐 파드 요청이 정해진다 |
+| `memoryOverhead` | **명시 선언** | 유도값을 쓰면 배분표가 실제와 어긋난다 |
+| `executor.limit.cores` | **필수** | 빠뜨리면 executor에 CPU limit이 아예 없다 |
+| `shuffle.partitions` | 200(기본값) | 손대지 않았다 |
 
-🔴 **급소는 "느린 것"을 "도는 것"으로 오독하기 쉽다는 점이다.** 셔플이 커지면 파드가 OOMKilled →
-재시작되는데, **dbt는 gRPC 재시도 때문에 에러가 아니라 무한 대기처럼 보인다.**
+**전환 전에는 `--master local[2]`, 즉 파드 한 개 안의 로컬 모드였다.** 그때는 executor가 없어
+driver 파드 하나가 곧 driver이자 executor였고, 아래 세 가지가 **그 우연에 가려져 있었다.**
 
-`k8s://` 전환에 남은 것은 둘이다 — ⓐ **driver 도달 주소**(headless Service + `spark.driver.host`)
-ⓑ **executor 크리덴셜 전파**(현재 driver env로만 주입된다). RBAC·SA·러너 이미지는 이미 준비돼 있다.
+#### 남은 과제 ⓐⓑ는 닫혔고, 셋째 축이 새로 드러났다
+
+**ⓐ driver 도달 주소 — Downward API `POD_IP`를 쓴다.** 이 문서는 처방을 *"headless Service +
+`spark.driver.host`"* 로 적고 있었으나 **그 길로 가지 않았다.** headless는 `publishNotReadyAddresses`가
+기본 `false`라 readinessProbe 통과 전에 A 레코드가 비는데, **executor 요청은 gRPC 바인딩보다 먼저**
+일어난다. 초기 executor가 driver를 못 찾고 증상은 에러가 아니라 **대기**다. `POD_IP`는 오브젝트를
+하나도 늘리지 않고 그 결합이 없다. `spark.driver.port`·`spark.blockManager.port`는 **고정**한다 —
+기본값이 임의 포트라 적을 수도, 정책을 걸 수도 없다.
+
+**ⓑ executor 크리덴셜 — `secretKeyRef`(비밀)와 `executorEnv`(평문)를 나눠 쓴다.**
+🔴 **체크섬 env 2종이 executor로 가는 것이 전환이 만든 위험 1순위다.** 로컬 모드에서는 driver env
+하나가 양쪽을 덮었고 전환이 그 우연을 깬다 — 빠지면 SeaweedFS가 aws-chunked를 못 풀어
+**PUT이 성공한 것처럼 보이면서 객체가 손상**된다.
+PG 크리덴셜은 **넣지 않고 시작한다**(JdbcCatalog 해석·커밋은 driver에서 일어난다).
+실패 서명은 executor 로그의 `org.postgresql`·`password authentication failed`이고, 뜨면 그때 더한다.
+
+**ⓒ executor 소유권 — 목록에 없던 셋째 축이다.** `spark.kubernetes.driver.pod.name`이 없으면
+executor에 ownerReference가 붙지 않아 **`--replicas=0`이 driver만 내리고 executor를 남긴다.**
+에러도 알림도 없이 1 CPU가 샌다. `deleteOnTermination`(기본 `true`)은 **정상 종료 경로만** 덮으므로
+대체재가 아니다. ⇒ 회수 다이얼 왕복은 **검증 항목**이지 가정이 아니다.
+
+#### 「일시」가 「상주」로 바뀌었다
+
+`spark.executor.instances`는 정적 할당이라 **executor가 서버 수명 내내 산다.** 배분표에서 executor가
+앉아 있던 *BATCH(일시)* 칸의 의미가 이 워크로드에는 성립하지 않는다 — Flink TaskManager 상주가
+경계 ①의 전제를 깬 것과 같은 형태다. 배분·경계는
+[../resource-sizing.md](../resource-sizing.md)와 [../conventions/k8s.md](../conventions/k8s.md) §9-3.
+
+`dynamicAllocation`(`minExecutors=0`·`maxExecutors=1` + shuffleTracking)으로 「일시」 성격을 되돌릴 수
+있으나 **이번에 넣지 않았다** — 넣으면 전환이 옳았는지와 동적 할당이 도는지가 한 관측에 섞인다.
+트리거는 *"Connect를 켜 둔 채 executor 상주가 실제로 거슬릴 때"* 다.
+
+#### 복붙 함정 하나
+
+❌ `spark.kubernetes.authenticate.driver.serviceAccountName`은 **넣지 않는다.** 그 키는 cluster
+mode에서 driver 파드 스펙을 만들 때 쓰인다. client mode의 인증 주체는 **파드의
+`serviceAccountName`** 이다. `sparkapplication-poc.yaml`에서 그대로 가져오면 "설정했는데 안 먹는"
+축이 하나 더 생긴다.
 
 📌 **발현하지 않은 성능 문제를 미리 고치지 않는다** — 고치면 전환이 옳았는지 판정할 관측 근거가 없다.
-다음에 느릴 때 여기를 먼저 본다.
+`shuffle.partitions`를 그대로 둔 것이 그 적용이다. 다음에 느릴 때 여기를 먼저 본다.
+
+⚠️ **미확정으로 남긴 것**: 전환 후 dbt 스모크의 **정리 단계**에서
+`unable to create native thread`가 한 번 났다. driver 파드는 재시작 0이고 OOMKilled도 아니었으며,
+스모크 자체는 통과했다. **전환 탓인지는 확인하지 않았다** — 전환 전 같은 스모크를 돌린 관측이 없다.
+⚠️ 그 스크립트는 **정리 실패를 회귀로 치지 않아 종료 코드 0을 낸다** — 종료 코드만 보면 놓친다.
 
 ### `createOrReplace`는 계보를 끊는다
 

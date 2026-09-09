@@ -10,7 +10,11 @@ Dagster 파이프라인 **밖**에서 레이크하우스를 ad-hoc 조회·탐�
 ## 실행
 
 ```shell
-kubectl port-forward svc/spark-connect 15002:15002   # 필수, 별도 터미널
+kubectl scale deploy/spark-connect --replicas=1      # 평시 0이다 — 먼저 올린다
+
+# 접속 경로 ① TLS Ingress (기본) — .env의 SPARK_REMOTE·GRPC_DEFAULT_SSL_ROOTS_FILE_PATH를 쓴다
+# 접속 경로 ② port-forward (폴백) — CA 미배포 환경·컨트롤러 장애용
+kubectl port-forward svc/spark-connect 15002:15002   # 폴백을 쓸 때만, 별도 터미널
 
 cd dagster/dockerfile.d/src
 uv run --group notebook jupyter lab --port 8889 --notebook-dir ../../../notebooks
@@ -29,9 +33,13 @@ uv run --group notebook jupyter lab --port 8889 --notebook-dir ../../../notebook
 compose의 `trino`는 `--profile legacy-sql` 로만 뜬다(방언 값 대조용).
 
 카탈로그 설정(JDBC URI·warehouse·S3·자격증명)은 **Spark Connect 서버 측**
-(`k8s/spark/spark-connect-server.yaml`)에 있다. → 클라이언트는 `sc://localhost:15002`만 알면 되고
+(`k8s/spark/spark-connect-server.yaml`)에 있다. → 클라이언트는 **`sc://` 주소만** 알면 되고
 **비밀정보를 노트북에 두지 않는다**. pyiceberg로 직접 붙는 경로는 `.env`가 추가로 필요하다
 (스타터 노트북 §6 참고).
+
+같은 이유로 **executor 설정도 클라이언트가 못 바꾼다.** 런타임 `spark.conf.set(...)`은
+`CANNOT_MODIFY_CONFIG`로 거부되고, `builder.config(...)`는 **조용히 무시**된다(경고로 강등) —
+두 경로가 다르게 실패하므로 "설정했다"를 "적용됐다"로 읽지 않는다.
 
 ### pyiceberg 직접 접속 — 엔드포인트와 S3 키는 한 쌍이다
 
@@ -66,7 +74,8 @@ compose의 `trino`는 `--profile legacy-sql` 로만 뜬다(방언 값 대조용)
 
 | 파일 | 내용 |
 |---|---|
-| `00-lakehouse-connect.ipynb` | 접속 스타터 — port-forward 점검 → Spark Connect → 카탈로그 탐색 → pandas → Iceberg 메타데이터 → (선택) pyiceberg 직접 접속 |
+| `00-lakehouse-connect.ipynb` | 접속 스타터 — 환경 로드·경로 점검 → Spark Connect → 카탈로그 탐색 → pandas → Iceberg 메타데이터 → (선택) pyiceberg 직접 접속 |
+| `01-spark-on-k8s.ipynb` | K8s executor 관측 — 클라이언트가 못 바꾸는 것 → **계산이 어디서 도는가**(REST API 태스크 대조) → 파티션의 두 얼굴 → 스냅샷 계보 |
 
 ## 컴퓨트 정리
 
@@ -75,4 +84,8 @@ Spark Connect는 클러스터의 **유일한 상주 컴퓨트**다. 오래 안 �
 
 ```shell
 kubectl scale deploy/spark-connect --replicas=0
+kubectl get pods -l spark-role=executor   # 🔴 executor도 함께 사라져야 한다
 ```
+
+`--master k8s://`라 **executor 파드가 driver와 함께 상주**한다. 내린 뒤에도 executor가 남았다면
+회수가 안 된 것이고, 에러도 알림도 없이 1 CPU를 계속 점유한다.
