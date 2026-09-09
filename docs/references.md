@@ -53,6 +53,8 @@
 | [Kubernetes](https://kubernetes.io/docs/home/) | 🚧 채택·이행중 | [architectures/k8s.md](architectures/k8s.md) · [conventions/k8s.md](conventions/k8s.md) |
 | [Helm](https://helm.sh/docs/) | 🔎 K8s 패키징 | [conventions/k8s.md](conventions/k8s.md) |
 | [Prometheus](https://prometheus.io/docs/introduction/overview/) | 🔎 미채택 | [architectures/monitoring.md](architectures/monitoring.md) · [conventions/monitoring.md](conventions/monitoring.md) |
+| [Apache Kafka](https://kafka.apache.org/) | 🔎 미도입 유지 | [architectures/kafka.md](architectures/kafka.md) · [architectures/flink.md](architectures/flink.md) |
+| [DuckDB](https://duckdb.org/docs/) | 🔎 미채택 | [architectures/duckdb.md](architectures/duckdb.md) · [conventions/analysis.md](conventions/analysis.md) |
 
 ### 엔진 버전·조합 판정에 쓴 1차 출처 (2026-08-23 확인)
 

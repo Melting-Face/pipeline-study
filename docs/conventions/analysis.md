@@ -132,7 +132,7 @@ inner join {{ ref('icustay_times') }} as t using (stay_id)
 | 대화형 탐색 | **Jupyter Lab**(호스트, `--group notebook`, 포트 **8889**) | Dagster와 venv 공유 — `dagster_project.common.*` import 가능 |
 | SQL 엔진 | **Spark SQL**(Spark Connect `sc://localhost:15002`) | Trino는 재설계에서 제거 대상 — `--profile legacy-sql`로만 뜬다 |
 | 지표·마트 정의 | **dbt**(gold 모델) | 스킬 `using-dbt-for-analytics-engineering` |
-| 로컬 파일 즉석 분석 | **DuckDB** | 클러스터를 띄우기 아까운 소형 csv·parquet에 한정 |
+| 로컬 파일 즉석 분석 | **없음** — 위 SQL 엔진으로 간다 | 후보 **DuckDB**는 🔎 미채택 — 기각 사유·재검토 트리거는 [`../architectures/duckdb.md`](../architectures/duckdb.md) |
 
 ## 참고
 
