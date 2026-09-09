@@ -297,6 +297,12 @@ resources:
 2. 🔴 **`spark.executor.instances` ≤ 1**(Flink 세션이 떠 있는 동안).
    하나를 더 붙이면 Allocatable에 여유가 사라진다.
    executor를 늘려야 하면 **Flink 세션을 먼저 내린다** — 둘 중 하나만 확장한다.
+   ⚠️ **이 경계는 이제 Spark Connect가 상시 소비한다.** Connect가 `--master k8s://`로 뜨면
+   executor 1개가 **서버 수명 내내** 붙어 있다(정적 할당). 그래서 **Connect가 떠 있는 동안
+   `SparkApplication` 배치 잡을 겹쳐 돌리지 않는다** — 겹치면 executor가 2가 되어 이 경계를 넘긴다.
+   겹쳐야 하면 **Connect를 먼저 `--replicas=0`으로 내린다.**
+   그 회수는 **`spark.kubernetes.driver.pod.name`이 걸려 있을 때만 참이다** — 없으면
+   `--replicas=0`이 driver만 내리고 executor가 남는다(§9-4).
 3. **허용은 Redpanda까지 확장되지 않는다.** 도입하면 STREAM 피크가 올라가므로
    배분표와 이 경계를 **함께 재계산**한다. 재계산 전에는 허용 범위가 넓어지지 않는다.
 
@@ -342,6 +348,18 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
 🔴 **긴 쪽을 먼저 띄운다.** 짧게 살았다 사라지는 워크로드를 먼저 띄우면
 긴 쪽이 올라오기 전에 이미 회수돼 **동시 피크 창이 열리지 않는다.**
 그 창을 놓친 관측은 **여유가 있는 것처럼 보인다** — 유리한 방향으로 틀린다.
+
+## 9-4. Spark Connect를 client mode로 띄우는 규칙
+
+`--master k8s://`의 필수 설정·복붙 함정·회수 다이얼 검증 절차는 분량이 커서 별도 문서로 뺐다 —
+[k8s/spark-connect.md](k8s/spark-connect.md).
+
+요지 셋만 여기 둔다.
+
+- **driver는 Deployment 파드 그 자체다**(client mode). `--deploy-mode cluster`를 주면 **CrashLoop**다.
+- **체크섬 env 2종은 executor에도 보낸다** — 로컬 모드에서는 driver env 하나가 양쪽을 덮었다(§11).
+- **`spark.kubernetes.driver.pod.name`이 회수 다이얼의 전제다** — 없으면 `--replicas=0`이
+  driver만 내리고 executor가 남는다.
 
 ## 10. 클러스터 노출·연결 규칙
 

@@ -8,6 +8,7 @@
 - [Dagster 파티션](dagster-partitions.md)
 - [엔진마다 값이 갈리는 SQL](cross-engine-sql.md)
 - [Claude Code CLI](claude-code-cli.md)
+- [Spark를 K8s 위로](spark-on-k8s.md)
 
 **정본은 저장소에**
 

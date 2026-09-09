@@ -115,7 +115,8 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 | | 웹훅(webhook) 컨테이너 | 100m | 256Mi | 200m | 512Mi |
 | **Dagster**(상주) ⁷ | `dagster-webserver`(UI·GraphQL) | 100m | 768Mi | 500m | 1536Mi |
 | | `dagster-daemon`(스케줄·센서 + run 서브프로세스) | 250m | 1024Mi | 1 | 3Gi |
-| **온디맨드 상주** | **Spark Connect 서버**(dbt 접속용, 미사용 시 `--replicas=0`) | 500m | 1536Mi | 1 | 2Gi |
+| **온디맨드 상주** | **Spark Connect 서버**(dbt 접속용 · driver 겸용, 미사용 시 `--replicas=0`) | 500m | 1536Mi | 1 | 2Gi |
+| | **Spark Connect executor × 1** ⁸ — `k8s://`라 **함께 상주** | 1000m | 1408Mi | 1 | 1408Mi |
 | | Flink JobManager(세션 클러스터, 잡 없어도 상주) | 1000m | 2048Mi | 1 | 2Gi |
 | **STREAM(일시)** | Flink TaskManager × 1 — **잡 제출 시 온디맨드**, 종료 시 자동 회수 ⁶ | 1000m | 2048Mi | 1 | 2Gi |
 | **BATCH(일시)** | Spark driver ⁴ | 1000m | 실측 ⁴ | 1 | 1.5Gi |
@@ -158,6 +159,16 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
   ⚠️ **동시 기동 피크는 실측이 아니라 산술이다** — 두 실측의 합이고,
   BATCH+STREAM+Dagster를 **동시에 띄운 관측 창은 아직 열린 적이 없다**. 재측정은 §(C-2) 순서를 따른다.
   값 자체는 두 실측의 합이라 신뢰할 만하지만 **"관측했다"로 인용하지 않는다.**
+⁸ **Spark Connect가 `--master k8s://`로 돌면서 executor 1개가 「일시」가 아니라 「상주」가 됐다.**
+  `spark.executor.instances`는 정적 할당이라 **서버 수명 내내** 산다 — Flink TaskManager 상주가
+  경계 ①의 전제를 깬 것과 같은 형태다. ⇒ **Connect가 떠 있는 동안 `SparkApplication` 배치 잡을
+  겹쳐 돌리지 않는다**(겹치면 executor가 2가 되어 각주 ⁵를 넘긴다 —
+  [conventions/k8s.md](conventions/k8s.md) §9-3 경계 ②).
+  ⚠️ **이 행은 선언값이라 각주 ⁴의 유도값 함정에 해당하지 않는다** —
+  `spark.executor.memoryOverhead`를 **명시**해 `1024m + 384m`가 그대로 파드 요청이 된다.
+  `spark.kubernetes.executor.limit.cores`를 함께 주지 않으면 **CPU limit이 아예 없어** 이 행의
+  `lim CPU`가 거짓이 된다. 회수는 다이얼 0번이 덮되 **`spark.kubernetes.driver.pod.name`이 걸려
+  있을 때만 참이다**([conventions/k8s/spark-connect.md](conventions/k8s/spark-connect.md)).
 
 > ⚠️ **`BestEffort` 파드는 `describe node` 합계에 0으로 잡힌다.** 실재하며 개수는 늘어난다
 > (cert-manager · barman-cloud · kube-proxy · local-path-provisioner 계열 — 계수는 볼트 §6-3).
