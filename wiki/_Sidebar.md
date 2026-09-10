@@ -9,6 +9,8 @@
 - [엔진마다 값이 갈리는 SQL](cross-engine-sql.md)
 - [Claude Code CLI](claude-code-cli.md)
 - [Spark를 K8s 위로](spark-on-k8s.md)
+- [빈 클러스터를 세우며](k8s-bootstrap.md)
+- [kubectl로 판정하기](kubectl-judgement.md)
 
 **정본은 저장소에**
 
