@@ -57,7 +57,7 @@ def resources() -> dg.Definitions:
     return dg.Definitions(resources={"s3": ...})
 
 @dg.asset
-def poc_spark_ingest(...): ...      # ← 조용히 사라진다
+def poc_spark_ingest(...): ...      # ← 에러 없이 사라진다
 ```
 
 **에러도 경고도 나지 않는다.** 임포트는 성공하고, 파이프라인은 정상 기동하고,
@@ -67,9 +67,9 @@ UI에 뜬 적이 한 번도 없었다는 걸 한참 뒤에 발견했다.
 규칙으로 굳혔다 — **`@dg.definitions`는 `@asset`이 있는 모듈에 두지 않는다.**
 리소스 등록은 자산이 없는 별도 모듈(`resources.py`)에 둔다.
 
-## 시끄럽게 깨진 것 — future annotations
+## 에러를 내고 멈춘 것 — future annotations
 
-이건 반대로 시끄럽게 깨지지만, 원인이 엉뚱한 곳에 있어서 헤맸다.
+이건 반대로 에러를 내고 멈추지만, 원인이 엉뚱한 곳에 있어서 헤맸다.
 
 ```
 DagsterInvalidDefinitionError: Cannot annotate context parameter …
@@ -99,8 +99,8 @@ cwd가 다르면 모델이 **하나도 수집되지 않는다**. 역시 에러�
 
 ## 그래서 무엇을 배웠나
 
-세 가지 실패가 전부 **같은 형태**다 — 실패가 예외로 나타나지 않고,
-**개수가 조용히 줄어든다.** 정상 기동, 정상 종료, 그냥 에셋이 없다.
+셋 중 **에러 없이 깨진 둘**이 같은 형태다 — 실패가 예외로 나타나지 않고,
+**개수가 줄어든다.** 정상 기동, 정상 종료, 그냥 에셋이 없다.
 
 그래서 정의를 추가하면 **에셋 수를 센다**.
 

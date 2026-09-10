@@ -109,9 +109,9 @@
     회귀 기울기(`0.5301 tok/B`)를 그대로 곱하지 마라 — 그 값은 **1.710 B/char 한국어 문서**에 적합된 것이고
     `SKILL.md`는 **1.00 B/char 영어**다(둘 다 실측). 쓰려면 **상한**임을 병기한다.
 
-## 조용히 깨지는 것
+## 에러 없이 깨지는 것
 
-- 🔴 **오타난 스킬명은 워커에게 조용하고, 로그에만 시끄럽다**(실측 — 종전 `미검증` 해소).
+- 🔴 **오타난 스킬명은 워커에게 아무 신호도 주지 않고, 경고는 로그에만 남는다**(실측 — 종전 `미검증` 해소).
   `skills: [nonexistent-skill-zzz9]` 프로브는 **기동에 성공**했고 스스로 `NO-PRELOAD`·"경고 없음"으로 답했으나,
   `--debug-file` 로그에는
   `[Agent: probe-b1] Warning: Skill 'nonexistent-skill-zzz9' specified in frontmatter was not found`가

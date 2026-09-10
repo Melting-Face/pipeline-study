@@ -47,7 +47,7 @@
    위험하다** — 오답은 언젠가 걸리지만 그것은 검산을 통과하며 남는다. 그래서 기준선을 박제할 때는
    값과 함께 **"이 값이 무엇을 세는가"** 를, 판정 셀을 등록할 때는 기대값과 함께 **그 기대값의 근거**를
    적는다("0=작동/9=미작동"은 이분법이 성립하는지부터 확인 — 정답은 1이었다).
-   **재귀 탐색은 단위를 조용히 바꾼다.** 상세 [`docs/philosophy.md`](docs/philosophy.md) §계측 단위
+   **재귀 탐색은 단위를 조용히 바꾼다.** 상세 [`docs/philosophy.md`](docs/philosophy.md) §계측 단위·§실패 어휘
 
 ## Python 코딩 컨벤션
 
@@ -132,7 +132,7 @@
   `[tool.sqlfluff.templater.jinja.macros]` 인라인, `{{ dbt.* }}`는 `library_path = "sqlfluff_libs"`의
   `sqlfluff_libs/dbt.py` 셰임(`__init__.py`를 두지 않아야 파일명이 곧 네임스페이스가 된다).
   **`macros/`에 dispatch 매크로를 추가하면 스텁도 함께 추가**한다 — 빠뜨리면 조용히 통과하지 않고
-  `TMP`로 시끄럽게 깨진다(의도한 결합). **스텁은 의미론이 아니라 파싱만 맞으면 되지만 *길이·모양*은
+  `TMP`로 에러를 내고 멈춘다(의도한 결합). **스텁은 의미론이 아니라 파싱만 맞으면 되지만 *길이·모양*은
   판정에 직접 들어간다**(`LT05`·`LT02`) — 원본 구현을 옮기지 말고 짧은 등가 호출로 둔다.
   **이 게이트가 보증하는 것은 스타일·구문까지다** — 린트 대상이 **컴파일 SQL이 아니라 스텁 치환 SQL**이라
   매크로가 엔진별로 같은 값을 내는지는 보지 않는다(그건 `scripts/spark_connect_smoke.py` 몫).
@@ -245,7 +245,7 @@
   미사용 시 `--replicas=0`으로 내리고 **executor가 함께 사라지는지 확인**한다
   (`spark.kubernetes.driver.pod.name`이 그 전제 — 없으면 driver만 내려간다).
   그래서 **Connect가 떠 있는 동안 `SparkApplication` 배치 잡을 겹쳐 돌리지 않는다**(executor 2 초과).
-  **조용히 깨지는 셋** — ⓐ **카탈로그 이름은 전 엔진 `iceberg`로 통일**(JDBC 카탈로그는 `catalog_name`으로
+  **에러 없이 깨지는 셋** — ⓐ **카탈로그 이름은 전 엔진 `iceberg`로 통일**(JDBC 카탈로그는 `catalog_name`으로
   레지스트리를 분할해, 이름이 다르면 같은 DB를 봐도 서로의 테이블이 안 보인다) ⓑ **SeaweedFS는 aws-chunked
   체크섬을 못 풀어** 객체가 손상되므로 `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` 유지
   ⓒ **`io-impl`(S3FileIO)과 `spark.hadoop.fs.s3*`(S3A)는 둘 다 필요**(S3FileIO는 카탈로그가 *아는* 파일만
