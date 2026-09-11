@@ -47,7 +47,7 @@ dbt 어댑터를 통해 Spark Connect에 접속한다. 즉 커밋이 클러스�
   `mypy`와 같은 이유로 repo 루트에서 실행해야 한다.
 
 **`macros/`에 새 dispatch 매크로를 추가하면 스텁도 함께 추가한다.** 빠뜨리면 조용히 통과하지 않고
-`TMP: Undefined jinja template variable`로 **시끄럽게 깨진다**(의도한 결합).
+`TMP: Undefined jinja template variable`로 **에러를 내고 멈춘다**(의도한 결합).
 
 **스텁 출력은 선언된 dialect(`sparksql`)에 맞춘다.** 의미론은 무관하지만 **길이는 무관하지 않다** —
 치환 결과의 길이·모양이 `LT05`(줄길이)·`LT02`(들여쓰기) 판정에 그대로 들어간다.

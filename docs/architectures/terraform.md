@@ -215,7 +215,7 @@ CI 잡은 `terraform/*/`를 순회해 스택이 늘어도 자동으로 집고, *
 ### 불통 시 `plan`은 실패한다 — 우회는 절반만 듣는다
 
 실측(`podman stop lakehouse-control-plane` 후). 조용히 오도하지 **않는다** —
-`Planning failed`로 시끄럽게 죽는다. 다만 실패 지점이 **둘**이고 성질이 다르다.
+`Planning failed`로 에러를 내고 멈춘다. 다만 실패 지점이 **둘**이고 성질이 다르다.
 
 | 축 | 증상 | `-refresh=false` |
 | --- | --- | --- |
