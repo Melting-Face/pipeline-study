@@ -21,6 +21,8 @@
 | [엔진마다 값이 갈리는 SQL](cross-engine-sql.md) | 같은 SQL이 Trino와 Spark에서 다른 답을 낸다 — 그리고 같은 자리에서 두 번 틀렸다 |
 | [Claude Code CLI](claude-code-cli.md) | 세션은 누적만 한다 — 비용은 요청 수 × 컨텍스트 크기 |
 | [Spark를 K8s 위로](spark-on-k8s.md) | 파드가 뜬 것과 계산이 거기서 도는 것은 다르다 |
+| [빈 클러스터를 세우며](k8s-bootstrap.md) | 순서를 정하는 것은 의존이 아니라 소유와 해석 시점이다 |
+| [kubectl로 판정하기](kubectl-judgement.md) | 없음·정상·통과는 셋 다 「안 봤다」와 모양이 같다 |
 
 ## 이 프로젝트가 궁금하다면
 
