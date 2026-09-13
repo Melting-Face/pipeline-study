@@ -75,7 +75,13 @@ jobs:
       #    (2026-08-28 실측 — 로컬은 terraform 이 깔려 있어 통과했고 CI 에서만 터졌다).
       #    hadolint 와 같은 처리다: 훅이 `language: system` 계열이면 러너에도 도구를 깐다.
       # ⚠️ 이 게이트는 **개발 머신에도 terraform 이 있어야** 돈다. 없는 사람에게는
-      #    커밋이 막히므로 docs/setup.md §0 사전 요구 도구에 넣어야 한다(아직 미반영).
+      #    커밋이 막히므로 docs/setup.md §0 사전 요구 도구에 **반영됐다**(커밋 c9fa190).
+      #    ✅ 전수 결과 **추가할 도구는 더 없다** — 로컬 바이너리를 부르는 훅은
+      #    `terraform_fmt`·`hadolint` 둘뿐이고 §0 에 둘 다 있다. 나머지 `language: system`
+      #    훅 7 종(doc-links·doc-lint·skill-wiring·worker-wiring·guard-tests·hook-files·
+      #    permission-glob)은 `python3` 만 쓰고, sqlfluff·shellcheck 는 업스트림 repo 의
+      #    격리 env 라 호스트 설치가 필요 없다. **「전수했는데 없었다」를 적어 둔다** —
+      #    안 적으면 「전수 안 했다」와 구분되지 않는다.
       #
       # 액션(`hashicorp/setup-terraform`)을 쓰지 않는 이유는 머리 주석 원칙 4를 본다.
       # ⚠️ **`terraform_wrapper: false` 가 사라진 것은 설정을 빠뜨린 게 아니다** — 그 옵션은
