@@ -163,7 +163,7 @@ diff /tmp/lock.txt /tmp/doc.txt   # 빈 출력 = 정합
 | GitHub Issue 관리(등록·수정·라벨) | **스킬 없음**(`github-issues` 검토 후 미등재) | ✅ supervisor 1회 조회 + 사람 승인으로 푼다 → [conventions/issue.md](conventions/issue.md) · [conventions/agents.md](conventions/agents.md) §미션 개시 |
 | git 커밋 작성(메시지·스테이징) | **스킬 없음**(`git-commit` 검토 후 미등재) | ✅ 정본은 [conventions/git.md](conventions/git.md) §2·§6·§7 + [conventions/general.md](conventions/general.md) §커밋 메시지. **supervisor도 호출하지 않는다** — 아래 ⓑ |
 | 설계·기획(구현 전 대화) | **스킬 없음** | ✅ 하네스로 푼다 — 아래 ⓐ |
-| 분석·애드혹 질의 | `answering-natural-language-questions-with-dbt` · `duckdb` | ⚙️ |
+| 분석·애드혹 질의 | **없음** — SQL 엔진(Spark Connect)으로 간다 | ✅ 후보 2종은 **죽은 참조로 제거** — 아래 ⓒ |
 | 차트·시각화(리포트 그림) | `dataviz` | 🌐 **워커 등재 불가** — 디스크에 없어 `Read` 불가. supervisor 전용 |
 | 외부 1차 출처 확인(범용) | **전용 스킬 없음** → [.claude/agents/researcher.md](../.claude/agents/researcher.md) §출처 등급 | — |
 | 기술 문서·README·런북 작성 | `documentation` | 🔒 — lock 등재(§①). ⚠️ **매체 포맷·공개 판정은 덮지 않는다** — 그쪽 정본은 [conventions/publishing.md](conventions/publishing.md)이고 스킬보다 우선한다 |
@@ -198,6 +198,20 @@ type 표·Conventional Commits 포맷뿐인데 그건 [conventions/general.md](c
 §7이 요구하는 pathspec(`git commit -- <경로…>`, `git add`와 섞지 않는다)을 **정면으로
 어기는 절차가 여과 없이 컨텍스트에 들어온다**.
 막을 기계가 없으므로 **이 방침의 실효는 규율 100%**이고, 그래서 여기 적는다.
+
+ⓒ **분석·애드혹 질의에 스킬을 두지 않는 이유.** 후보 2종
+(`answering-natural-language-questions-with-dbt`·`duckdb`)은 [skills/scoring.md](skills/scoring.md)
+§analyst가 **죽은 참조로 제거**라 판정했고 실태도 그쪽과 맞는다 — `skills-lock.json` **0건**,
+[.claude/agents/analyst.md](../.claude/agents/analyst.md) §참고 스킬 **0건**.
+`duckdb` 강등(★2) 근거는 그 문서에 보존돼 있다. **DuckDB 자체**는 도구 선택 축에서 🔎 미채택이고
+기각 사유·재검토 트리거는 [architectures/duckdb.md](architectures/duckdb.md)에 있다
+([conventions/analysis.md](conventions/analysis.md) §6 도구 표가 같은 형태로 적혀 있다).
+
+**이 행이 「활성」으로 오래 남았던 이유를 함께 적는다** —
+[`skill_wiring_check.py`](../scripts/skill_wiring_check.py)는 **워커 → 문서** 방향만 본다.
+워커 지시문에 없고 이 문서에만 있는 항목은 **잡히지 않는다**. §③은 **파생 인덱스**라 집행에는
+영향이 없었으나 **읽는 사람에게는 「쓸 수 있는 스킬」로 보였다.**
+⇒ 이 방향의 드리프트는 기계가 아니라 **규율로만** 막힌다.
 
 - **워크플로 스킬**(도메인 아님, 슬래시 커맨드): `code-review` · `simplify` · `security-review` · `run` ·
   `find-skills`(🔒 — §① 등재) · `auditing-skills` · 프로젝트 자체 커맨드 `journal` — 검토·검증·실행 보조에 쓴다.

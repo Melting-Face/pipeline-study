@@ -76,6 +76,9 @@ notebook = [
   "ipykernel>=6.29,<7",
   # pyspark/pyiceberg 전이로 이미 설치되나 노트북에서 직접 import하므로 명시 선언
   "pandas>=2.2",
+  # 전이 의존으로만 설치되나 노트북에서 직접 import하므로 명시 선언
+  # (`from dotenv import load_dotenv` — 상류가 이 의존을 떨구면 조용히 깨진다)
+  "python-dotenv>=1.2,<2",
 ]
 
 [build-system]
