@@ -14,6 +14,28 @@ Dagster `defs/<dataset>` 서브프로젝트가 S3의 `csv.gz`를 읽어 적재�
 > 저장은 UTC, 표시·스케줄은 KST. 저장/조인 흐름·컨테이너 구성은 [architectures/overview.md](architectures/overview.md),
 > source/ref·메달리온 태깅 규칙은 [conventions/dbt.md](conventions/dbt.md) 참고.
 
+## 원천 획득 (PhysioNet)
+
+MIMIC-IV·eICU 원천 `csv.gz`는 **PhysioNet credentialed access** 대상이다(CITI 교육 이수 +
+DUA 서명). 파일은 Dagster **수집 자산**(`defs/<dataset>/raw_assets.py`)이 인증 세션으로 받아
+`s3://warehouse/raw/<dataset>/...`에 놓고, 그 뒤를 적재 자산이 읽는다.
+
+| 데이터셋 | PhysioNet 프로젝트 | 고정 버전 | 상수 위치 |
+| --- | --- | --- | --- |
+| MIMIC-IV | `mimiciv` | `3.1` | `defs/mimic_iv/constants.py` |
+| eICU-CRD | `eicu-crd` | `2.0` | `defs/eicu/constants.py` |
+
+🔴 **버전은 스키마 계약이다.** 아래 컬럼 표는 위 버전의 것이고, `PHYSIONET_VERSION`을
+올리면 **이 문서도 한 벌로** 고쳐야 한다 — 코드만 바꾸면 적재는 성공하고 값이 어긋난다
+(검산을 통과하는 종류의 오류다).
+
+⚠️ 프로젝트 슬러그·버전·`SHA256SUMS.txt`의 존재는 저장소 밖 사실이라 **미확인**이다.
+`uv run scripts/physionet_access_probe.py`가 실측으로 판정한다(종료코드 0/1/2 —
+`2`는 "통과"가 아니라 **판정 불가**다).
+
+접근 경로가 막혔을 때의 폴백은 `scripts/upload_raw_to_seaweedfs.py`(로컬 파일 미러)다.
+크리덴셜 주입은 [operations.md](operations.md) §1-1, 거버넌스는 [security.md](security.md).
+
 ---
 
 ## MIMIC-IV 원천 테이블

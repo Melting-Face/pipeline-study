@@ -321,6 +321,24 @@ spec:
                         valueFrom: {secretKeyRef: {name: lakehouse-creds, key: s3-access-key}}
                       - name: AWS_SECRET_ACCESS_KEY
                         valueFrom: {secretKeyRef: {name: lakehouse-creds, key: s3-secret-key}}
+                      # PhysioNet credentialed 원천 접근 (수집 자산).
+                      #
+                      # 🔴 **이 블록만 webserver와 비대칭이다.** 위 주석의 "항상 함께
+                      #    바꾼다"는 *같은 대상에 붙는* 값에 대한 규칙이고, 이것은
+                      #    daemon에만 필요하다 — `DefaultRunLauncher`라 자산은 daemon
+                      #    in-process 서브프로세스에서만 실행되고 webserver는 정의만
+                      #    띄운다(값은 `dg.EnvVar`라 run 시점에 해석된다).
+                      #    ⚠️ `K8sRunLauncher`로 바꾸면 run 파드 쪽에 추가해야 한다.
+                      # 🔴 **개인 DUA 크리덴셜이라 전용 Secret으로 분리**했다.
+                      #    회전 주기가 다르고(외부 기관 계정) 읽는 주체가 하나뿐이다.
+                      - name: PHYSIONET_USERNAME
+                        valueFrom:
+                            secretKeyRef:
+                                {name: physionet-creds, key: username, optional: true}
+                      - name: PHYSIONET_PASSWORD
+                        valueFrom:
+                            secretKeyRef:
+                                {name: physionet-creds, key: password, optional: true}
                   volumeMounts:
                       - {name: dagster-storage, mountPath: /opt/dagster/dagster_home/storage}
                       - {name: tmp, mountPath: /tmp}

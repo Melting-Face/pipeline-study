@@ -83,7 +83,7 @@ cp .env.example .env
 ```
 
 [`.env.example`](../.env.example)이 키·형식의 정본이고 각 키의 의도가 주석으로 붙어 있다.
-그룹은 여섯이다.
+그룹은 여덟이다(아래 표의 행 수 — 세는 대상은 *키*가 아니라 *그룹*이다).
 
 | 그룹 | 무엇을 가리키나 |
 | --- | --- |
@@ -94,6 +94,7 @@ cp .env.example .env
 | `ICEBERG_JDBC_*` · `ICEBERG_PG_*` · `ICEBERG_S3_*` · `ICEBERG_WAREHOUSE` | 같은 카탈로그의 **JDBC(dbt-spark) 경로** |
 | `SPARK_REMOTE` · `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` | dbt-spark ↔ Spark Connect 접속 |
 | `AWS_*_CHECKSUM_*` | SeaweedFS 호환(§8 참조) |
+| `PHYSIONET_*` | 원천 획득 — MIMIC-IV·eICU 다운로드 계정(개인 DUA 크리덴셜) |
 
 비밀값은 **§3을 돌린 뒤** 클러스터 Secret에서 꺼내 채운다(그래서 `.env` 완성은 §3 이후다).
 
@@ -330,6 +331,9 @@ cd dagster/dockerfile.d/src && uv run dg check defs                           # 
 # 실인프라 접속 — 수동 관문
 uv run scripts/spark_connect_smoke.py       # dbt-spark ↔ Spark Connect 어댑터
 uv run scripts/iceberg_changelog_probe.py   # Iceberg changelog 판독
+
+# 외부(physionet.org) 접속 — 원천 획득을 처음 켜기 직전
+uv run scripts/physionet_access_probe.py    # 인증 방식·무결성 정본 판정
 ```
 
 > 🔴 **`spark_connect_smoke.py`의 종료코드는 셋이다** — `0`=통과 / `1`=회귀 /
@@ -337,6 +341,32 @@ uv run scripts/iceberg_changelog_probe.py   # Iceberg changelog 판독
 > `dbt-spark`·`pyspark` 상한을 올리기 **직전에** 통과시킨다.
 
 테스트 계층·우선순위와 각 관문이 무엇을 보증하지 *않는지*는 [`test.md`](test.md)가 정본이다.
+
+## 6-1. 원천 데이터 가져오기
+
+파이프라인이 읽을 `csv.gz`가 `s3://warehouse/raw/`에 있어야 한다. **정본은 Dagster 수집 자산**이다.
+
+⚠️ **전제: `warehouse` 버킷이 이미 있어야 한다.** 수집 자산은 버킷을 만들지 않고 `NoSuchBucket`으로
+멈춘다 — 오타 난 버킷을 자동 생성하면 *"적재는 성공했는데 아무도 못 찾는"* 상태가 되기 때문이다.
+버킷은 스토리지 프로비저닝(§3, `k8s-poc-storage.sh`)이 만든다.
+⚠️ **`list_buckets`가 빈 목록이어도 「버킷 없음」이 아니다** — SeaweedFS는 권한에 따라 목록을
+비워 주면서 그 버킷에 대한 읽기·쓰기는 허용한다(실측). 존재 판정은 `head_bucket` 또는 실제 왕복으로 한다.
+
+1. `.env`에 `PHYSIONET_USERNAME`/`PHYSIONET_PASSWORD`를 채운다(PhysioNet credentialed access —
+   CITI 교육 이수 + DUA 서명이 선행 조건이다. 계정이 없으면 이 단계는 통과할 수 없다).
+2. in-cluster로 쓰려면 `scripts/k8s-poc-storage.sh`를 다시 돌려 Secret `physionet-creds`를 만든다
+   (값이 없으면 만들지 않고 넘어간다 — 수집 자산만 실패하고 나머지는 계속 돈다).
+3. `uv run scripts/physionet_access_probe.py`로 접근을 판정한다(§6, 종료코드 `0`이어야 진행).
+4. Dagster UI에서 `raw_*` 자산을 머티리얼라이즈한다. 작은 것부터 확인하고
+   **`raw_mimiciv_chartevents`·`raw_mimiciv_labevents`(각 ≈3.3GB)는 동시에 돌리지 않는다.**
+5. 이어서 적재 자산(`chartevents` 등)을 돌린다. `deps`가 걸려 있어 그래프에서 순서가 보인다.
+
+재실행해도 **이미 받았고 해시가 맞으면 내려받지 않는다**(사이드카 대조). 다시 받아야 하면
+자산 config `force: true`를 쓴다 — 운영 레버는 [`operations.md`](operations.md) §1-1-2.
+
+> 접근이 막혔을 때의 폴백은 로컬 파일 미러다(이미 받아둔 파일이 있을 때도 이쪽이 빠르다).
+> `uv run scripts/upload_raw_to_seaweedfs.py -n ./data/raw`로 먼저 목록을 확인한 뒤 `-n`을 뺀다.
+> 로컬 구조가 곧 S3 구조이므로 `./data/raw/mimiciv/icu/...` 형태로 둔다.
 
 ## 7. 노트북 (옵션)
 

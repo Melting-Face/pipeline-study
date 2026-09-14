@@ -107,6 +107,12 @@
 
 ### S3 → Iceberg 적재 (리소스 기반, 2경로)
 
+- **원천 획득은 적재의 앞 단계**다 — `defs/<dataset>/raw_assets.py`가 PhysioNet에서 인증 세션으로
+  받아 `raw/`에 놓고, 적재 자산이 `deps`로 잇는다. **`deps`에 문자열을 쓰지 않는다** — 오타가
+  에러가 아니라 **암묵적 external asset**이 돼 `dg check`를 통과한다(확인은 자산 수가 아니라
+  **고아 0건**). 멱등은 사이드카 `<key>.sha256` ↔ 상류 `SHA256SUMS.txt`이고 **쓰기 순서는
+  데이터→사이드카**다(역순이면 깨진 객체를 영영 스킵). 인증 방식이 **미확인**이라 켜기 전
+  `physionet_access_probe.py`를 통과시킨다 — 핵심은 **음성 대조**다(공개 파일이면 200은 무의미).
 - S3/Iceberg 연결은 **Dagster 리소스로 관리**한다: `dagster-aws` `S3Resource` +
   `dagster-iceberg`(IO 매니저·`IcebergTableResource`). 연결을 자산이 아닌 리소스에 둔다.
 - **일반(부하 없는) 파일**: 자산이 `pa.Table` 반환 → **dagster-iceberg IO 매니저**가 자동 create+적재.

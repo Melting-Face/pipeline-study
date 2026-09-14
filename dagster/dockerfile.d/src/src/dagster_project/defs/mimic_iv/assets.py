@@ -21,6 +21,19 @@ from dagster_project.common.helper import (
     read_csv_gz_table,
 )
 from dagster_project.defs.mimic_iv.constants import GROUP_NAME, SOURCE_BASE
+from dagster_project.defs.mimic_iv.raw_assets import (
+    raw_mimiciv_admissions,
+    raw_mimiciv_chartevents,
+    raw_mimiciv_d_items,
+    raw_mimiciv_d_labitems,
+    raw_mimiciv_icustays,
+    raw_mimiciv_inputevents,
+    raw_mimiciv_labevents,
+    raw_mimiciv_microbiologyevents,
+    raw_mimiciv_outputevents,
+    raw_mimiciv_patients,
+    raw_mimiciv_prescriptions,
+)
 
 # 일반 경로 에셋은 이 데이터셋 전용 IO 매니저(namespace=mimiciv)로 적재한다.
 IO_MANAGER_KEY = "io_manager_mimiciv"
@@ -36,6 +49,7 @@ VALUE_AS_STRING = {"value": pa.string()}
 @dg.asset(
     group_name=GROUP_NAME,
     io_manager_key=IO_MANAGER_KEY,
+    deps=[raw_mimiciv_icustays],
     kinds={"python", "iceberg", "bronze"},
 )
 def icustays(s3: S3Resource) -> pa.Table:
@@ -43,7 +57,11 @@ def icustays(s3: S3Resource) -> pa.Table:
     return read_csv_gz_table(s3, f"{SOURCE_BASE}/icu/icustays.csv.gz")
 
 
-@dg.asset(group_name=GROUP_NAME, kinds={"python", "iceberg", "bronze"})
+@dg.asset(
+    group_name=GROUP_NAME,
+    deps=[raw_mimiciv_chartevents],
+    kinds={"python", "iceberg", "bronze"},
+)
 def chartevents(
     context: AssetExecutionContext,
     s3: S3Resource,
@@ -65,6 +83,7 @@ def chartevents(
 @dg.asset(
     group_name=GROUP_NAME,
     io_manager_key=IO_MANAGER_KEY,
+    deps=[raw_mimiciv_inputevents],
     kinds={"python", "iceberg", "bronze"},
 )
 def inputevents(s3: S3Resource) -> pa.Table:
@@ -75,6 +94,7 @@ def inputevents(s3: S3Resource) -> pa.Table:
 @dg.asset(
     group_name=GROUP_NAME,
     io_manager_key=IO_MANAGER_KEY,
+    deps=[raw_mimiciv_outputevents],
     kinds={"python", "iceberg", "bronze"},
 )
 def outputevents(s3: S3Resource) -> pa.Table:
@@ -85,6 +105,7 @@ def outputevents(s3: S3Resource) -> pa.Table:
 @dg.asset(
     group_name=GROUP_NAME,
     io_manager_key=IO_MANAGER_KEY,
+    deps=[raw_mimiciv_d_items],
     kinds={"python", "iceberg", "bronze"},
 )
 def d_items(s3: S3Resource) -> pa.Table:
@@ -98,6 +119,7 @@ def d_items(s3: S3Resource) -> pa.Table:
 @dg.asset(
     group_name=GROUP_NAME,
     io_manager_key=IO_MANAGER_KEY,
+    deps=[raw_mimiciv_patients],
     kinds={"python", "iceberg", "bronze"},
 )
 def patients(s3: S3Resource) -> pa.Table:
@@ -108,6 +130,7 @@ def patients(s3: S3Resource) -> pa.Table:
 @dg.asset(
     group_name=GROUP_NAME,
     io_manager_key=IO_MANAGER_KEY,
+    deps=[raw_mimiciv_admissions],
     kinds={"python", "iceberg", "bronze"},
 )
 def admissions(s3: S3Resource) -> pa.Table:
@@ -115,7 +138,11 @@ def admissions(s3: S3Resource) -> pa.Table:
     return read_csv_gz_table(s3, f"{SOURCE_BASE}/hosp/admissions.csv.gz")
 
 
-@dg.asset(group_name=GROUP_NAME, kinds={"python", "iceberg", "bronze"})
+@dg.asset(
+    group_name=GROUP_NAME,
+    deps=[raw_mimiciv_labevents],
+    kinds={"python", "iceberg", "bronze"},
+)
 def labevents(
     context: AssetExecutionContext,
     s3: S3Resource,
@@ -137,6 +164,7 @@ def labevents(
 @dg.asset(
     group_name=GROUP_NAME,
     io_manager_key=IO_MANAGER_KEY,
+    deps=[raw_mimiciv_d_labitems],
     kinds={"python", "iceberg", "bronze"},
 )
 def d_labitems(s3: S3Resource) -> pa.Table:
@@ -147,6 +175,7 @@ def d_labitems(s3: S3Resource) -> pa.Table:
 @dg.asset(
     group_name=GROUP_NAME,
     io_manager_key=IO_MANAGER_KEY,
+    deps=[raw_mimiciv_prescriptions],
     kinds={"python", "iceberg", "bronze"},
 )
 def prescriptions(s3: S3Resource) -> pa.Table:
@@ -157,6 +186,7 @@ def prescriptions(s3: S3Resource) -> pa.Table:
 @dg.asset(
     group_name=GROUP_NAME,
     io_manager_key=IO_MANAGER_KEY,
+    deps=[raw_mimiciv_microbiologyevents],
     kinds={"python", "iceberg", "bronze"},
 )
 def microbiologyevents(s3: S3Resource) -> pa.Table:
