@@ -46,9 +46,25 @@ dependencies = [
   "dagster-pyspark==0.28.12",
   # S3(SeaweedFS)·Iceberg 리소스
   "dagster-aws==0.28.12",
-  # dagster-iceberg(preview)가 pyiceberg[pyarrow]를 동반 설치 → pyarrow는 전이 의존으로 해결
+  # dagster-iceberg(preview)가 pyiceberg[pyarrow]를 동반 설치한다.
   "dagster-iceberg==0.3.14",
   "kubernetes>=36.0.3",
+  # ── 아래 셋은 위 패키지들의 전이 의존이나 **직접 import하므로 명시 선언**한다
+  #    (`trino`와 같은 처리 — explicit dependencies). 안 적으면 상류가 의존을 떨궜을 때
+  #    적재 헬퍼(`common/helper.py`)가 조용히 깨진다.
+  #
+  # 🔴 **상한을 붙이지 않는 것이 결정이다**(빠뜨린 것이 아니다). 이 선언의 목적은 버전
+  #    통제가 아니라 **의존이 사라지지 않게** 하는 것이고, 상한은 그 목적에 기여하지 않으면서
+  #    상류(dagster-iceberg)의 업그레이드를 막는다. 위 dbt-spark·pyspark에 상한이 있는 것은
+  #    **미지원 경로에 얹혀 있기 때문**이고 거기엔 상한 인상 전 통과시킬 스모크가 있다.
+  #    이 셋은 그 축이 아니다 ⇒ 상한이 필요해지면 **그때 통과시킬 검증을 함께** 만든다.
+  #
+  # 하한은 **현재 잠금본보다 한참 아래**로 둔다 — 쓰는 API가 전부 장기 안정 코어라
+  # 하한이 binding constraint가 되면 안 된다(pa·pa.compute·pa.csv / catalog.load_catalog·
+  # exceptions·table.Table / yaml). 하한을 올릴 일이 생기면 **그 API를 근거로** 올린다.
+  "pyarrow>=16",
+  "pyiceberg>=0.9",
+  "pyyaml>=6",
 ]
 
 [dependency-groups]
