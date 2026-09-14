@@ -91,6 +91,28 @@ kubectl create secret generic dagster-meta-pg-app -n default \
     --from-literal=password="${DAGSTER_PG_PASSWORD}" \
     --dry-run=client -o yaml | kubectl apply -f -
 
+# 1-2) PhysioNet credentialed 원천 접근 (수집 자산 — defs/<dataset>/raw_assets.py).
+#
+# 🔴 **기본값(placeholder)을 두지 않는다.** 위 세 Secret과 갈리는 지점이다 —
+#    저것들은 우리가 발급하는 로컬 PoC 크리덴셜이라 기본값이 의미를 갖지만,
+#    이것은 **외부 기관(PhysioNet)의 개인 계정**이다. 아무 값이나 넣으면
+#    Secret은 생기고 파드는 뜨는데 수집에서 401로 죽는 **부분 성공**이 된다.
+#    값이 없으면 만들지 않고, 매니페스트 쪽은 `optional: true`로 받는다
+#    (= 수집 자산만 실패하고 나머지 파이프라인은 계속 돈다).
+# 🔴 **전용 Secret으로 분리한다** — 회전 주기가 다르고(우리가 통제하지 못한다)
+#    읽는 주체가 Dagster daemon 하나뿐이다.
+if [ -n "${PHYSIONET_USERNAME:-}" ] && [ -n "${PHYSIONET_PASSWORD:-}" ]; then
+    log "Secret 생성/갱신: physionet-creds (원천 다운로드 계정)"
+    kubectl create secret generic physionet-creds -n default \
+        --type=kubernetes.io/basic-auth \
+        --from-literal=username="${PHYSIONET_USERNAME}" \
+        --from-literal=password="${PHYSIONET_PASSWORD}" \
+        --dry-run=client -o yaml | kubectl apply -f -
+else
+    log "Secret 건너뜀: physionet-creds (PHYSIONET_USERNAME/PASSWORD 미설정)"
+    log "  → 수집 자산(raw_*)만 실패한다. 적재 자산은 기존 S3 객체로 계속 돈다."
+fi
+
 # 2) 선행 조건 — 오퍼레이터·플러그인 CRD.
 #    카탈로그 PG는 **CNPG Cluster CR**이고 그 CR이 barman 플러그인을 참조한다.
 #    🔴 두 CRD의 **출처가 다르다**(2026-08-28 이관).

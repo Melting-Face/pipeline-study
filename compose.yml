@@ -31,6 +31,10 @@ x-dagster-common: &dagster-common
     - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
     - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
     - ENDPOINT_URL=${ENDPOINT_URL}
+    # PhysioNet credentialed 원천 접근(수집 자산). 비어 있어도 정의 로드는
+    # 성공하고 수집 자산 실행에서만 실패한다 — 코드가 dg.EnvVar로 받는다.
+    - PHYSIONET_USERNAME=${PHYSIONET_USERNAME:-}
+    - PHYSIONET_PASSWORD=${PHYSIONET_PASSWORD:-}
     # SeaweedFS는 AWS SDK의 aws-chunked 체크섬 업로드를 못 푼다(객체가 깨진다).
     - AWS_REQUEST_CHECKSUM_CALCULATION=${AWS_REQUEST_CHECKSUM_CALCULATION:-when_required}
     - AWS_RESPONSE_CHECKSUM_VALIDATION=${AWS_RESPONSE_CHECKSUM_VALIDATION:-when_required}
