@@ -52,6 +52,35 @@ dg.EnvVar("KEY") / os.environ["KEY"]  (코드에서 참조)
 > 예) `AWS_*`·`ENDPOINT_URL`은 `x-dagster-common` 앵커에 있어 webserver·daemon에 전파되고,
 > `trino` 서비스는 앵커를 안 쓰므로 `environment:`에 `AWS_*`를 **별도로** 나열한다(현재 구현).
 
+> 예) `PHYSIONET_USERNAME`/`PHYSIONET_PASSWORD`(원천 획득)는 compose에서는 앵커에 한 번 넣지만
+> **in-cluster에서는 daemon `env:`에만** 넣는다(전용 Secret `physionet-creds`, `optional: true`).
+> ⚠️ **의도된 비대칭**이다 — `DefaultRunLauncher`라 자산은 daemon에서만 실행되고 webserver는
+> 정의만 띄운다(값이 `dg.EnvVar`라 run 시점에 해석된다). `K8sRunLauncher`로 바꾸면 run 파드에 추가한다.
+> Secret이 없으면 **수집 자산만** 실패하고 적재 자산은 기존 S3 객체로 계속 돈다.
+
+### 1-1-2. 원천 재수신 강제 (PhysioNet)
+
+수집 자산은 사이드카 객체(`<key>.sha256`)와 상류 `SHA256SUMS.txt`를 대조해 **일치하면
+받지 않는다**. 다시 받아야 할 때는 두 가지 레버가 있다.
+
+| 방법 | 범위 | 쓰는 때 |
+| --- | --- | --- |
+| 자산 config `force: true` | 그 실행 한 번 | 보통 이것을 쓴다 |
+| 사이드카 객체 삭제 | 그 파일 | UI 없이 CLI로 처리할 때 |
+
+```bash
+# 사이드카만 지우면 다음 머티리얼라이즈가 downloaded_sidecar_missing으로 재수신한다
+aws --endpoint-url http://localhost:8333 \
+    s3 rm s3://warehouse/raw/mimiciv/icu/chartevents.csv.gz.sha256
+```
+
+⚠️ **환경변수 플래그는 두지 않았다** — 전역이고 끈적여서 누가 켜둔 채 잊으면 매 실행
+3.3GB를 다시 받는다(상대는 남의 서버다). 재수신은 그 실행에만 사는 선택으로 둔다.
+
+⚠️ `skipped_verified`가 보증하는 것은 *"상류가 말하는 해시와 우리 기록이 같다"*이지
+*"S3의 바이트가 지금 그 해시를 만든다"*가 아니다. **객체가 나중에 손상되면 이 경로는 못 잡는다**
+(선언된 공백 — 재해시 비용이 방어 가치를 넘고, 실제 손상은 적재 파싱에서 드러난다).
+
 ### 1-2. 호스트 실행과 컨테이너 실행의 값이 다른 키
 
 Dagster는 **클러스터 안**에서 돌고 메타 Postgres도 **CNPG의 `dagster` DB**다

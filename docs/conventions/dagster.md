@@ -88,6 +88,29 @@ def mimiciv_hosp_patients(context) -> MaterializeResult:
 bronze_assets = [build_csv_to_iceberg_asset(...) for ... in TABLES]   # ← 사용하지 않는다
 ```
 
+### `deps`에는 문자열이 아니라 **함수 객체**를 넣는다
+
+```python
+from dagster_project.defs.eicu.raw_assets import raw_eicu_patient
+
+@dg.asset(group_name=GROUP_NAME, deps=[raw_eicu_patient], ...)   # ← 함수 객체
+def patient(s3: S3Resource) -> pa.Table: ...
+
+@dg.asset(deps=["raw_eicu_patinet"], ...)                        # ← 쓰지 않는다(오타 주목)
+```
+
+⚠️ **Dagster는 존재하지 않는 문자열 자산키를 에러로 만들지 않는다** — 암묵적 external asset으로
+**조용히 만든다**. 오타 한 글자가 *"의존이 걸린 것처럼 보이는데 실제로는 아무 데도 연결되지 않은"*
+상태를 만들고 `dg check`도 통과한다. 함수 객체는 Python import가 fail-closed로 막는다.
+
+배선 확인은 자산 수가 아니라 **고아 0건**으로 센다 — 자식이 없는 상류 자산이 있으면 그게 오타다.
+(자산 수는 오타가 만든 external asset까지 세어 **늘어난 채로 맞아 보인다**.)
+
+```python
+g = defs.resolve_asset_graph()
+orphans = [k for k in g.get_all_asset_keys() if not g.get(k).child_keys]
+```
+
 ## 머티리얼라이즈 메타데이터를 남긴다
 
 > **적재/변환 에셋은 관측 가능한 메타데이터(행 수·미리보기 등)를 남긴다.**
@@ -207,6 +230,10 @@ Iceberg 네임스페이스는 **데이터셋 서브프로젝트 단위**로 만�
 2. **`defs/<dataset>/assets.py`** — 테이블별 **명시적 `@asset`**(팩토리 금지). 일반=IO 매니저 /
    대용량=`load_heavy_csv_gz_to_iceberg`. 메타데이터를 남긴다(위 규약).
    원천이 **일자별로 나뉘면 `partitions_def`를 건다**(아래 §파티션 — 시작일 리터럴·타임존·멱등).
+2-1. **원천이 인증 필요한 다운로드면 `defs/<dataset>/raw_assets.py`를 먼저 둔다** — 파일별
+   명시적 `@asset`(외부 → S3 `raw/`)을 만들고, 접속은 프로바이더 리소스(`common/<provider>.py`)가
+   갖는다. 파일 상대경로는 `constants.py`에 상수로 두어 **URL과 S3 키의 단일 출처**로 쓴다.
+   `assets.py`의 적재 자산에는 `deps`(**함수 객체**)를 건다. 상세 [../architectures/overview.md](../architectures/overview.md) §원천 획득.
 3. **`defs/<dataset>/dbt_assets.py`** — `@dbt_assets(select="fqn:<dataset>", project=dbt_project)`로 dbt 모델 소유.
 4. **IO 매니저 리소스 등록** — `defs/resources.py`에 `io_manager_<dataset>`(namespace=`<dataset>`)를
    추가한다. 대용량 테이블이 있으면 해당 `IcebergTableResource`도 함께 등록한다.

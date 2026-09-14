@@ -235,7 +235,8 @@ sequenceDiagram
 
 ## bronze 적재 (S3 csv.gz → Iceberg)
 
-이미 S3에 적재된 `csv.gz` 원본을 **메타스토어 없이** Iceberg(JDBC 카탈로그) 테이블로 올린다.
+S3 `raw/`에 놓인 `csv.gz` 원본을 **메타스토어 없이** Iceberg(JDBC 카탈로그) 테이블로 올린다.
+거기까지 파일을 가져오는 **원천 획득**은 아래 §원천 획득이 맡는다(예전에는 사람 손이었다).
 **공통 로직은 `dagster_project/common/`** 에 두고, **에셋은 데이터셋별 서브프로젝트**
 (`defs/mimic_iv/`, `defs/eicu/`)에서 **각각 명시적으로 정의**한다(팩토리 미사용).
 
@@ -253,7 +254,8 @@ S3/Iceberg 연결은 **Dagster 리소스**(`dagster-aws`·`dagster-iceberg`)로 
 
 | 파일             | 역할                                                                          |
 | ---------------- | ----------------------------------------------------------------------------- |
-| `constants.py`   | 데이터셋 전용 `NAMESPACE`·`GROUP_NAME`·`SOURCE_BASE`                          |
+| `constants.py`   | 데이터셋 전용 `NAMESPACE`·`GROUP_NAME`·`SOURCE_BASE`, 원천 좌표(`PHYSIONET_*`·파일 상대경로) |
+| `raw_assets.py`  | 파일별 **명시적 `@dg.asset`**(원천 획득: 외부 → S3 `raw/`. PhysioNet 데이터셋만)  |
 | `assets.py`      | 테이블별 **명시적 `@dg.asset`**(bronze; 일반=IO 매니저 / 대용량=청크 append)   |
 | `dbt_assets.py`  | 데이터셋 dbt 모델 소유 `@dbt_assets(select="fqn:<dataset>", project=dbt_project)` |
 
@@ -264,7 +266,37 @@ S3/Iceberg 연결은 **Dagster 리소스**(`dagster-aws`·`dagster-iceberg`)로 
 > 공유 리소스는 `defs/resources.py`(`@dg.definitions`), 잡·스케줄은 `defs/automation.py`에 두고,
 > 최상위 `definitions.py`의 `load_defs(dagster_project.defs)`가 모두 **단일 `Definitions`** 로 합친다.
 
+### 원천 획득 (PhysioNet → S3 `raw/`)
+
+적재보다 **한 단계 앞**이다. MIMIC-IV·eICU의 원천 `csv.gz`를 PhysioNet에서 인증
+세션으로 받아 `s3://warehouse/raw/<dataset>/...`에 놓는다. 이 구간은 원래
+**사람 손**(수동 다운로드 + `scripts/upload_raw_to_seaweedfs.py`)이었고, 그래서
+파이프라인의 첫 구간만 계보에 없었다.
+
+- 자산 1개 = 원천 파일 1개(`raw_<dataset>_<table>`, 14개). bronze 자산과 1:1로
+  대응해 `deps`가 곧게 이어진다. 3.3GB 하나가 실패해도 재시도 단위가 그 파일 하나다.
+- 연결은 리소스(`common/physionet.py`의 `PhysioNetResource`)가 갖는다. **인증 방식이
+  바뀌어도 자산은 그대로**다 — 리소스의 계약이 "인증된 `requests.Session`을 돌려준다"라서.
+- 스트리밍 수신 → 멀티파트 업로드로 메모리가 일정하고, 그 흐름 위에서 sha256을 함께 계산한다.
+- **멱등**: 상류 `SHA256SUMS.txt`가 정본, 로컬 증거는 **사이드카 객체**(`<key>.sha256`).
+  객체 메타데이터를 안 쓰는 이유는 멀티파트에서 SeaweedFS가 user metadata를 보존하는지
+  **미확인**이기 때문이다 — 보존하지 않으면 *에러 없이* 매 실행 3.3GB를 다시 받는다.
+  쓰기 순서는 **데이터 → 사이드카**다(역순이면 깨진 객체를 영영 스킵한다).
+- 재수신 강제는 자산 config `force: true`. 환경변수 플래그로 두지 않는다(켜둔 채 잊는다).
+
+🔴 **가장 비싼 실패 모드는 401이 아니라 「200 + 로그인 HTML」이다.** 인증이 풀린 채
+받으면 `chartevents.csv.gz`라는 이름의 HTML이 S3에 올라가고, 실패는 다운로드가 아니라
+몇 시간 뒤 적재 자산의 pyarrow 파싱에서 터진다. 그래서 매직바이트·Content-Type 가드가
+**런타임 경로에** 있고, 착수 전 관문으로 `scripts/physionet_access_probe.py`를 둔다
+(그 프로브의 핵심은 **음성 대조** — 인증 없이도 받아지는 파일이면 200은 아무것도 증명하지 않는다).
+
+⚠️ **이것을 "다섯 번째 적재 경로"라고 부르지 않는다.** 아래 A~D는 전부 Iceberg 테이블로
+끝나는 *같은 단계의 변종*이고, 이 구간은 S3에서 멈추며 테이블을 만들지 않는다. 한 표에
+넣으면 "적재 경로"가 두 가지 뜻을 갖게 된다.
+
 ### 네 가지 적재 경로
+
+아래 표는 **`raw/` 이후**를 다룬다(그 앞은 위 §원천 획득).
 
 | 경로 | 조건 | 방법 | 자산 반환 |
 | --- | --- | --- | --- |
@@ -278,13 +310,16 @@ C와 D는 **정반대 방향**이다 — C는 중복을 남겨 dedup 실습 재�
 
 ```mermaid
 flowchart LR
-    SRC[(s3 csv.gz)]
+    PHY[(physionet.org<br/>credentialed)]
+    DL[수집 자산<br/>raw_*: 스트리밍 → S3]
+    SRC[(s3 raw/ csv.gz)]
     S3R[dagster-aws<br/>S3Resource]
     A[일반: pa.Table 반환<br/>→ IO 매니저 write]
     B[대용량: boto3 스트리밍<br/>pyarrow 청크 append]
     ICE[(iceberg.ns.table<br/>JDBC 카탈로그)]
     Q[Trino · dbt]
 
+    PHY --> DL --> SRC
     SRC --> S3R
     S3R --> A --> ICE
     S3R --> B --> ICE --> Q
@@ -311,6 +346,23 @@ def admissions(s3: S3Resource) -> pa.Table:
 
 대용량(현재 `chartevents`·`labevents`·`nurse_charting`)은 `load_heavy_csv_gz_to_iceberg`를
 호출하고, 대상 테이블용 `IcebergTableResource`를 `defs/resources.py`의 `resources`에 추가한다.
+
+PhysioNet 데이터셋이면 **수집 자산도 함께 만든다**(`raw_assets.py`) — 파일 상대경로를
+`constants.py`에 상수로 두고, bronze 자산에 `deps`를 건다.
+
+```python
+# 원천 획득 (raw_assets.py) — 파일 1개 = 자산 1개
+@dg.asset(group_name=GROUP_NAME, kinds={"python", "s3"})
+def raw_mimiciv_admissions(context, s3, physionet, config: RawFetchConfig) -> dg.MaterializeResult:
+    """MIMIC-IV hosp/admissions.csv.gz를 받아 S3 raw/에 놓는다."""
+    return fetch_physionet_file(context, s3=s3, physionet=physionet, ...)
+```
+
+🔴 **`deps`에는 문자열이 아니라 함수 객체를 넣는다.** Dagster는 존재하지 않는 문자열
+자산키를 에러로 만들지 않고 **암묵적 external asset으로 조용히 만들어**, 오타 한 글자가
+"의존이 걸린 것처럼 보이는데 아무 데도 연결되지 않은" 상태를 만들고 `dg check`도 통과한다.
+함수 객체는 Python import가 fail-closed로 막는다. 배선 확인은 **고아 자산 0건**으로 센다
+(자식 없는 `raw_*`가 있으면 그게 오타다).
 
 ### 검증 상태
 
