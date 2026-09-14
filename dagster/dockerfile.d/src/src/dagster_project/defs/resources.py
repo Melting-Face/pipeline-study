@@ -31,6 +31,7 @@ from dagster_project.common.constants import (
     WAREHOUSE,
 )
 from dagster_project.common.dbt import build_dbt_resource
+from dagster_project.common.physionet import PhysioNetResource
 from dagster_project.common.trino import TrinoResource
 from dagster_project.defs.eicu.constants import NAMESPACE as EICU_NS
 from dagster_project.defs.frankfurter_fx.constants import NAMESPACE as FRANKFURTER_FX_NS
@@ -50,6 +51,17 @@ def resources() -> dg.Definitions:
                 aws_access_key_id=S3_ACCESS_KEY_ID,
                 aws_secret_access_key=S3_SECRET_ACCESS_KEY,
                 region_name=AWS_REGION,
+            ),
+            # 원천 획득: PhysioNet credentialed 접근(MIMIC-IV·eICU csv.gz).
+            #
+            # 🔴 **`dg.EnvVar`여야 한다(`os.environ` 직접 읽기 금지).**
+            #    `common.constants`처럼 모듈 로드 시점에 읽으면 크리덴셜이 없는
+            #    webserver에서 **정의 로드가 통째로 실패**한다. EnvVar는 run
+            #    시점에 해석되므로 webserver는 값 없이도 정의를 띄우고, UI에는
+            #    값이 아니라 참조로 표시된다.
+            "physionet": PhysioNetResource(
+                username=dg.EnvVar("PHYSIONET_USERNAME"),
+                password=dg.EnvVar("PHYSIONET_PASSWORD"),
             ),
             "dbt": build_dbt_resource(),
             # Spark Connect 접속(Iceberg 유지보수 프로시저용 — defs/maintenance.py).
