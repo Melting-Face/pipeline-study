@@ -267,13 +267,6 @@ def is_unidentified_subagent(payload: dict[str, object]) -> bool:
     return first_event is not None and is_subagent_meta(first_event)
 
 
-def matches_prefix(path: str, prefix: str) -> bool:
-    """디렉터리 접두어와 단일 파일 규칙을 구분해 대조한다."""
-    if prefix.endswith("/"):
-        return path.startswith(prefix)
-    return path == prefix
-
-
 def denied_reason(worker: str, raw_path: str, root: Path) -> str | None:
     """경계를 벗어난 경우 거부 사유를 반환한다."""
     boundary = BOUNDARIES[worker]
@@ -305,17 +298,23 @@ def denied_reason(worker: str, raw_path: str, root: Path) -> str | None:
     if control := worker_boundaries.control_path(relative):
         return f"`{worker}`는 통제 스크립트 `{control}`를 수정할 수 없다."
 
+    # 🔴 대조 술어는 **공용 모듈이 갖는다**(Issue #53 잔여 축 — 「판정 함수가 두 벌」).
+    #    표를 `worker_boundaries.py`로 합친 뒤에도 비교식은 두 벌로 남아 있었고,
+    #    **표가 같은데 결과가 갈렸다** — 이 파일의 구 `matches_prefix()`가
+    #    ⓐ 세 축 모두 대소문자를 **구분**하고(macOS에서 `Terraform/`·`.GitHub/`·
+    #    `docs/Security.md`가 통과) ⓑ `deny`에도 **완전일치**를 적용해
+    #    (`.env`가 금지인데 `.env.local`이 통과) 짝 가드보다 느슨했다.
+    # 🔴 **축마다 술어가 다르다** — 하나로 되돌리지 마라. 안전한 방향이 반대다
+    #    (근거는 `worker_boundaries.py` §경로 대조 술어).
     for excluded in boundary.get("except", ()):
-        if matches_prefix(relative, excluded):
+        if worker_boundaries.matches_except(relative, (excluded,)):
             return f"`{worker}` 쓰기 예외 경로를 차단했다: `{relative}`."
 
     allowed = boundary.get("allow")
-    if allowed is not None and not any(
-        matches_prefix(relative, prefix) for prefix in allowed
-    ):
+    if allowed is not None and not worker_boundaries.matches_allow(relative, allowed):
         return f"`{worker}`의 허용 쓰기 범위 밖이다: `{relative}`."
 
-    if any(matches_prefix(relative, prefix) for prefix in boundary.get("deny", ())):
+    if worker_boundaries.matches_deny(relative, boundary.get("deny", ())):
         return f"`{worker}`의 금지 쓰기 범위다: `{relative}`."
     return None
 

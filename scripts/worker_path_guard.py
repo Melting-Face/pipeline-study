@@ -348,15 +348,15 @@ def main() -> None:
     elif blocked := next(
         (
             item
-            for item in boundary.get("except", ())
-            # 🔴 여기는 **대소문자를 무시한다** — `deny` 분기와 같은 방향(막는 쪽)이다.
+            # 🔴 대조 술어는 **공용 모듈이 갖는다**(Issue #53 잔여 축). 이 자리에
+            #    인라인 비교식을 되살리면 짝 가드와 다시 갈린다 — 표를 합친 뒤에도
+            #    **비교식이 두 벌이라 결과가 갈렸던** 것이 이 축의 재발 경로다.
+            #    `except`는 막는 쪽이라 **대소문자를 무시한다**(과잉 = fail-closed):
             #    macOS 파일시스템이 대소문자를 무시하므로 `docs/Security.md`가 같은
             #    실파일에 착지하는데 구분해 비교하면 **그대로 통과**한다.
-            #    막는 쪽의 과잉은 fail-closed라 안전하다(§BOUNDARIES 주석의 두 방향).
-            if (
-                target_text[len(project_text) + 1 :].lower().startswith(item.lower())
-                if item.endswith("/")
-                else target_text[len(project_text) + 1 :].lower() == item.lower()
+            for item in boundary.get("except", ())
+            if worker_boundaries.matches_except(
+                target_text[len(project_text) + 1 :], (item,)
             )
         ),
         "",
@@ -384,10 +384,8 @@ def main() -> None:
             #    `DOCS/x.md`가 안 걸려 거부되는 쪽이 fail-closed이고, 소문자화하면
             #    대소문자 구분 파일시스템(Linux CI)에서 **진짜 다른 디렉터리를
             #    열어주는** fail-open이 된다.
-            permitted = any(
-                relative.startswith(item) if item.endswith("/") else relative == item
-                for item in scope
-            )
+            # 술어 정본은 공용 모듈이다(Issue #53 — 인라인으로 되살리지 마라).
+            permitted = worker_boundaries.matches_allow(relative, scope)
             # 라벨을 붙인다 — 없으면 "…쓸 수 없다. docs/posts/."처럼 읽혀
             # 그 경로가 금지인지 허용인지 뒤집혀 읽힌다(2026-08-20 실발동 로그 관측).
             scope_text = (
@@ -407,8 +405,8 @@ def main() -> None:
             #    `3885700`은 "막는 쪽은 넓게 거는 편이 안전하니 분기를 두지 않는다"고
             #    적었는데, 대소문자 축에서는 그 `deny`가 오히려 뚫려 있었다.
             #    넓게 걸려면 **넓게 걸리도록 비교**해야 한다 — 의도만으로는 안 넓어진다.
-            lowered = relative.lower()
-            permitted = not lowered.startswith(tuple(item.lower() for item in scope))
+            # 술어 정본은 공용 모듈이다(Issue #53 — 인라인으로 되살리지 마라).
+            permitted = not worker_boundaries.matches_deny(relative, scope)
             scope_text = f"금지: {' · '.join(scope)}"
         if permitted:
             sys.exit(0)

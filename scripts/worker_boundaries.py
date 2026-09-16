@@ -16,12 +16,21 @@ r"""워커 쓰기 경계의 **단일 출처** — 두 런타임 짝 가드가 �
     **예외**로 존재했고, 예외에 대조 수단이 없었다. ⇒ 예외를 없앤다.
 
 무엇을 담고 무엇을 안 담는가:
-    담는 것은 **표**다 — 워커별 경계·저장소 밖 허용·통제 파일 목록.
-    담지 않는 것은 **판정 로직**이다. 두 런타임은 입력 형태(`tool_input` 키 vs
+    담는 것은 **표**와 그 표를 읽는 **순수 문자열 술어**다 — 워커별 경계·저장소 밖
+    허용·통제 파일 목록, 그리고 `matches_deny`·`matches_except`·`matches_allow`.
+    담지 않는 것은 **런타임 결합 로직**이다. 두 런타임은 입력 형태(`tool_input` 키 vs
     `apply_patch` 헤더)와 결정 어휘(`allow/deny/ask/defer` vs `deny`만)가 달라
-    로직까지 합치면 분기가 늘어 오히려 읽기 어려워진다.
-    ⚠️ 그래서 **표가 같아도 매칭이 갈리면 결과는 갈린다.** 그 축은 이 파일이 아니라
-    `scripts/tests/test_worker_boundaries.py`가 대조군 셀로 본다.
+    그 층까지 합치면 분기가 늘어 오히려 읽기 어려워진다.
+
+    🔴 **술어는 원래 여기 없었고, 그래서 갈렸다**(Issue #53 잔여 축). 표를 합친 뒤에도
+    비교식이 두 벌로 남아 **표가 같은데 결과가 갈렸다** — 실호출 14셀 중 7건이
+    어긋났고 **전부 Codex가 느슨한 방향**이었다(`Terraform/`·`.GitHub/`가 통과,
+    `.env`가 금지인데 `.env.local`이 통과, `docs/Security.md`가 통과).
+    ⇒ 「입력 형태가 다르다」는 유보는 **런타임 결합 층에만** 성립한다. 경로 접두어
+    대조는 순수 문자열 연산이라 그 유보에 해당하지 않는다 — `control_path()`가
+    이미 같은 성격으로 여기 있었다.
+    ⚠️ 그래도 **술어를 부르는 쪽이 축을 바꿔 부르면 결과는 여전히 갈린다.**
+    그 축은 `scripts/tests/test_worker_boundaries.py`가 대조군 셀로 본다.
 
 🔴 이 파일 자체가 통제 배선이다:
     아래 `CONTROL_GLOBS`에 자기 자신이 들어 있고, `.claude/settings.json`의
@@ -235,3 +244,65 @@ def control_path(relative: str) -> str:
     lowered = relative.lower()
     hit = any(fnmatchcase(lowered, glob.lower()) for glob in CONTROL_GLOBS)
     return relative if hit else ""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 경로 대조 술어 — 축마다 **방향이 다르다**.
+#
+# 🔴 **셋을 "일관성"을 이유로 통일하지 마라.** 안전한 방향이 축마다 반대다:
+#     막는 축(`deny`·`except`)은 **넓게 걸리는 쪽**이 fail-closed이고,
+#     여는 축(`allow`)은 **좁게 걸리는 쪽**이 fail-closed다.
+#     한 방향으로 맞추면 반드시 한쪽이 fail-open이 된다.
+# 🔴 대소문자 축의 근거는 **파일시스템이 둘**이라는 것이다. macOS(개발 호스트)는
+#     무시하고 Linux(CI·컨테이너)는 구분한다. 그래서:
+#       - 막는 축에서 **구분**하면 macOS에서 `Terraform/main.tf`가 같은 실파일인데
+#         통과한다(fail-open).
+#       - 여는 축에서 **무시**하면 Linux에서 `DOCS/`라는 **진짜 다른 디렉터리**를
+#         열어 준다(fail-open).
+# ⚠️ 방향을 바꾸려면 `scripts/tests/test_worker_boundaries.py` §매칭 축·방향의
+#     네 셀을 함께 본다 — 네 번째 셀이 일부러 반대 방향을 박아 두고 있다.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def matches_deny(relative: str, prefixes: tuple[str, ...]) -> bool:
+    """금지 접두어에 걸리는가 — **대소문자 무시 · 항상 접두어**.
+
+    🔴 `/`로 끝나지 않는 항목에도 **완전일치 분기를 두지 않는다.** `.env`가 금지면
+    `.env.local`·`.env.prod`도 금지여야 한다 — 막는 쪽의 과잉은 fail-closed다.
+    (Codex 짝 가드가 이 축에서 완전일치를 적용해 `.env.local`이 열려 있었다.)
+    """
+    lowered = relative.lower()
+    return lowered.startswith(tuple(prefix.lower() for prefix in prefixes))
+
+
+def matches_except(relative: str, items: tuple[str, ...]) -> bool:
+    """판정 근거 문서(`except`)에 걸리는가 — **대소문자 무시 · `/`면 접두어**.
+
+    `deny`와 같은 방향(막는 축)이라 대소문자를 무시한다. 다만 여기는 항목 단위로
+    파일과 디렉터리가 섞여 있어 `/` 유무로 의미론을 가른다 — 허브를 하위 문서로
+    쪼갤 때를 대비한 접두어(`docs/skills/`)와 단일 파일(`docs/security.md`)이
+    같은 표에 있다.
+    """
+    lowered = relative.lower()
+    return any(
+        lowered.startswith(item.lower())
+        if item.endswith("/")
+        else lowered == item.lower()
+        for item in items
+    )
+
+
+def matches_allow(relative: str, items: tuple[str, ...]) -> bool:
+    """허용 범위 안인가 — 🔴 **대소문자 구분** · `/`면 접두어, 아니면 완전일치.
+
+    위 둘과 **방향이 반대다.** 소문자화하면 대소문자를 구분하는 파일시스템에서
+    `DOCS/x.md`가 `docs/`로 통과해 **진짜 다른 디렉터리**가 열린다. 여기서는
+    안 걸려 거부되는 쪽이 fail-closed다.
+
+    🔴 파일 항목을 접두어로 두지 않는다 — `README.md`를 접두어로 보면
+    `README.md.bak`·`README.mdx`까지 함께 열린다(2026-08-20 `security` 지적 ⓔ).
+    """
+    return any(
+        relative.startswith(item) if item.endswith("/") else relative == item
+        for item in items
+    )

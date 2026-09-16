@@ -208,6 +208,98 @@ class WorkerBoundariesTest(unittest.TestCase):
                     assert denied.get("permissionDecision") == "deny", (
                         f"{worker} → {target}"
                     )
+            # 🔴 PASS 대조군 — 위와 같은 이유다(단정이 전부 `deny`뿐인 셀은
+            #    관측 경로가 죽어도 초록이다). 각 워커의 소관 경로를 함께 친다.
+            assert decide("data-engineer", "dagster_project/defs/probe.py") == {}
+            assert decide("devops-engineer", "terraform/probe.tf") == {}
+
+    # ── 매칭 축 · 방향 (표가 같아도 여기서 갈린다) ──────────────────────
+    #
+    # 🔴 아래 셋은 **같은 방향으로 통일하면 안 된다.** `deny`·`except`는 대소문자를
+    #    무시하고(막는 쪽 과잉 = fail-closed), `allow`는 구분한다(넓히는 쪽 과잉은
+    #    대소문자 구분 파일시스템에서 fail-open). 네 번째 셀이 그 반대 방향을 박아
+    #    "일관성"을 이유로 셋을 뒤집는 것을 막는다.
+    def test_deny_is_case_insensitive_in_both_runtimes(self) -> None:
+        """`deny` 접두어 대조가 **대소문자를 무시**한다(양 런타임).
+
+        macOS 파일시스템이 대소문자를 무시하므로 `Terraform/main.tf`는 금지 경로와
+        **같은 실파일**이다. Codex 짝 가드가 이 축에서 구분하고 있었다(Issue #53 —
+        표는 합쳐졌으나 매칭이 두 벌로 남아 있던 자리).
+        """
+        for decide in (self._claude_decision, self._codex_decision):
+            # 대조군 — 소문자 원본이 막히지 않으면 아래 단정은 아무것도 증명하지 않는다.
+            assert (
+                decide("data-engineer", "terraform/main.tf").get("permissionDecision")
+                == "deny"
+            ), "대조군: 소문자 원본은 막혀야 한다"
+            for target in (
+                "Terraform/main.tf",
+                "TERRAFORM/main.tf",
+                ".GitHub/workflows/ci.yml",
+            ):
+                assert decide("data-engineer", target).get("permissionDecision") == (
+                    "deny"
+                ), target
+            # 대조군 — 소관 경로는 통과해야 한다(전면 차단과 구분).
+            assert decide("data-engineer", "dagster_project/defs/probe.py") == {}
+
+    def test_deny_file_entry_is_a_prefix_in_both_runtimes(self) -> None:
+        """`deny` 항목은 `/`가 없어도 **접두어**다 — `.env`가 `.env.local`을 막는다.
+
+        🔴 `allow`와 **반대 방향**이다. `worker_boundaries.py` §COMMON 주석이
+        *"`deny`에는 그 분기를 두지 않는다: 막는 쪽은 넓게 걸리는 편이 안전하다"* 로
+        의미론을 못 박는데, Codex 짝 가드의 `matches_prefix()`가 `deny`에도 완전일치를
+        적용해 **공용 표가 선언한 의미론을 런타임이 안 지키고 있었다**(Issue #53).
+        ⇒ `.env`가 금지인데 `.env.local`·`.env.prod`가 열려 있었다.
+        """
+        for decide in (self._claude_decision, self._codex_decision):
+            # 대조군 — 완전일치 자신이 막히는지 먼저 본다.
+            assert decide("data-engineer", ".env").get("permissionDecision") == "deny"
+            for target in (".env.local", ".envrc", "compose.yml.bak"):
+                assert decide("data-engineer", target).get("permissionDecision") == (
+                    "deny"
+                ), target
+            # 🔴 **PASS 대조군은 선택이 아니다.** 단정이 전부 `== "deny"` 뿐인 셀은
+            #    관측 경로가 죽어도 초록이다 — 실측으로 확인했다(합성 페이로드를 깨자
+            #    `_decision()`의 방어가 없던 시점 기준 이 셀과 아래 통제 배선 셀
+            #    **둘만** 통과했고, PASS 대조군을 가진 나머지 다섯은 잡혔다).
+            assert decide("data-engineer", "dagster_project/defs/probe.py") == {}
+
+    def test_except_is_case_insensitive_in_both_runtimes(self) -> None:
+        """`except`(판정 근거 문서) 대조가 **대소문자를 무시**한다(양 런타임).
+
+        `deny`와 같은 방향이다 — 판정 대상이 판정 기준을 고치는 것을 막는 축이라
+        과잉 차단이 안전하다. 접두어 항목(`docs/skills/`)도 함께 친다.
+        """
+        for decide in (self._claude_decision, self._codex_decision):
+            # 대조군 — 소문자 원본.
+            assert (
+                decide("tech-writer", "docs/security.md").get("permissionDecision")
+                == "deny"
+            ), "대조군: 소문자 원본은 막혀야 한다"
+            for target in ("docs/Security.md", "docs/Skills/hub.md"):
+                assert decide("tech-writer", target).get("permissionDecision") == (
+                    "deny"
+                ), target
+            # 대조군 — 소관 문서는 통과해야 한다.
+            assert decide("tech-writer", "docs/setup.md") == {}
+
+    def test_allow_stays_case_sensitive_in_both_runtimes(self) -> None:
+        """🔴 `allow`는 **대소문자를 구분한다** — 위 두 셀과 방향이 반대다.
+
+        소문자화하면 대소문자를 **구분하는** 파일시스템(Linux CI)에서 `DOCS/`라는
+        **진짜 다른 디렉터리**를 열어 준다(fail-open). 여기서는 걸러지는 쪽이
+        fail-closed다.
+        ⚠️ 이 셀이 없으면 다음 사람이 "일관성"을 이유로 세 축을 모두 `lower()`로
+        통일하고 그 변경이 **초록으로 통과**한다.
+        """
+        for decide in (self._claude_decision, self._codex_decision):
+            # 대조군 — 정확한 표기는 통과한다.
+            assert decide("tech-writer", "docs/setup.md") == {}
+            assert (
+                decide("tech-writer", "DOCS/setup.md").get("permissionDecision")
+                == "deny"
+            ), "allow는 대소문자를 구분해야 한다(구분 FS에서 fail-open 방지)"
 
     # ── 헬퍼 ────────────────────────────────────────────────────────────
     def _claude_decision(self, worker: str, target: str) -> dict[str, str]:
@@ -243,10 +335,35 @@ class WorkerBoundariesTest(unittest.TestCase):
         return self._decision(result)
 
     def _decision(self, result: subprocess.CompletedProcess[str]) -> dict[str, str]:
-        """가드 출력에서 결정을 뽑는다. 무출력이면 통과다."""
+        """가드 출력에서 결정을 뽑는다. 무출력이면 통과다.
+
+        🔴 **fail-closed `deny`를 판정 `deny`로 읽지 않는다.** 두 가드는 입력을 못
+        읽으면 `deny`를 내는데(안전한 설계다), 그 값은 *"경계가 막았다"* 가 아니라
+        *"관측 경로가 죽었다"* 다. 둘이 **같은 모양**이라 구분하지 않으면 페이로드
+        형태가 어긋난 날 **`assert == "deny"` 전 셀이 초록으로 통과**한다.
+        실제로 Issue #53을 다시 재던 세션이 이 함정에 빠졌다 — 합성 페이로드의 JSON
+        이스케이프가 깨져 Codex가 14/14 `deny`를 냈고, 사유 문자열을 열어보기 전까지
+        **드리프트가 0건으로 보였다.**
+        ⇒ fail-closed 표지가 있으면 **단정 실패로 떨어뜨린다**(통과시키지 않는다).
+
+        🔴 **표지를 문구로 열거하지 않는다.** 처음에는 `"읽지 못했다"`·`"찾지 못했다"`
+        두 문구를 열거했는데 `devops-qa` 감사가 **셋째를 찾아냈다** — Codex 가드의
+        *"서브에이전트 역할을 식별하지 못해 patch를 차단했다"* 가 어느 쪽에도 안 걸렸다.
+        당시 호출 경로로는 도달 불가라 실해는 없었으나, **주석이 "두 가드의 fail-closed
+        사유"라고 검증 범위를 실제보다 넓게 주장**하고 있었다.
+        ⇒ 열거 대신 **다섯 사유가 공통으로 다는 `(fail-closed)` 표지 하나**를 본다.
+        새 fail-closed 분기가 규약대로 그 표지를 달면 **여기를 고치지 않아도 덮인다**.
+        ⚠️ 표지를 안 달면 다시 샌다 — 그 결합은 이 단정이 아니라 가드 쪽 규율이다.
+        """
         if not result.stdout.strip():
             return {}
-        return json.loads(result.stdout)["hookSpecificOutput"]
+        decision = json.loads(result.stdout)["hookSpecificOutput"]
+        reason = decision.get("permissionDecisionReason", "")
+        assert "fail-closed" not in reason, (
+            "가드가 경계 판정이 아니라 **fail-closed**로 deny했다 — 이 셀은 경계를 "
+            f"검사하지 못했다(합성 페이로드가 프로덕션 형태와 어긋났다): {reason}"
+        )
+        return decision
 
 
 if __name__ == "__main__":
