@@ -21,7 +21,7 @@ spec:
     # SeaweedFS가 이를 못 풀어 **PutObject가 `InternalError`로 실패**한다
     # (2026-08-19 실측: WAL 아카이빙이 `exit status 4`로 무한 재시도, `ContinuousArchiving=False`).
     # Dagster(pyiceberg) 경로에서 이미 밟은 것과 **같은 원인·다른 컴포넌트**다
-    # (common/constants.py의 `os.environ.setdefault`, docs/conventions/k8s.md §11).
+    # (common/constants.py의 `os.environ.setdefault`, docs/conventions/k8s/checksum.md).
     # 사이드카에도 같은 값을 넣어야 한다 — 여기가 세 번째 적용 지점이다.
     instanceSidecarConfiguration:
         env:

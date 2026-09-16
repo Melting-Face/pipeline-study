@@ -253,7 +253,7 @@
   그래서 **Connect가 떠 있는 동안 `SparkApplication` 배치 잡을 겹쳐 돌리지 않는다**(executor 2 초과).
   **에러 없이 깨지는 셋** — ⓐ **카탈로그 이름은 전 엔진 `iceberg`로 통일**(JDBC 카탈로그는 `catalog_name`으로
   레지스트리를 분할해, 이름이 다르면 같은 DB를 봐도 서로의 테이블이 안 보인다) ⓑ **SeaweedFS는 aws-chunked
-  체크섬을 못 풀어** 객체가 손상되므로 `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` 유지
+  체크섬을 못 풀어** 객체가 손상된다 — `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` 유지, **Java도 해당**
   ⓒ **`io-impl`(S3FileIO)과 `spark.hadoop.fs.s3*`(S3A)는 둘 다 필요**(S3FileIO는 카탈로그가 *아는* 파일만
   다뤄, warehouse를 직접 나열하는 `remove_orphan_files`가 Hadoop FS를 탄다).
   **Iceberg 유지보수(컴팩션·orphan 정리)는 Spark 프로시저**로 실행하고(Trino에서 이관),
@@ -271,7 +271,7 @@
   **Flink는 REST와 UI가 같은 포트**라 UI를 내면 **잡 제출 API도 함께 나간다**("UI만 열었다"로 읽지 않는다).
   컴퓨트 **러너 이미지는 로컬 레지스트리에 직접 push**하고(`kind load` 불필요) **태그와 매니페스트를 함께 올린다**.
   상세·실측은 [`docs/conventions/k8s.md`](docs/conventions/k8s.md)(§8 Dagster·§9 Spark·§9-2 Flink·§9-3 동시 기동·§11 스토어)와
-  [`docs/conventions/k8s/cnpg.md`](docs/conventions/k8s/cnpg.md)·[`docs/architectures/dagster.md`](docs/architectures/dagster.md).
+  [`docs/conventions/k8s/cnpg.md`](docs/conventions/k8s/cnpg.md)·[`k8s/checksum.md`](docs/conventions/k8s/checksum.md)·[`docs/architectures/dagster.md`](docs/architectures/dagster.md).
 - **Terraform/IaC 규칙**: 스택 단위 `terraform/<stack>/`, 버전 고정 + `.terraform.lock.hcl` 커밋, 포매터는
   **`terraform fmt`(2-space, 4칸 규칙의 예외)**, `*.tfstate`·`terraform.tfvars`·개인키 **커밋 금지**,
   부트스트랩은 **cloud-init 선언형**. 첫 스택 [`terraform/oci-k3s/`](terraform/oci-k3s/README.md)(OCI A1+k3s)는
