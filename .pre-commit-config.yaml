@@ -159,13 +159,21 @@ repos:
       - id: no-health-data-files
         name: 원천 진료 데이터 파일 커밋 차단
         language: fail
+        # 🔴 `joblib`은 원천 데이터가 아니라 **학습 산출물**인데 같은 훅이 막는다(2026-09-16 추가).
+        #    모델은 **훈련 데이터의 함수**이기 때문이다 — ① 적합 산출물에 훈련 분포 통계가
+        #    박히고(`SimpleImputer.statistics_`·`StandardScaler.mean_`·회귀계수) ② 트리 계열은
+        #    관측치 자체가 분할 임계값이 된다. "비식별 데이터로 만든 모델"을 자동으로
+        #    비식별로 취급하지 않는다. `pkl`·`pickle`·`npy`·`npz`는 원래 있었고 scikit-learn의
+        #    표준 직렬화 확장자만 정확히 빠져 있었다.
+        #    ⚠️ 이 훅과 `.gitignore`는 `notebooks|docs|wiki` 하위만 본다 — 저장소 루트의
+        #    `model.joblib`은 어느 층도 잡지 않는다(기존 `pkl`·`npy`와 같은 한계).
         entry: >-
           🔴 원천 진료 데이터일 수 있는 데이터 파일이다. 저장소에 커밋하지 않는다 (DUA·재식별 금지).
           반출은 저장소 밖 $DATA_EXTRACT_DIR(기본 ~/extracts)로만 하며 담당은 `data-extractor`다.
           집계·요약만 남기려면 gold 모델이나 리포트 본문으로 옮겨라.
           정본 docs/security.md · 예외가 필요하면 supervisor에 `security` 컨펌을 요청한다.
         files: >-
-          ^(notebooks|docs|wiki)/.*\.(csv|tsv|psv|parquet|feather|arrow|orc|avro|xlsx|xls|jsonl|ndjson|pkl|pickle|npy|npz|dta|sas7bdat|db|sqlite|duckdb)$
+          ^(notebooks|docs|wiki)/.*\.(csv|tsv|psv|parquet|feather|arrow|orc|avro|xlsx|xls|jsonl|ndjson|pkl|pickle|joblib|npy|npz|dta|sas7bdat|db|sqlite|duckdb)$
 
   # 조사 게이트 런타임 상태 커밋 차단 (2026-08-23 신설).
   # 🔴 `no-health-data-files`와 **같은 형태·다른 대상**이다: `.gitignore`가 1층이고

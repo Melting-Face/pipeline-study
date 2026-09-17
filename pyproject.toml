@@ -63,7 +63,11 @@ max-complexity = 10
 # 본질이라 f-string SQL 조립(S608)이 불가피하다. **외부 입력이 아니라 작성자가 직접 쓰는 리터럴**이라
 # 주입 경로가 없다. 실행 경로에 놓이는 코드(defs/·common/·scripts/)에는 면제하지 않는다.
 # T201: 노트북 셀의 출력 수단이 print다.
-"notebooks/**" = ["S608", "T201"]
+# S101·ANN: `**/tests/**`와 **같은 논리**다 — 노트북의 `assert`는 방어 코드가 아니라
+#   **검증 수단**이다(분모 grain·attrition 합산·분할 누수를 조용한 0 대신 에러로 바꾼다).
+#   `-O`로 최적화 실행할 대상이 아니므로 assert가 사라질 경로가 없다.
+#   타입 어노테이션은 탐색 코드에 과하다. 🔴 실행 경로(defs/·common/)에는 면제하지 않는다.
+"notebooks/**" = ["S608", "T201", "S101", "ANN"]
 # k8s/spark/poc_ingest.py: Spark 드라이버로 제출돼 executor 로그를 stdout으로 내는 잡 스크립트다.
 # Dagster 프로세스가 아니라 컨테이너 안에서 단독 실행되므로 context.log가 없다.
 "k8s/spark/poc_ingest.py" = ["T201"]
