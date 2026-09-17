@@ -18,6 +18,9 @@ kubectl port-forward svc/spark-connect 15002:15002   # 폴백을 쓸 때만, 별
 
 cd dagster/dockerfile.d/src
 uv run --group notebook jupyter lab --port 8889 --notebook-dir ../../../notebooks
+
+# 모델링 노트북(02·03)을 열 때는 ml 그룹을 함께 켠다
+uv run --group notebook --group ml jupyter lab --port 8889 --notebook-dir ../../../notebooks
 ```
 
 | 항목 | 값 | 이유 |
@@ -25,6 +28,11 @@ uv run --group notebook jupyter lab --port 8889 --notebook-dir ../../../notebook
 | 포트 | **8889** | 기본 8888은 compose SeaweedFS filer UI가 게시 |
 | venv | **Dagster와 공유** (`dagster/dockerfile.d/src/.venv`) | `pyspark[connect]`·`pyiceberg`·`pandas`·`pyarrow`가 이미 있고, `dagster_project.common.*`를 그대로 import해 **에셋과 같은 코드로** 검증할 수 있다 |
 | 의존성 | `[dependency-groups] notebook` | 런타임(`[project].dependencies`)과 분리 — 이미지·daemon에는 들어가지 않는다 |
+| 모델링 의존성 | `[dependency-groups] ml` | `notebook`과도 **분리**한다 — 접속·관측만 하는 00·01에 scikit-learn이 필요 없고, ML 의존성 문제가 **접속 검증 관문**(`docs/test.md` §6의 nbconvert)까지 죽이지 않게 한다 |
+
+> ⚠️ **그룹 분리는 선언 축에서만 보증된다.** venv가 하나라 `--group ml` 없이 띄워도 이미
+> 설치된 scikit-learn은 import된다. 분리의 근거는 `pyproject.toml` 선언과 이미지 빌드 경로이지
+> 로컬 디스크 상태가 아니다 — "`--group ml` 없이도 import된다"를 분리 실패로 읽지 않는다.
 
 ## SQL 엔진은 Spark Connect다 (Trino 아님)
 
@@ -72,10 +80,53 @@ compose의 `trino`는 `--profile legacy-sql` 로만 뜬다(방언 값 대조용)
 
 ## 파일
 
-| 파일 | 내용 |
+| 파일 | 내용 | 그룹 |
+|---|---|---|
+| `00-lakehouse-connect.ipynb` | 접속 스타터 — 환경 로드·경로 점검 → Spark Connect → 카탈로그 탐색 → pandas → Iceberg 메타데이터 → (선택) pyiceberg 직접 접속 | `notebook` |
+| `01-spark-on-k8s.ipynb` | K8s executor 관측 — 클라이언트가 못 바꾸는 것 → **계산이 어디서 도는가**(REST API 태스크 대조) → 파티션의 두 얼굴 → 스냅샷 계보 | `notebook` |
+| `02-water-task-candidates.ipynb` | **과제 후보 실측** — 규모·시간 범위 → 후보 3종의 표본·라벨 출처·누수 위험 → 피처 가용성 → 선정 근거표 | `notebook` |
+| `03-water-discharge-baseline.ipynb` | **베이스라인** — attrition → 수위→유량 회귀 → 관측소 단위 분할 → dummy·Ridge·HistGB → 음성 대조 → 유효 표본 검증 → 산출물 | `+ ml` |
+
+> 02가 03의 입력이다 — 과제는 02의 **실측 결과로** 고른다(미리 정해 두고 확인하지 않는다).
+
+### ⚠️ 왜 MIMIC-IV가 아니라 USGS인가
+
+이 저장소의 분석 질문 정본은 MIMIC-IV의 SOFA → Sepsis-3다([`dataset_schema.md`](../docs/dataset_schema.md)).
+그러나 **`mimiciv`·`eicu`는 네임스페이스만 등록돼 있고 Iceberg 테이블이 0건**이며,
+`s3://warehouse/raw/mimiciv/icu/`도 비어 있다 — **정의는 있으나 실체가 없다.**
+그래서 지금 실제로 조회되는 `usgs_water`에서 시작한다. 데이터가 갖춰지면 정본 질문으로 돌아간다.
+
+> 🔴 이건 "적재가 실패했다"가 아니라 **"아직 적재하지 않았다"** 일 가능성이 높다 — 둘은 다른 축이고,
+> 이 문서는 어느 쪽인지 판정하지 않는다. 확인 방법만 남긴다:
+> ```shell
+> kubectl exec catalog-postgres-1 -c postgres -- \
+>   psql -U postgres -d iceberg -c "select table_namespace, count(*) from iceberg_tables group by 1"
+> ```
+> ⚠️ **존재하지 않는 테이블을 Spark로 조회하면 `JDBC catalog is initialized without view support`라는
+> 엉뚱한 에러**가 난다. 카탈로그 설정 문제처럼 보이지만 원인은 **테이블 부재**다 —
+> 에러 메시지를 원인으로 읽지 말고 위 쿼리나 `show tables`로 실재부터 확인한다.
+
+## 🔴 학습 산출물은 저장소 밖에 둔다
+
+모델 파일은 **훈련 데이터의 함수**다 — ① 적합 산출물에 훈련 분포 통계가 박히고
+(`SimpleImputer.statistics_`·`StandardScaler.mean_`·회귀계수) ② 트리 계열은 **관측치 자체가
+분할 임계값**이 된다. "비식별 데이터로 만든 모델"이 자동으로 비식별인 것은 아니므로,
+데이터 반출과 같은 등급으로 다룬다.
+
+| 항목 | 값 |
 |---|---|
-| `00-lakehouse-connect.ipynb` | 접속 스타터 — 환경 로드·경로 점검 → Spark Connect → 카탈로그 탐색 → pandas → Iceberg 메타데이터 → (선택) pyiceberg 직접 접속 |
-| `01-spark-on-k8s.ipynb` | K8s executor 관측 — 클라이언트가 못 바꾸는 것 → **계산이 어디서 도는가**(REST API 태스크 대조) → 파티션의 두 얼굴 → 스냅샷 계보 |
+| 착지 | `$DATA_EXTRACT_DIR`(기본 `~/extracts`) 하위 `ml/<slug>/` — **저장소 밖** |
+| 내용 | `model.joblib`, `metrics.json`(지표·유병률·N·시드·라이브러리 버전·커밋 SHA) |
+| 1층 방어 | `.gitignore`의 `notebooks/**/*.joblib` |
+| 2층 방어 | `no-health-data-files` 훅 정규식(`joblib` 포함) |
+| 3층 방어 | 03의 저장 셀 안 경로 검사 |
+
+⚠️ **3층이 왜 필요한가** — `scripts/worker_path_guard.py`는 **워커의 쓰기만** 본다.
+Jupyter 커널은 그 가드 **밖**이라, 노트북이 저장소 안에 쓰는 것을 막는 기계는 없다.
+그래서 저장 셀이 직접 경로를 확인하고 에러를 내고 멈춘다.
+
+실험 추적은 이 `metrics.json` 하나다(MLflow 등 상주 서비스를 두지 않는다).
+그래서 **다시 만들 수 있을 만큼** 적는다 — 시드·분할 방식·버전·커밋·산출 엔진.
 
 ## 컴퓨트 정리
 

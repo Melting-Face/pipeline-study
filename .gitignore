@@ -15,6 +15,10 @@ notebooks/**/*.jsonl
 notebooks/**/*.pkl
 notebooks/**/*.npy
 notebooks/**/*.duckdb
+# 학습 산출물(2026-09-16). 모델은 **훈련 데이터의 함수**라 데이터와 같은 급으로 취급한다 —
+# ① 적합 산출물에 훈련 분포 통계가 박힌다(대체 중앙값·스케일·계수) ② 트리 계열은
+# 관측치 자체가 분할 임계값이 된다. 착지는 저장소 밖 `$DATA_EXTRACT_DIR`(기본 `~/extracts`).
+notebooks/**/*.joblib
 docs/analyses/**/*.csv
 docs/analyses/**/*.tsv
 docs/analyses/**/*.parquet
