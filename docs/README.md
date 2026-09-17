@@ -55,6 +55,7 @@
 | [관측·모니터링](conventions/monitoring.md) | 서비스 추가 시 **관측 수단 등록 의무** |
 | [Kubernetes](conventions/k8s.md) | 워크로드·requests/limits·probe·RBAC·Operator·Ingress |
 | [CNPG Postgres](conventions/k8s/cnpg.md) | 카탈로그·메타 DB · 선언 롤 · 백업 · PVC 제약 |
+| [aws-chunked 체크섬](conventions/k8s/checksum.md) | SeaweedFS 호환 env · **SDK 버전 경계** · 오진 갈래 |
 | [Terraform/IaC](conventions/terraform.md) | 스택 구조·버전 고정·state 커밋 금지 |
 | [에이전트 오케스트레이션](conventions/agents.md) | AI 세션 2계층·권한·게이트·저널 |
 | [Codex 에이전트 구성](conventions/codex.md) | Claude와 분리된 Codex 지침·워커·권한·hook·스킬 운영 |

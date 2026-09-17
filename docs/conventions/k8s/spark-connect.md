@@ -1,7 +1,7 @@
 # Spark Connect — client mode 운영 규칙
 
 > [../k8s.md](../k8s.md) §9-4에서 분리했다. 이 문서가 `--master k8s://` 설정의 정본이다.
-> 자원 경계는 §9-3, 노출·연결은 §10, 체크섬은 §11이 갖는다.
+> 자원 경계는 §9-3, 노출·연결은 §10이 갖고 체크섬은 [checksum.md](checksum.md)가 갖는다.
 
 ## 실행 모드는 client다
 
@@ -52,7 +52,7 @@ StatefulSet 전환은 택하지 않았다 — `kubectl scale deploy/spark-connec
 ⚠️ **체크섬 env 2종(`AWS_REQUEST_CHECKSUM_CALCULATION`·`AWS_RESPONSE_CHECKSUM_VALIDATION`)은
 executor에도 보낸다.** 로컬 모드에서는 driver=executor가 한 몸이라 driver env 하나가 양쪽을 덮었고,
 client mode가 그 우연을 깬다. 빠지면 SeaweedFS가 aws-chunked를 못 풀어 **PUT이 성공한 것처럼
-보이면서 객체가 손상**된다(§11).
+보이면서 객체가 손상**된다([checksum.md](checksum.md)).
 
 **PG 크리덴셜은 executor에 넣지 않고 시작한다** — JdbcCatalog 해석·커밋은 driver에서 일어나고
 executor는 데이터 파일 I/O만 한다. 실패 서명은 executor 로그의 `org.postgresql` ·

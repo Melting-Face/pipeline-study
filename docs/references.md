@@ -74,6 +74,12 @@
 | [Hadoop 3.4.0 릴리스 노트](https://hadoop.apache.org/docs/r3.4.0/hadoop-project-dist/hadoop-common/release/3.4.0/RELEASENOTES.3.4.0.html) | S3A의 **AWS SDK v2 전환**(`HADOOP-18073`)·**v1 bundle 제거**(`HADOOP-18820`) — 버전이 아니라 **좌표가 바뀌는** 근거 | [architectures/spark.md](architectures/spark.md) |
 | [Apache Flink CDC 3.6.0 릴리스 공지](https://flink.apache.org/2026/03/30/apache-flink-cdc-3.6.0-release-announcement/) | 지원 Flink가 **1.20.x · 2.2.x** — 현행 **2.1**과 짝이 아니라 DB CDC를 비권장한 근거 | [architectures/flink.md](architectures/flink.md) |
 | [Iceberg Flink Writes](https://iceberg.apache.org/docs/latest/flink-writes/) | 싱크가 **체크포인트 완료 시점에 커밋** · upsert는 **format v2 + primary key** 필수 | [architectures/flink.md](architectures/flink.md) |
+| [AWS SDK for Java v2 2.30.x CHANGELOG](https://raw.githubusercontent.com/aws/aws-sdk-java-v2/master/changelogs/2.30.x-CHANGELOG.md) | request checksum 기본 계산이 **`WHEN_SUPPORTED`로 전환**된 원문(기본 알고리즘 CRC32) | [conventions/k8s/checksum.md](conventions/k8s/checksum.md) |
+| [AWS SDK for Java v2 2.30.0 릴리스 태그](https://github.com/aws/aws-sdk-java-v2/releases/tag/2.30.0) | 전환 판본이 **`2.30.0`**(2025-01-15)이라는 확정 — 체크섬 경계의 기준점 | [conventions/k8s/checksum.md](conventions/k8s/checksum.md) |
+| [AWS SDK for Java 2.x — S3 checksums](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/s3-checksums.html) | 버전별 기본 동작 **표** — CHANGELOG와 값이 일치(A등급 2건 교차 확인) | [conventions/k8s/checksum.md](conventions/k8s/checksum.md) |
+| [AWS SDKs·도구 레퍼런스 — Data integrity protections](https://docs.aws.amazon.com/sdkref/latest/guide/feature-dataintegrity.html) | 끄는 설정의 **이름·기본값** 3형태(env · config 키 · JVM 프로퍼티) | [conventions/k8s/checksum.md](conventions/k8s/checksum.md) |
+| [Iceberg `1.6.1` 태그 `libs.versions.toml`](https://raw.githubusercontent.com/apache/iceberg/apache-iceberg-1.6.1/gradle/libs.versions.toml) | `iceberg-aws-bundle 1.6.1`의 번들 SDK = **`2.26.20`**(경계 **이전**) | [conventions/k8s/checksum.md](conventions/k8s/checksum.md) |
+| [Iceberg `1.11.0` 태그 `libs.versions.toml`](https://raw.githubusercontent.com/apache/iceberg/apache-iceberg-1.11.0/gradle/libs.versions.toml) | `iceberg-aws-bundle 1.11.0`의 번들 SDK = **`2.44.4`**(경계 **이후**) | [conventions/k8s/checksum.md](conventions/k8s/checksum.md) |
 
 🔴 **Iceberg 매트릭스는 정본 소스 경로를 틀리기 쉽다.** 위 페이지의 원본은 `apache/iceberg`
 저장소의 **`site/docs/multi-engine-support.md`** 다. `docs/multi-engine-support.md`는 **부재**하고,

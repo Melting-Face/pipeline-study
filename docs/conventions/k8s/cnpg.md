@@ -13,7 +13,8 @@
   `<cluster>` 이름의 서비스는 **만들어지지 않는다**. jdbc URI는 `catalog-postgres-rw:5432`다.
 - **자동생성 시크릿(`<cluster>-app`)을 쓰지 않는다** — Dagster·dbt가 이 DB에 직접 붙으므로
   (`ICEBERG_CATALOG_*`) 오퍼레이터가 만든 비밀번호는 사람이 옮겨야 하고, 그 동기화가
-  어긋나면 §11의 "부분 성공" 드리프트가 재현된다. → `bootstrap.initdb.secret`으로 **선언 시크릿**
+  어긋나면 [operations.md](../../operations.md)의 "부분 성공" 드리프트가 재현된다(나열은 되고
+  `load_table`에서 거부). → `bootstrap.initdb.secret`으로 **선언 시크릿**
   `catalog-pg-app`(type `kubernetes.io/basic-auth`, 키 `username`/`password` 고정)을 지정하고,
   값의 단일 출처는 `scripts/k8s-poc-storage.sh`(env override)로 둔다.
   PG 크리덴셜은 `lakehouse-creds`(S3 전용)와 **분리**한다 — 같은 비밀번호를 두 시크릿에 두지 않는다.

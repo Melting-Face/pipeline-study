@@ -418,6 +418,7 @@ uv run --group notebook jupyter lab --port 8889 --notebook-dir ../../../notebook
 - **`DAGSTER_HOME` 미지정** → 임시 sqlite 인스턴스가 쓰여 **런이 UI에 남지 않는다**. 실패하지 않고 조용하다.
 - **`AWS_REQUEST_CHECKSUM_CALCULATION=when_required` 누락** → 최신 AWS SDK가 본문을 aws-chunked로 감싸는데
   SeaweedFS가 못 푼다. 업로드는 성공한 것처럼 보이고 **객체가 손상된다.**
+  적용 대상 전수와 SDK 버전 경계는 [conventions/k8s/checksum.md](conventions/k8s/checksum.md).
 - **`ICEBERG_S3_*` 엔드포인트와 키가 어긋남** → 카탈로그 **나열은 되고** `load_table`에서 `ACCESS_DENIED`.
   부분 성공이라 원인을 오해하기 쉽다. 엔드포인트와 자격증명은 **한 쌍으로 바꾼다.**
 - **dbt 타깃에 `trino`라는 이름은 없다** — Trino는 `dev`/`prod`이고, 기본값은 `spark_connect`다

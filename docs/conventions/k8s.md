@@ -357,7 +357,8 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
 요지 셋만 여기 둔다.
 
 - **driver는 Deployment 파드 그 자체다**(client mode). `--deploy-mode cluster`를 주면 **CrashLoop**다.
-- **체크섬 env 2종은 executor에도 보낸다** — 로컬 모드에서는 driver env 하나가 양쪽을 덮었다(§11).
+- **체크섬 env 2종은 executor에도 보낸다** — 로컬 모드에서는 driver env 하나가 양쪽을 덮었다
+  ([k8s/checksum.md](k8s/checksum.md)).
 - **`spark.kubernetes.driver.pod.name`이 회수 다이얼의 전제다** — 없으면 `--replicas=0`이
   driver만 내리고 executor가 남는다.
 
@@ -465,24 +466,11 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
   Dagster 적재분이 Spark에서 보이지 않을 상태였다 → `iceberg`로 통일하고 기존 행을 마이그레이션했다.
   설정 위치: Spark `spark.sql.catalog.<name>`·`ICEBERG_CATALOG_NAME`(러너 env) / Flink `CREATE CATALOG <name>` /
   Dagster `common/constants.py:CATALOG_NAME` / Trino `iceberg.jdbc-catalog.catalog-name`.
-- **SeaweedFS는 AWS SDK의 flexible checksum(aws-chunked)을 풀지 못한다.**
-  최신 SDK는 PutObject에 CRC64NVME 체크섬을 기본 적용하며 본문을 청크로 감싸는데, SeaweedFS가 이를
-  해제하지 않아 **프레이밍 바이트가 객체 내용에 그대로 저장**된다
-  (실측: Iceberg `metadata.json`이 `11\r\n{...}\r\n0\r\nx-amz-checksum-...`로 저장 →
-  다음 읽기에서 pyiceberg가 JSON 파싱 실패). **오류가 쓰기가 아니라 이후 읽기에서 나므로 추적이 어렵다.**
-  → `AWS_REQUEST_CHECKSUM_CALCULATION=when_required`(+`AWS_RESPONSE_CHECKSUM_VALIDATION`)로 끈다.
-  코드에도 `common/constants.py`가 `os.environ.setdefault`로 기본값을 못 박는다(환경 누락 시 조용한 손상 방지).
-  Java SDK 경로(Spark·Flink의 iceberg-aws-bundle)는 영향받지 않는다 — 파이썬(pyiceberg/pyarrow·boto3) 경로만 해당.
-  - ⚠️ **증상은 쓰기 경로마다 다르고, 그중 하나는 원인을 틀린 곳으로 가리킨다.**
-    `overwrite(overwrite_filter=...)`는 `delete`+`append`로 풀려 parquet를 다시 쓰는데(copy-on-write),
-    이 경로는 **쓰기 시점에** `AWS Error INVALID_ACCESS_KEY_ID during UploadPart`로 죽는다.
-    **자격증명 문제가 아니다** — 같은 키로 체크섬 모드만 바꾸면 통과한다(변인 하나만 달리한 대조).
-    이 문구를 보면 `.env`·시크릿·롤을 뒤지기 전에 **체크섬 모드를 먼저 본다**.
-    이 저장소가 반복해 적은 *"조용히 잘못된 값"* 과는 다른 축이다 — 관측 경로는 살아 있고
-    에러를 내고 멈추는데 **그 에러가 거짓 증언**을 한다.
-    미확인 축 셋 — ⓐ 위 대조는 일회용 컨테이너 실측이라 in-cluster 재현은 안 했고
-    ⓑ 다른 쓰기 경로(청크 append·IO 매니저)에서 같은 문구가 나오는지 안 셌으며
-    ⓒ 두 체크섬 변수를 함께 뒤집어 어느 쪽이 원인인지는 안 갈랐다.
+- **SeaweedFS는 AWS SDK의 flexible checksum(aws-chunked)을 풀지 못해 객체가 조용히 손상된다.**
+  `AWS_REQUEST_CHECKSUM_CALCULATION`·`AWS_RESPONSE_CHECKSUM_VALIDATION`을 `when_required`로 끈다.
+  영향 경로는 **SDK 버전이 가른다**(S3A=v1 무관 / S3FileIO·pyiceberg=v2 해당) — 종전의
+  *"Java 경로는 무관"* 서술은 러너가 `iceberg-aws-bundle 1.11.0`을 실으면서 **거짓이 됐다.**
+  버전 경계·전수 적용 대상·오진 갈래·미확인 축은 **[k8s/checksum.md](k8s/checksum.md)** 가 정본이다.
 
 ## 12. 카탈로그·메타 Postgres = CloudNativePG(CNPG)
 
