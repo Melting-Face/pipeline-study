@@ -43,6 +43,8 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
+import subprocess
 import sys
 import unicodedata
 from collections.abc import Iterable
@@ -188,6 +190,10 @@ DEFAULT_TARGETS = (
 #   ⚠️ 링크 축은 이미 `LINK_SCAN_DIRS`가 보고 있었다.
 #      **세 목록의 모집단은 셋 다 다르다** — 한 축의 초록을 다른 축으로 읽지 마라.
 #      정본은 `docs/doc-sync.md` §변경 유형별 동기화 체인의 3목록 표다.
+# 🔴 **이 상수는 이제 폴백이다**(Issue #29) — 평시 일자 축 모집단은
+#    `collect_tracked_md()`의 **git 추적 md 전수**이고, 여기로 돌아오는 것은
+#    git 조회가 실패했을 때뿐이다. 그때는 모집단 이름이 출력에 함께 찍힌다.
+#    ⚠️ **지우지 않는다** — 폴백이 없으면 git 없는 환경에서 일자 축이 통째로 사라진다.
 DATE_TARGETS = (*DEFAULT_TARGETS, ".claude/agents")
 
 # 링크 검사는 **저장소 전역 1회**로 돈다.
@@ -466,9 +472,14 @@ def check_vault_refs(repo_root: Path) -> list[str] | None:
 def collect(targets: Iterable[str | Path], repo_root: Path) -> list[Path]:
     """대상 열거를 파일 목록으로 편다 — 디렉터리는 재귀, 제외 경로는 걸러낸다.
 
-    🔴 **두 모집단이 이 함수 하나를 쓴다**(`DEFAULT_TARGETS`·`DATE_TARGETS`).
-       복제하면 축마다 제외 규칙이 조용히 갈린다 — `check_dates`를 재사용하는 것과
-       같은 이유이고, 이 저장소가 반복해 데인 함정이다.
+    🔴 **명시 열거를 쓰는 모든 경로가 이 함수 하나를 쓴다** — 가독성 4축·시제
+       (`DEFAULT_TARGETS`), 사용자가 준 명시 경로, 그리고 일자 축의 **폴백**
+       (`DATE_TARGETS`). 복제하면 축마다 제외 규칙이 조용히 갈린다 —
+       `check_dates`를 재사용하는 것과 같은 이유이고, 이 저장소가 반복해 데인 함정이다.
+
+    ⚠️ **평시 일자 축은 여기를 거치지 않는다**(Issue #29) — `collect_tracked_md()`가
+       git 인덱스에서 직접 뽑는다. 다만 `EXCLUDE_PARTS` 필터는 **양쪽이 같은 상수를**
+       쓰므로 제외 규칙은 갈리지 않는다.
     """
     files: list[Path] = []
     for target in targets:
@@ -480,6 +491,57 @@ def collect(targets: Iterable[str | Path], repo_root: Path) -> list[Path]:
         elif path.is_file():
             files.append(path)
     return [f for f in files if not any(part in f.parts for part in EXCLUDE_PARTS)]
+
+
+def collect_tracked_md(repo_root: Path) -> tuple[list[Path], str]:
+    """일자 축 모집단 — **git이 추적하는 `*.md` 전수**를 편다 (Issue #29).
+
+    🔴 **여기서만 명시 열거를 쓰지 않는다.** 상수 목록은 빠뜨린 파일을
+       *"위반 0건"에 포함되지 않는* 상태로 남긴다 —
+       **막힌 것이 아니라 세지 않은 것**이다.
+       모집단을 git 인덱스로 두면 그 결함이 **구조적으로** 사라진다.
+       벤더 콘텐츠(`.claude/skills/**`·`dbt_packages/`·`.venv/`·`.pytest_cache/`·
+       `.terraform/`)는 **추적되지 않으므로** `EXCLUDE_PARTS`를 키우지 않아도 빠진다
+       (디렉터리를 더하는 처방이었다면 제외 목록이 함께 자랐다).
+
+    ⚠️ **경계**: 모집단이 인덱스라 **미추적 md는 보지 않는다.** 스테이징된 신규
+       파일은 잡히므로 **커밋 게이트로서는 사각이 없고**, 남는 것은
+       *커밋할 생각이 없는 파일*뿐이다.
+
+    🔴 둘째 반환값은 **어느 모집단을 썼는지**다. 폴백으로 조용히 좁아지면 "0건"이
+       거짓이 되므로, `check_vault_refs`가 *"검사 안 함"* 을 따로 찍는 것과 같이 밝힌다.
+    """
+    # 🔴 조용히 통과시키지 않는다 — 어느 경로로 실패하든 좁은 상수 목록으로
+    #    되돌리고 **그 사실을 라벨로 알린다**(`check_vault_refs`가 "검사 안 함"을
+    #    따로 찍는 것과 같은 이유).
+    # S603: 셸을 안 태우고(리스트 인자) `git ls-files`는 읽기 전용이다.
+    #    인자는 전부 리터럴이고 `repo_root`는 이 파일 위치에서 유도된다.
+    git_bin = shutil.which("git")
+    if git_bin is None:
+        return collect(DATE_TARGETS, repo_root), "상수 폴백(git 없음)"
+    try:
+        listed = subprocess.run(  # noqa: S603
+            [git_bin, "-C", str(repo_root), "ls-files", "-z", "--", "*.md"],
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=10,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return collect(DATE_TARGETS, repo_root), "상수 폴백(git 조회 실패)"
+    files = [repo_root / rel for rel in listed.split("\0") if rel]
+    # 🔴 **`is_file()`을 빠뜨리면 죽는다** — 인덱스에는 있는데 워크트리에서 지워진 파일
+    #    (`git rm` 없이 `rm`한 경우, 삭제가 스테이징되기 전)이 목록에 남는다.
+    #    `collect()`의 `rglob`은 **실재하는 것만** 냈으므로 이 형태가 없었다 —
+    #    모집단을 디스크 순회에서 인덱스로 바꾸며 **새로 생긴 실패 모드**다.
+    #    ⚠️ 검사할 내용이 없으니 조용히 빼는 것이 맞다
+    #       (존재 여부는 이 도구의 축이 아니다).
+    kept = [
+        f
+        for f in files
+        if f.is_file() and not any(part in f.parts for part in EXCLUDE_PARTS)
+    ]
+    return sorted(kept), "git 추적 전수"
 
 
 def main() -> int:
@@ -527,9 +589,11 @@ def main() -> int:
     if args.paths:
         files = collect([Path(p) for p in args.paths], repo_root)
         date_files = files
+        date_population = "명시 경로"
     else:
         files = collect(DEFAULT_TARGETS, repo_root)  # 가독성 4축 + 시제
-        date_files = collect(DATE_TARGETS, repo_root)  # 일자 축(상위집합)
+        # 일자 축은 **명시 열거를 쓰지 않는다**(Issue #29) — 상세는 함수 docstring.
+        date_files, date_population = collect_tracked_md(repo_root)
 
     if not files and not date_files:
         print("검사 대상 없음", file=sys.stderr)
@@ -546,8 +610,11 @@ def main() -> int:
                 counts[finding.split(":")[0]] = counts.get(finding.split(":")[0], 0) + 1
             for rel, count in sorted(counts.items(), key=lambda item: -item[1]):
                 print(f"{count:5d}  {rel}")
+        # 🔴 **모집단 이름을 함께 찍는다** —
+        #    폴백으로 좁아진 0건과 전수 0건은 다른 상태다.
         print(
-            f"\n일자 표기 {len(date_findings)}건 / 문서 {len(date_files)}개",
+            f"\n일자 표기 {len(date_findings)}건 / "
+            f"문서 {len(date_files)}개 ({date_population})",
             file=sys.stderr,
         )
         return 1 if date_findings else 0
@@ -574,19 +641,24 @@ def main() -> int:
     total = 0
     per_file: list[tuple[Path, int]] = []
     default_set = set(files)
+    dated_set = set(date_files)
 
-    # 🔴 루프는 **상위집합**(`date_files`)을 돈다. 가독성 4축·시제는 `default_set`
-    #    안에서만 본다 — **넓힌 것이 일자 축 하나뿐임이 코드에서 읽혀야** 한다.
-    for path in date_files:
+    # 🔴 루프는 **두 모집단의 합집합**을 돈다. 각 축은 자기 집합 안에서만 판정한다 —
+    #    **넓힌 것이 일자 축 하나뿐임이 코드에서 읽혀야** 한다.
+    #    ⚠️ 합집합인 이유: 일자 축이 git 인덱스로 바뀌면서 **포함 관계가 깨졌다.**
+    #       `docs/`의 **미추적** md는 가독성 축 대상이지만 일자 축 밖이라, 예전처럼
+    #       `date_files`만 돌면 그 파일의 가독성 검사가 **조용히 빠진다**.
+    for path in sorted(default_set | dated_set):
         lines = path.read_text(encoding="utf-8").splitlines()
         rel = path.relative_to(repo_root) if path.is_relative_to(repo_root) else path
         findings: list[str] = []
         is_default = path in default_set
 
-        # 관측 일자 — **두 모집단 공통**. 함수를 재사용해 `--dates`와 같은 판정을 쓴다.
+        # 관측 일자 — 함수를 재사용해 `--dates`와 **같은 판정**을 쓴다.
         #   🔴 여기서 로직을 복제하면 두 경로의 모집단이 갈린다
         #      (이 저장소가 반복해 데인 함정).
-        findings.extend(check_dates([path], repo_root))
+        if path in dated_set:
+            findings.extend(check_dates([path], repo_root))
 
         # 문서 길이 — 문서당 1건
         if is_default and len(lines) > MAX_FILE_LINES:
@@ -696,7 +768,8 @@ def main() -> int:
 
     # 🔴 **모집단을 한 숫자로 적으면 그 자체가 거짓이 된다** — 축마다 대상이 다르다.
     print(
-        f"\n위반 {total}건 / 가독성·시제 {len(files)}개 · 일자 {len(date_files)}개",
+        f"\n위반 {total}건 / 가독성·시제 {len(files)}개 · "
+        f"일자 {len(date_files)}개 ({date_population})",
         file=sys.stderr,
     )
     return 1 if total else 0

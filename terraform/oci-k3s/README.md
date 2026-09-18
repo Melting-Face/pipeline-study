@@ -6,12 +6,14 @@ OCI **Always Free**(Ampere A1, ARM64) 인스턴스 1대에 **k3s 단일 노드**
 [`../../docs/conventions/k8s.md`](../../docs/conventions/k8s.md).
 
 > **주의(비용/보안)**: A1은 무료 한도(**2 OCPU/12 GB**/블록스토리지 200 GB) 내에서만 무료다
-> (2026-06-15부로 4/24 → **2/12 축소**, 월 1,500 OCPU시간·9,000 GB시간). 초과분은 **과금**되며
-> `variables.tf`의 `validation`이 이를 막는다. `terraform.tfvars`·`*.tfstate`·
+> (2026-06-15부로 4/24 → **2/12 축소**, 월 1,500 OCPU시간·9,000 GB시간). <!-- date-ok -->
+> 🔴 위 일자는 **벤더 정책 변경일**(외부 사실)이라 일자 축에서 **면제**한다 — 지우면 한도가
+> 왜 이 값인지 검증할 근거가 사라진다. **내부 결정 일자와 처방이 다르다.**
+> 초과분은 **과금**되며 `variables.tf`의 `validation`이 이를 막는다. `terraform.tfvars`·`*.tfstate`·
 > 개인키·`kubeconfig-oci`는 **커밋 금지**(`.gitignore` 처리됨). `allowed_ssh_cidr`·`allowed_api_cidr`는
 > **본인 공인 IP/32**로 좁히는 것을 권장한다.
 
-## 현황 — ⏸ 보류 (2026-08-17)
+## 현황 — ⏸ 보류
 
 **A1 컴퓨트가 Out of host capacity로 생성되지 않아 보류**하고, 검증은 로컬 K8s(kind on Podman)에서 이어간다.
 배경·재개 조건은 [`../../docs/architectures/oci.md`](../../docs/architectures/oci.md) §현황.
