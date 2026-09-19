@@ -8,7 +8,8 @@
   미리 만들고(`create_namespace = false`), `Cluster` CR은 `k8s/catalog-postgres.yaml`(적용은
   `k8s-poc-storage.sh`). 즉 CNPG 하나에 세 주체가 걸쳐 있어 **순서가 곧 전제**다([`../../setup.md`](../../setup.md) §3).
 - **차트 버전 ≠ appVersion**(§9 Spark 오퍼레이터와 같은 함정): chart **0.29.0** = CNPG **1.30.0**.
-  `helm search repo cnpg/cloudnative-pg --versions`로 대조하고 `k8s-env.sh`의 `CNPG_CHART_VERSION`에 핀한다.
+  `helm search repo cnpg/cloudnative-pg --versions`로 대조하고
+  `terraform/lakehouse-platform/variables.tf`의 `cnpg.chart_version`에 핀한다(오퍼레이터 설정은 셸에서 이관됐다).
 - **서비스 이름에 접미사가 붙는다** — `<cluster>-rw`(쓰기)·`-ro`(읽기 전용)·`-r`(전체)만 생기고
   `<cluster>` 이름의 서비스는 **만들어지지 않는다**. jdbc URI는 `catalog-postgres-rw:5432`다.
 - **자동생성 시크릿(`<cluster>-app`)을 쓰지 않는다** — Dagster·dbt가 이 DB에 직접 붙으므로

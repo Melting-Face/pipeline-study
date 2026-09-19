@@ -142,7 +142,11 @@ CDC를 쓰려면 없는 DB를 먼저 만들어야 한다 — **목적과 수단�
 
 - Flink 문서(stable): https://flink.apache.org/documentation/flink-stable/
 - 다운로드/릴리스: https://flink.apache.org/downloads/
-- Flink Kubernetes Operator: https://nightlies.apache.org/flink/flink-kubernetes-operator-docs-main/
+- Flink Kubernetes Operator — **릴리스 문서를 본다**(`nightlies.apache.org`의
+  `flink-kubernetes-operator-docs-release-<차트버전>` 계열). `<차트버전>`은
+  `terraform/lakehouse-platform/variables.tf`의 `flink_operator.chart_version`이다.
+  ⚠️ `-docs-main`(나이틀리)에는 미출시 필드가 섞여 *"문서엔 있는데 설치된 오퍼레이터는
+  모르는 키"* 가 나온다. 패턴·판단축은 [operators.md](operators.md) §참고.
 - Flink + Iceberg connector: https://iceberg.apache.org/docs/latest/flink/
 - Iceberg Flink 읽기(스트리밍·`IncrementalAppendScan`): https://iceberg.apache.org/docs/latest/flink-queries/
 - Iceberg Flink 설정(read option 목록): https://iceberg.apache.org/docs/latest/flink-configuration/
