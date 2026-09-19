@@ -69,7 +69,11 @@
 
 **둘 다 정확한 값이고 단위만 다르다.** 그래서 「디스크 16」이라고 쓸 때는 **링크를 세었다**는 것을 함께 적는다
 — 값이 맞고 단위가 어긋난 수치는 검산을 통과하며 남는다([philosophy.md](philosophy.md) §계측 단위).
-**설치 경로가 심볼릭 링크라는 사실은 이 저장소의 상수**다(`.claude/skills/` → `.agents/skills/`).
+**설치 경로가 엔트리마다 갈린다는 사실은 이 저장소의 상수**다 — `.claude/skills/`에는
+`.agents/skills/<name>`을 가리키는 상대 링크와 독립 실디렉터리가 섞여 있고, `.agents/skills/`는 전부 실체다.
+디렉터리 단위 링크가 아니므로 **한 형태에만 건 규칙은 절반만 덮는다.** 위 표의 `10`이 실디렉터리 수와
+같은 것이 그 방증이다. 건수는 볼트가 갖는다 — 재측정은 `.claude/skills`에 대해
+`find … -maxdepth 1 -type l | wc -l`(링크) · `find … -maxdepth 1 -mindepth 1 -type d | wc -l`(실체).
 경로 규칙·매칭 로직을 바꾸면 **볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md`의 형태 매트릭스를 통째로 다시 돌린다.**
 
 이전 판 스냅샷은 볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md`에 있다.
