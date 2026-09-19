@@ -67,10 +67,30 @@
 ## 안전
 
 - 쓰기는 **전용 프로브 버킷 + 실행마다 새로 만드는 프리픽스**에만 한다.
-  `warehouse`·`dagster-logs` 등 실데이터 버킷은 **하드 거부**한다.
+  가드는 **두 겹**이고 서로를 대체하지 않는다:
+  ① **allowlist** — 버킷명·프리픽스에 `probe` 마커를 **강제**한다. 실 버킷
+     (`warehouse`·`pg-backup`·`dagster-logs`)이 **구조적으로** 배제되므로
+     인벤토리가 늘어도 이 파일을 따라 갱신할 필요가 없다.
+  ② **denylist** — 실 버킷 이름을 **하드 거부**한다(이중 방어).
 - 버킷 삭제·기존 객체 삭제는 하지 않는다. 정리는 **이번 실행이 만든 키만**
   지우며, **정리 결과는 판정과 분리해 별도로 출력**한다(정리 실패가 결과를
   가리지 않게).
+- 🔴 **삭제 범위는 서버 응답이 아니라 자기가 만든 문자열로 정한다.**
+  `ListObjectsV2`가 `Prefix`를 지키는지가 **이 스위트의 검사 대상**이라
+  (P5가 계약을, P4가 나열 정합을 잰다) 정리에서 그 응답을 무조건 신뢰하면
+  순환이다. 나열 결과는 `run_prefix`로 **클라이언트에서 재검증**하고,
+  걸러진 건수가 0이 아니면 **비준수의 추가 관측점으로 출력**한다.
+
+## 예외 출력 규칙
+
+임의 예외를 잡는 자리(`except Exception`)에서는 **`type(exc).__name__`만**
+싣고 **`str(exc)`는 싣지 않는다**. 예외 메시지의 내용은 서드파티가 정하는데
+P3·P4는 자격증명을 딕셔너리 값·키워드 인자로 넘기고(`SqlCatalog`·
+`PyArrowFileIO`·`S3FileSystem`), pydantic `ValidationError`처럼 **입력값을
+메시지에 싣는** 구현이 있어 비노출이 **보장되지 않는다**. 실유출이 관측된
+것은 아니지만(「보장되지 않음」이지 「유출됨」이 아니다) 같은 파일에 안전한
+패턴이 이미 있으므로 갈리는 쪽이 **드리프트**다. 스토어가 응답한
+`ClientError`는 예외 — 에러 **코드**만 꺼내 쓴다(입력값이 아니다).
 
 ## 실행 (의존성은 위 PEP 723 — uv가 자동 provisioning)
 
@@ -110,8 +130,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # 프로브 전용 기본 좌표. 실데이터 버킷과 **이름이 겹칠 수 없게** 둔다.
 DEFAULT_BUCKET = "conformance-probe"
 DEFAULT_PREFIX = "conformance-probe"
-# 이 버킷들에는 어떤 경우에도 쓰지 않는다(오타 한 번의 대가가 크다).
-FORBIDDEN_BUCKETS = frozenset({"warehouse", "dagster-logs", "raw"})
+# 🔴 1차 방어 — **allowlist**. 버킷명에도 마커를 강제한다.
+#   denylist 단독은 **인벤토리가 늘 때마다 이 상수를 갱신해야 하는데 그 트리거가
+#   없다**. 실제로 한 번 어긋났다: 실 버킷은 `warehouse`/`pg-backup`/
+#   `dagster-logs` 3개인데(정본 scripts/k8s-poc-storage.sh) 목록은 백업 버킷을
+#   빠뜨리고 버킷이 아닌 `raw`(=s3://warehouse/raw 경로)를 넣고 있었다.
+#   마커 강제는 실 버킷 3종을 **구조적으로** 배제하므로 인벤토리를 따라다니지
+#   않는다 — 앞으로 버킷이 늘어도 이 파일은 그대로다.
+REQUIRED_BUCKET_MARKER = "probe"
+# 2차 방어 — denylist. allowlist를 **대체하지 않는다**(두 겹을 함께 둔다).
+#   마커를 포함하면서 실데이터이기도 한 이름이 생기는 경우를 위한 이중 방어다.
+FORBIDDEN_BUCKETS = frozenset({"warehouse", "pg-backup", "dagster-logs"})
 # 프리픽스에 반드시 들어가야 하는 토큰 — 구조적 오폭 방지.
 REQUIRED_PREFIX_MARKER = "probe"
 
@@ -274,7 +303,10 @@ def main() -> int:
     parser.add_argument(
         "--bucket",
         default=os.environ.get("S3_PROBE_BUCKET", DEFAULT_BUCKET),
-        help="프로브 전용 버킷(실데이터 버킷은 거부된다)",
+        help=(
+            f"프로브 전용 버킷('{REQUIRED_BUCKET_MARKER}'를 포함해야 한다. "
+            "실데이터 버킷은 거부된다)"
+        ),
     )
     parser.add_argument(
         "--prefix",
@@ -386,11 +418,17 @@ def main() -> int:
     # ── 5) 안전 가드 ─────────────────────────────────────────────────────
     bucket = args.bucket.strip().strip("/")
     prefix_root = args.prefix.strip().strip("/")
-    if bucket in FORBIDDEN_BUCKETS:
-        print(f"❌ 거부 — '{bucket}'은 실데이터 버킷이다. 프로브 버킷을 쓴다")
-        return EXIT_PRECONDITION
     if not bucket:
         print("❌ 거부 — 버킷명이 비었다")
+        return EXIT_PRECONDITION
+    # 1차 — allowlist(마커 강제). 실 버킷 인벤토리를 몰라도 배제된다.
+    if REQUIRED_BUCKET_MARKER not in bucket:
+        print(f"❌ 거부 — 버킷명에 '{REQUIRED_BUCKET_MARKER}'가 없다: '{bucket}'")
+        print("   프로브는 마커가 든 전용 버킷에만 쓴다(실 버킷 구조적 배제)")
+        return EXIT_PRECONDITION
+    # 2차 — denylist(이중 방어). 1차를 통과해도 실데이터 이름이면 거부한다.
+    if bucket in FORBIDDEN_BUCKETS:
+        print(f"❌ 거부 — '{bucket}'은 실데이터 버킷이다. 프로브 버킷을 쓴다")
         return EXIT_PRECONDITION
     if REQUIRED_PREFIX_MARKER not in prefix_root:
         print(
@@ -668,7 +706,9 @@ def main() -> int:
             observed = f"스토어가 오류로 응답 — {exc.response['Error'].get('Code')}"
         except Exception as exc:
             p3_verdict = VERDICT_UNMEASURED
-            observed = f"예기치 않은 예외 — {type(exc).__name__}: {exc}"
+            # 예외 본문(`{exc}`)은 싣지 않는다 — str()을 서드파티가 정하는데
+            # 이 경로는 자격증명을 인자로 넘긴다(§예외 출력 규칙).
+            observed = f"예기치 않은 예외 — {type(exc).__name__}"
         record(
             "p3",
             "pyiceberg 테이블 write→read + FileIO 대용량 멀티파트",
@@ -736,7 +776,9 @@ def main() -> int:
             observed = f"스토어가 오류로 응답 — {exc.response['Error'].get('Code')}"
         except Exception as exc:
             p4_verdict = VERDICT_UNMEASURED
-            observed = f"예기치 않은 예외 — {type(exc).__name__}: {exc}"
+            # 예외 본문(`{exc}`)은 싣지 않는다 — str()을 서드파티가 정하는데
+            # 이 경로는 자격증명을 인자로 넘긴다(§예외 출력 규칙).
+            observed = f"예기치 않은 예외 — {type(exc).__name__}"
         record(
             "p4",
             "warehouse 직접 나열 — FS 재귀 나열 ↔ ListObjectsV2 대조",
@@ -835,7 +877,9 @@ def main() -> int:
             observed = f"스토어가 오류로 응답 — {exc.response['Error'].get('Code')}"
         except Exception as exc:
             p5_verdict = VERDICT_UNMEASURED
-            observed = f"예기치 않은 예외 — {type(exc).__name__}: {exc}"
+            # 예외 본문(`{exc}`)은 싣지 않는다 — str()을 서드파티가 정하는데
+            # 이 경로는 자격증명을 인자로 넘긴다(§예외 출력 규칙).
+            observed = f"예기치 않은 예외 — {type(exc).__name__}"
         record(
             "p5",
             "path-style · ListObjectsV2 페이지네이션 · 멀티파트 abort",
@@ -858,12 +902,20 @@ def main() -> int:
         failed = 0
         try:
             cleaner = make_s3_client(boto3, Config, endpoint, region, creds, None)
+            # 🔴 삭제 범위는 **서버 응답이 아니라 자기가 만든 문자열**로 정한다.
+            #   `ListObjectsV2`가 `Prefix`를 지키는지가 바로 이 스위트의 검사
+            #   대상이다(P5가 그 계약을, P4가 나열 정합을 잰다). "모른다"고
+            #   전제하고 재면서 정리에서만 무조건 신뢰하면 순환이다 — 대상이
+            #   신생 구현(RustFS·Garage)이라 전제가 깨질 개연성도 낮지 않다.
+            scope = f"{run_prefix}/"
+            out_of_scope = 0
             # 이번 실행이 만든 미완료 멀티파트도 함께 거둔다(best effort).
             try:
-                pending = cleaner.list_multipart_uploads(
-                    Bucket=bucket, Prefix=f"{run_prefix}/"
-                )
+                pending = cleaner.list_multipart_uploads(Bucket=bucket, Prefix=scope)
                 for upload in pending.get("Uploads", []):
+                    if not upload["Key"].startswith(scope):
+                        out_of_scope += 1
+                        continue
                     cleaner.abort_multipart_upload(
                         Bucket=bucket,
                         Key=upload["Key"],
@@ -871,7 +923,20 @@ def main() -> int:
                     )
             except (ClientError, BotoCoreError):
                 failed += 1
-            targets = list_keys(cleaner, bucket, f"{run_prefix}/")
+            listed = list_keys(cleaner, bucket, scope)
+            targets = [k for k in listed if k.startswith(scope)]
+            out_of_scope += len(listed) - len(targets)
+            # 걸러진 건수가 0이 아니면 그 자체가 **스토어 비준수의 추가
+            # 관측점**이다(Prefix 계약 위반). 버리지 말고 정보로 남긴다.
+            if out_of_scope:
+                print(
+                    f"   🔴 Prefix 계약 위반 관측 — 범위 밖 응답 {out_of_scope}건을 "
+                    f"삭제 대상에서 제외했다(요청 Prefix='{scope}')"
+                )
+                print(
+                    "      스토어가 ListObjectsV2/ListMultipartUploads의 Prefix를 "
+                    "지키지 않았다는 뜻이다 — P4·P5 판정과 함께 읽는다"
+                )
             for start in range(0, len(targets), 1000):
                 batch = targets[start : start + 1000]
                 resp = cleaner.delete_objects(
@@ -880,7 +945,10 @@ def main() -> int:
                 )
                 deleted += len(resp.get("Deleted", []))
                 failed += len(resp.get("Errors", []))
-            remaining = len(list_keys(cleaner, bucket, f"{run_prefix}/"))
+            # 잔존 집계도 같은 기준으로 센다 — 범위 밖 응답을 세면 "내 객체가
+            # 남았다"로 오독된다(계측 단위를 맞춘다).
+            left = list_keys(cleaner, bucket, scope)
+            remaining = len([k for k in left if k.startswith(scope)])
             cleanup_status = "OK" if (remaining == 0 and failed == 0) else "PARTIAL"
             print(
                 f"정리(cleanup): 대상 {len(targets)}건 / 삭제 {deleted}건 / "
