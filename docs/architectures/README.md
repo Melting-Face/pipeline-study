@@ -16,6 +16,7 @@
 | [flink.md](flink.md) | 🚧 | 스트림 엔진 — 실시간 조기경보. Iceberg bronze 스트리밍 읽기를 소스로 쓴다 |
 | [k8s.md](k8s.md) | 🚧 | 컨테이너 오케스트레이션 — 컴퓨트·데이터 서비스 이전(이행중) |
 | [operators.md](operators.md) | ✅ | 오퍼레이터 패턴 3종(Spark·Flink·PostgreSQL) — **왜 셋 중 둘만 전용 이미지를 굽는가**. 판단축은 오퍼레이터가 아니라 런타임의 확장 적재 방식이다 |
+| [storage.md](storage.md) | ✅ | 오브젝트 스토리지 — 현행 **SeaweedFS**. 교체 검토의 동기는 **정확성 축 하나**이고, 후보 판정 수단은 **실측 프로브뿐**이다 |
 | [terraform.md](terraform.md) | 🚧 | IaC — 로컬 K8s 플랫폼을 셸에서 이행. 분할 축은 부트스트랩이 아니라 **폭발반경**이다 |
 | [oci.md](oci.md) | 🔎 | 클라우드 이행 — OCI Always Free A1(ARM) + Terraform + k3s(학습·확장 경로) |
 | [trino.md](trino.md) | 🔎 | MPP SQL 엔진 — 현행 compose까지 채택, **재설계로 제거**(dbt→dbt-spark) |

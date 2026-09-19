@@ -41,7 +41,7 @@
 | [dbt-trino](https://github.com/starburstdata/dbt-trino) | dbt Trino 어댑터 | [conventions/dbt.md](conventions/dbt.md) |
 | [Apache Iceberg](https://iceberg.apache.org/) | 테이블 포맷(JDBC 카탈로그) | [architectures/overview.md](architectures/overview.md) |
 | [Trino](https://trino.io/docs/current/) | 쿼리 엔진 | [architectures/overview.md](architectures/overview.md) · [resource-sizing.md](resource-sizing.md) |
-| [SeaweedFS](https://github.com/seaweedfs/seaweedfs) | S3 호환 오브젝트 스토리지 | [architectures/overview.md](architectures/overview.md) |
+| [SeaweedFS](https://github.com/seaweedfs/seaweedfs) | S3 호환 오브젝트 스토리지 | [architectures/storage.md](architectures/storage.md) · [architectures/overview.md](architectures/overview.md) |
 
 ## 처리·배포 기술 (architectures)
 
@@ -60,6 +60,11 @@
 | [CloudNativePG](https://cloudnative-pg.io/) | ✅ 채택(오퍼레이터) | [architectures/operators.md](architectures/operators.md) · [conventions/k8s/cnpg.md](conventions/k8s/cnpg.md) |
 | [CNPG operand 이미지 카탈로그](https://github.com/cloudnative-pg/postgres-containers) — 태그 형식·변형 타입 | ✅ 채택 | [architectures/operators.md](architectures/operators.md) · [conventions/k8s/cnpg.md](conventions/k8s/cnpg.md) |
 | [Barman Cloud 플러그인(CNPG-I)](https://github.com/cloudnative-pg/plugin-barman-cloud) — 백업이 별도 컨테이너인 근거 | ✅ 채택(백업) | [architectures/operators.md](architectures/operators.md) · [conventions/k8s/cnpg.md](conventions/k8s/cnpg.md) |
+| [MinIO](https://github.com/minio/minio) — 저장소 아카이브 상태의 1차 출처 | 🔎 교체 후보 **탈락** | [architectures/storage.md](architectures/storage.md) |
+| [RustFS](https://github.com/rustfs/rustfs) — 정식 릴리스 도달·Apache 2.0 원문 / [문서](https://docs.rustfs.com) — S3 호환 범위·공식 Helm 차트 | 🔎 교체 후보 | [architectures/storage.md](architectures/storage.md) |
+| [Ceph RADOS Gateway](https://docs.ceph.com/en/latest/radosgw/) — S3 호환 범위 | 🔎 교체 후보 **보류** | [architectures/storage.md](architectures/storage.md) |
+| [Rook](https://rook.io/) — Ceph를 K8s에 올리는 오퍼레이터 | 🔎 교체 후보 **보류** | [architectures/storage.md](architectures/storage.md) |
+| [Garage](https://garagehq.deuxfleurs.fr/) — 버저닝·object lock·SSE **미지원 명시**의 출처 | 🔎 교체 후보(약) | [architectures/storage.md](architectures/storage.md) |
 
 ### 엔진 버전·조합 판정에 쓴 1차 출처 (2026-08-23 확인)
 

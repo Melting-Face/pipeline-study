@@ -70,7 +70,7 @@ resources:
 ## 9. Spark Operator·SparkApplication 규칙
 
 - **오퍼레이터**: Apache 공식 **Spark Kubernetes Operator**([apache/spark-kubernetes-operator](https://github.com/apache/spark-kubernetes-operator),
-  GA **1.0.0**)를 Helm으로 `ns=spark-operator`에 설치한다. Kubeflow spark-operator에서 이전했다
+  GA **1.0.0**)를 Helm으로 `ns=spark-operator`에 설치한다. Kubeflow spark-operator에서 갈아탔다
   (공식 생태계 무게중심 이동). 오퍼레이터가 `spark-submit`을 대행하므로 자산은 명령형 submit 대신
   **선언형 `SparkApplication`(CRD)** 을 제출한다.
 - **차트 버전 ≠ appVersion**(설치 시 최다 실수): GA **appVersion 1.0.0**은 **chart 1.8.0**이다.

@@ -184,7 +184,7 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 > **이 표와 [conventions/k8s.md](conventions/k8s.md) §9-3의 경계를 함께 재계산**한다.
 
 > **Spark Operator 행 정정** — 종전 `100m/256Mi req · 250m/512Mi lim`은
-> **Kubeflow(Go) 오퍼레이터 시절 수치**였다. 프로젝트는 Apache 오퍼레이터(**JVM**)로 이전했는데
+> **Kubeflow(Go) 오퍼레이터 시절 수치**였다. 이 저장소는 Apache 오퍼레이터(**JVM**)로 갈아탔는데
 > 이 표를 재검토하지 않아, 아래 두 가지가 동시에 성립하고 있었다.
 >
 > 1. **표가 거짓을 말했다** — `scripts/k8s-operators.sh`에 근거 주석만 있고 `--set`이 빠져
