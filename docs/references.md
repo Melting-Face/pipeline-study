@@ -55,6 +55,11 @@
 | [Prometheus](https://prometheus.io/docs/introduction/overview/) | 🔎 미채택 | [architectures/monitoring.md](architectures/monitoring.md) · [conventions/monitoring.md](conventions/monitoring.md) |
 | [Apache Kafka](https://kafka.apache.org/) | 🔎 미도입 유지 | [architectures/kafka.md](architectures/kafka.md) · [architectures/flink.md](architectures/flink.md) |
 | [DuckDB](https://duckdb.org/docs/) | 🔎 미채택 | [architectures/duckdb.md](architectures/duckdb.md) · [conventions/analysis.md](conventions/analysis.md) |
+| [Spark Kubernetes Operator](https://apache.github.io/spark-kubernetes-operator/) | ✅ 채택(오퍼레이터) | [architectures/operators.md](architectures/operators.md) · [conventions/k8s.md](conventions/k8s.md) |
+| [Flink 차트 저장소](https://downloads.apache.org/flink/) — 현행 릴리스만 보관(구버전 404) | ✅ 채택(오퍼레이터) | [architectures/operators.md](architectures/operators.md) · [architectures/flink.md](architectures/flink.md) |
+| [CloudNativePG](https://cloudnative-pg.io/) | ✅ 채택(오퍼레이터) | [architectures/operators.md](architectures/operators.md) · [conventions/k8s/cnpg.md](conventions/k8s/cnpg.md) |
+| [CNPG operand 이미지 카탈로그](https://github.com/cloudnative-pg/postgres-containers) — 태그 형식·변형 타입 | ✅ 채택 | [architectures/operators.md](architectures/operators.md) · [conventions/k8s/cnpg.md](conventions/k8s/cnpg.md) |
+| [Barman Cloud 플러그인(CNPG-I)](https://github.com/cloudnative-pg/plugin-barman-cloud) — 백업이 별도 컨테이너인 근거 | ✅ 채택(백업) | [architectures/operators.md](architectures/operators.md) · [conventions/k8s/cnpg.md](conventions/k8s/cnpg.md) |
 
 ### 엔진 버전·조합 판정에 쓴 1차 출처 (2026-08-23 확인)
 

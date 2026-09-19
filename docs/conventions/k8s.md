@@ -76,7 +76,8 @@ resources:
 - **차트 버전 ≠ appVersion**(설치 시 최다 실수): GA **appVersion 1.0.0**은 **chart 1.8.0**이다.
   `--version 1.0.0`을 주면 **appVersion 0.2.0**이 깔린다.
   `helm search repo … --versions`로
-  대조하고 `scripts/k8s-env.sh`의 `SPARK_OPERATOR_CHART_VERSION`에 **chart 버전**을 핀한다.
+  대조하고 `terraform/lakehouse-platform/variables.tf`의 `spark_operator.chart_version`에
+  **chart 버전**을 핀한다(오퍼레이터 설정은 셸에서 이 스택으로 이관됐다).
 - **CRD**: `apiVersion: spark.apache.org/**v1**`, `kind: SparkApplication`.
   chart 1.8.0의 CRD는 **`v1beta1`(served) + `v1`(served·**storage**) 2버전**이고 `storedVersions=["v1"]`이라
   **`v1`이 정본**이다(라이브 실측 — `kubectl get crd sparkapplications.spark.apache.org -o json`).
