@@ -92,6 +92,18 @@ P3·P4는 자격증명을 딕셔너리 값·키워드 인자로 넘기고(`SqlCa
 패턴이 이미 있으므로 갈리는 쪽이 **드리프트**다. 스토어가 응답한
 `ClientError`는 예외 — 에러 **코드**만 꺼내 쓴다(입력값이 아니다).
 
+`FlexibleChecksumError`·`AwsChunkedWrapperError`도 예외다 — P1·P2는 이 둘의
+**전문(`{exc}`)을 싣는다**. 근거는 범주다: botocore `httpchecksum.py`를 직접
+열어 보면 두 예외의 `error_msg`는 **SDK 내부 상태**(기대/실제 체크섬 digest·
+알고리즘명·스트림 seek 상태)로만 조립되고 **자격증명·사용자 입력값을 에코하는
+경로가 없다**. 입력값을 그대로 메시지에 싣는 pydantic `ValidationError` 계열과
+같이 취급하면 P1이 겨냥한 축 그 자체(어느 체크섬이 어떻게 어긋났는가)가
+타입명 한 줄로 뭉개진다.
+🔴 **잔여위험**: `error_msg`는 botocore **내부 구현이지 공개 계약이 아니다** —
+상위 버전에서 조립 재료가 바뀌어도 아무 신호가 없다. 재확인 트리거는 시점이
+아니라 **조건**이다: 위 PEP 723 `boto3` **상한(`<1.44`)을 올리기 전에** 이
+전제를 다시 확인한다(올린 뒤가 아니다).
+
 ## 실행 (의존성은 위 PEP 723 — uv가 자동 provisioning)
 
     uv run scripts/storage_conformance_probe.py --help
@@ -369,6 +381,22 @@ def main() -> int:
         print(f"❌ 사전 조건 미충족 — boto3 부재({exc.name}). 전 프로브 미측정")
         print("   uv run scripts/storage_conformance_probe.py 로 실행한다")
         return EXIT_PRECONDITION
+    # 🔴 **모듈은 있는데 심볼이 없는** 경우는 위 분기에 걸리지 않는다.
+    #   `from botocore.exceptions import AwsChunkedWrapperError`가 실패하면
+    #   맨 `ImportError`가 나는데 `ModuleNotFoundError`는 그 **하위**라
+    #   최상위까지 뚫려 트레이스백 + 종료코드 1이 된다 — 이 파일이 "1은 쓰지
+    #   않는다"고 선언한 계약을 깨는 경로다(실측: 파이썬 3.13).
+    #   개연성은 낮지 않다 — PEP 723 하한(`boto3>=1.36`) 쪽 botocore에 위
+    #   체크섬 예외 심볼이 없으면 그대로 이 경로다.
+    #   `exc.name`은 심볼이 아니라 **모듈명**('botocore.exceptions')이라
+    #   "boto3 부재"로 출력하면 오히려 오진을 부른다 ⇒ 타입명만 싣고
+    #   무엇을 찾다 실패했는지는 **이 파일의 리터럴**로 말한다(§예외 출력 규칙).
+    except ImportError as exc:
+        print(f"❌ 사전 조건 미충족 — botocore 심볼 부재: {type(exc).__name__}")
+        print("   필요: AwsChunkedWrapperError·BotoCoreError·ClientError·")
+        print("         EndpointConnectionError·FlexibleChecksumError")
+        print("   설치된 botocore가 PEP 723 하한 쪽이면 상한을 맞춰 다시 받는다")
+        return EXIT_PRECONDITION
 
     # ── 3) .env 로드 (PEP 723 단독 실행 전제 — 기존 env가 이긴다) ────────
     env_path = REPO_ROOT / ".env"
@@ -468,6 +496,27 @@ def main() -> int:
         except (ClientError, BotoCoreError) as exc2:
             print(f"❌ 사전 조건 미충족 — 버킷 생성 실패: {type(exc2).__name__}")
             return EXIT_PRECONDITION
+    # 🔴 캐치올 — 위 `EndpointConnectionError`는 접속 실패의 **한 형제**일 뿐이다.
+    #   botocore 1.43 실측 계층:
+    #     BotoCoreError
+    #      ├─ ConnectionError ─┬─ EndpointConnectionError  ← 위에서 잡는 것
+    #      │                   ├─ SSLError                 ← 형제
+    #      │                   └─ ConnectTimeoutError       ← 형제
+    #      └─ HTTPClientError ── ReadTimeoutError            ← 형제
+    #   하위가 아니라 **형제**라 이 셋은 위 분기를 통과해 최상위까지 뚫리고,
+    #   그러면 트레이스백 + **종료코드 1**이 난다 — 이 파일이 모듈 독스트링에서
+    #   "`1`은 쓰지 않는다"고 선언한 계약을 코드가 깨는 자리다.
+    #   개연성이 낮지 않은 이유: P1은 https 엔드포인트를 요구하는데(트레일러
+    #   체크섬이 https에서만 붙는다) 이 저장소의 로컬 TLS는 **로컬 CA 체인**이라
+    #   신뢰 스토어에 CA가 없으면 **첫 head_bucket에서 SSLError**다 — 대조군
+    #   실측을 시작하는 바로 그 순간이다.
+    #   `ClientError`는 이 튜플에 넣지 않는다 — **BotoCoreError의 하위가 아니고**
+    #   (실측) 위에서 이미 버킷 생성 경로로 분기해 여기 도달할 수 없다.
+    except BotoCoreError as exc:
+        print(f"❌ 사전 조건 미충족 — 엔드포인트 접속 실패: {type(exc).__name__}")
+        print("   전 프로브 미측정(못 돈 것은 정보가 아니다)")
+        print("   TLS면 CA 신뢰(로컬 CA 체인)를, 타임아웃이면 좌표를 확인한다")
+        return EXIT_PRECONDITION
     print()
 
     # 전선 관측 버퍼 — PUT 요청 헤더를 화이트리스트로만 담는다.
