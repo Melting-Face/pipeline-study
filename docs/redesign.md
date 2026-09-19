@@ -166,7 +166,7 @@ lineage(스트림): **Iceberg bronze(changelog 스트리밍 읽기) → Flink(�
 
 ## 6. 참고 (공식 문서)
 
-- Apache Spark Kubernetes Operator(GA 1.0.0, Kubeflow에서 이전): https://apache.github.io/spark-kubernetes-operator/ · 릴리스: https://github.com/apache/spark-kubernetes-operator/releases
+- Apache Spark Kubernetes Operator(GA 1.0.0, Kubeflow 오퍼레이터에서 갈아탔다): https://apache.github.io/spark-kubernetes-operator/ · 릴리스: https://github.com/apache/spark-kubernetes-operator/releases
 - Apache Flink Kubernetes Operator: https://nightlies.apache.org/flink/flink-kubernetes-operator-docs-main/
 - Dagster Pipes / dagster-k8s(PipesK8sClient): https://docs.dagster.io/api/python-api/libraries/dagster-k8s
   — 🔎 **검토 후 미채택**(§3 트리거 행). 링크는 기각 근거를 확인할 수 있도록 남긴다.

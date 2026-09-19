@@ -12,7 +12,7 @@ Spark는 **범용 분산 데이터 처리 엔진**이다. driver가 DAG를 스�
 ## 이 프로젝트에서의 위치 — 🚧 채택·이행중(PoC 게이트)
 
 - **채택 방향**: 재설계로 **K8s의 Apache Spark Operator**([apache/spark-kubernetes-operator](https://github.com/apache/spark-kubernetes-operator),
-  GA 1.0.0 2026-07-26) <!-- date-ok --> 를 컴퓨트로 도입한다(Kubeflow spark-operator에서 이전). 확장성 확보와 함께,
+  GA 1.0.0 2026-07-26) <!-- date-ok --> 를 컴퓨트로 도입한다(Kubeflow spark-operator에서 갈아탔다). 확장성 확보와 함께,
   오케스트레이터↔원격 컴퓨트 분리를 시연하는 **학습/포트폴리오** 목적이다. 전체 로드맵은 [../redesign.md](../redesign.md).
 - **컴퓨트 분업(급소)**: Spark가 장식이 되지 않도록 역할을 분리한다.
   lineage는 **Spark(bronze·인제스트) → Iceberg → dbt-on-Trino(silver/gold)**.

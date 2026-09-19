@@ -1,10 +1,13 @@
 # 입력 변수 — 모두 description·type 명시(conventions/terraform.md §5).
 #
-# 🔴 **값의 출처는 `scripts/k8s-env.sh`다.** 이행이 끝날 때까지 두 곳에 같은 값이 산다 —
-#    셸이 아직 cert-manager·Barman·클러스터 계층을 세우기 때문이다. 어느 한쪽만 바꾸면
-#    "설치는 됐는데 Terraform 이 재설치를 계획하는" 상태가 된다.
-#    ⇒ 차트 버전을 올릴 때는 **두 파일을 같은 커밋에서** 바꾼다.
-#    기본값은 2026-08-28 기준 `k8s-env.sh` 실값과 일치시켰다.
+# 🔴 **오퍼레이터 3종(Spark·Flink·CloudNativePG) 설정의 정본은 이 파일이다.**
+#    ns·릴리스명·차트 좌표·차트 버전·자원값이 `scripts/k8s-env.sh`에서 이리로 이관됐고,
+#    셸에 남아 있던 껍데기 값은 제거됐다. ⇒ 차트 버전은 **여기서만** 바꾼다.
+#    (값이 두 벌이면 한쪽만 고쳐도 눈치채지 못한다 — 그래서 한 벌로 줄였다.)
+#
+#    ⚠️ `k8s-env.sh`에 `*_VERSION`이 아직 셋 남아 있으나 **오퍼레이터 차트가 아니다** —
+#    cert-manager·ingress-nginx·Barman Cloud 플러그인(CNPG-I)이고, 그 셋은 셸이 세우므로
+#    그쪽이 정본이다. 이름이 비슷하다고 이 파일로 끌어오지 않는다.
 
 variable "kube_config_path" {
   description = "kubeconfig 파일 경로"
