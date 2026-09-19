@@ -47,12 +47,16 @@
       TM이 잡 수명 내내 상주해 동시 기동 허용의 전제가 깨진다([architectures/flink.md](architectures/flink.md)).
 ```
 
-> **※ dbt 경로는 아직 "클러스터 대상 실행"이 아니다**(실측). Spark Connect 서버는
-> **`--master local[2]`**, 즉 **파드 한 개 안의 로컬 모드**로 돌고 있어 executor가 따로 뜨지 않는다.
-> 위 그림의 화살표는 **목표 상태**이며, 현재는 "K8s 파드 안의 단일 JVM"이 정확한 서술이다.
-> 한계(병렬도 ≈ 1·driver 힙 1g·`shuffle.partitions` 200)와 `k8s://` 전환에 필요한 2가지는
-> [architectures/spark.md](architectures/spark.md) §`--master local[2]`. **이번 범위에서 전환하지 않는다** —
-> 22모델을 아직 못 돌려 성능 문제가 발현하지 않았다.
+> **※ dbt 경로는 "클러스터 대상 실행"이다**(전환 완료). Spark Connect 서버는 **`--master k8s://`**,
+> 즉 **client mode**로 돌고 **driver는 Deployment 파드 그 자체**이며, **executor 파드 1개가 서버 수명
+> 내내 상주**한다([architectures/spark.md](architectures/spark.md)).
+> ⇒ 그 executor가 [conventions/k8s.md](conventions/k8s.md) §9-3 **경계 ②를 상시 소비**하므로,
+> **Connect가 떠 있는 동안 `SparkApplication` 배치 잡을 겹쳐 돌리지 않는다.**
+>
+> 🔴 **이력**: 이 문서는 한동안 이 경로를 **`--master local[2]`**(파드 한 개 안의 로컬 모드·executor 없음)로
+> 적고 **"이번 범위에서 전환하지 않는다"고 선언**했으나 그 뒤 전환됐다. **선언이 이행을 따라오지 못한
+> 사례**로 남긴다. 당시 함께 적었던 한계치(병렬도·driver 힙·`shuffle.partitions`)는 `local[2]` 시절
+> 값이므로 여기 옮기지 않는다 — 현행 값의 정본은 [architectures/spark.md](architectures/spark.md)의 표다.
 >
 > ⚠️ **배치 경로(`SparkApplication`)는 이와 별개로 오퍼레이터가 driver/executor를 띄운다.**
 > 그림에서 두 경로가 같은 "Spark"로 보이지만 **실행 모델이 다르다.**

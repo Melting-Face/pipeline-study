@@ -9,6 +9,11 @@ topic은 **partition**으로 나뉘어 복제되며, consumer는 그 partition�
 이 저장소의 맥락에서 Kafka가 놓이는 자리는 하나다 — **스트림 소스**, 즉 Flink가 무엇을 읽어
 실시간 처리를 시작하는가. 그 자리는 현재 **Iceberg bronze 스트리밍 읽기**가 차지하고 있다.
 
+🔴 **그래서 Kafka는 Flink의 대체재가 아니다** — 처리 엔진(Flink)과 로그·전송(Kafka)은
+**다른 자리**다. 실제 선택지는 「Flink ↔ Kafka」가 아니라 **소스 축**(Iceberg changelog ↔
+Kafka 토픽)과 **처리 축**(Flink ↔ Kafka Streams)의 **독립된 두 결정**이다.
+「Flink를 Kafka로 교체」라는 프레이밍으로 오면 이 절부터 읽는다.
+
 ## 이 프로젝트에서의 위치 — 🔎 미도입 유지
 
 **상태 마커 근거**: 이것은 새 판정이 아니라 **기존 결정의 유지**다. 그래서 이 문서는 근거를
@@ -86,6 +91,64 @@ Kafka도 **producer→broker는 push, broker→consumer는 pull인 혼합**이�
   여기 트리거를 두는 이유는 규칙 준수가 아니라 **「언제 다시 보나」가 결정 문서의 값**이기 때문이다.
 - **저장소를 검색할 때는 두 이름을 함께 본다** — 이 자리의 기존 결정은 대부분
   **Redpanda**라는 이름으로 적혀 있다([flink.md](flink.md) · [../risk.md](../risk.md)).
+
+### 재검토 이력
+
+**1회 — 판정 유지(미도입).** 계기는 **①Flink 운영 부담 ②Kafka 학습 욕구** 두 축이었다.
+
+- 🔴 **둘 다 트리거 ⓐⓑⓒ에 걸리지 않는다. 걸리지 않는다는 것이 결론이다** —
+  트리거는 전부 *기능 요구* 축이고 이 둘은 다른 축이다. 그래도 **트리거 목록에 더하지 않았다.**
+  - **운영 부담**은 Kafka로 **해소되지 않고 늘어난다**(브로커 + Iceberg 싱크 Connect가 순증).
+    게다가 부담의 소재지가 Flink인지 **미착수 구간**인지 아직 갈리지 않는다 —
+    Flink는 🚧라 배치 자산조차 「선언」 등급이고 스트림 잡 수명주기는 미착수다
+    ([flink.md](flink.md) · [../redesign.md](../redesign.md)).
+    ⇒ **미착수인 것을 교체 대상으로 평가할 수 없다.** 먼저 🚧를 닫는다.
+  - **학습 욕구**는 도입 판정 축이 아니다. 학습은 **별도 PoC 창**의 문제이고,
+    그 경우에도 예산 재계산이 선행이라는 위 규율은 그대로다.
+- **트리거 ⓑ의 분모를 함께 적는다** — 발견 지연의 하한을 정하는 것은 스트림 엔진이 아니라
+  **원천의 주기**다. 원천 6종이 전부 배치이고(PhysioNet 파일·USGS 폴링·환율 API),
+  가장 짧은 것이 USGS IV의 **15분 cron 폴링**이다. **엔진을 바꿔도 이 값은 안 내려간다.**
+  ⇒ ⓑ가 실제 요구로 등장하면 먼저 볼 것은 브로커가 아니라 **원천 주기**다.
+- ⚠️ **미확인으로 남긴다** — Kafka 도입 시 실제 리소스 소요.
+  [../resource-sizing.md](../resource-sizing.md)가 "표에 없다"고 명시하므로 **추정치를 적지 않는다.**
+
+### 이 저장소에서 갈리는 것 — Flink 현행 vs Kafka 가정
+
+⚠️ 위 「실제로 갈리는 축 셋」이 **일반론(외부 출처 등급 A/B)** 이라면, 이 표는 **이 저장소의
+선언값과 실제 배선**을 나란히 둔 것이다. 출처는 저장소 자신이고, **Kafka 열은 전부 가정**이다 —
+배선된 적이 없으므로 확인된 사실로 읽지 않는다.
+
+| 축 | Flink (현행) | Kafka로 했을 때 (**가정** — 배선 없음) |
+| --- | --- | --- |
+| 새로 띄울 상주 | Operator + 세션 JM **2개**(이미 있음) | 브로커 + Connect(Iceberg 싱크) + Streams 앱 — **최소 3개 신규**로 추정 |
+| 원천이 들어오는 길 | Dagster 배치 → Iceberg bronze `water_iv_raw`(append) | 같은 배치분을 **토픽에 다시 넣는 producer가 새로 필요**하다 — 원천이 밀어주지 않는다 |
+| 소스 읽기 | Iceberg 스트리밍 읽기(`IncrementalAppendScan`) | 토픽 consume |
+| 처리 | Flink SQL | Kafka Streams(JVM 앱) 또는 ksqlDB(상주 1개 추가) |
+| Iceberg 쓰기 | Flink Iceberg 싱크가 카탈로그에 직접 | Kafka Connect Iceberg Sink 경유 — **홉 1개 증가** |
+| 상태·정확성 | RocksDB + 체크포인트 `10s`·`EXACTLY_ONCE` → `s3://warehouse/flink-checkpoints` | RocksDB + **changelog 토픽** — 상태가 브로커에도 쌓인다 |
+| 자원 | JM `1000m`/`2048Mi` · TM `1000m`/`2048Mi`(잡 제출 시) · Operator 컨트롤러+웹훅 합계 `300m`/`768Mi` — **예산표 선언값**(실측 아님) | ⚠️ **미측정** — 정본 예산표에 항목 자체가 없다 |
+| Dagster 연동 | `flink_iceberg_batch` 자산이 **배치 경로**를 관통(CR 기동 → SQL → `finally` teardown) | 없다. 새로 설계해야 하고 `PipesK8sClient`를 못 쓰는 제약은 동일하게 재발한다 |
+| 진척 | 배치 왕복·스트리밍 경로 **실증**(최소 SQL) / 실시간 피처 계산·스트림 잡 수명주기 **미착수** | **0** |
+| 버전 족쇄 | Iceberg가 정한다 — Flink `2.1.3` + Iceberg `1.11.0` | Connect ↔ Iceberg 지원 짝을 새로 찾아야 한다 |
+| 회수 | `flink cancel` → `kubectl delete` **순서가 규칙**(뒤집으면 `CLEANUPFAILED`로 CR이 `DELETING` 고착). JM 로그·체크포인트는 **회수 전에** 건진다(`DELETE_ON_CANCELLATION`이면 `cancel`이 지운다) | 토픽 데이터가 **PVC에 남을 것**으로 본다 |
+
+**갈리는 것은 셋이다.**
+
+- **① Kafka가 이기는 곳 — append-only 소스 제약이 사라진다.** 현행의 급소는 스트림 소스가
+  append 전용이어야 한다는 것이다. 그래서 `merge into`를 쓰는 dbt 실버는 소스로 못 쓰고,
+  `UPDATE`·`replace`가 한 번만 들어가도 **에러가 아니라 조용한 누락**으로 자격을 잃는다
+  (`common/helper.py`·`defs/usgs_water/assets.py`의 경고와 `scripts/iceberg_changelog_probe.py`가
+  이 제약이 물리는 비용이다). **토픽은 로그라서 이 제약이 통째로 없어진다** —
+  Kafka로 갈 때 얻는 가장 확실한 것이다.
+- **② Flink가 이기는 곳 — 홉 수와 상주 수.** Flink는 Iceberg를 직접 읽고 직접 쓴다. Kafka는
+  `Iceberg → producer → 토픽 → Streams → Connect → Iceberg`로 홉이 늘고 홉마다 상주가 붙으며,
+  그 전부가 **CPU 축**을 먹는다 — [../conventions/k8s.md](../conventions/k8s.md) §9-3 경계 ②
+  (`spark.executor.instances` ≤ 1)가 걸린 그 축을 Spark Connect executor가 이미 상시 소비한다.
+- **③ 어느 쪽도 못 바꾸는 것 — 지연.** USGS는 15분 폴링이고 PhysioNet은 정적 파일이다.
+  **엔진이 무엇이든 데이터는 15분마다 온다.** 실시간성은 여기서 갈리지 않는다.
+
+⇒ Kafka로 가면 **소스 유연성**을 얻고 **상주 3개·홉 3개**를 낸다. 지금 예산에선 그 교환이
+맞지 않고, **예산이 늘면 맞는다** — 즉 「Kafka가 틀렸다」가 아니라 **「지금 이 노드에선 못 한다」** 이다.
 
 ## 참고
 
