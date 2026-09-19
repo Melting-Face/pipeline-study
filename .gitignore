@@ -108,8 +108,9 @@ dagster/dockerfile.d/src/history/
 dagster/dockerfile.d/src/schedules/
 
 # Claude Code 프로젝트 스코프 스킬 — 외부 코드(2026-08-21 기준 6종·brainstorming만 1,432행)라
-# 저장소에 넣지 않는다. `.claude/skills/<name>`은 `../../.agents/skills/<name>`을 가리키는 링크이고
-# 실체는 `.agents/`에 있어 **둘 다** 걸어야 한다(한쪽만 걸면 죽은 규칙).
+# 저장소에 넣지 않는다. `.claude/skills/<name>`은 **엔트리마다 갈린다** — 일부는
+# `../../.agents/skills/<name>`을 가리키는 링크이고, 나머지는 양쪽에 독립 사본이 있다.
+# 그래서 **둘 다** 걸어야 한다(한쪽만 걸면 죽은 규칙). 건수는 볼트가 갖는다.
 # 재현성은 `skills-lock.json`(커밋 대상)이 담당한다 — 클론 후 스킬 CLI로 재설치한다.
 # 🔴 배경: brainstorming은 `security` 판정 **거부**(C등급×실행 파일)라 커밋 대상이 아니고,
 # untracked 상태를 방치하면 `git add -A` 한 번으로 들어간다(security 발견 B-8).
