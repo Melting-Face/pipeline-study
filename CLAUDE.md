@@ -338,7 +338,7 @@
   `agents/<YYYY-MM-DD>/<NN>-<mission>.md`에 쌓으며 **저장소 커밋 대상 아님**.
   기록 시점·미션 판단은 [`journal.md`](docs/conventions/agents/journal.md), 누락 보정은 **`/journal`**
   (`NN`은 hook이 발급). 서브에이전트 **실행 메타**를 남기되 **수치가 없으면 `미측정`**(추정치 금지).
-  **저널과 `_MOC.md`는 한 벌로 갱신**한다.
+  인덱스는 **`_MOC.base`(Bases)가 프론트매터에서 생성** — 저널 `summary`만 채운다(MOC 수기 갱신 없음).
   플랜 모드 계획서는 볼트 `plans/…`로 **미러**되며(`scripts/plan_mirror_guard.py`) 빼려면 계획서에
   **`<!-- plan-mirror: off -->`** 를 둔다 — [`plan-mirror.md`](docs/conventions/agents/plan-mirror.md).
   **② 워커 편성** — **`security`**(보안 점검) + 데이터·인프라 **각 3종 세트**가 **같은 축**
