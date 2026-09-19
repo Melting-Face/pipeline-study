@@ -11,6 +11,7 @@
 - [Spark를 K8s 위로](spark-on-k8s.md)
 - [빈 클러스터를 세우며](k8s-bootstrap.md)
 - [kubectl로 판정하기](kubectl-judgement.md)
+- [오퍼레이터를 둘 것인가](k8s-operators.md)
 
 **정본은 저장소에**
 
