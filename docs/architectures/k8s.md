@@ -19,7 +19,7 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
 - **핵심 컴포넌트**: **Spark Operator**(배치)·**Flink Operator**(스트림)로
   `SparkApplication`·`FlinkDeployment`(CRD)를 실행하고,
   **CloudNativePG**(카탈로그 Postgres)로 `Cluster`(CRD) 관리,
-  Redpanda·SeaweedFS·카탈로그 Postgres를 K8s에 배포한다(**Trino 제거**). Iceberg 테이블은 Spark·Flink가 공유한다.
+  SeaweedFS·카탈로그 Postgres를 K8s에 배포한다(**Trino 제거**). Iceberg 테이블은 Spark·Flink가 공유한다.
   **웹 UI 진입점은 ingress-nginx**로 고정 URL화한다(`*.localtest.me:8080`).
 - **구축 현황(실측)**: 클러스터 k8s **v1.36.1** 단일 노드.
   **Spark Operator 1.0.0**(chart 1.8.0) / **Flink Operator 1.15.0**(+cert-manager) 기동,

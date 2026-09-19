@@ -11,7 +11,7 @@
 
 - **오퍼레이터/컨트롤러**(Spark Operator·Flink Operator): `Deployment`.
 - **컴퓨트 잡**(Spark driver/executor·Flink JM/TM): 오퍼레이터가 CRD(`SparkApplication`·`FlinkDeployment`)로 생성.
-- **상태 저장**(seaweedfs·redpanda): `StatefulSet` + `PersistentVolumeClaim`(PVC)로 데이터 유실 방지.
+- **상태 저장**(seaweedfs): `StatefulSet` + `PersistentVolumeClaim`(PVC)로 데이터 유실 방지.
   단 **카탈로그 postgres는 오퍼레이터(CNPG)** 가 관리한다(§12) — 파드·PVC·서비스를 오퍼레이터가 만든다.
   **`emptyDir`를 상태 저장에 쓰지 않는다** — CNPG 이전 전까지 카탈로그 PG가 `emptyDir`였고,
   파드 재기동만으로 Iceberg 테이블 메타가 전부 소멸하는 상태였다(S3 parquet은 남아 "부분 생존"으로 보인다).
@@ -328,7 +328,11 @@ resources:
 📌 **발견 경로가 성능 이상이 아니라 "안 쓰는 것 정리"였다**는 점이 이 규율의 근거다.
 성능으로는 안 드러난다.
 
-### 경계 ④ — Dagster 상주는 회수 다이얼이 듣지 않는다
+### 경계 ④ — Dagster 상주(동시 기동 경계와 다른 축)
+
+⚠️ **①~③과 세는 대상이 다르다** — ①~③은 「동시에 띄워도 되는가」의 경계이고,
+④는 「모든 시나리오에 **상시 가산**되는 워크로드」다. 그래서 위 제목은 **3개가 맞고**,
+합쳐 넷으로 세지 않는다.
 
 Spark Connect는 `--replicas=0`, Flink 세션은 `delete`로 회수되지만 **오케스트레이터는 회수 대상이 아니다**
 (내리면 스케줄·센서·런큐가 함께 멈춘다). 그래서 Dagster 상주분은
@@ -419,7 +423,7 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
 
 > 종전 규약은 *"gRPC는 Ingress로 내보내지 않는다(YAGNI)"* 였다. **CA 신뢰 축이 실측으로 닫히면서**
 > 뒤집었다 — port-forward는 매 세션 별도 터미널을 요구하고, 끊긴 상태가 **에러가 아니라 무한 대기**로
-> 보여 오진을 낳는다([../architectures/spark.md](../architectures/spark.md) §`local[2]`).
+> 보여 오진을 낳는다([../architectures/spark.md](../architectures/spark.md) §`--master k8s://`).
 
 - **TLS는 선택이 아니라 전제다.** ingress-nginx의 `backend-protocol: "GRPC"`는 HTTP/2 위에서만
   동작하고, nginx는 HTTP/2를 **TLS 리스너에서만** 협상한다. ⇒ **평문 gRPC 경로는 이 방식으로 만들 수 없다**
