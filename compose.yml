@@ -192,6 +192,12 @@ services:
     <<: *docker-logging
     container_name: seaweedfs
     profiles: ["legacy-storage", "legacy-sql", "monitoring"]
+    # 🔴 **인증(`-s3.config`)을 배선하지 않는다 — 빠뜨린 것이 아니라 결정이다.**
+    #   이 경로는 서비스가 아니라 **이관 전 원본 백업**이고 정본은 K8s(거기엔 Secret 마운트로
+    #   배선돼 있다). 배선하면 두 벌을 맞춰 유지해야 하는데, 그 「두 벌」이 만드는 드리프트가
+    #   이 저장소의 반복 실패 형태다. 도달 경로는 아래 루프백 바인딩으로 좁혔다.
+    #   ⇒ 재검토 트리거(조건): ①이것을 다시 서비스로 쓸 때 ②포트를 루프백 밖으로 낼 때
+    #   ③이 볼륨이 원본 백업 이상의 역할을 가질 때. 근거·실태는 docs/security.md §4-3.
     # 🔴 **상향 고정**이다 — K8s 정본(`k8s/seaweedfs.yaml` = 3.80)에 맞추지 **않는다**.
     #   `./seaweedfs/data`는 4.x가 쓴 온디스크 상태(`.mini_kek_passphrase`·`mini.options`
     #   등 4.x 산물 실재)이고 **이관 전 원본 백업**이라, 낮은 버전으로 인플레이스로 여는
