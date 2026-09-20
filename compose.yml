@@ -186,7 +186,13 @@ services:
     <<: *docker-logging
     container_name: seaweedfs
     profiles: ["legacy-storage", "legacy-sql", "monitoring"]
-    image: chrislusf/seaweedfs # use a remote image
+    # 🔴 **상향 고정**이다 — K8s 정본(`k8s/seaweedfs.yaml` = 3.80)에 맞추지 **않는다**.
+    #   `./seaweedfs/data`는 4.x가 쓴 온디스크 상태(`.mini_kek_passphrase`·`mini.options`
+    #   등 4.x 산물 실재)이고 **이관 전 원본 백업**이라, 낮은 버전으로 인플레이스로 여는
+    #   것이 위험하다. 값 `4.36`은 로컬 이미지가 보고하는 버전이고(라벨
+    #   `org.opencontainers.image.version`), 업스트림 실재와 arm64 매니페스트 일치를
+    #   확인했다 ⇒ 다운그레이드도 업그레이드도 아니다. 근거 docs/conventions/docker.md §1-3.
+    image: chrislusf/seaweedfs:4.36
     ports:
       - 9333:9333 # master UI
       - 8333:8333 # S3 API
