@@ -14,6 +14,7 @@
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -317,6 +318,13 @@ class WorkerBoundariesTest(unittest.TestCase):
         「그 조건이 없었다」였다. 여기서 조건을 만들어 CI 안으로 가져온다.
 
         ⚠️ 링크 **대상이 없어도** 된다 — 가드는 존재를 보지 않고 경로만 판정한다.
+
+        🔴 **fixture에 `.git`을 둔다.** Codex 가드는 `cwd`에서 위로 올라가며 `.git`을
+        찾아 루트를 정하므로, 없으면 **`/`까지 거슬러 올라가** `.env`가 `/.env`로
+        판정되고 **링크를 한 번도 따라가지 않는다.** 그 상태의 초록은 구 코드에서도
+        나오는 **가짜 초록**이다(`security` G2 실측). fixture의 결정적 성질을
+        빠뜨리면 셀은 초록인데 아무것도 재지 않는다 — 이 파일이 #108에서 지적한
+        「조건이 없는 환경에서만 도는 게이트」와 같은 형태다.
         """
         with tempfile.TemporaryDirectory() as raw_temporary:
             base = Path(raw_temporary).resolve()
@@ -324,6 +332,13 @@ class WorkerBoundariesTest(unittest.TestCase):
             worktree = base / "repo-feature"
             (main_tree / ".claude").mkdir(parents=True)
             (worktree / ".claude").mkdir(parents=True)
+            # 🔴 Codex 가드의 루트 탐색이 성립하도록 실제 배치를 흉내낸다
+            #    (메인은 `.git` 디렉터리, 워크트리는 `gitdir:` 포인터 파일).
+            (main_tree / ".git").mkdir()
+            (worktree / ".git").write_text(
+                f"gitdir: {main_tree / '.git/worktrees/repo-feature'}\n",
+                encoding="utf-8",
+            )
             (worktree / ".env").symlink_to(main_tree / ".env")
             (worktree / ".claude/settings.local.json").symlink_to(
                 main_tree / ".claude/settings.local.json"
@@ -341,6 +356,50 @@ class WorkerBoundariesTest(unittest.TestCase):
                 )
                 assert codex.get("permissionDecision") == "deny", (
                     f"Codex가 링크 자산 `{relative}`를 막지 않았다: {codex}"
+                )
+
+    def test_symlink_escape_to_allowed_outside_is_denied(self) -> None:
+        """🔴 저장소 **안** 경로가 밖의 허용 구역으로 링크돼도 막힌다.
+
+        위 셀은 Claude 축에서는 유효한 회귀 테스트지만 **Codex 축에서는 vacuous**하다 —
+        Codex는 저장소 밖을 원래 전부 `deny`하므로 `ask` 강등 축 자체가 없다.
+        Codex에서 #108이 실제로 닫은 것은 강등이 아니라 **`OUTSIDE_ALLOW`·저널 예외를
+        경유한 링크 탈출**이다: 저장소 안 파일을 허용된 밖 경로로 링크해두면
+        `resolve()` 후 그 예외에 걸려 **통과**했다.
+
+        ⚠️ 이 셀이 없으면 "양 런타임을 다 본다"는 보증이 **한쪽에서만 성립**한다.
+        `security` G2가 구/신 대조로 실측한 결정 뒤집힘(`pass` → `deny`)이 여기 있다.
+        """
+        with tempfile.TemporaryDirectory() as raw_temporary:
+            base = Path(raw_temporary).resolve()
+            worktree = base / "repo"
+            (worktree / ".claude").mkdir(parents=True)
+            (worktree / ".git").mkdir()
+
+            vault = base / "vault"
+            (vault / "agents" / "2026-01-01").mkdir(parents=True)
+            (worktree / "journal-link.md").symlink_to(
+                vault / "agents/2026-01-01/01-probe.md"
+            )
+
+            extracts = base / "extracts"
+            extracts.mkdir()
+            (worktree / "extract-link.csv").symlink_to(extracts / "out.csv")
+
+            cases = (
+                ("archivist", "journal-link.md", {"OBSIDIAN_VAULT": str(vault)}),
+                (
+                    "data-extractor",
+                    "extract-link.csv",
+                    {"DATA_EXTRACT_DIR": str(extracts)},
+                ),
+            )
+            for worker, relative, extra in cases:
+                codex = self._decision(
+                    self._run_codex(worktree, worker, relative, extra)
+                )
+                assert codex.get("permissionDecision") == "deny", (
+                    f"Codex가 `{worker}`의 링크 탈출을 막지 않았다: {relative} {codex}"
                 )
 
     def test_plain_file_in_worktree_is_not_over_denied(self) -> None:
@@ -382,9 +441,18 @@ class WorkerBoundariesTest(unittest.TestCase):
         )
 
     def _run_codex(
-        self, project_dir: Path, worker: str, relative: str
+        self,
+        project_dir: Path,
+        worker: str,
+        relative: str,
+        extra_env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        """`cwd`를 임의 트리로 주고 Codex 가드를 호출한다."""
+        """`cwd`를 임의 트리로 주고 Codex 가드를 호출한다.
+
+        `extra_env`로 `OBSIDIAN_VAULT`·`DATA_EXTRACT_DIR`를 임시 경로로 돌린다 —
+        허용된 저장소 밖 구역을 **실제 홈 디렉터리 대신 fixture 안에** 세워야
+        테스트가 호스트 상태에 의존하지 않는다.
+        """
         payload = {
             "tool_name": "apply_patch",
             "cwd": str(project_dir),
@@ -393,6 +461,7 @@ class WorkerBoundariesTest(unittest.TestCase):
         return subprocess.run(  # noqa: S603
             [sys.executable, str(CODEX_GUARD), worker],
             input=json.dumps(payload),
+            env={**os.environ, **(extra_env or {})},
             check=False,
             capture_output=True,
             text=True,

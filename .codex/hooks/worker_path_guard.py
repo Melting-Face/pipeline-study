@@ -279,8 +279,16 @@ def denied_reason(worker: str, raw_path: str, root: Path) -> str | None:
     🔴 **축을 열거하지 않는다** — 열거는 다음 축을 또 놓친다. 양쪽을 다 보면
     `resolve()`가 무엇을 바꾸든 구조적으로 덮인다. 거부가 하나라도 나오면 거부다.
 
-    ⚠️ **짝 가드와 함께 고친다.** 한쪽만 고치면 런타임이 갈리고, 그것을
-    `test_worker_boundaries.py`의 `*_in_both_runtimes` 셀이 잡는다.
+    ⚠️ **짝 가드와 함께 고친다.** 한쪽만 고치면 런타임이 갈린다.
+
+    🔴 **다만 `*_in_both_runtimes` 셀이 그것을 잡는다고 읽지 마라.** 링크 자산
+    (`.env` 등)으로 쏘는 셀은 **Codex 축에서 vacuous**하다 — Codex는 저장소 밖을
+    원래 전부 `deny`하므로 `ask` 강등 축 자체가 없고, 그 셀은 **수정 전 코드에서도
+    통과**한다(실측). Codex에서 이 처방이 실제로 닫은 것은 강등이 아니라
+    **`OUTSIDE_ALLOW`·저널 예외를 경유한 링크 탈출**이다(저장소 안 파일을 허용된
+    밖 경로로 링크해두면 `resolve()` 후 그 예외에 걸려 통과했다).
+    ⇒ Codex 축의 실질 회귀 셀은 `test_symlink_escape_to_allowed_outside_is_denied`이고,
+    거기서 구/신 판정이 `pass` → `deny`로 **뒤집히는 것**을 확인했다.
     """
     declared = Path(raw_path).expanduser()
     if not declared.is_absolute():
