@@ -59,8 +59,11 @@ services:
     profiles: ["host-dagster"]
     entrypoint: ["dagster-webserver"]
     command: ["-h", "0.0.0.0", "-p", "${DAGSTER_PORT}", "-w", "workspace.yaml"]
+    # 호스트에서 UI에 붙을 때를 위해 노출하되, 루프백 바인딩으로 LAN 도달은 막는다
+    # (docs/security.md — 최소 노출). UI와 같은 포트로 쓰기 가능한 API가 함께 나가고
+    # 인증 배선이 없어, 호스트 밖으로 낼 이유가 없다.
     ports:
-      - ${DAGSTER_PORT}:${DAGSTER_PORT}
+      - "127.0.0.1:${DAGSTER_PORT}:${DAGSTER_PORT}"
     # UI/GraphQL: 가벼움 (run 실행은 daemon 쪽)
     deploy:
       resources:
@@ -136,10 +139,13 @@ services:
     container_name: trino
     profiles: ["legacy-sql"]
     image: trinodb/trino:468
+    # 호스트에서 쿼리·UI에 붙을 때를 위해 노출하되, 루프백 바인딩으로 LAN 도달은 막는다
+    # (docs/security.md — 최소 노출). 이 엔진 뒤에는 재배포가 제한된 원천 데이터가 있고
+    # 인증 배선이 없어, 호스트 밖으로 낼 이유가 없다.
     ports:
       # 호스트 8080은 kind ingress(k8s/kind-cluster.yaml extraPortMappings)가 점유한다.
       # 컨테이너 내부 포트는 8080 그대로라 dbt profiles.yml(host: trino, port: 8080)은 영향 없다.
-      - "8081:8080"
+      - "127.0.0.1:8081:8080"
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -222,8 +228,11 @@ services:
     container_name: prometheus
     profiles: ["monitoring"]
     image: prom/prometheus:v2.21.0
+    # 호스트에서 메트릭·UI를 볼 때를 위해 노출하되, 루프백 바인딩으로 LAN 도달은 막는다
+    # (docs/security.md — 최소 노출). 수집한 메트릭에 내부 구성이 드러나고 lifecycle API가
+    # 함께 열려 있어, 호스트 밖으로 낼 이유가 없다.
     ports:
-      - 9000:9090
+      - "127.0.0.1:9000:9090"
     volumes:
       - ./prometheus:/etc/prometheus
     command: "--web.enable-lifecycle --config.file=/etc/prometheus/prometheus.yml"
