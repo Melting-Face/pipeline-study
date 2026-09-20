@@ -12,8 +12,9 @@ path-style·카탈로그 정합 규칙은 [../conventions/k8s.md](../conventions
 [`scripts/storage_conformance_probe.py`](../../scripts/storage_conformance_probe.py)의
 머리 주석이 갖는다. **여기에 복제하지 않는다** — 복제하면 양쪽이 각자 낡는다.
 
-⚠️ **이 스위트는 [../test.md](../test.md)의 수동 관문 목록에 등재되기 전이다.**
-등재되면 실행 규약의 정본은 그쪽으로 간다 — 지금은 스크립트 주석이 유일한 정본이다.
+**실행 규약의 정본은 [../test/manual-gates.md](../test/manual-gates.md) §5-5다** — 언제 통과시키는가,
+종료 코드의 의미, 대조군 규율, 전제, 첫 실행 범위, 미검사 축이 거기 있다. 이 문서는 *왜 이 스위트가
+유일한 판정 수단인가*와 후보 평가를 갖고, 인자·구현 세부는 스크립트 주석이 갖는다.
 
 ## 개요
 
@@ -219,6 +220,6 @@ compose 쪽을 보고 「미채택으로 내려갔다」로 읽지 않는다.
 - 규칙 정본: [../conventions/k8s/checksum.md](../conventions/k8s/checksum.md) ·
   [../conventions/k8s.md](../conventions/k8s.md) §11
 - 판정 수단: [`scripts/storage_conformance_probe.py`](../../scripts/storage_conformance_probe.py)
-  / 수동 관문 계층: [../test.md](../test.md) §5
+  / 수동 관문 규약: [../test/manual-gates.md](../test/manual-gates.md) §5-5
 - 자원 수치: [../resource-sizing.md](../resource-sizing.md) /
   결정 배경: [../redesign.md](../redesign.md) · [spark.md](spark.md) · [flink.md](flink.md)
