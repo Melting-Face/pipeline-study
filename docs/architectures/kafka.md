@@ -128,7 +128,7 @@ Kafka도 **producer→broker는 push, broker→consumer는 pull인 혼합**이�
 | 상태·정확성 | RocksDB + 체크포인트 `10s`·`EXACTLY_ONCE` → `s3://warehouse/flink-checkpoints` | RocksDB + **changelog 토픽** — 상태가 브로커에도 쌓인다 |
 | 자원 | JM `1000m`/`2048Mi` · TM `1000m`/`2048Mi`(잡 제출 시) · Operator 컨트롤러+웹훅 합계 `300m`/`768Mi` — **예산표 선언값**(실측 아님) | ⚠️ **미측정** — 정본 예산표에 항목 자체가 없다 |
 | Dagster 연동 | `flink_iceberg_batch` 자산이 **배치 경로**를 관통(CR 기동 → SQL → `finally` teardown) | 없다. 새로 설계해야 하고 `PipesK8sClient`를 못 쓰는 제약은 동일하게 재발한다 |
-| 진척 | 배치 왕복·스트리밍 경로 **실증**(최소 SQL) / 실시간 피처 계산·스트림 잡 수명주기 **미착수** | **0** |
+| 진척 | 🚧 **선언 등급** — 저장소 선언은 있고 클러스터 관측 범위는 [flink.md](flink.md) §위치가 가리키는 정본이 갖는다. 실시간 피처·스트림 수명주기 **미착수** | **0** |
 | 버전 족쇄 | Iceberg가 정한다 — Flink `2.1.3` + Iceberg `1.11.0` | Connect ↔ Iceberg 지원 짝을 새로 찾아야 한다 |
 | 회수 | `flink cancel` → `kubectl delete` **순서가 규칙**(뒤집으면 `CLEANUPFAILED`로 CR이 `DELETING` 고착). JM 로그·체크포인트는 **회수 전에** 건진다(`DELETE_ON_CANCELLATION`이면 `cancel`이 지운다) | 토픽 데이터가 **PVC에 남을 것**으로 본다 |
 
