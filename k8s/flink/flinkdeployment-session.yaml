@@ -110,17 +110,27 @@ spec:
                             secretKeyRef: {name: lakehouse-creds, key: s3-secret-key}
                   # Flink SQL 파일(공용 init=k8s/flink/iceberg-catalog-init.yaml,
                   #                배치=iceberg-batch-job.yaml, 스트림=iceberg-stream-job.yaml,
-                  #                datagen 대조군=iceberg-datagen-job.yaml).
+                  #                datagen 대조군=iceberg-datagen-job.yaml,
+                  #                축 A 실데이터=usgs-water-stream-job.yaml).
                   # 🔴 이 마운트는 참조 대상 ConfigMap이 **전부 먼저 존재해야** 한다 —
                   #   하나라도 없으면 파드가 CreateContainerConfigError로 뜨지 않는다.
                   #   그래서 ConfigMap을 만든 뒤에야 이 블록을 넣었다(배치 2026-08-21, 스트림 2026-08-23).
-                  #   ⇒ apply 순서는 **ConfigMap 4종 → FlinkDeployment**로 고정이다
-                  #     (`kubectl apply -f k8s/flink/iceberg-*.yaml`가 4개를 한 번에 잡는다).
+                  #   ⇒ apply 순서는 **ConfigMap 5종 → FlinkDeployment**로 고정이다
+                  #     (`kubectl apply -f k8s/flink/iceberg-*.yaml -f k8s/flink/usgs-water-stream-job.yaml`).
+                  #   🔴 **글롭 하나로는 5종이 안 잡힌다** — `iceberg-*.yaml`은 usgs를,
+                  #     `*-job.yaml`은 catalog-init을 놓친다. 둘 다 4개라 **개수만 세면 맞아 보인다.**
+                  #     이 주석이 「4종」으로 오래 남았던 이유가 그것이다: usgs가
+                  #     `iceberg-` 접두어 규약(iceberg-catalog-init.yaml의 "글롭에 잡히게 한다")을
+                  #     깨고 들어왔는데 글롭도 주석도 따라오지 않았다.
+                  #     ⇒ ConfigMap을 **추가할 때는 이 목록·글롭·종수를 한 벌로** 고친다.
+                  #     종수 정본은 defs/flink/constants.py의 REQUIRED_CONFIGMAPS다(런타임 선검사).
                   # 마운트 경로를 나눈 이유: 한 경로에 ConfigMap 2개를 겹쳐 마운트하면 뒤엣것이 앞엣것을
                   #   가린다(파일 단위 병합이 아니다). init=/opt/flink/sql-catalog,
-                  #   배치=/opt/flink/sql, 스트림=/opt/flink/sql-stream, datagen=/opt/flink/sql-datagen.
+                  #   배치=/opt/flink/sql, 스트림=/opt/flink/sql-stream, datagen=/opt/flink/sql-datagen,
+                  #   usgs=/opt/flink/sql-usgs.
                   volumeMounts:
-                      # 카탈로그 init은 잡 3종이 공유한다(iceberg-catalog-init.yaml).
+                      # 카탈로그 init은 잡 4종이 공유한다(iceberg-catalog-init.yaml).
+                      #   usgs 잡도 `iceberg` 카탈로그를 수식해 쓰므로 init 없이는 뜨지 않는다.
                       # 🔴 자기 경로를 쓴다 — ConfigMap 볼륨은 마운트 경로를 통째로 덮으므로
                       #   잡 파일과 같은 경로에 두면 뒤엣것이 앞엣것을 가린다.
                       - name: iceberg-catalog-init

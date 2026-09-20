@@ -235,7 +235,8 @@
   규칙 [`docs/conventions/k8s.md`](docs/conventions/k8s.md), 예산·배분 [`docs/resource-sizing.md`](docs/resource-sizing.md).
   클러스터에는 **Spark Operator**(배치)·**Spark Connect**(dbt-spark 접속용 상주)가 있고,
   Spark·Flink가 **같은 Iceberg JDBC 카탈로그**를 공유한다.
-  **Flink Operator**(기본 설치)와 세션 클러스터로 **Iceberg 배치 왕복이 실증**됐다.
+  **Flink Operator**(기본 설치)와 세션 클러스터로 **Spark가 쓴 Iceberg 테이블을 읽는 것까지**
+  확인됐다(쓰기는 검증 SELECT가 없어 `write_verified: False` — **「돌았다」와 「실증」은 다른 축**이다).
   예산 규약은 **시분할 → 동시 기동**으로 개정됐고(급소는 **CPU 축**·실측은 볼트) 경계가 셋이다 — Flink 상주는
   **JM만**(TM은 잡 제출 시 온디맨드·잡 종료와 함께 회수), **`spark.executor.instances` ≤ 1**, Redpanda 미도입.
   **검증용으로 띄운 상주 컴퓨트는 그 자리에서 내린다** — 회수 시점을 트리거하는 주체가 없으면

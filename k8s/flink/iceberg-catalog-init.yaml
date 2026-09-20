@@ -19,9 +19,12 @@
 #
 # 🔴 **ConfigMap이 먼저 존재해야 파드가 뜬다** — `flinkdeployment-session.yaml`이 이 이름을
 #   volume으로 참조하므로, 없으면 JM 파드가 `CreateContainerConfigError`로 기동하지 않는다.
-#   ⇒ apply 순서는 **`k8s/flink/iceberg-*.yaml` 전부 → FlinkDeployment**로 고정이다.
+#   ⇒ apply 순서는 **ConfigMap 5종 → FlinkDeployment**로 고정이다.
 #   파일명을 `iceberg-`로 시작시킨 것은 기존 글롭(`kubectl apply -f k8s/flink/iceberg-*.yaml`)에
 #   **그대로 잡히게 하려는 것**이다(빠뜨리면 JM이 안 뜨는데 원인이 멀리 보인다).
+#   ⚠️ 그 규약은 이미 한 번 깨졌다 — `usgs-water-stream-job.yaml`은 이 글롭에 **안 걸린다.**
+#   즉 글롭은 더 이상 "전부"가 아니다. 목록·글롭의 정본은
+#   `flinkdeployment-session.yaml`의 volumes 블록, 런타임 선검사는 REQUIRED_CONFIGMAPS다.
 apiVersion: v1
 kind: ConfigMap
 metadata:
