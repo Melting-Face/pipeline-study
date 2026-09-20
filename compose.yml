@@ -193,11 +193,16 @@ services:
     #   `org.opencontainers.image.version`), 업스트림 실재와 arm64 매니페스트 일치를
     #   확인했다 ⇒ 다운그레이드도 업그레이드도 아니다. 근거 docs/conventions/docker.md §1-3.
     image: chrislusf/seaweedfs:4.36
+    # 호스트에서 S3·UI에 붙을 때를 위해 노출하되, 루프백 바인딩으로 LAN 도달은 막는다
+    # (docs/security.md — 최소 노출). 이 볼륨 뒤에는 재배포가 제한된 원천 데이터가 있고
+    # 데이터 반출은 비가역이라, postgres와 같은 형태로 127.0.0.1에 묶는다.
     ports:
-      - 9333:9333 # master UI
-      - 8333:8333 # S3 API
-      - 8888:8888 # filer UI
-      - 23646:23646
+      - "127.0.0.1:9333:9333" # master UI
+      - "127.0.0.1:8333:8333" # S3 API
+      - "127.0.0.1:8888:8888" # filer UI
+      # Admin UI(23646)는 게시 자체를 하지 않는다 — vacuum·balance 등 데이터 파괴가 가능한
+      # 운영 평면인데 인증 배선이 없고, 정본이 K8s로 넘어가 호스트에서 쓸 일이 없다(YAGNI).
+      # 컨테이너 안에서는 그대로 뜬다(프로세스 인자 무변경). 필요해지면 그때 루프백으로 연다.
       # volume(8080)·grpc·metrics(9324)는 컨테이너 네트워크 내부 통신만 사용 → host 미게시 (Trino 8080 충돌 회피)
     command: "mini -ip.bind=0.0.0.0 -dir=/data -metricsPort=9324"
     volumes:
