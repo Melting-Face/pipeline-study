@@ -159,7 +159,7 @@ mode에서 driver 파드 스펙을 만들 때 쓰인다. client mode의 인증 �
 🔴 **`UPDATE`는 `append`가 아니라 `overwrite` 스냅샷을 남긴다** —
 Flink 스트리밍 읽기 제약이 실제로 물리는 지점이다([flink.md](flink.md) §급소).
 
-게이트 규약·종료 코드는 [../test.md](../test.md) §5-3.
+게이트 규약·종료 코드는 [../test/manual-gates.md](../test/manual-gates.md) §5-3.
 
 ### SeaweedFS는 aws-chunked 체크섬을 못 푼다
 
@@ -258,7 +258,8 @@ dbt-spark가 공식 지원하는 method는 **thrift / http / odbc / session 넷�
     `No FileSystem for scheme "s3"`가 **0건**이었지만, 프로시저가 **테이블 해석 단계에서 먼저 죽어
     Hadoop FS 나열에 도달조차 못 했다.** **에러가 안 났다는 것을 "배선이 통과했다"로 읽으면 안 된다** —
     그 코드 경로가 실행되지 않았을 뿐이다([philosophy.md](../philosophy.md) 원칙 7: 부정 결과는
-    **관측 경로가 살아 있었음을 함께 확인**해야 유효하다). 상세는 [../test.md](../test.md) §커버리지 공백.
+    **관측 경로가 살아 있었음을 함께 확인**해야 유효하다). 상세는
+    [../test/manual-gates.md](../test/manual-gates.md) §5-2 「"에러 0건"을 통과로 읽지 않는다」.
 - **안전 순서**: **compact(`rewrite_data_files`) → expire snapshots → remove orphan files**(현행 잡이
   op 의존성으로 강제). 컴팩션이 새 파일·스냅샷을 만든 뒤 만료가 옛 작은 파일 참조를 풀고,
   orphan 정리가 잔여를 제거한다.

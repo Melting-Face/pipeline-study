@@ -340,7 +340,8 @@ uv run scripts/physionet_access_probe.py    # 인증 방식·무결성 정본 �
 > **`2`=사전조건 미충족(판정 불가)**. `2`를 통과로 읽지 않는다. 이 관문은
 > `dbt-spark`·`pyspark` 상한을 올리기 **직전에** 통과시킨다.
 
-테스트 계층·우선순위와 각 관문이 무엇을 보증하지 *않는지*는 [`test.md`](test.md)가 정본이다.
+테스트 계층·우선순위는 [`test.md`](test.md)가, **각 관문의 실행 규약과 무엇을 보증하지
+*않는지*는 [`test/manual-gates.md`](test/manual-gates.md)** 가 정본이다.
 
 ## 6-1. 원천 데이터 가져오기
 
@@ -464,4 +465,4 @@ uv run --group notebook jupyter lab --port 8889 --notebook-dir ../../../notebook
 - **K8s 규약**(워크로드·probe·Ingress·러너 이미지): [`conventions/k8s.md`](conventions/k8s.md)
 - **Docker/Compose 규약**(앵커·profiles·healthcheck): [`conventions/docker.md`](conventions/docker.md)
 - **커밋 게이트·pre-commit**: [`conventions/general.md`](conventions/general.md)
-- **테스트 계층·관문**: [`test.md`](test.md)
+- **테스트 계층**: [`test.md`](test.md) / **수동 관문 실행 규약**: [`test/manual-gates.md`](test/manual-gates.md)

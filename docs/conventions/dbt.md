@@ -57,7 +57,7 @@ dbt 어댑터를 통해 Spark Connect에 접속한다. 즉 커밋이 클러스�
 
 린트 대상은 **실제 컴파일 SQL이 아니라 스텁 치환 SQL**이다. 보증 범위는 **스타일·구문**
 (대소문자·들여쓰기·줄길이·참조)까지이고, **매크로 dispatch가 엔진별로 같은 값을 내는지는 검사하지 않는다.**
-그건 [test.md](../test.md) §5-1 `scripts/spark_connect_smoke.py`의 몫이다.
+그건 [test/manual-gates.md](../test/manual-gates.md) §5-1 `scripts/spark_connect_smoke.py`의 몫이다.
 **`sqlfluff` 통과를 값 정합의 근거로 읽지 않는다**([philosophy.md](../philosophy.md) 원칙 7).
 
 같은 이유로 **`dialect = "sparksql"` 파싱 통과도 값의 근거가 아니다** — 그건 "구문이 sparksql
@@ -293,8 +293,9 @@ dbt-spark의 기본 `file_format`은 iceberg가 아니며, **없으면 아래 �
 
 - ⇒ **계약이 아니라 구현에 의존**하므로 minor 업그레이드가 **에러 없이** 깨뜨릴 수 있다.
   그래서 `pyproject.toml`이 상한을 **`dbt-spark<1.12`·`pyspark<3.6`** 으로 묶는다.
-- **상한을 올리기 직전에 `scripts/spark_connect_smoke.py`를 통과시킨다**([../test.md](../test.md) §5-1).
-  단 그 스모크가 무엇을 보지 **못하는지**는 test.md의 **B9**를 함께 읽는다.
+- **상한을 올리기 직전에 `scripts/spark_connect_smoke.py`를 통과시킨다**
+  ([../test/manual-gates.md](../test/manual-gates.md) §5-1). 단 그 스모크가 무엇을 보지
+  **못하는지**는 같은 절의 「이 스모크가 보증하지 않는 것」을 함께 읽는다.
 
 ### 방언 차이는 크로스 어댑터 매크로로 흡수한다 (규칙)
 

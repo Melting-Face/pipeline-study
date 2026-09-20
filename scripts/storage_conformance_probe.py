@@ -180,6 +180,10 @@ WIRE_HEADER_ALLOWLIST = (
 FRAMING_TRAILER = "trailer"
 FRAMING_HEADER = "header"
 FRAMING_NONE = "none"
+# 🔴 `none`(PUT은 전선에 나갔는데 체크섬 프레이밍이 안 붙음)과 **다른 축**이다.
+#   이쪽은 전선에 PUT 자체가 없다는 뜻이라 프레이밍을 잰 적이 없다.
+#   한 값으로 뭉치면 "안 붙었다"와 "못 쟀다"가 구분되지 않는다.
+FRAMING_NO_REQUEST = "no-request"
 
 # ── 판정 어휘 ────────────────────────────────────────────────────────────
 # 식별자에 PASS/FAIL을 쓰지 않는 이유는 ruff S105(하드코딩 비밀 추정)가
@@ -284,6 +288,40 @@ def put_get_roundtrip(
         # (프로브가 직접 만든 난수 페이로드라 민감정보가 아니다)
         detail += f" / 회수 선두 24B(hex) {got[:24].hex()}"
     return same, detail
+
+
+def classify_framing(wire_log: list[dict[str, str]], key: str) -> tuple[str, str]:
+    """전선 기록에서 해당 키 PUT의 체크섬 프레이밍을 판정 — (프레이밍, 헤더 요약).
+
+    🔴 프레이밍은 **PUT의 성공 여부와 독립**이다. `before-send` 시점에 이미
+    결정돼 있어 스토어가 그 요청을 거부해도 "무엇을 보냈는가"는 남는다.
+    P1은 **기대 결과가 FAIL**이고 그 FAIL이 `ClientError`로 오므로, 이 값을
+    성공 경로에서만 남기면 정확히 **기대하는 경우에** 판정 재료가 사라진다 —
+    그러면 `p1=FAIL`만 보고는 "축을 재고 실패했다"와 "축이 성립조차 안 했다"를
+    구분할 수 없다. 그래서 순수 함수로 떼어 호출부가 `finally`에서 부른다.
+
+    키로 거르는 이유: P1은 같은 실행에서 `.bin` PUT을 두 번 보낸다
+    (when_supported → when_required). 마지막 PUT을 집으면 대조군을 재게 된다.
+    """
+    put_wires = [
+        w
+        for w in wire_log
+        if w.get("__method") == "PUT" and w.get("__path", "").endswith(key)
+    ]
+    if not put_wires:
+        return FRAMING_NO_REQUEST, ""
+    wire = put_wires[-1]
+    enc = wire.get("content-encoding", "")
+    if "aws-chunked" in enc and "x-amz-trailer" in wire:
+        framing = FRAMING_TRAILER
+    elif "x-amz-checksum-crc32" in wire or "x-amz-sdk-checksum-algorithm" in wire:
+        framing = FRAMING_HEADER
+    else:
+        framing = FRAMING_NONE
+    desc = ", ".join(
+        f"{k}={v}" for k, v in sorted(wire.items()) if not k.startswith("__")
+    )
+    return framing, desc
 
 
 def list_keys(client: Any, bucket: str, prefix: str) -> list[str]:
@@ -541,34 +579,30 @@ def main() -> int:
         "SeaweedFS가 aws-chunked 프레이밍을 못 풀어 객체에 그대로 저장된다 — "
         "PASS면 스토어가 고쳐진 것이 아니라 프로브를 의심한다"
     )
+    key_forced = f"{run_prefix}/p1/when_supported.bin"
     if "p1" in selected:
+        # 🔴 프레이밍 기본값을 먼저 박는다 — p1을 고른 실행이면 RESULT 줄에
+        #   `p1_framing=`이 **항상** 실린다. 값이 아예 없으면 축 성립 여부를
+        #   사후에 복원할 수 없다(요청을 보내지 않고 별도 재현해야 했다).
+        framing, wire_desc = FRAMING_NO_REQUEST, ""
+        EXTRA["p1_framing"] = framing
         try:
             wire_log.clear()
             forced = make_s3_client(
                 boto3, Config, endpoint, region, creds, "when_supported"
             )
             forced.meta.events.register("before-send.s3", capture_wire)
-            key_forced = f"{run_prefix}/p1/when_supported.bin"
-            same_forced, detail_forced = put_get_roundtrip(
-                forced, bucket, key_forced, p1_payload
-            )
-
-            # 🔴 덮어쓰기가 먹혔는지는 결과가 아니라 전선에서 판정한다.
-            put_wires = [
-                w
-                for w in wire_log
-                if w.get("__method") == "PUT" and w.get("__path", "").endswith(".bin")
-            ]
-            wire = put_wires[-1] if put_wires else {}
-            enc = wire.get("content-encoding", "")
-            if "aws-chunked" in enc and "x-amz-trailer" in wire:
-                framing = FRAMING_TRAILER
-            elif "x-amz-checksum-crc32" in wire or (
-                "x-amz-sdk-checksum-algorithm" in wire
-            ):
-                framing = FRAMING_HEADER
-            else:
-                framing = FRAMING_NONE
+            try:
+                same_forced, detail_forced = put_get_roundtrip(
+                    forced, bucket, key_forced, p1_payload
+                )
+            finally:
+                # 🔴 덮어쓰기가 먹혔는지는 결과가 아니라 전선에서 판정한다.
+                #   그리고 그 판정을 **여기서** 한다 — ⓐ PUT이 거부돼도(=기대
+                #   결과) 이 블록을 지나므로 값이 남고 ⓑ 뒤따르는 when_required
+                #   왕복이 전선에 `.bin` PUT을 더 쌓기 전이다.
+                framing, wire_desc = classify_framing(wire_log, key_forced)
+                EXTRA["p1_framing"] = framing
 
             # 대조 — 저장소 전역 우회책(when_required)을 켠 같은 왕복.
             relaxed = make_s3_client(
@@ -579,11 +613,7 @@ def main() -> int:
                 relaxed, bucket, key_relaxed, p1_payload
             )
 
-            wire_desc = ", ".join(
-                f"{k}={v}" for k, v in sorted(wire.items()) if not k.startswith("__")
-            )
             observed = (
-                f"프레이밍={framing} [{wire_desc or '체크섬 헤더 없음'}] / "
                 f"when_supported: {detail_forced} / "
                 f"when_required: {detail_relaxed} / "
                 f"두 모드 결과 {'갈림' if same_forced != same_relaxed else '동일'}"
@@ -601,7 +631,6 @@ def main() -> int:
                 p1_verdict = VERDICT_OK if same_forced else VERDICT_NG
                 if same_forced and same_relaxed:
                     observed += " ⚠️ 두 모드가 갈리지 않았다 — 덮어쓰기 실효를 의심한다"
-            EXTRA["p1_framing"] = framing
             EXTRA["p1_when_required"] = VERDICT_OK if same_relaxed else VERDICT_NG
         except EndpointConnectionError as exc:
             p1_verdict = VERDICT_UNMEASURED
@@ -620,6 +649,12 @@ def main() -> int:
         except Exception as exc:
             p1_verdict = VERDICT_UNMEASURED
             observed = f"예기치 않은 예외 — {type(exc).__name__}"
+        # 🔴 프레이밍은 **모든 경로**의 관측에 싣는다(성공 경로 전용이 아니다).
+        #   빠지면 사람이 읽는 기록에서도 "축을 재고 실패"와 "축 미성립"이
+        #   구분되지 않는다 — RESULT 줄의 `p1_framing=`과 같은 이유다.
+        observed = (
+            f"프레이밍={framing} [{wire_desc or '체크섬 헤더 없음'}] / " + observed
+        )
         record(
             "p1",
             "SDK 기본 체크섬(aws-chunked+트레일러) PUT → 바이트 무결성",
