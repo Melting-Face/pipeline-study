@@ -149,7 +149,7 @@ in-cluster 값의 정본은 `k8s/dagster/dagster-deploy.yaml`의 ConfigMap이다
 🔴 **순서 강제가 이 잡의 설계다** — 컴팩션이 새 파일을 쓰고 만료가 옛 스냅샷을 끊은 **뒤에야**
 orphan 정리가 안전하다. 순서를 바꾸면 살아 있는 파일을 지운다.
 🔴 **다만 순서 강제와 실패 전파가 같은 배선에 묶여 있다** — 첫 op이 실패하면 뒤가 전부 중단된다
-([`test.md`](test.md) §5-2).
+([`test/manual-gates.md`](test/manual-gates.md) §5-2).
 
 📌 **각 항목의 현재 설정 상태와 남은 결정은 저장소 밖에 있다** —
 `$OBSIDIAN_VAULT/status/observations.md` §운영 정책 미설정 항목.

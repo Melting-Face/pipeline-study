@@ -53,6 +53,7 @@
 | [외부 공개](conventions/publishing.md) | 공개는 커밋보다 강한 기준. 소규모 셀 마스킹·DUA·출처 등급 |
 | [타임존](conventions/timezone.md) | 저장 UTC / 표시·스케줄 KST |
 | [테스트](test.md) | 테스트 계층과 우선순위 |
+| [수동 관문](test/manual-gates.md) | 실인프라·외부 서비스에 붙는 관문 5절 · **관문마다 다른 종료 코드** |
 | [Docker](conventions/docker.md) | 앵커·태그 고정·healthcheck·`deploy.resources`·profiles |
 | [관측·모니터링](conventions/monitoring.md) | 서비스 추가 시 **관측 수단 등록 의무** |
 | [Kubernetes](conventions/k8s.md) | 워크로드·requests/limits·probe·RBAC·Operator·Ingress |
