@@ -21,7 +21,8 @@
 #
 #   `envsubst`는 러너 이미지에 존재한다(/usr/bin/envsubst, 2026-08-21 실측).
 #   🔴 `--history`를 **버릴 경로로 지정**하고 렌더 산출물과 함께 지우는 것은 k8s.md §9-2 예외 조건 3이다 —
-#   지정하지 않으면 `/opt/flink/.flink-sql-history`에 평문이 남는다(2026-08-22 실측, 5라인 유출).
+#   지정하지 않으면 `/opt/flink/.flink-sql-history`에 평문이 남는다 — **실제로 유출된 적이 있다.**
+#   건수·전말은 저장소에 적지 않는다(k8s.md §9-2와 같은 이유) — `security/posture.md` 소관.
 #   `rm`은 sql-client 실패 시에도 돌아야 하므로 `&&`가 아니라 `;`로 잇는다.
 #
 # 🔴 **마운트 경로가 배치와 다르다** — 이 ConfigMap은 `/opt/flink/sql-stream`에 붙는다.
@@ -29,7 +30,9 @@
 #
 # 🔴 **ConfigMap이 먼저 존재해야 파드가 뜬다** — `flinkdeployment-session.yaml`이 이 이름을
 #   volume으로 참조하므로, 없으면 JM 파드가 `CreateContainerConfigError`로 기동하지 않는다.
-#   ⇒ apply 순서는 **`k8s/flink/iceberg-*.yaml` 4종 → FlinkDeployment**로 고정이다.
+#   ⇒ apply 순서는 **ConfigMap 5종 → FlinkDeployment**로 고정이다. 5종은 `iceberg-*.yaml` 4개 +
+#   `usgs-water-stream-job.yaml`이며, **글롭 하나로는 안 잡힌다** —
+#   목록·글롭의 정본 주석은 `flinkdeployment-session.yaml`의 volumes 블록에 있다.
 apiVersion: v1
 kind: ConfigMap
 metadata:
