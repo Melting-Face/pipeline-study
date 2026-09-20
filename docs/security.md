@@ -370,7 +370,7 @@ git에 들어가지 않는다. 바뀐 것은 *데이터가 어떻게 들어오�
 
 | 통제 | 상태 |
 | --- | --- |
-| kind `extraPortMappings`의 `listenAddress: 127.0.0.1` | ✅ — **현재 유일한 실효 통제**(LAN 도달 불가) |
+| kind `extraPortMappings`의 `listenAddress: 127.0.0.1` | ✅ — **이 경로에서 유일한 실효 통제**(LAN 도달 불가) |
 | webserver `automountServiceAccountToken: false` | ✅ — UI가 탈취돼도 파드에 k8s 토큰이 없다(기능 손실 0) |
 | daemon `Role`을 ns 한정 4 verb로 제한 | ✅ — `sparkapplications`·`pods`·`pods/log`뿐 |
 | `dagster-webserver --read-only` | ❌ **쓸 수 있는데 안 쓴다** — UI가 주 조작 수단이라 무력화된다 |
@@ -389,6 +389,11 @@ git에 들어가지 않는다. 바뀐 것은 *데이터가 어떻게 들어오�
 
 **SeaweedFS S3** — `-s3.config=s3.json`의 `identities`로 서비스별 accessKey·최소 action 지정
 (`Admin`/`Read`/`Write`/`List`/`Tagging`). *주의: `-s3.iam.config`는 identities 미지원 → `-s3.config` 사용.*
+
+⚠️ **통제는 서비스 이름이 아니라 배포 경로별로 적는다.** 같은 서비스가 compose와 K8s 양쪽에 있으면
+**인증 배선이 갈릴 수 있다** — 한쪽이 초록이라고 다른 쪽이 안전한 것이 아니고 역도 같다.
+위 처방은 **배선이 있는 경로**를 전제하며, 「없음」과 「넓음」은 **처방이 다르다**(좁힐 정책이 없다).
+경로별 현행 실태는 저장소 밖 `$OBSIDIAN_VAULT/security/posture.md`가 갖는다.
 
 ```json
 {
