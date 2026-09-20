@@ -287,12 +287,66 @@ def main() -> None:
     if not raw_path:
         sys.exit(0)
 
-    project_dir = Path(os.environ.get("CLAUDE_PROJECT_DIR", ".")).resolve()
-    target = Path(raw_path).expanduser()
-    if not target.is_absolute():
-        target = project_dir / target
-    target = target.resolve()
+    # 🔴 **기준도 두 벌이다.** 경로를 두 형태로 재면서 `project_dir`을 한 벌만 쓰면
+    #    좌표계가 어긋난다 — macOS는 `/var`가 `/private/var`로 가는 링크라,
+    #    resolve한 기준에 resolve 안 한 경로를 대면 **저장소 안인데 밖으로 판정**된다
+    #    (실측: 임시 디렉터리를 쓰는 기존 테스트 3건이 과차단으로 깨졌다).
+    #    ⇒ 선언 경로는 **정규화만 한 기준**과, resolve 경로는 **resolve한 기준**과 잰다.
+    project_raw = Path(os.environ.get("CLAUDE_PROJECT_DIR", ".")).expanduser()
+    project_norm = Path(os.path.normpath(project_raw))
+    project_resolved = project_raw.resolve()
 
+    declared = Path(raw_path).expanduser()
+    if not declared.is_absolute():
+        declared = project_norm / declared
+    # `..`만 편다 — **링크는 따라가지 않는다**. 안 펴면 `<tree>/../<repo>/x`가
+    # 문자열 접두어 비교에서 "안"으로 오판된다.
+    declared = Path(os.path.normpath(declared))
+    resolved = declared.resolve()
+
+    # 🔴 **선언 경로와 resolve 경로를 둘 다 판정하고 엄격한 쪽을 취한다**(Issue #108).
+    #    `resolve()`가 경로를 바꾸면 **같은 실파일인데 판정이 갈린다.** 이 저장소는
+    #    그 형태를 두 번 밟았다 — ⓐ 대소문자(macOS FS가 무시) ⓑ 심볼릭 링크
+    #    (`worktree-new.sh`가 `.env`·`.claims`·`settings.local.json`을 메인 트리로
+    #    링크하므로 워크트리에서 `resolve()`하면 **메인 트리 경로**가 되어 「밖」이
+    #    된다 → `deny` 표가 적용되지 않고 `ask`로 **강등**됐다).
+    #
+    #    🔴 **축을 열거하지 않는다.** ⓐ를 닫을 때 ⓑ가 남았듯, 열거는 다음 축을 또
+    #    놓친다(유니코드 정규화·firmlink·`/tmp`→`/private/tmp` 등이 남아 있을 수 있다).
+    #    양쪽을 다 보면 `resolve()`가 **무엇을** 바꾸든 구조적으로 덮인다.
+    #    ⚠️ 대가는 **과차단 방향**이다 — 선언은 "안"인데 실체가 "밖"이면 안쪽 규칙이
+    #    함께 걸린다. 막는 쪽의 과잉은 fail-closed라 수용한다(이 파일의 `deny` 분기가
+    #    대소문자를 무시하는 것과 같은 논거).
+    # 🔴 **선언 경로는 「안」일 때만 채택한다.** 이 이슈가 잡으려는 것은
+    #    *"저장소 **안** 금지 경로가 밖으로 분류되는 것"* 하나다. 선언 경로의 「밖」
+    #    판정까지 쓰면 **좌표계 차이가 그대로 과차단이 된다** — `/var`↔`/private/var`
+    #    처럼 resolve가 기준과 경로를 함께 움직이는 자리에서 안쪽 파일이 밖으로 읽힌다
+    #    (실측: 이 조건을 안 걸었을 때 기존 테스트 3건이 과차단으로 깨졌다).
+    #    밖 처분은 resolve 경로 판정 하나가 갖는다.
+    declared_inside = (
+        declared.as_posix().lower().startswith(project_norm.as_posix().lower() + "/")
+    )
+    verdicts = []
+    if declared_inside:
+        verdicts.append(judge_target(worker, boundary, project_norm, declared))
+    verdicts.append(judge_target(worker, boundary, project_resolved, resolved))
+    verdict = strictest(verdicts)
+    if verdict is None:
+        sys.exit(0)
+    emit(*verdict)
+
+
+def judge_target(
+    worker: str,
+    boundary: dict,
+    project_dir: Path,
+    target: Path,
+) -> tuple[str, str] | None:
+    """경로 **하나**를 판정해 `(결정, 사유)`를 돌려준다. 통과면 `None`.
+
+    🔴 `main()`에서 이 함수로 뺀 이유는 **같은 판정을 두 경로에 걸기 위해서**다
+    (Issue #108). 인라인으로 되돌리면 한쪽 경로만 보게 되고, 그것이 이 이슈의 원인이다.
+    """
     # 🔴 저장소 경계 판정도 **대소문자를 무시**해야 한다(2026-08-20 G2 지적 M6).
     #    `is_relative_to`는 대소문자를 구분하는데 macOS 파일시스템은 무시한다.
     #    그래서 `<PROJECT_DIR의 대소문자 변형>/terraform/main.tf`가 **같은 실파일인데
@@ -311,16 +365,16 @@ def main() -> None:
         allowed = OUTSIDE_ALLOW.get(worker, ())
         roots = (Path(prefix).expanduser().resolve() for prefix in allowed)
         if any(target.is_relative_to(root) for root in roots):
-            sys.exit(0)
+            return None
         # 저널은 접두어가 아니라 **내용**으로 판정한다(공유 폴더라 경로로는 못 가른다).
         if worker == "archivist" and is_claude_journal_path(target):
-            sys.exit(0)
+            return None
         if worker in OUTSIDE_STRICT:
             # 🔴 `ask`로 두면 **막히지 않는다** — auto 모드 분류기가 파일 도구의 `ask`를
             #    경로 민감도와 무관하게 흡수한다(CLAUDE.md §강제 수단).
             #    원천 진료 데이터에서는 그 흡수가 곧 **무통제 반출**이라 `deny`다.
             #    허용 경로를 넓혀야 하면 `OUTSIDE_ALLOW`를 고치지 이 분기를 풀지 않는다.
-            emit(
+            return (
                 "deny",
                 f"`{worker}`는 지정된 반출 경로 밖에 쓸 수 없다: {target}. "
                 f"허용: {' · '.join(allowed) if allowed else '없음'}. "
@@ -409,7 +463,7 @@ def main() -> None:
             permitted = not worker_boundaries.matches_deny(relative, scope)
             scope_text = f"금지: {' · '.join(scope)}"
         if permitted:
-            sys.exit(0)
+            return None
         decision = "deny"
         reason = (
             f"`{worker}`는 `{relative}`를 쓸 수 없다. {scope_text}. "
@@ -417,7 +471,23 @@ def main() -> None:
             "필요하면 변경안을 반환해 소관 워커에 재배정하라."
         )
 
-    emit(decision, reason)
+    return decision, reason
+
+
+# 결정의 엄격도. 🔴 숫자가 크면 엄격하다 — `deny`가 `ask`를 이긴다.
+#    `ask`를 이기게 두면 이 이슈(#108)의 강등이 그대로 남는다.
+STRICTNESS = {"deny": 2, "ask": 1}
+
+
+def strictest(verdicts: list[tuple[str, str] | None]) -> tuple[str, str] | None:
+    """여러 판정 중 **가장 엄격한 것**을 고른다. 전부 통과면 `None`.
+
+    ⚠️ 통과(`None`)는 가장 느슨한 값이다 — 하나라도 막으면 막는다.
+    """
+    decided = [item for item in verdicts if item is not None]
+    if not decided:
+        return None
+    return max(decided, key=lambda item: STRICTNESS.get(item[0], 0))
 
 
 if __name__ == "__main__":

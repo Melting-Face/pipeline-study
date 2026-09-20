@@ -16,6 +16,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
@@ -302,6 +303,101 @@ class WorkerBoundariesTest(unittest.TestCase):
             ), "allow는 대소문자를 구분해야 한다(구분 FS에서 fail-open 방지)"
 
     # ── 헬퍼 ────────────────────────────────────────────────────────────
+    def test_symlinked_asset_is_denied_in_both_runtimes(self) -> None:
+        """🔴 워크트리 링크 자산이 `deny` 표를 빠져나가지 않는지 본다 (Issue #108).
+
+        `worktree-new.sh`는 `.env`·`.claude/.claims`·`.claude/settings.local.json`을
+        **메인 트리로 향하는 심볼릭 링크**로 배선한다(단일 출처·피어 감지 생존이 목적).
+        가드가 `resolve()` **후** 경로로만 안/밖을 가르면 링크를 따라간 결과가 메인
+        트리가 되어 **「밖」으로 분류**되고, `deny` 표가 안 걸려 `ask`로 **강등**된다.
+
+        🔴 **링크를 이 테스트가 직접 만든다.** 원래 이 축은 로컬 워크트리에서만 재현됐고
+        **CI는 새 체크아웃이라 링크가 애초에 없어 통과**했다 — 갭을 잡을 수 있는 유일한
+        게이트가 **조건이 없는 환경에서만** 돌았다. 초록이 「검사했다」가 아니라
+        「그 조건이 없었다」였다. 여기서 조건을 만들어 CI 안으로 가져온다.
+
+        ⚠️ 링크 **대상이 없어도** 된다 — 가드는 존재를 보지 않고 경로만 판정한다.
+        """
+        with tempfile.TemporaryDirectory() as raw_temporary:
+            base = Path(raw_temporary).resolve()
+            main_tree = base / "repo"
+            worktree = base / "repo-feature"
+            (main_tree / ".claude").mkdir(parents=True)
+            (worktree / ".claude").mkdir(parents=True)
+            (worktree / ".env").symlink_to(main_tree / ".env")
+            (worktree / ".claude/settings.local.json").symlink_to(
+                main_tree / ".claude/settings.local.json"
+            )
+
+            for relative in (".env", ".claude/settings.local.json"):
+                claude = self._decision(
+                    self._run_claude(worktree, "data-engineer", relative)
+                )
+                codex = self._decision(
+                    self._run_codex(worktree, "data-engineer", relative)
+                )
+                assert claude.get("permissionDecision") == "deny", (
+                    f"Claude가 링크 자산 `{relative}`를 막지 않았다: {claude}"
+                )
+                assert codex.get("permissionDecision") == "deny", (
+                    f"Codex가 링크 자산 `{relative}`를 막지 않았다: {codex}"
+                )
+
+    def test_plain_file_in_worktree_is_not_over_denied(self) -> None:
+        """🔴 대조군 — 양쪽 판정이 **전부 막는 것**으로 변질되지 않았는가.
+
+        Issue #108의 처방은 "선언 경로와 resolve 경로 둘 다 보고 엄격한 쪽"이다.
+        이 칸이 없으면 「선별 차단」과 「전부 차단」이 구분되지 않는다 — 가드가 무조건
+        `deny`를 뱉어도 위 셀은 초록이다.
+        """
+        with tempfile.TemporaryDirectory() as raw_temporary:
+            base = Path(raw_temporary).resolve()
+            worktree = base / "repo-feature"
+            (worktree / "dagster").mkdir(parents=True)
+            plain = worktree / "dagster/note.py"
+            plain.write_text("# plain\n", encoding="utf-8")
+
+            claude = self._decision(
+                self._run_claude(worktree, "data-engineer", "dagster/note.py")
+            )
+            assert claude.get("permissionDecision") is None, (
+                f"링크가 아닌 허용 경로까지 막혔다(과차단): {claude}"
+            )
+
+    def _run_claude(
+        self, project_dir: Path, worker: str, relative: str
+    ) -> subprocess.CompletedProcess[str]:
+        """`CLAUDE_PROJECT_DIR`를 임의 트리로 주고 Claude 가드를 호출한다."""
+        payload = {
+            "tool_name": "Edit",
+            "tool_input": {"file_path": str(project_dir / relative)},
+        }
+        return subprocess.run(  # noqa: S603
+            [sys.executable, str(CLAUDE_GUARD), worker],
+            input=json.dumps(payload),
+            env={"CLAUDE_PROJECT_DIR": str(project_dir), "PATH": "/usr/bin:/bin"},
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    def _run_codex(
+        self, project_dir: Path, worker: str, relative: str
+    ) -> subprocess.CompletedProcess[str]:
+        """`cwd`를 임의 트리로 주고 Codex 가드를 호출한다."""
+        payload = {
+            "tool_name": "apply_patch",
+            "cwd": str(project_dir),
+            "tool_input": {"command": f"*** Update File: {relative}\n"},
+        }
+        return subprocess.run(  # noqa: S603
+            [sys.executable, str(CODEX_GUARD), worker],
+            input=json.dumps(payload),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
     def _claude_decision(self, worker: str, target: str) -> dict[str, str]:
         """Claude 가드를 실제 hook 입출력으로 호출한다."""
         payload = {
