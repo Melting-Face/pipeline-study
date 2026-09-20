@@ -9,6 +9,12 @@
 그 위에 오퍼레이터 셋 — 배치 컴퓨트·스트리밍 컴퓨트·데이터베이스 — 과 인증서 발급 체인,
 오브젝트 스토리지, 카탈로그 데이터베이스, 오케스트레이터가 차례로 올라간다.
 
+**제품 이름은 가리지 않는다**(런타임 값을 가린다). 클러스터는 **kind**를 Podman 위에
+올린 것이고, 오퍼레이터 셋은 **Spark Operator · Flink Kubernetes Operator ·
+CloudNativePG**, 인증서는 **cert-manager**, 인그레스는 **ingress-nginx**,
+오브젝트 스토리지는 **SeaweedFS**, 오케스트레이터는 **Dagster**다.
+테이블 형식은 **Apache Iceberg**이고 카탈로그를 PostgreSQL에 둔다.
+
 "한 명령으로 올린다"가 안 된다. 빈 클러스터 최초 구축은 **여섯 단계**이고
 그중 **같은 도구가 두 번** 나온다.
 
@@ -67,7 +73,7 @@ CRD는 생겼고 에러는 아홉 줄이다. **부분 성공처럼 보인다.**
 ## 그럴듯해서 속은 것 ① — `Plan: 20 to add`를 띄운 채 실패한다
 
 Terraform 스택 하나가 리소스 **스물한 개**를 적용한다 —
-매니페스트 열여덟 개와 helm 릴리스 셋이다. 그중 **하나**가 데이터베이스 오퍼레이터의
+매니페스트 열여덟 개와 helm 릴리스 셋이다. 그중 **하나**가 CloudNativePG의
 커스텀 리소스이고, 그 CRD를 **같은 스택의 helm 릴리스가 같은 apply 안에서 만든다.**
 
 순서 문제니까 `depends_on`이면 되겠다고 생각했다. 안 된다.
@@ -168,4 +174,4 @@ CRD는 생기고 네임스페이스 스코프만 죽는다, 리소스 스무 개
 
 ---
 
-[← 홈으로](Home.md) · [kubectl로 판정하기](kubectl-judgement.md) · [Spark를 K8s 위로](spark-on-k8s.md)
+[← 홈으로](Home.md) · [읽는 법](how-to-read.md) · [kubectl로 판정하기](kubectl-judgement.md) · [Spark를 K8s 위로](spark-on-k8s.md)

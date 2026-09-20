@@ -150,4 +150,4 @@ compile이 말해주는 것은 **구문이 파서에 맞았다**는 것뿐이다
 
 ---
 
-[← 홈으로](Home.md)
+[← 홈으로](Home.md) · [읽는 법](how-to-read.md) · [Spark를 K8s 위로](spark-on-k8s.md)

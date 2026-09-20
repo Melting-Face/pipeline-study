@@ -32,6 +32,12 @@
 
     ⇒ 총 위반 수는 "고쳐야 할 곳의 수"이지 "문제가 있는 문서 수"가 아니다.
 
+    `--links`는 위 총계와 **별도 단위**다:
+    - `dead-link`/`dead-anchor` : **링크 수**(한 줄에 둘이면 2건)
+    - `unindexed`    : **노트 수**(두 인덱스에 다 빠져도 그 노트는 1건)
+      🔴 인덱스가 아예 없으면 `missing-index`가 나오고 **노트별 판정은 생략**된다
+         — 그때의 `unindexed 0건`은 통과가 아니다.
+
 검사에서 빼는 것(빠뜨린 것과 구분하기 위해 명시한다):
     - 펜스 코드 블록(``` … ```) 안 — 명령·설정 원문은 줄여 쓸 수 없다.
     - URL만 있는 줄 — 링크는 접을 수 없다.
@@ -215,6 +221,36 @@ LINK_SCAN_DIRS = (
 )
 LINK_SCAN_FILES = ("README.md", "AGENTS.md", "CLAUDE.md")
 
+# 위키 인덱스 — `check_links`의 **반대 방향**을 보는 축이다.
+#   `check_links`는 *"링크가 가리키는 대상이 있는가"* 만 본다. 그 반대,
+#   **노트를 추가하고 인덱스에 안 적는 것**은 어느 검사도 보지 않았다 —
+#   링크가 아예 없으니 깨질 링크도 없다(**증상이 없는 누락**).
+#   인덱스가 카테고리별로 갈리면 "어느 칸에 넣을지" 판단이 붙어 확률이 오른다.
+# 🔴 **모집단은 「파일 존재」(글롭)다 — 등재 여부로 잡으면 순환이다.**
+#    인덱스에 적힌 것을 모집단으로 삼으면 미등재 파일이 **애초에 안 보여**
+#    검사가 영원히 0건을 낸다(그 0건은 통과와 모양이 같다).
+# 🔴 **두 인덱스를 「양쪽 다」로 본다.** `Home.md`는 진입 페이지, `_Sidebar.md`는
+#    모든 페이지에 렌더되는 상시 내비게이션이라 **도달 경로가 서로 다르다.**
+#    한쪽만 보면 나머지 한쪽의 누락이 통과한다.
+# ⚠️ 여기 있는 둘은 **인덱스이지 면제 목록이 아니다.** GitHub 위키의 다른 특수
+#    페이지(`_Footer.md` 등)를 **미리 빼 두지 않는다** — 쓰이지 않을 예외를 먼저
+#    만들지 않는다(`DATE_OPT_OUT`이 Rule of Three로 들어온 것과 같은 규율).
+#    생기면 이 게이트가 시끄럽게 걸리고, 그때 사람이 판단한다.
+#    게이트에서는 **시끄러운 오탐이 조용한 누락보다 낫다.**
+WIKI_INDEX_FILES = ("Home.md", "_Sidebar.md")
+
+# 인덱스에서 **등재된 노트 이름**을 뽑는 패턴 —
+#   `wiki_linkify.py`가 변환하는 대상과 같은 형태다(저장소 원본은 `.md`를 붙여
+#   쓰고, 미러 단계에서 접미어만 뗀다).
+# 🔴 **이름마다 정규식을 만들어 찾지 않는다 — 집합 소속으로 판정한다.**
+#    `](<이름>.md)`를 이름별 패턴으로 돌리면 경계 문제가 따라온다: 파이썬 `\b`는
+#    유니코드 워드 문자 기준이라 **한글 조사 앞에서 서지 않고**(같은 함정을
+#    `TENSE_STRICT_RES`·`OBSERVATION_DATE_RE` 주석이 이미 기록하고 있다),
+#    파일명의 `-`·`.`도 이스케이프 대상이다. 그 경로는 **0건을 내며 조용히 통과**한다.
+#    ⇒ 인덱스에서 링크 대상을 **한 번에 걷어 집합으로 만들고 정확 일치**로 본다.
+#       경계 규칙이 아예 필요 없어지므로 그 실패 모드가 구조적으로 사라진다.
+WIKI_LINK_RE = re.compile(r"\]\((?!https?://|mailto:|#)([^)\s#]+\.md)(?:#[^)\s]*)?\)")
+
 # `.claude/skills/`는 **외부에서 설치한 벤더 콘텐츠**라 링크 검사에서 뺀다.
 #   우리가 고칠 수 없고, 코드 예시의 제네릭 `[T](x: T)`가 링크로 오인된다.
 #   🔴 **제외는 「검사 안 함」이지 「안전함」이 아니다** — 그 디렉터리에는
@@ -314,6 +350,73 @@ def check_links(repo_root: Path) -> list[str]:
                     f"{rel}: dead-anchor {path_part}#{anchor} — 그런 절이 없다"
                 )
     return findings
+
+
+def check_wiki_index(wiki_dir: Path) -> tuple[list[str], int] | None:
+    """위키 노트가 **인덱스 두 곳에 모두** 등재됐는지 본다 — `check_links`의 역방향.
+
+    🔴 **왜 `--links`에 붙는가**(기본 검사가 아니라):
+        - 판정이 **파일 단위가 아니라 관계 단위**다. 기본 검사의 루프는
+          한 파일을 읽어 줄 번호와 함께 위반을 내지만, 이 축의 위반은
+          *"A 파일이 B 파일에 없다"* 라 그 루프에 들어갈 자리가 없다.
+        - 기본 검사는 **명시 경로를 존중한다**(`doc_lint.py docs/setup.md`).
+          그런데 이 축의 모집단은 **항상 `wiki/*.md` 전수**여야 한다 —
+          경로를 좁히면 미등재 파일이 모집단에서 빠져 "0건"이 거짓이 된다.
+          `--links`는 `args.paths`를 아예 읽지 않는 **전역 1회** 경로라 그 요구와 맞다.
+        - 판정 재료가 **마크다운 링크**다(`check_links`와 같은 축의 반대 방향).
+        - 훅도 그쪽이 맞다: `doc-links`는 `always_run: true`라 `.md`가 없는
+          커밋에서도 돈다. 기본 검사 훅은 `files:` 필터가 붙어 더 좁다.
+
+    반환은 `(위반 목록, 모집단 크기)`다. 🔴 **크기를 함께 돌려주는 것이 요점** —
+    `0건`이 *검사했다*인지 *대상이 0개였다*인지 호출부가 가를 수 있어야 한다
+    (원칙 7). 호출부가 따로 세면 모집단 정의가 두 벌이 된다.
+
+    `wiki/`가 없으면 `None`을 돌려 **건너뛴다**. 🔴 호출부는 이 `None`을
+    `0건`이 아니라 **「검사 안 함」으로** 출력해야 한다(`check_vault_refs`와 같다).
+
+    ⚠️ **글롭은 평면이다**(`rglob`이 아니다) — `publishing.md` §4-1이 `wiki/`
+       하위 디렉터리를 금지한다(위키에 계층 사이드바가 없다). `rglob`으로 바꾸면
+       규약이 금지한 배치를 **검사기가 먼저 인정**하는 꼴이 된다.
+    """
+    if not wiki_dir.is_dir():
+        return None
+
+    notes = [f for f in sorted(wiki_dir.glob("*.md")) if f.name not in WIKI_INDEX_FILES]
+
+    findings: list[str] = []
+    linked: dict[str, set[str]] = {}
+    for index_name in WIKI_INDEX_FILES:
+        index_path = wiki_dir / index_name
+        if not index_path.is_file():
+            findings.append(f"wiki/{index_name}: missing-index — 인덱스 파일이 없다")
+            continue
+        # 펜스 안은 링크로 세지 않는다 — `check_links`와 같은 규율이다.
+        #   🔴 `Home.md`에는 스택 다이어그램 펜스가 있다. 펜스 안의 예시가 등재로
+        #      읽히면 **안 적고도 통과**하는 구멍이 된다.
+        prose, in_fence = [], False
+        for line in index_path.read_text(encoding="utf-8").splitlines():
+            if FENCE_RE.match(line):
+                in_fence = not in_fence
+                continue
+            if not in_fence:
+                prose.append(line)
+        # 경로가 붙어 있어도(`./x.md`) 파일명으로 정규화해 비교한다.
+        linked[index_name] = {
+            Path(m.group(1)).name for m in WIKI_LINK_RE.finditer("\n".join(prose))
+        }
+
+    # 인덱스 자체가 없으면 **그것이 유일한 실행 가능한 결함**이다.
+    #   노트별 미등재를 함께 쏟으면 진짜 할 일이 N건 밑에 묻힌다.
+    if findings:
+        return findings, len(notes)
+
+    for note in notes:
+        missing = [name for name in WIKI_INDEX_FILES if note.name not in linked[name]]
+        if missing:
+            findings.append(
+                f"wiki/{note.name}: unindexed — {' · '.join(missing)}에 링크가 없다"
+            )
+    return findings, len(notes)
 
 
 def check_dates(files: list[Path], repo_root: Path) -> list[str]:
@@ -571,15 +674,32 @@ def main() -> int:
             print(finding)
         print(f"\n링크 위반 {len(link_findings)}건", file=sys.stderr)
 
+        # 역방향 — 노트가 인덱스에 등재됐는가(`check_wiki_index` docstring 참조).
+        index_result = check_wiki_index(root / "wiki")
+        if index_result is None:
+            # 🔴 여기도 "0건"이 아니다 — 안 본 것과 통과한 것은 다른 상태다.
+            print("위키 인덱스: 검사 안 함 (wiki/ 없음)", file=sys.stderr)
+            index_findings: list[str] = []
+        else:
+            index_findings, note_count = index_result
+            for finding in index_findings:
+                print(finding)
+            # 🔴 **모집단을 함께 찍는다** — 0건이 *검사했다*인지
+            #    *노트가 0개였다*인지 읽는 사람이 갈라야 한다.
+            print(
+                f"위키 인덱스 미등재 {len(index_findings)}건 / 노트 {note_count}개",
+                file=sys.stderr,
+            )
+
         vault_findings = check_vault_refs(root)
         if vault_findings is None:
             # 🔴 "0건"으로 적지 않는다 — 안 본 것과 통과한 것은 다른 상태다.
             print("볼트 참조: 검사 안 함 ($OBSIDIAN_VAULT 없음)", file=sys.stderr)
-            return 1 if link_findings else 0
+            return 1 if link_findings or index_findings else 0
         for finding in vault_findings:
             print(finding)
         print(f"볼트 참조 위반 {len(vault_findings)}건", file=sys.stderr)
-        return 1 if link_findings or vault_findings else 0
+        return 1 if link_findings or index_findings or vault_findings else 0
 
     repo_root = Path(__file__).resolve().parent.parent
 

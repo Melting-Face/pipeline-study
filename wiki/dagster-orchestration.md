@@ -7,7 +7,10 @@
 
 이 프로젝트가 다루는 것은 "매일 도는 잡"이 아니라 **테이블**이다.
 원천 CSV를 Iceberg bronze로 넣고, dbt가 silver/gold로 올리고,
-노트북과 리포트가 그걸 읽는다. 관심사가 **작업의 순서**가 아니라
+노트북과 리포트가 그걸 읽는다. 아래 예시에 나오는 **eICU**는 **PhysioNet 인증 절차**
+— 교육 이수와 DUA 서명 — 를 거쳐 받는 **비식별 중환자실 연구 데이터셋**이다.
+누구나 내려받는 공개 파일이 아니고 재배포도 제한된다. 적재 단위는 `patient`처럼
+원천 파일 하나하나다. 관심사가 **작업의 순서**가 아니라
 **데이터의 상태**라면, 태스크 중심 스케줄러보다 **에셋 중심** 모델이 맞는다.
 
 Dagster는 파이프라인의 단위를 *"무엇을 실행하는가"* 가 아니라
@@ -15,6 +18,11 @@ Dagster는 파이프라인의 단위를 *"무엇을 실행하는가"* 가 아니
 `@dbt_assets`로 dbt 프로젝트를 통째로 lineage에 끌어올 수 있다.
 
 ## 에셋은 함수 + 데코레이터로 정의한다
+
+아래 `dg`는 `import dagster as dg`다 — 이 프로젝트가 쓰는 관례적 별칭이고 공식
+예제도 이렇게 쓴다. `pa`는 `pyarrow`라 `pa.Table`은 메모리 위의 표 한 장이다.
+⚠️ **뒤에 나오는 `dg check defs`의 `dg`는 이것과 다르다** — 그쪽은 Dagster가 설치하는
+**CLI 실행 파일**이고, 여기 `dg`는 **파이썬 모듈 별칭**이다. 철자가 같을 뿐이다.
 
 ```python
 @dg.asset(group_name=GROUP_NAME, io_manager_key=IO_MANAGER_KEY,
@@ -118,4 +126,4 @@ dg check defs
 
 ---
 
-[← 홈으로](Home.md)
+[← 홈으로](Home.md) · [읽는 법](how-to-read.md) · [Dagster 파티션](dagster-partitions.md)
