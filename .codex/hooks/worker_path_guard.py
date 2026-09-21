@@ -268,12 +268,54 @@ def is_unidentified_subagent(payload: dict[str, object]) -> bool:
 
 
 def denied_reason(worker: str, raw_path: str, root: Path) -> str | None:
-    """경계를 벗어난 경우 거부 사유를 반환한다."""
+    """경계를 벗어난 경우 거부 사유를 반환한다.
+
+    🔴 **선언 경로와 resolve 경로를 둘 다 판정한다**(Issue #108 — 짝 가드와 동일 처방).
+    `resolve()`가 경로를 바꾸면 **같은 실파일인데 판정이 갈린다.** 이 저장소는 그 형태를
+    두 번 밟았다(대소문자 · 심볼릭 링크). 워크트리의 `.env`·`.claims`·
+    `settings.local.json`은 메인 트리로 향하는 링크라 `resolve()` 후 「저장소 밖」이
+    되고, 그러면 `deny` 표가 적용되지 않는다.
+
+    🔴 **축을 열거하지 않는다** — 열거는 다음 축을 또 놓친다. 양쪽을 다 보면
+    `resolve()`가 무엇을 바꾸든 구조적으로 덮인다. 거부가 하나라도 나오면 거부다.
+
+    ⚠️ **짝 가드와 함께 고친다.** 한쪽만 고치면 런타임이 갈린다.
+
+    🔴 **다만 `*_in_both_runtimes` 셀이 그것을 잡는다고 읽지 마라.** 링크 자산
+    (`.env` 등)으로 쏘는 셀은 **Codex 축에서 vacuous**하다 — Codex는 저장소 밖을
+    원래 전부 `deny`하므로 `ask` 강등 축 자체가 없고, 그 셀은 **수정 전 코드에서도
+    통과**한다(실측). Codex에서 이 처방이 실제로 닫은 것은 강등이 아니라
+    **`OUTSIDE_ALLOW`·저널 예외를 경유한 링크 탈출**이다(저장소 안 파일을 허용된
+    밖 경로로 링크해두면 `resolve()` 후 그 예외에 걸려 통과했다).
+    ⇒ Codex 축의 실질 회귀 셀은 `test_symlink_escape_to_allowed_outside_is_denied`이고,
+    거기서 구/신 판정이 `pass` → `deny`로 **뒤집히는 것**을 확인했다.
+    """
+    declared = Path(raw_path).expanduser()
+    if not declared.is_absolute():
+        declared = root / declared
+    # `..`만 편다 — 링크는 따라가지 않는다(안 펴면 접두어 비교가 오판한다).
+    declared = Path(os.path.normpath(declared))
+    resolved = declared.resolve()
+
+    # 🔴 **선언 경로는 「안」일 때만 채택한다**(짝 가드와 동일). 이 이슈가 잡으려는 것은
+    #    *"저장소 **안** 금지 경로가 밖으로 분류되는 것"* 하나다. 선언 경로의 「밖」
+    #    판정까지 쓰면 **좌표계 차이가 그대로 과차단이 된다** — `/var`↔`/private/var`나
+    #    볼트 경로처럼 resolve가 기준과 경로를 함께 움직이는 자리에서 그렇다
+    #    (실측: 이 조건이 없을 때 `archivist` 저널 셀이 과차단으로 깨졌다).
+    if declared.is_relative_to(root):
+        reason = judge_one(worker, declared, root)
+        if reason is not None:
+            return reason
+    return judge_one(worker, resolved, root)
+
+
+def judge_one(worker: str, target: Path, root: Path) -> str | None:
+    """경로 **하나**를 판정한다. 통과면 `None`.
+
+    🔴 `denied_reason()`에서 이 함수로 뺀 이유는 **같은 판정을 두 경로에 걸기
+    위해서**다(Issue #108). 인라인으로 되돌리면 한쪽 경로만 보게 된다.
+    """
     boundary = BOUNDARIES[worker]
-    target = Path(raw_path).expanduser()
-    if not target.is_absolute():
-        target = root / target
-    target = target.resolve()
 
     try:
         relative = target.relative_to(root).as_posix()
