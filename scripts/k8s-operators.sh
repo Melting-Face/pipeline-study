@@ -53,8 +53,12 @@ done
 ensure_cert_manager
 
 # 3) Barman Cloud 플러그인 — 백업·PITR. 백업 대상은 클러스터 내부 SeaweedFS(S3)라 외부 비용 0.
-#    🔴 선택이 아니다 — Cluster CR이 `isWALArchiver: true`로 이 플러그인을 참조하므로
-#    없으면 WAL 아카이빙이 실패한다(k8s-env.sh 주석 참고).
+#    ⚠️ **지금 Cluster CR은 이 플러그인을 참조하지 않는다** — `spec.plugins` 배선이
+#    주석 처리돼 있다(SeaweedFS `PutObject` `InternalError`로 WAL 아카이빙이 무한 재시도,
+#    **원인 미규명** — k8s/catalog-postgres.yaml §plugins). 그래도 설치는 남긴다:
+#      ⓐ `objectstores.barmancloud.cnpg.io` **CRD를 공급**한다
+#         (k8s-poc-storage.sh:123의 선행 조건 검사 대상 — 없으면 그 스크립트가 멈춘다)
+#      ⓑ 배선 재활성을 **1단계**(주석 해제)로 남긴다 — 설치는 「능력」, 적용은 「배선」이다.
 log "Barman Cloud 플러그인 설치 (${CNPG_BARMAN_PLUGIN_VERSION}) — CNPG 와 같은 ns(${CNPG_NS})"
 kubectl apply -f \
     "https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/${CNPG_BARMAN_PLUGIN_VERSION}/manifest.yaml"

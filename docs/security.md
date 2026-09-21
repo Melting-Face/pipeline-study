@@ -191,7 +191,7 @@ git에 들어가지 않는다. 바뀐 것은 *데이터가 어떻게 들어오�
 | **2.9 시스템 및 서비스 운영관리** | Docker 로그를 보존 한도와 함께 남기고(`max-size`×`max-file`), healthcheck와 `depends_on` 조건, `deploy.resources`를 선언한다 | **선언된 서비스에 한한다.** 적용 범위의 실측은 `architectures/monitoring.md`에서 관측 시각과 함께 읽는다 |
 | **2.10 시스템 및 서비스 보안관리** | UTC 저장 / KST 표시로 로그 타임스탬프를 정합화한다 | 타임스탬프 일관성까지. 중앙 감사 로그 수집·보관은 범위 밖이다([§4-5](#4-5-감사-로그접속기록-210--32)) |
 | **2.11 사고 예방 및 대응** | 관측 수단은 **무엇을 두고 무엇을 안 두는지 선언**한다("안 둔다"도 선언한다 — 빠뜨린 것과 구분하기 위해). 규칙 정본은 `conventions/monitoring.md` | **규칙 문서까지.** 침해 대응 절차·알림 경로는 범위 밖이다. ⚠️ **문서가 생긴 것이 통제가 생긴 것은 아니다** |
-| **2.12 재해복구 및 업무연속성** | 카탈로그 Postgres는 CloudNativePG가 관리하며, 백업 경로(Barman Cloud 플러그인)를 opt-in으로 둔다 | 백업 **경로**까지. 활성화는 opt-in이며, **백업 대상이 같은 장애 도메인이면 DR이 아니다**([§4-4](#4-4-백업복구-212)) |
+| **2.12 재해복구 및 업무연속성** | 카탈로그 Postgres를 CloudNativePG가 관리해 PVC·선언 롤·서버 파라미터가 CR 한 장에 들어온다. 백업 경로(Barman Cloud 플러그인)는 **선언까지만** 둔다 | **선언까지다 — 백업은 미수행이다.** 배선이 꺼져 있어 PITR도 불가하고, HA·failover는 `instances: 1`이라 미적용이다([§4-4](#4-4-백업복구-212)). 켜더라도 **백업 대상이 같은 장애 도메인이라 DR은 아니다** |
 
 **표에 담기지 않는 단서 2건**
 
@@ -442,10 +442,15 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO trino_ro;
 
 | 대상 | 백업 | 복구 |
 | --- | --- | --- |
-| 카탈로그 Postgres(K8s, CNPG) | **Barman Cloud 플러그인**(CNPG-I)으로 base backup + WAL 아카이브 → SeaweedFS S3. opt-in이 아니라 뼈대(`isWALArchiver`가 참조) | CNPG `Cluster`의 `bootstrap.recovery`로 복원(PITR 지원) |
-| 메타 Postgres(compose, Dagster DB) | 논리 백업 `pg_dump`(정기 cron) 또는 물리 백업 `pg_basebackup` + **WAL 아카이브**(PITR) | `pg_restore`(논리) / base backup + WAL 재생(물리) |
-| SeaweedFS `s3://warehouse` | 버킷 객체 복제(다른 호스트/버킷) 또는 볼륨 백업 | 복제본에서 복원 후 카탈로그 정합 확인 |
+| 카탈로그 Postgres(K8s, CNPG) | **선언만 있고 배선은 꺼져 있다** — 백업 미수행(아래 단서) | **없다** — 백업본이 없어 PITR 복원 불가 |
+| 메타 Postgres(compose, Dagster DB) | **미구현** — 수단은 논리 백업 `pg_dump` 또는 물리 `pg_basebackup` + WAL 아카이브(PITR) | `pg_restore`(논리) / base backup + WAL 재생(물리) |
+| SeaweedFS `s3://warehouse` | **미설정** — 수단은 버킷 객체 복제(다른 호스트/버킷) 또는 볼륨 백업 | 복제본에서 복원 후 카탈로그 정합 확인 |
 
+> **카탈로그 PG 백업은 지금 돌지 않는다** — 플러그인·`ObjectStore`·`ScheduledBackup`은 선언돼
+> 있으나 `Cluster`가 `spec.plugins`로 참조하지 않는다. 사유와 재개 조건은
+> [`conventions/k8s/cnpg.md`](conventions/k8s/cnpg.md), 현행 판정은
+> [`operations.md`](operations.md)에 있다. 아래 두 단서는 **되살린 뒤에** 적용되는 것이다.
+>
 > 🔴 **백업 대상이 같은 장애 도메인이면 DR이 아니다** — 클러스터 내부 스토리지로 백업을 보내면
 > 원본 PVC와 백업본이 **같은 노드·같은 호스트 디스크**에 놓여 노드 유실 시 함께 사라진다.
 > 목적을 **논리 오류·실수 복구**로 한정하고, 진짜 DR이 필요해지면 목적지를 호스트 밖으로 뺀다.

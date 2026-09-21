@@ -167,10 +167,30 @@ for bucket in warehouse pg-backup dagster-logs; do
 done
 
 # 4) 백업 구성 — ObjectStore + ScheduledBackup.
-#    🔴 **Cluster보다 먼저** 적용한다. Cluster가 뜨는 즉시 WAL 아카이빙이 시작되는데
+#    🔴 **Cluster CR의 `spec.plugins` 배선과 한 벌이다.** 배선이 없으면 적용하지 않는다 —
+#    적용만 하면 ScheduledBackup이 매일 배선 없이 돌아 **아무도 안 읽는 실패**를 쌓는다.
+#    판정은 클러스터가 아니라 **파일**을 읽으므로 아래 순서 근거에 영향이 없다.
+#    🔴 Cluster보다 먼저 적용한다. Cluster가 뜨는 즉시 WAL 아카이빙이 시작되는데
 #    그때 ObjectStore(와 pg-backup 버킷)가 없으면 아카이빙이 실패한다.
-log "백업 구성 적용 (ObjectStore + ScheduledBackup)"
-kubectl apply -f "${REPO_ROOT}/k8s/catalog-pg-backup.yaml"
+#    🔴 들여쓰기를 **`spec` 직속(4칸)에 고정**한다. `^ *plugins:`처럼 깊이를 열어두면
+#    무관한 `plugins:` 키가 다른 깊이에 들어올 때 가드가 "배선됨"으로 **뒤집혀**,
+#    배선 없이 ScheduledBackup만 매일 도는 상태 — 이 가드가 막으려던 바로 그 상태 — 로 복귀한다.
+#    주석 줄(`    # plugins:`)은 4칸 뒤가 `#`이라 걸리지 않는다. 다만 이 패턴이 가르는 것은
+#    「주석 / 활성」이 아니라 **「정확히 이 리터럴 형태 / 그 밖 전부」**다 — 활성 줄이어도
+#    행말 주석(`plugins:  # …`)·다른 들여쓰기(2칸)·flow 표기(`plugins: [{…}]`)면 걸리지 않는다
+#    (2026-09-21 security 실측, 편집 변형 7종). 즉 거짓 양성이 아니라 **거짓 음성 쪽으로 기운다** —
+#    배선을 되살릴 때는 위 리터럴 형태 그대로 쓴다.
+CR_PLUGINS="$(awk '/^    plugins:[[:space:]]*$/ {print "yes"; exit}' \
+    "${REPO_ROOT}/k8s/catalog-postgres.yaml")"
+if [ "${CR_PLUGINS}" = "yes" ]; then
+    log "백업 구성 적용 (ObjectStore + ScheduledBackup)"
+    kubectl apply -f "${REPO_ROOT}/k8s/catalog-pg-backup.yaml"
+else
+    # 🔴 이 로그가 보증하는 범위는 **선언 파일까지**다. 스크립트는 클러스터를 조회하지 않으므로
+    #    라이브 Cluster에 이전 배선이 남아 있으면 아카이빙이 시도될 수 있다("미수행"으로 단정하지 않는다).
+    log "백업 구성 건너뜀 — Cluster CR 선언에 plugins 배선이 없다(선언 기준 — 라이브 Cluster는 별도 확인)"
+    log "  → 되살리려면 k8s/catalog-postgres.yaml의 plugins 블록 주석을 해제한다"
+fi
 
 # 5) 카탈로그 Postgres(CNPG Cluster) — 백업 목적지가 준비된 뒤에 띄운다.
 log "Catalog Postgres(CNPG) 배포"
