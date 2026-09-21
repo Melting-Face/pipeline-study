@@ -49,9 +49,41 @@
   (실제로 **직후 플러그인 apply가 실패**했다). `ensure_cert_manager`는 **설치 여부와 무관하게**
   self-signed `Issuer`의 `--dry-run=server`가 통과할 때까지 폴링한다("이미 설치됨"도 준비를 뜻하지 않는다).
   백업 대상은 클러스터 내부 **SeaweedFS(S3)** 로 두어 외부 비용을 만들지 않는다.
-  🔴 **opt-in이 아니라 뼈대다** — `Cluster` CR이 이 플러그인을 `isWALArchiver: true`로 참조하므로
-  없으면 **WAL 아카이빙이 실패해 WAL이 무한정 쌓인다**(PVC가 찬다). 그래서 옵션을 없앴고,
-  `k8s-poc-storage.sh`가 `ObjectStore`·`ScheduledBackup`을 **항상** 적용한다.
+  🔴 **지금 이 배선은 꺼져 있다 — 백업은 돌지 않는다.** `Cluster` CR의 `spec.plugins`가
+  **주석 처리**되어 플러그인을 참조하지 않으므로 base backup·WAL 아카이빙 모두 **미수행**이고
+  `bootstrap.recovery`(PITR)도 쓸 수 없다([operations.md](../../operations.md) §4-4).
+  끈 이유는 SeaweedFS로의 `PutObject`가 `InternalError`로 실패해 WAL 아카이빙이
+  `exit status 4` 재시도 루프에 빠졌기 때문이고(`ContinuousArchiving=False`),
+  aws-chunked 체크섬 가설로 사이드카 env를 넣어도 증상이 같아 **원인은 미규명**이다
+  (경위는 CR 주석 `k8s/catalog-postgres.yaml`).
+  실패한 채 배선을 남겨두면 **아카이빙 못 한 WAL이 PVC(5Gi)를 채워 DB가 선다** → 참조를 뺐다.
+  ⚠️ 이 문서는 한동안 인과를 **정반대로** 적고 있었다("플러그인이 없으면 WAL이 쌓인다").
+  같은 결과를 반대 조건에 귀속시키면 되살릴 때 **틀린 쪽을 만진다**.
+  - **설치는 능력, 적용은 배선** — 플러그인 설치(`k8s-operators.sh`)와 CRD 선행 검사는 **유지**한다.
+    재활성을 **CR 주석 해제 1단계**로 남기기 위해서다(설치는 상주 비용이 아니라 능력이다).
+  - **적용은 배선과 한 벌** — `k8s-poc-storage.sh`는 CR에 `plugins` 배선이 있을 때만
+    `ObjectStore`·`ScheduledBackup`을 적용한다(판정은 클러스터가 아니라 **선언 파일**을 읽는다).
+    배선 없이 `ScheduledBackup`만 돌면 **아무도 안 읽는 실패**가 매일 쌓인다.
+  - ⚠️ **가드는 신규 적용만 가른다 — 잔존 오브젝트는 회수하지 않는다.** 로그는 "건너뜀"인데 옛
+    `ScheduledBackup`이 계속 도는 **로그↔실체 괴리**가 남는다. 더 나쁜 축은 **라이브 `Cluster`에
+    `spec.plugins`가 남은 경우**다 — `ObjectStore` 없이 아카이빙만 시도돼 **끈 이유(WAL이 PVC를
+    채운다)가 로그상 "미수행"인 채로 재현**된다(카탈로그 정지 = 전 테이블 메타 접근 불가).
+    선언 파일 주석이 **라이브 CR의 필드까지 지운다는 보장은 없다**(client-side apply의 prune 동작 —
+    이 저장소에는 필드 소유권이 `kubectl-patch`로 넘어간 실측이 `terraform/lakehouse-platform/manifests.tf`에
+    있다). **prune 여부는 미확인**이니 배선을 끈 뒤 처음 재실행하는 클러스터는 **두 축을 다** 본다.
+
+    ```shell
+    kubectl get scheduledbackup,objectstore -n default
+    kubectl get cluster catalog-postgres -o jsonpath='{.spec.plugins}'
+    ```
+
+    삭제는 파괴적이므로 **출력을 확인한 뒤 사용자 판단**이다.
+  - **재검토 트리거는 시점이 아니라 조건** — *SeaweedFS가 aws-chunked·flexible checksum을
+    해제한다는 실측이 나올 때* 되살린다. 🔴 **버전 상승은 트리거가 아니다 — `거부` ≠ `지원`.**
+    새 버전에서 증상이 바뀌어도(조용한 손상 → 명시적 거부) 체크섬을 처리하게 된 것은 아니다.
+    그전까지는 리스크 **수용**이고(대응 4종은 [risk.md](../../risk.md) §3),
+    카탈로그 소실 시 복구 수단은 **재적재**다.
+  - 아래 두 단서(DR 아님·평문 전송)는 **되살린 뒤에도 그대로 유효**하다.
   **이 백업은 DR이 아니다** — 백업본이 원본과 **같은 노드·같은 호스트 디스크**에 놓이므로
   노드/PVC 유실 시 함께 사라진다. 목적은 **논리 오류·실수 복구**로 한정한다. 또 SeaweedFS S3는 `http://`
   평문이라 WAL·base backup이 평문 전송·저장된다(카탈로그 DB는 테이블 식별자·메타 포인터만 담아

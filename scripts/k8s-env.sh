@@ -45,9 +45,14 @@ CNPG_NS="${CNPG_NS:-cnpg-system}"
 # 백업·PITR — Barman Cloud **플러그인**(CNPG-I). in-tree barman-cloud는 CNPG **1.31.0에서 제거 예정**이라
 # 처음부터 플러그인으로 간다. 전제: CNPG ≥ 1.26 + cert-manager(Flink 웹훅과 공용 — ensure_cert_manager).
 #
-# 🔴 **opt-in이 아니라 뼈대다.** `k8s/catalog-postgres.yaml`의 `spec.plugins`가 이 플러그인을
-# `isWALArchiver: true`로 참조하므로, 플러그인이 없으면 **WAL 아카이빙이 실패해 WAL이 무한정 쌓인다**
-# (PVC가 찬다). "선언은 백업을 요구하는데 런타임엔 없는" 상태를 만들지 않으려고 옵션을 없앴다.
+# ⚠️ **지금 Cluster CR은 이 플러그인을 참조하지 않는다** — `k8s/catalog-postgres.yaml`의
+# `spec.plugins` 배선이 주석 처리돼 있다(SeaweedFS `PutObject` `InternalError`로 WAL 아카이빙이
+# 무한 재시도, **원인 미규명** — 해당 파일 §plugins).
+# 🔴 그래도 설치는 opt-in으로 돌리지 않는다 — **설치는 「능력」, 적용은 「배선」**이다:
+#   ⓐ `objectstores.barmancloud.cnpg.io` **CRD를 공급**한다
+#      (k8s-poc-storage.sh:123의 선행 조건 검사 대상 — 없으면 그 스크립트가 멈춘다)
+#   ⓑ 배선 재활성을 **1단계**(CR 주석 해제)로 남긴다
+# 배선을 되살리면 `k8s-poc-storage.sh` §4 가드가 ObjectStore·ScheduledBackup을 함께 적용한다(한 벌).
 CNPG_BARMAN_PLUGIN_VERSION="${CNPG_BARMAN_PLUGIN_VERSION:-v0.14.0}"
 
 # ingress-nginx — UI를 고정 URL로 노출(port-forward 대체).
