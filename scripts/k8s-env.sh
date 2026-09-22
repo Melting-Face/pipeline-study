@@ -50,7 +50,8 @@ CNPG_NS="${CNPG_NS:-cnpg-system}"
 # 무한 재시도, **원인 미규명** — 해당 파일 §plugins).
 # 🔴 그래도 설치는 opt-in으로 돌리지 않는다 — **설치는 「능력」, 적용은 「배선」**이다:
 #   ⓐ `objectstores.barmancloud.cnpg.io` **CRD를 공급**한다
-#      (k8s-poc-storage.sh:123의 선행 조건 검사 대상 — 없으면 그 스크립트가 멈춘다)
+#      (k8s-poc-storage.sh §2의 선행 조건 검사 대상 — 없으면 그 스크립트가 멈춘다.
+#       줄번호로 가리키지 않는다 — 그 파일은 앞에 줄이 들어가는 자리라 조용히 어긋난다)
 #   ⓑ 배선 재활성을 **1단계**(CR 주석 해제)로 남긴다
 # 배선을 되살리면 `k8s-poc-storage.sh` §4 가드가 ObjectStore·ScheduledBackup을 함께 적용한다(한 벌).
 CNPG_BARMAN_PLUGIN_VERSION="${CNPG_BARMAN_PLUGIN_VERSION:-v0.14.0}"

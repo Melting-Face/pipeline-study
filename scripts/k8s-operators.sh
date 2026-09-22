@@ -57,7 +57,8 @@ ensure_cert_manager
 #    주석 처리돼 있다(SeaweedFS `PutObject` `InternalError`로 WAL 아카이빙이 무한 재시도,
 #    **원인 미규명** — k8s/catalog-postgres.yaml §plugins). 그래도 설치는 남긴다:
 #      ⓐ `objectstores.barmancloud.cnpg.io` **CRD를 공급**한다
-#         (k8s-poc-storage.sh:123의 선행 조건 검사 대상 — 없으면 그 스크립트가 멈춘다)
+#         (k8s-poc-storage.sh §2의 선행 조건 검사 대상 — 없으면 그 스크립트가 멈춘다.
+#          줄번호로 가리키지 않는다 — 그 파일은 앞에 줄이 들어가는 자리라 조용히 어긋난다)
 #      ⓑ 배선 재활성을 **1단계**(주석 해제)로 남긴다 — 설치는 「능력」, 적용은 「배선」이다.
 log "Barman Cloud 플러그인 설치 (${CNPG_BARMAN_PLUGIN_VERSION}) — CNPG 와 같은 ns(${CNPG_NS})"
 kubectl apply -f \
