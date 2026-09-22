@@ -181,7 +181,9 @@ Dagster(ConfigMap·SA·Role·Deployment 2·Service·Ingress·`Database` CR).
 > ⚠️ **백업 구성은 `Cluster` CR의 `plugins` 배선이 있을 때만 적용된다** — 스크립트가
 > `k8s/catalog-postgres.yaml`을 읽어 판정한다(클러스터 상태가 아니라 **선언 파일**).
 > **현재 그 배선은 주석 처리되어 있어 백업 단계는 건너뛴다**(로그에 "백업 구성 건너뜀"이 찍힌다).
-> 플러그인 설치 자체는 `k8s-operators.sh`에서 **항상** 하므로 되살리기는 주석 해제 한 단계다.
+> 플러그인 설치 자체는 `k8s-operators.sh`에서 **항상** 하므로 되살리기는 주석 해제 한 단계지만,
+> **형태가 `    plugins:`(4칸 들여쓰기 + 행말 즉시 종료)여야** 한다 — 행말 주석·2칸·flow 표기면
+> §0-3 형태 검사가 `exit 1`로 멈춘다(Secret·SeaweedFS보다 앞이라 만들어 둔 것 없이 선다).
 > 끈 이유와 재활성 조건은 [`conventions/k8s/cnpg.md`](conventions/k8s/cnpg.md)에 있다.
 
 **`k8s-dagster.sh`** — 이미지 빌드·push + `spark-app-manifests` ConfigMap + rollout 대기.

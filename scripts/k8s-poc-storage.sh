@@ -64,6 +64,75 @@ if [ "${DB_OWNER}" != "${DAGSTER_PG_USER}" ]; then
     exit 1
 fi
 
+# 0-3) `spec.plugins` 배선의 **형태** 검사 — 판정 불가면 멈춘다(fail-closed).
+#    §4의 가드는 `^    plugins:` 리터럴로 배선 유무를 가르는데, 그 패턴이 실제로 가르는 것은
+#    「주석 / 활성」이 아니라 **「정확히 그 형태 / 그 밖 전부」**다. 그래서 **활성 배선이라도**
+#    행말 주석·다른 들여쓰기·flow 표기면 「배선 없음」과 **같은 출력**이 된다(거짓 음성).
+#    🔴 그 방향의 결과가 무겁다 — §5는 Cluster를 **무조건** 적용하므로 `isWALArchiver`는
+#    살아 있는데 `ObjectStore`만 없는 상태가 된다. 그러면 아카이빙 못 한 WAL이 PVC(5Gi)를 채워
+#    DB가 서고, `ALLOWVOLUMEEXPANSION=false`(§5 주석)라 확장도 못 해 클러스터 재생성이다.
+#    ⚠️ 뒷문장은 **추정이다** — 2026-08-19 실측(`k8s/catalog-postgres.yaml` §plugins)은
+#    `ObjectStore`가 **있는** 상태의 거동이고, 없는 상태는 플러그인이 참조 해결에 실패해
+#    아카이빙 시도 이전에 막힐 수도 있다(방향이 다르다). PVC 포화 자체도 실측 기록이 없다.
+#    확실한 것은 「배선 있음이 배선 없음으로 처리된다」까지이고, **그것만으로 중단 사유는 된다.**
+#    ⇒ 「못 읽었다」를 「없다」와 같이 처리하지 않고 **중단**으로 바꾼다.
+#    🔴 **위치가 곧 설계다.** 여기는 Secret 생성(§1)·구 리소스 삭제(§2-1)·SeaweedFS 기동(§3)
+#    **전부보다 앞**이라 멈춰도 **클러스터에 만들어 둔 것이 없다.** 이것이 롤백을 넣지 않는
+#    이유이기도 하다 — 이 스크립트가 만드는 것은 전부 stateful이라 되돌리기가 곧 데이터
+#    삭제이고(PVC·카탈로그), 타임아웃은 「실패」가 아니라 「아직 안 끝남」인 경우가 많아
+#    되돌리는 쪽이 틀린 대응이 된다.
+#    ⚠️ 단 **「부작용 0」은 아니다** — 위 `kubectl config use-context`(§상단)가 이미 돌아
+#    현재 컨텍스트가 `kind-${CLUSTER_NAME}`로 바뀌어 있고 여기서 멈춰도 되돌아가지 않는다.
+#    되돌릴 대상이 없다는 것은 **클러스터 자원 축**에 대한 말이지 환경 전체가 아니다.
+#    🔴 매칭은 **키 위치에 앵커**한다(`^[[:space:]]*plugins:`). 앵커 없이 `/plugins:/`로 두면
+#    활성 줄의 **행말 주석**(`imageName: foo  # plugins: 아래 참고`)까지 활성 배선으로 집계돼
+#    **아무 배선도 없는데 부트스트랩이 멈춘다**(2026-09-21 security 실측). 이 파일은 주석 밀도가
+#    높고 산문에서 `plugins`를 반복 언급해 개연성이 낮지 않다.
+CR_PLUGINS_ACTIVE="$(awk '/^[[:space:]]*#/ {next} /^[[:space:]]*plugins:/ {print}' \
+    "${REPO_ROOT}/k8s/catalog-postgres.yaml")"
+CR_PLUGINS_LINES="$(printf '%s' "${CR_PLUGINS_ACTIVE}" | grep -c . || true)"
+#    🔴 `|| true`는 grep의 **모든** 실패를 삼킨다. grep이 실행조차 못 하면 값이 비는데,
+#    `[ "" -gt 1 ]`은 rc=2를 내면서도 **`if` 조건은 `set -e` 면제**라 중단되지 않아
+#    두 검사가 **조용히 거짓**이 된다 — fail-closed 게이트 안의 fail-open이다(security 실측).
+#    같은 블록의 `awk` 실패는 명령 치환이라 `set -e`에 걸려 중단되는데, 이쪽만 방향이 달랐다.
+case "${CR_PLUGINS_LINES}" in
+    '' | *[!0-9]*)
+        printf 'plugins 줄 수 판정에 실패했다(값=[%s]) — 검사기가 돌지 않았다.\n' \
+            "${CR_PLUGINS_LINES}" >&2
+        exit 1
+        ;;
+esac
+if [ "${CR_PLUGINS_LINES}" -gt 1 ]; then
+    printf 'k8s/catalog-postgres.yaml의 활성 plugins 줄이 %s개다 — 하나여야 한다.\n' \
+        "${CR_PLUGINS_LINES}" >&2
+    printf '%s\n' "${CR_PLUGINS_ACTIVE}" >&2
+    exit 1
+fi
+if [ "${CR_PLUGINS_LINES}" -eq 1 ] \
+    && ! printf '%s\n' "${CR_PLUGINS_ACTIVE}" | grep -q '^    plugins:[[:space:]]*$'; then
+    printf 'k8s/catalog-postgres.yaml의 plugins 배선 형태가 §4 가드와 맞지 않는다:\n' >&2
+    printf '  [%s]\n' "${CR_PLUGINS_ACTIVE}" >&2
+    printf '기대 형태(4칸 들여쓰기 + 행말 즉시 종료): "    plugins:"\n' >&2
+    printf '이대로 두면 배선이 있는데도 ObjectStore가 적용되지 않아 WAL이 PVC를 채운다.\n' >&2
+    exit 1
+fi
+#    🔴 형태가 맞으면 **값**까지 대조한다(§0·§0-2와 같은 형태). 형태만 보면 `plugins:` 아래가
+#    비었거나 다른 이름을 가리켜도 통과하는데, 그러면 §4가 ObjectStore·ScheduledBackup을 적용해
+#    **WAL 아카이버 없이 백업 잡만 매일 도는** 상태가 된다 — 이 가드가 막으려던 바로 그 상태다.
+if [ "${CR_PLUGINS_LINES}" -eq 1 ]; then
+    CR_BARMAN_OBJ="$(awk '/^[[:space:]]*#/ {next} /^[[:space:]]*barmanObjectName:/ {print $2; exit}' \
+        "${REPO_ROOT}/k8s/catalog-postgres.yaml")"
+    OBJECTSTORE_NAME="$(awk '/^kind: ObjectStore/ {f=1} f && /^[[:space:]]*name:/ {print $2; exit}' \
+        "${REPO_ROOT}/k8s/catalog-pg-backup.yaml")"
+    if [ -z "${CR_BARMAN_OBJ}" ] || [ "${CR_BARMAN_OBJ}" != "${OBJECTSTORE_NAME}" ]; then
+        printf 'plugins 배선은 살아 있는데 barmanObjectName이 ObjectStore와 맞지 않는다.\n' >&2
+        printf '  catalog-postgres.yaml  barmanObjectName : [%s]\n' "${CR_BARMAN_OBJ}" >&2
+        printf '  catalog-pg-backup.yaml ObjectStore name : [%s]\n' "${OBJECTSTORE_NAME}" >&2
+        printf 'WAL 아카이버 없이 ScheduledBackup만 매일 돌게 된다.\n' >&2
+        exit 1
+    fi
+fi
+
 # 1) Secret — 용도별로 **분리**한다.
 #    lakehouse-creds : SeaweedFS s3.json + S3 접속 키 (S3 전용)
 #    catalog-pg-app  : 카탈로그 Postgres 계정 (CNPG `bootstrap.initdb.secret`이 요구하는
@@ -153,17 +222,36 @@ kubectl -n default rollout status statefulset/seaweedfs --timeout=180s
 #    백업을 안 켜도 빈 버킷 하나는 비용이 없으므로 항상 만든다(분기 없는 단순함).
 #    🔴 분리하는 이유: 같은 버킷에 두면 Iceberg `remove_orphan_files`의 나열 대상과 섞인다.
 #    compute log는 특히 그렇다 — 카탈로그가 모르는 파일이라 orphan으로 지워질 수 있다.
+#    🔴 **재시도 소진은 에러다.** 종전에는 12회가 모두 실패해도 루프가 그냥 끝나 §4·§5로
+#    진행했다 — `warehouse` 버킷 없이 Iceberg가 올라가는데 스크립트는 성공으로 보였다(fail-open).
+#    재시도는 「filer gRPC가 아직 안 열렸다」를 흡수하려는 것이지 **실패를 삼키려는 것이 아니다.**
+#    ⚠️ **이 게이트가 닫는 것은 「프로세스가 실패한다」 축까지다.** 판정 근거는 파이프 끝단
+#    `weed shell`의 종료코드인데, REPL이라 **명령이 실패해도 메시지만 찍고 0으로 끝날 수 있다**.
+#    그러면 버킷이 없는데도 `break`로 빠져 「준비 완료」가 찍힌다 — 그 축은 **`미확인`이다**
+#    (종료코드 의미론이 저장소에 기록된 바 없고 클러스터 미기동. 2026-09-21 security 지적).
+#    닫으려면 종료코드가 아니라 **상태**를 봐야 한다(`s3.bucket.list` 대조). 그건 클러스터에서
+#    출력 형식을 확인한 뒤 할 일이라 여기 넣지 않았다 — **검증 못 한 파서를 차단 게이트로
+#    승격시키는 것**이 바로 이 지적의 요지이기 때문이다.
 for bucket in warehouse pg-backup dagster-logs; do
     log "${bucket} 버킷 생성"
+    bucket_ready=""
     for attempt in $(seq 1 12); do
         if kubectl -n default exec statefulset/seaweedfs -- \
             sh -c "echo 's3.bucket.create -name ${bucket}' | weed shell -master localhost:9333 -filer localhost:8888" \
             >/dev/null 2>&1; then
             log "${bucket} 버킷 준비 완료 (시도 ${attempt})"
+            bucket_ready="yes"
             break
         fi
         sleep 5
     done
+    if [ -z "${bucket_ready}" ]; then
+        printf '버킷 생성 실패: %s (12회 재시도 60초 소진)\n' "${bucket}" >&2
+        printf 'SeaweedFS filer가 안 떴거나 weed shell이 실패한다. 아래로 원인을 본다:\n' >&2
+        printf '  kubectl -n default get pod -l app=seaweedfs\n' >&2
+        printf '  kubectl -n default logs statefulset/seaweedfs --tail=50\n' >&2
+        exit 1
+    fi
 done
 
 # 4) 백업 구성 — ObjectStore + ScheduledBackup.
@@ -180,6 +268,9 @@ done
 #    행말 주석(`plugins:  # …`)·다른 들여쓰기(2칸)·flow 표기(`plugins: [{…}]`)면 걸리지 않는다
 #    (2026-09-21 security 실측, 편집 변형 7종). 즉 거짓 양성이 아니라 **거짓 음성 쪽으로 기운다** —
 #    배선을 되살릴 때는 위 리터럴 형태 그대로 쓴다.
+#    ✅ **그 세 형태는 §0-3이 앞에서 차단한다**(2026-09-21 신설) — 여기까지 도달하지 못하고
+#    부작용 전에 `exit 1`이 난다. 즉 위 「거짓 음성」은 **닫힌 갭**이고, 이 문단은 §4 패턴
+#    단독의 성질을 적은 것이다. 이 분기를 손볼 때 §0-3을 함께 보지 않으면 없는 구멍을 다시 막게 된다.
 CR_PLUGINS="$(awk '/^    plugins:[[:space:]]*$/ {print "yes"; exit}' \
     "${REPO_ROOT}/k8s/catalog-postgres.yaml")"
 if [ "${CR_PLUGINS}" = "yes" ]; then
