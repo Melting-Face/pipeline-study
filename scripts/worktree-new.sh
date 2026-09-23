@@ -31,6 +31,10 @@ SRC_DIR="dagster/dockerfile.d/src"
 #   .claude/settings.local.json — 권한 오버라이드. 갈라지면 worktree마다 프롬프트가 달라진다.
 LINK_ASSETS=(".env" ".claude/.claims" ".claude/settings.local.json")
 
+# 새 브랜치의 기본 시작점. 🔴 **현재 HEAD를 쓰지 않는다**(축 1 주석 참고) —
+# 공유 루트의 HEAD는 다른 세션이 옮길 수 있고, 그러면 새 브랜치가 남의 브랜치 위에 선다.
+DEFAULT_BRANCH="main"
+
 log() { printf '\033[1;34m[worktree]\033[0m %s\n' "$1"; }
 die() { printf '\033[1;31m[worktree]\033[0m %s\n' "$1" >&2; exit 1; }
 
@@ -88,9 +92,23 @@ elif git -C "${REPO_ROOT}" show-ref --verify --quiet "refs/remotes/origin/${BRAN
     log "생성: ${WORKTREE_DIR} (원격 origin/${BRANCH} 를 추적하는 브랜치를 만든다)"
     ADD_ARGS=("-b" "${BRANCH}" "${WORKTREE_DIR}" "origin/${BRANCH}")
 else
-    # 축 1 — 신규.
-    log "생성: ${WORKTREE_DIR} (새 브랜치 ${BRANCH})"
-    ADD_ARGS=("${WORKTREE_DIR}" "-b" "${BRANCH}")
+    # 축 1 — 신규. 🔴 **시작점을 명시한다.** 생략하면 `worktree add`가 **현재 HEAD**를
+    #    쓰는데, 공유 루트의 HEAD는 **내 것이 아니다** — 다른 세션이 거기서 브랜치를
+    #    갈아타면 새 피처 브랜치가 **남의 브랜치 위에** 생긴다(에러 없음).
+    #    실측: 이 스크립트를 쓰던 날 루트가 `fix/k8s-flink-comment-drift`에 있었고,
+    #    몇 시간 차이로 결과가 갈릴 뻔했다. 로컬 `main`이 낡은 경우도 같은 축이다.
+    #    ⚠️ 축 4는 시작점을 명시하면서 축 1은 안 하고 있었다 — **축을 다 세지 않은 자리**다.
+    START_POINT="origin/${DEFAULT_BRANCH}"
+    if ! git -C "${REPO_ROOT}" show-ref --verify --quiet "refs/remotes/${START_POINT}"; then
+        # 원격 기본 브랜치를 못 찾으면 로컬로 떨어지되 **조용히 넘어가지 않는다**.
+        START_POINT="${DEFAULT_BRANCH}"
+        log "⚠️ origin/${DEFAULT_BRANCH} 를 못 찾아 로컬 ${DEFAULT_BRANCH} 에서 딴다"
+    fi
+    # 🔴 `--no-track` 이 **없으면 upstream이 `origin/main`으로 걸린다**(실측).
+    #    그 상태로 `git push` 하면 **main을 향할 수 있다** — 시작점을 명시해 얻은 이득을
+    #    훨씬 비싼 위험으로 바꾸는 자리다. 축 4는 **추적이 목적**이므로 붙이지 않는다.
+    log "생성: ${WORKTREE_DIR} (새 브랜치 ${BRANCH} ← ${START_POINT}, 추적 안 함)"
+    ADD_ARGS=("--no-track" "-b" "${BRANCH}" "${WORKTREE_DIR}" "${START_POINT}")
 fi
 
 # 호출은 **한 곳**에 둔다 — 분기마다 복사하면 옵션이 갈렸을 때 grep으로 못 찾는다.

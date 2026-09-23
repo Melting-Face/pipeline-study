@@ -241,6 +241,28 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/worktree_guard.py file-pre",
+            "statusMessage": "루트 워킹트리 쓰기 차단",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/worktree_guard.py bash-pre",
+            "statusMessage": "루트 워킹트리 쓰기 차단(Bash)",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PostToolUse": [
