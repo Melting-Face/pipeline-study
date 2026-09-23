@@ -14,7 +14,7 @@
 | [`general.md`](general.md) | 공통 코딩·커밋·비밀정보 | Conventional Commits · pre-commit · 비밀정보 취급 |
 | [`python.md`](python.md) | Python 스타일 | ruff(4칸·88자) · `scripts/`는 **절차형**(단일 `main`) · PEP 723 |
 | [`git.md`](git.md) | git 워크플로 | 브랜치 전략 · **논리적 커밋 단위** · 커밋 대상/금지 · **머지 후 브랜치 자동 삭제 3층** |
-| [`git/worktree.md`](git/worktree.md) | 병렬 세션 | worktree 격리와 그 부작용 · **pathspec 의무** · 겹침 4축 · 귀속/리뷰 주체 |
+| [`git/worktree.md`](git/worktree.md) | 병렬 세션 | **worktree 의무화**(가드 집행)와 그 부작용 · pathspec 의무 · 겹침 4축 · 귀속/리뷰 주체 |
 | [`dagster.md`](dagster.md) | Dagster 정의 | **함수+데코레이터**(클래스 지양) · 에셋 명시 분리 · 머티리얼라이즈 메타데이터 |
 | [`dbt.md`](dbt.md) | dbt 모델 | `source()` 매핑 · 메달리온은 kind/tag로 · `fqn:` 셀렉터 |
 | [`data-quality.md`](data-quality.md) | 데이터 품질 | 품질 **6차원**과 강제 지점 · 실패 시 **차단/경고/관측** 3등급 · **보증하지 않는 것**을 함께 선언 |

@@ -44,7 +44,7 @@
 | 문서 | 내용 |
 | --- | --- |
 | [공통](conventions/general.md) | 언어·들여쓰기·커밋 메시지·릴리스·pre-commit·**문서 작성 규약** |
-| [Git 워크플로](conventions/git.md) | 브랜치·커밋 단위·**병렬 세션 worktree** |
+| [Git 워크플로](conventions/git.md) | 브랜치·커밋 단위·**worktree 의무화**(루트는 읽기 전용) |
 | [Python](conventions/python.md) | ruff·타입 힌트·예외·의존성·스크립트 절차형 |
 | [Dagster](conventions/dagster.md) | 함수형 에셋 정의·메타데이터·잡·스케줄 · **K8s in-cluster 배포** |
 | [dbt](conventions/dbt.md) | 레이어링·네이밍·테스트·sqlfluff·**방언 흡수** |

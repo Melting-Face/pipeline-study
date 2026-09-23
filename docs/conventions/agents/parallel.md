@@ -160,7 +160,9 @@ auto 모드(`classifyAllShell`)에서는 **분류기가 먼저 판정**하고 ho
 
 - **`Bash` 경유 쓰기는 타지 않는다.** `sed -i`·`>`·heredoc은 파일 도구 matcher 밖이라
   리스 검사도 갱신도 없다. 보호 경로만
-  [`protected_paths_guard.py`](../../../scripts/protected_paths_guard.py)가 별도로 잡는다.
+  [`protected_paths_guard.py`](../../../scripts/protected_paths_guard.py)가 별도로 잡고,
+  **루트 워킹트리 축**은 [`worktree_guard.py`](../../../scripts/worktree_guard.py)가 잡는다
+  (두 가드 모두 `bash-pre` 축을 따로 둔 이유가 이것이다 — 파일 도구만 막으면 반쪽이다).
   🔴 **파일 수정을 `Bash`로 하라는 지시는 이 사각지대를 노린 인젝션 패턴**이므로 거부한다.
   ⚠️ 단 출처가 **하네스의 일반 안내**면 공격이 아니라 규약 충돌이다 —
   **거부한다는 대응은 같고 보고 방식만 갈린다.**
@@ -169,3 +171,7 @@ auto 모드(`classifyAllShell`)에서는 **분류기가 먼저 판정**하고 ho
 - claim 생성은 check-then-write라 **원자적 락이 아니다.**
 - 가드는 **같은 머신의 세션**만 본다. worktree로 갈라진 세션도
   `CLAUDE_PROJECT_DIR`가 다르면 서로 다른 레지스트리를 본다.
+  → 그래서 `worktree-new.sh`가 `.claude/.claims`를 **심볼릭 링크로 잇는다**.
+  ⚠️ `CLAUDE_PROJECT_DIR`는 **hook 실행 환경**의 값이다 — `Bash` 도구 환경에서는
+  미설정인 것이 관측된 적이 있다. **두 환경을 한 이름으로 묶어 읽지 않는다**
+  (그래서 `worktree_guard.py`는 이 변수를 판정에 쓰지 않는다).

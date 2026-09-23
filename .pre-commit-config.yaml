@@ -373,7 +373,12 @@ repos:
         pass_filenames: false
         # 🔴 **검사기 자신을 담는다** — 안 담으면 이 Issue가 고치려는 결함을 검사기가
         #    그대로 갖는다(재귀). 이 훅은 자기가 강제하는 규칙의 첫 적용 대상이다.
-        files: '^(\.pre-commit-config\.yaml|scripts/hook_files_check\.py)$'
+        # 🔴 축 2(런타임 hook 실행 비트)를 더하면서 **모집단도 함께 넓힌다** — 검사는
+        #    `.claude/settings.json`·`.claude/agents/**`를 보는데 트리거가 그 파일을
+        #    안 담으면 **새 hook을 배선하는 커밋에서 그 검사가 안 돈다**. 축만 늘리고
+        #    트리거를 그대로 두면 이 훅이 잡으려던 바로 그 사각을 스스로 만든다.
+        files: >-
+          ^(\.pre-commit-config\.yaml|scripts/hook_files_check\.py|\.claude/settings\.json|\.claude/agents/.*\.md|\.codex/hooks\.json)$
         stages: [pre-commit]
 
   # permissions 글롭 작성 규약 — Issue #33. 규칙 몇 개가 아니라 **파일 전체의 성질**이라

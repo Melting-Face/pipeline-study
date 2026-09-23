@@ -49,14 +49,27 @@ Issue #56 — 게이트를 바꾸는 커밋에서 하필 그 게이트가 안 �
     대가는 아래 최소 파서를 우리가 지는 것이고,
     **파싱이 어긋나면 fail-closed**로 갚는다.
 
+축 2 — 런타임 hook의 **실행 비트**(나중에 추가):
+    `.claude/settings.json`·`.claude/agents/**`의 hook은 **인터프리터 없이 스크립트를
+    직접 실행**한다. 실행 비트가 없으면 `Permission denied`(exit 126)로 죽고, 그것은
+    **무출력 + 비-0 종료**라 하네스에게 「결정 없음」 = **통과**다 — 가드가 통째로
+    fail-open인데 **증상이 조용한 통과**다. 신설 가드가 `100644`로 커밋될 뻔했고
+    `security` 컨펌이 잡았다. 그때 `python3 <script>`로 돌린 프로브는 전부 초록이었다 —
+    **재는 방식이 배선된 호출 방식과 달랐다.**
+    ⚠️ 축 1의 pre-commit 훅(`python3 scripts/x.py`)은 대상이 아니다. 같은 "hook"이라는
+    이름 아래 **실행 방식이 갈리므로**, 모집단을 이름이 아니라 **호출 형태**로 잡는다.
+
 보증하지 않는 것:
-    · `.claude/settings.json`의 hook 배선은 **`files:` 축 자체가 없다**(배선이 정의 로드
-      시점 스냅샷이라 **다른 형태의 사각**이다). 여기서 보지 않는다.
+    · `.claude/settings.json`의 hook 배선에는 **`files:` 축 자체가 없다**(배선이
+      정의 로드 시점 스냅샷이라 **다른 형태의 사각**이다). 축 1은 여기를 보지 않는다 —
+      **축 2가 보는 것은 실행 비트 하나뿐**이고, 배선이 옳은지는 여전히 보지 않는다.
     · `repo: local`이 아닌 업스트림 훅은 자기 스크립트가 저장소에 없어
       이 축이 성립하지 않는다.
     · 훅이 **옳은 일을 하는지**는 보지 않는다. **언제 도는지**만 본다.
 """
 
+import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -74,6 +87,9 @@ HOOK_KEYS = ("id", "name", "language", "entry", "files", "exclude", "always_run"
 
 # 접힌·리터럴 스칼라 표식. 뒤따르는 더 깊은 들여쓰기 줄이 값의 연속이다.
 BLOCK_SCALARS = (">", ">-", "|", "|-", ">+", "|+")
+
+# 에이전트 정의(YAML frontmatter)의 hook `command:`. 따옴표 유무 양쪽을 받는다.
+AGENT_COMMAND_RE = re.compile(r'^\s*-?\s*command:\s*"?([^"\n]+)"?\s*$', re.MULTILINE)
 
 
 def main() -> int:
@@ -215,6 +231,102 @@ def main() -> int:
         )
         return 1
 
+    # ── 축 2: 직접 실행되는 런타임 hook 스크립트의 **실행 비트** ─────────────
+    # 🔴 `.claude/settings.json`과 `.claude/agents/**`의 hook은 **인터프리터 없이
+    #    스크립트를 직접 실행**한다. 실행 비트가 없으면 `Permission denied`(exit 126)로
+    #    죽는데, 그것은 **무출력 + 비-0 종료**라 하네스에게 「결정 없음」 = **통과**다.
+    #    가드가 통째로 fail-open인데 **증상이 조용한 통과**라 어떤 게이트도 빨갛지 않다.
+    #    (신설 가드가 `100644`로 커밋될 뻔했고 `security` G2가 잡았다 — 그때
+    #     `python3 <script>`로 돌린 프로브는 전부 초록이었다. **호출 방식이 달랐다.**)
+    # ⚠️ 위 축 1의 pre-commit 훅(`python3 scripts/x.py`)은 **대상이 아니다** —
+    #    인터프리터가 앞에 있어 실행 비트가 필요 없다. 같은 "hook"이라는 이름 아래
+    #    **실행 방식이 갈리므로**, 모집단을 이름이 아니라 **호출 형태**로 잡는다.
+    # 🔴 **JSON은 JSON으로 판다.** 정규식 `"([^"]+)"`는 `"\"$CLAUDE_PROJECT_DIR\"/…"`의
+    #    이스케이프된 따옴표에서 끊겨 **대부분을 조용히 놓친다**(첫 구현이 10종 중 4종만
+    #    잡았고, 모집단 수를 출력하지 않았으면 "위반 0"으로 통과했을 것이다).
+    commands: list[tuple[str, str]] = []
+    settings = PROJECT_ROOT / ".claude/settings.json"
+    if settings.is_file():
+        stack = [json.loads(settings.read_text("utf-8"))]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                if isinstance(node.get("command"), str):
+                    commands.append((node["command"], settings.name))
+                stack.extend(node.values())
+            elif isinstance(node, list):
+                stack.extend(node)
+
+    # 🔴 Codex 배선도 **모집단에 넣는다** — 지금은 전부 `python3 "<path>"` 형태라
+    #    한 건도 안 걸리지만(인터프리터 경유), 그것은 **면제가 아니라 현재 형태가
+    #    그럴 뿐**이다. 넣어두면 배선이 직접 실행으로 바뀌는 날 자동으로 잡힌다.
+    #    ⚠️ 모집단에서 빼고 "Codex는 대상이 아니다"로 적으면, 그 문장이 **배선이
+    #    바뀐 뒤에도 그대로 남아** 조용한 구멍이 된다(판정은 이름이 아니라 형태로).
+    codex_hooks = PROJECT_ROOT / ".codex/hooks.json"
+    if codex_hooks.is_file():
+        stack = [json.loads(codex_hooks.read_text("utf-8"))]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                if isinstance(node.get("command"), str):
+                    commands.append((node["command"], codex_hooks.name))
+                stack.extend(node.values())
+            elif isinstance(node, list):
+                stack.extend(node)
+
+    # 🔴 **pre-commit 훅의 `entry:`도 모집단이다**(병렬 세션 지적으로 추가).
+    #    지금은 전부 `python3 <script>` 형태라 한 건도 안 걸리지만, `entry`가
+    #    스크립트를 **직접** 부르면 런타임 hook과 **똑같은 축**이 된다
+    #    (`exit 126` → 무출력+비-0 → 「결정 없음」 = 통과).
+    #    ⚠️ 이 목록을 뺀 채 "pre-commit은 인터프리터 경유라 대상이 아니다"라고 적으면
+    #    그 문장이 **배선이 바뀐 뒤에도 남아** 구멍이 된다 — `.codex/hooks.json`을
+    #    넣은 것과 같은 논거인데, **바로 옆 모집단을 빠뜨렸다.**
+    commands.extend(
+        (item["entry"], CONFIG.name) for item in local_hooks if item.get("entry")
+    )
+
+    # 에이전트 정의는 YAML frontmatter라 파서가 없다(의존성 0 유지) — 정규식으로 뽑되
+    # 따옴표가 없는 형태(`command: $CLAUDE_PROJECT_DIR/…`)까지 받는다.
+    for agent in sorted((PROJECT_ROOT / ".claude/agents").glob("*.md")):
+        found = AGENT_COMMAND_RE.findall(agent.read_text("utf-8"))
+        commands.extend((raw, agent.name) for raw in found)
+
+    direct_scripts: dict[str, str] = {}
+    for raw, origin in commands:
+        # 앞의 `NAME=value` 환경변수 접두어를 건너뛰고 **실제 실행 토큰**을 본다.
+        tokens = [t for t in raw.split() if "=" not in t.split("/")[0]]
+        if not tokens:
+            continue
+        # 🔴 따옴표는 **전부** 벗긴다 — `"$CLAUDE_PROJECT_DIR"/scripts/x.py` 처럼
+        #    셸 인용이 경로 **중간**에 온다. `strip()`은 양끝만 보므로 중간 따옴표가
+        #    남아 모든 경로가 "없는 파일"로 잡혔다(실측 — 6건 전부 오탐이었다).
+        head = tokens[0].replace('"', "").replace("'", "")
+        if not head.endswith(".py"):
+            continue  # 인터프리터 경유 — 실행 비트가 필요 없다
+        relative = head.replace("$CLAUDE_PROJECT_DIR/", "").lstrip("/")
+        direct_scripts.setdefault(relative, origin)
+
+    for relative, origin in sorted(direct_scripts.items()):
+        script = PROJECT_ROOT / relative
+        if not script.is_file():
+            violations.append(f"{origin}: hook이 없는 스크립트를 가리킨다 — {relative}")
+        elif not os.access(script, os.X_OK):
+            violations.append(
+                f"{origin}: hook이 **직접 실행**하는데 실행 비트가 없다 — {relative} "
+                "(`chmod +x`). 지금 상태로는 Permission denied로 죽고, 그것은 "
+                "무출력+비-0 종료라 하네스에게 「결정 없음」 = 통과다(fail-open)."
+            )
+
+    # 🔴 여기도 fail-closed — 0건을 통과로 읽지 않는다. 런타임 hook이 실재하는데
+    #    한 건도 못 뽑았다면 파싱이 어긋난 것이고, 그 초록은 축 1과 같은 거짓이다.
+    if not direct_scripts:
+        print(
+            "🔴 직접 실행되는 런타임 hook 스크립트를 한 건도 찾지 못했다 — "
+            "통과가 아니라 파싱 실패로 본다(.claude/settings.json 구조가 바뀌었는가?)",
+            file=sys.stderr,
+        )
+        return 1
+
     for line in violations:
         print(f"🔴 {line}", file=sys.stderr)
 
@@ -225,6 +337,15 @@ def main() -> int:
         f"비실행 language:fail {len(not_executing)}) · "
         f"자기포함 {len(self_contained)} · 전체모집단 {len(whole_population)} · "
         f"위반 {len(violations)}"
+    )
+    # 🔴 축 2의 **모집단을 함께 찍는다** — 건수가 안 보이면 「검사했다」와
+    #    「실행만 됐다」가 구분되지 않는다(첫 구현이 10종 중 4종만 잡았는데 이 줄
+    #    덕분에 드러났다). 이 숫자는 **직접 실행되는 스크립트 수**이지 hook 수가 아니다
+    #    (한 스크립트가 여러 hook에 배선되면 1로 센다).
+    print(
+        f"직접 실행 배선 검사 — 실행 비트 대상 {len(direct_scripts)}종 "
+        f"/ 배선 command {len(commands)}건 (출처: .claude/settings.json · "
+        ".claude/agents/*.md · .codex/hooks.json · .pre-commit-config.yaml)"
     )
     for line in whole_population:
         print(f"  · 전체모집단(면제 아님 — always_run/무 files): {line}")
