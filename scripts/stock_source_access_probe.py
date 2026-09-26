@@ -93,6 +93,47 @@ POLYGON_BAR_FIELDS = ("T", "o", "h", "l", "c", "v", "t")
 # 제목·링크·퍼블리셔는 없어도 레코드가 성립하므로 필수에 넣지 않는다.
 POLYGON_NEWS_FIELDS = ("id", "published_utc")
 
+# 🔴 **아는 전체 필드 집합**(필수와 축이 다르다 — 이쪽은 "아는 전부").
+# 테스트 픽스처는 원천 약관상 실측 값을 담을 수 없어 합성이라, 구조가 현실과
+# 어긋나도 테스트는 초록이다. 그 어긋남을 여기서 잡는다 — 응답에만 있는 필드는
+# **우리가 버리고 있는 것**이고, 조회 범위가 롤링 윈도우라 판단을 미루면 영구 손실이다.
+POLYGON_BAR_KNOWN_FIELDS = ("T", "c", "h", "l", "n", "o", "t", "v", "vw")
+POLYGON_NEWS_KNOWN_FIELDS = (
+    "article_url",
+    "author",
+    "description",
+    "id",
+    "image_url",
+    "insights",
+    "keywords",
+    "published_utc",
+    "publisher",
+    "tickers",
+    "title",
+)
+
+
+def report_field_drift(observed: dict[str, Any], known: tuple[str, ...]) -> None:
+    """응답의 필드 집합을 아는 집합과 대조해 양방향 드리프트를 출력한다.
+
+    🔴 판정을 바꾸지 않고 **관측만** 한다. 새 필드가 생겼다고 적재가 틀린 것은
+    아니고, 사라진 필드도 필수가 아니면 레코드는 성립한다. 다만 둘 다
+    **사람이 판단해야 할 신호**라 조용히 지나가지 않게 한다.
+
+    Args:
+        observed: 응답 레코드 하나.
+        known: 우리가 아는 필드 이름 튜플.
+    """
+    extra = sorted(set(observed) - set(known))
+    gone = sorted(set(known) - set(observed))
+    if extra:
+        print(f"  ⚠ 응답에만 있는 필드 {extra} — 담을지 판단한다(미루면 영구 손실)")
+    if gone:
+        print(f"  ⚠ 아는데 응답에 없는 필드 {gone} — 원천이 뺐는지 확인한다")
+    if not extra and not gone:
+        print("  ✓ 필드 집합이 파서의 계약과 일치한다")
+
+
 # 🔴 무료 플랜의 과거 경계를 **재는** 범위. 문서의 "2 Years"를 믿지 않고 직접 묻는다 —
 # 이 값이 `PARTITION_START_DATE`를 정하고, 틀리면 백필이 조용히 빈 파티션을 만든다.
 #
@@ -320,7 +361,7 @@ def probe_prices(session: requests.Session, api_key: str) -> int:
         print(f"  ✗ 기대 필드 누락 {missing} · 실제 {sorted(bar)} → 판정 불가")
         return EXIT_UNDETERMINED
     print(f"  ✓ {probe_day.isoformat()} · 티커 {len(results):,}개 · 필드 {sorted(bar)}")
-    print(f"    예: {bar['T']} o={bar['o']} h={bar['h']} l={bar['l']} c={bar['c']}")
+    report_field_drift(bar, POLYGON_BAR_KNOWN_FIELDS)
 
     # ── ④ 🔴 음성 대조: 휴장일에 직전 거래일 값을 조용히 주는가 ──────────
     # frankfurter_fx가 실측으로 발견한 실패 모드다. 상태코드·행 수·값 범위
@@ -497,6 +538,7 @@ def probe_news(session: requests.Session, api_key: str) -> int:
     if missing:
         print(f"  ✗ 필수 필드 누락 {missing} → 파서 상수를 고쳐야 한다. 판정 불가")
         return EXIT_UNDETERMINED
+    report_field_drift(articles[0], POLYGON_NEWS_KNOWN_FIELDS)
 
     # ── ③ 🔴 음성 대조: 발행시각이 기사마다 다른가 ───────────────────────
     # 🔴 Benzinga RSS를 탈락시킨 바로 그 축이다. 이벤트타임이 없으면 누수 방지

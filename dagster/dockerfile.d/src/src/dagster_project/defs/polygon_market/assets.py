@@ -69,6 +69,28 @@ REQUIRED_BAR_FIELDS = ("T", "o", "h", "l", "c", "v", "t")
 #    손실이 조용해진다.
 REQUIRED_NEWS_FIELDS = ("id", "published_utc")
 
+# 🔴 **실측 응답의 전체 필드 집합이다**(값이 아니라 구조라서 재배포 축과 무관하다).
+# 테스트 픽스처는 원천 약관상 **실측 값을 담을 수 없어 합성**인데, 그러면 구조가
+# 현실과 어긋나도 테스트는 초록이다. 그 축을 사람 눈이 아니라 프로브가 본다:
+#   - 여기 있는데 응답에 없다 → 원천이 필드를 뺐다(파서가 깨질 수 있다).
+#   - 응답에 있는데 여기 없다 → **우리가 버리고 있는 새 필드**다. 조회 범위가
+#     롤링 윈도우라 담을지 판단을 미루면 그만큼 영구 손실이다.
+# 필수(`REQUIRED_*`)와 축이 다르다 — 이쪽은 "아는 전부", 저쪽은 "없으면 죽는 것".
+KNOWN_BAR_FIELDS = ("T", "c", "h", "l", "n", "o", "t", "v", "vw")
+KNOWN_NEWS_FIELDS = (
+    "article_url",
+    "author",
+    "description",
+    "id",
+    "image_url",
+    "insights",
+    "keywords",
+    "published_utc",
+    "publisher",
+    "tickers",
+    "title",
+)
+
 # bronze 스키마 — grouped daily의 bar 하나가 한 행이다.
 #
 # 수치를 float64로 두는 이유: 원천이 JSON **수치**로 준다. 문자열로 담는 것이
@@ -117,6 +139,17 @@ NEWS_SCHEMA = pa.schema(
         # 종목별 피처의 조인 키. 배열로 두고 전개는 silver에서 한다
         # (bronze는 원천 형태를 보존한다).
         ("tickers", pa.list_(pa.string())),
+        # 🔴 **원천이 준 티커별 감성이다 — 우리가 계산한 것이 아니다.**
+        # 계획의 "감성 분석 없음"은 NLP를 돌리지 않는다는 뜻이지 받은 것을
+        # 버린다는 뜻이 아니다. 뉴스도 조회 범위가 롤링 윈도우일 수 있어
+        # (시세는 실측으로 확인됨) 지금 안 담으면 영구히 잃는다.
+        #
+        # `sentiment_reasoning`은 **담지 않는다** — 산문이라 기사 본문을
+        # 적재하지 않는다는 원칙과 같은 축이고, 저장량도 크다.
+        (
+            "insights",
+            pa.list_(pa.struct([("ticker", pa.string()), ("sentiment", pa.string())])),
+        ),
         ("ingested_at", pa.timestamp("us", tz="UTC")),
     ]
 )
@@ -226,6 +259,14 @@ def _news_to_arrow(
             # publisher는 중첩 객체다. 없거나 name이 비어도 레코드는 성립한다.
             "publisher": (article.get("publisher") or {}).get("name") or "",
             "tickers": article.get("tickers") or [],
+            # 🔴 `sentiment_reasoning`을 **의도적으로 떨군다**(스키마에도 없다).
+            "insights": [
+                {
+                    "ticker": insight.get("ticker") or "",
+                    "sentiment": insight.get("sentiment") or "",
+                }
+                for insight in article.get("insights") or []
+            ],
             "ingested_at": ingested_at,
         }
         for article in payload.get("results") or []

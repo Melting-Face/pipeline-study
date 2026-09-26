@@ -27,6 +27,8 @@ from pathlib import Path
 
 import pytest
 from dagster_project.defs.polygon_market.assets import (
+    KNOWN_BAR_FIELDS,
+    KNOWN_NEWS_FIELDS,
     NEWS_SCHEMA,
     OHLCV_SCHEMA,
     REQUIRED_BAR_FIELDS,
@@ -72,27 +74,59 @@ GROUPED_PAYLOAD = {
     ],
 }
 
+# 🔴 **필드 집합과 타입은 실측 구조를 따르고, 값은 전부 지어냈다.**
+# 원천이 재배포를 금지하므로(개인 사용 한정) 실제 응답 값을 저장소에 넣지 않는다.
+# 구조가 현실과 어긋나지 않는지는 프로브의 계약 검사가 본다 —
+# `scripts/stock_source_access_probe.py`가 응답의 필드 집합을 상수와 대조한다.
 NEWS_PAYLOAD = {
     "status": "OK",
     "count": 2,
     "results": [
         {
             "id": "abc123",
-            "publisher": {"name": "The Motley Fool", "homepage_url": "https://x"},
-            "title": "Apple announces something",
+            "publisher": {
+                "name": "Example Wire",
+                "homepage_url": "https://example.test",
+                "logo_url": "https://example.test/logo.svg",
+                "favicon_url": "https://example.test/favicon.ico",
+            },
+            "title": "Example headline one",
+            "author": "Example Author",
             "article_url": "https://example.test/a",
+            "image_url": "https://example.test/a.png",
+            "description": "Example summary text.",
+            "keywords": ["earnings"],
             "published_utc": "2026-09-23T13:30:00Z",
             "tickers": ["AAPL", "MSFT"],
+            # 🔴 원천이 **티커별 감성**을 준다. 우리가 계산한 것이 아니라 받은 것이다.
+            #    `sentiment_reasoning`은 산문이라 담지 않는다(본문 미적재와 같은 축).
+            "insights": [
+                {
+                    "ticker": "AAPL",
+                    "sentiment": "positive",
+                    "sentiment_reasoning": "긴 설명 문장 — 적재하지 않는다",
+                },
+                {
+                    "ticker": "MSFT",
+                    "sentiment": "neutral",
+                    "sentiment_reasoning": "긴 설명 문장 — 적재하지 않는다",
+                },
+            ],
         },
         {
             "id": "def456",
-            "publisher": {"name": "Benzinga"},
-            "title": "After-hours filing",
+            "publisher": {"name": "Example Daily"},
+            "title": "Example headline two",
+            "author": "Example Author",
             "article_url": "https://example.test/b",
+            "image_url": "https://example.test/b.png",
+            "description": "Example summary text.",
+            "keywords": [],
             # 🔴 20:01Z = 16:01 ET — **장 마감 직후**. 세션 배정 모델이 존재해야
-            #    하는 이유이고, SEC EDGAR 실측에서도 같은 시간대가 관측됐다.
+            #    하는 이유이고, 실측에서 최신 50건 중 45건이 이 시간대였다.
             "published_utc": "2026-09-23T20:01:00Z",
             "tickers": [],
+            "insights": [],
         },
     ],
 }
@@ -141,6 +175,24 @@ def test_grouped_tolerates_missing_vwap_and_trade_count() -> None:
     assert table.num_rows == 1
     assert table.column("vwap").to_pylist() == [None]
     assert table.column("trade_count").to_pylist() == [None]
+
+
+def test_grouped_accepts_integer_prices() -> None:
+    """가격·거래량이 정수로 와도 float로 담는다.
+
+    🔴 **실측에서 실재한다** — 구조 덤프상 500개 bar 중 `o`·`h`·`l`·`c`·`v`가
+    정수로 오는 것이 4~14건씩 있었다(JSON이 소수부 없는 수를 정수로 준다).
+    캐스팅을 빼면 청크·파티션마다 Arrow 타입이 갈려 적재가 터진다.
+    """
+    bar = dict(GROUPED_PAYLOAD["results"][0])
+    bar.update({"o": 510, "h": 515, "l": 508, "c": 512, "v": 18_400_000})
+    table = _grouped_to_arrow(
+        {"status": "OK", "resultsCount": 1, "results": [bar]}, TRADE_DATE, INGESTED_AT
+    )
+
+    assert table.schema == OHLCV_SCHEMA
+    assert table.column("open").to_pylist() == [510.0]
+    assert table.column("close").to_pylist() == [512.0]
 
 
 def test_grouped_sorts_by_ticker() -> None:
@@ -224,7 +276,7 @@ def test_news_maps_articles_into_rows() -> None:
     assert table.num_rows == 2
     assert table.schema == NEWS_SCHEMA
     assert table.column("article_id").to_pylist() == ["abc123", "def456"]
-    assert table.column("publisher").to_pylist() == ["The Motley Fool", "Benzinga"]
+    assert table.column("publisher").to_pylist() == ["Example Wire", "Example Daily"]
 
 
 def test_news_parses_published_at_as_tz_aware_utc() -> None:
@@ -252,6 +304,41 @@ def test_news_keeps_after_close_articles() -> None:
 
     after_close = [s for s in table.column("published_at").to_pylist() if s.hour >= 20]
     assert len(after_close) == 1
+
+
+def test_news_keeps_source_sentiment_per_ticker() -> None:
+    """원천이 준 티커별 감성을 담는다.
+
+    🔴 계획서의 "감성 분석 없음"은 **우리가 NLP로 계산하지 않는다**는 뜻이지
+    원천이 준 것을 버린다는 뜻이 아니다. 뉴스도 조회 범위가 롤링 윈도우일 수
+    있어(시세는 실측으로 확인됨) 지금 안 담으면 영구히 잃는다 — `vwap`과 같은
+    비대칭 비용이다.
+
+    `sentiment_reasoning`은 담지 않는다. 산문이라 본문 미적재 원칙과 같은 축이고,
+    저장량도 크다.
+    """
+    table = _news_to_arrow(NEWS_PAYLOAD, PUBLISHED_DATE, INGESTED_AT)
+
+    insights = table.column("insights").to_pylist()
+    assert insights[0] == [
+        {"ticker": "AAPL", "sentiment": "positive"},
+        {"ticker": "MSFT", "sentiment": "neutral"},
+    ]
+    assert insights[1] == []
+    # 🔴 산문은 스키마에 아예 없다 — 담지 않기로 한 것이 구조로 강제된다.
+    assert "sentiment_reasoning" not in str(NEWS_SCHEMA.field("insights").type)
+
+
+def test_news_missing_insights_becomes_empty_list() -> None:
+    """`insights`가 없으면 빈 배열로 담는다(행을 버리지 않는다)."""
+    payload = {
+        "results": [
+            {k: v for k, v in NEWS_PAYLOAD["results"][0].items() if k != "insights"}
+        ]
+    }
+    table = _news_to_arrow(payload, PUBLISHED_DATE, INGESTED_AT)
+
+    assert table.column("insights").to_pylist() == [[]]
 
 
 def test_news_missing_tickers_becomes_empty_list() -> None:
@@ -341,6 +428,21 @@ def _probe_tuple(name: str) -> tuple[str, ...]:
     raise AssertionError(message)
 
 
+def test_fixtures_match_the_known_field_contract() -> None:
+    """픽스처의 필드 집합이 **아는 전체 집합**과 정확히 같다.
+
+    🔴 이 픽스처는 원천 약관(개인 사용 한정) 때문에 **실측 값을 담을 수 없어
+    합성**이다. 그래서 구조가 현실과 어긋나도 다른 테스트는 전부 초록이다.
+    현실과의 대조는 프로브가 하고(응답 ↔ `KNOWN_*`), 이 테스트는 그 사이의
+    남은 한 칸 — **픽스처 ↔ `KNOWN_*`** — 을 잇는다. 셋이 이어져야
+    "픽스처가 현실과 같은 모양이다"가 성립한다.
+
+    계약만 고치고 픽스처를 두면 여기서 멈춘다.
+    """
+    assert set(GROUPED_PAYLOAD["results"][0]) == set(KNOWN_BAR_FIELDS)
+    assert set(NEWS_PAYLOAD["results"][0]) == set(KNOWN_NEWS_FIELDS)
+
+
 def test_probe_and_parser_share_the_field_contract() -> None:
     """프로브와 파서가 **같은 필수 필드 집합**을 본다.
 
@@ -353,3 +455,7 @@ def test_probe_and_parser_share_the_field_contract() -> None:
     """
     assert _probe_tuple("POLYGON_BAR_FIELDS") == REQUIRED_BAR_FIELDS
     assert _probe_tuple("POLYGON_NEWS_FIELDS") == REQUIRED_NEWS_FIELDS
+    # 🔴 "아는 전부" 집합도 같은 이유로 묶는다 — 이쪽이 갈라지면 프로브의
+    #    드리프트 경고가 파서의 실제 처리와 다른 것을 기준으로 삼는다.
+    assert _probe_tuple("POLYGON_BAR_KNOWN_FIELDS") == KNOWN_BAR_FIELDS
+    assert _probe_tuple("POLYGON_NEWS_KNOWN_FIELDS") == KNOWN_NEWS_FIELDS
