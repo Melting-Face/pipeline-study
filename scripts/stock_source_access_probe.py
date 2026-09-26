@@ -52,6 +52,7 @@
 import argparse
 import os
 import sys
+import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -92,9 +93,22 @@ POLYGON_BAR_FIELDS = ("T", "o", "h", "l", "c", "v", "t")
 # 제목·링크·퍼블리셔는 없어도 레코드가 성립하므로 필수에 넣지 않는다.
 POLYGON_NEWS_FIELDS = ("id", "published_utc")
 
-# 🔴 무료 플랜의 과거 경계를 **재는** 대상. 문서의 "2년"을 믿지 않고 직접 묻는다 —
+# 🔴 무료 플랜의 과거 경계를 **재는** 범위. 문서의 "2 Years"를 믿지 않고 직접 묻는다 —
 # 이 값이 `PARTITION_START_DATE`를 정하고, 틀리면 백필이 조용히 빈 파티션을 만든다.
-POLYGON_LOOKBACK_PROBE_YEARS = (1, 2, 3, 5)
+#
+# 🔴 **선형 표본이 아니라 이분 탐색으로 좁힌다.** 1·2·3년을 찍어보면 나오는 것은
+# "확인된 가장 오래된 날짜"이고, 그 값과 **실제 경계 사이에 최대 1년**이 남는다.
+# 둘은 다른 값인데 전자를 후자로 읽으면 그만큼의 학습 데이터를 조용히 버린다
+# (라벨이 맞아도 쓰는 쪽이 경계로 읽는다 — 실측에서 실제로 그랬다).
+POLYGON_LOOKBACK_MAX_DAYS = 365 * 5
+POLYGON_LOOKBACK_RESOLUTION_DAYS = 14
+POLYGON_LOOKBACK_BUDGET = 9
+
+# 🔴 무료 플랜의 분당 호출 제한. 페이싱이 없으면 429가 **판정 재료를 지운다** —
+# 프로브가 "권한이 없다"와 "너무 빨리 물었다"를 구분하지 못하고, 그 차이가
+# 그대로 파티션 시작일을 바꾼다. 실측에서 5년 전 질의가 429로 미확인이 됐다.
+POLYGON_CALLS_PER_MIN = 5
+_POLYGON_CALL_TIMES: list[float] = []
 
 # ── FRED ────────────────────────────────────────────────────────────────
 FRED_BASE = "https://api.stlouisfed.org/fred"
@@ -185,6 +199,27 @@ def get(
     return response, ""
 
 
+def pace_polygon() -> None:
+    """무료 플랜의 분당 호출 제한에 맞춰 필요한 만큼 대기한다.
+
+    🔴 인증된 Polygon 요청 **직전에** 부른다. 페이싱 없이 달리면 429가 섞여
+    들어오는데, 429는 "권한 없음"과 모양이 다르지만 **판정 불가**라는 점에서
+    같은 자리를 차지한다 — 경계를 재는 중이면 그 한 칸이 결과를 바꾼다.
+
+    미인증 음성 대조(401 확인)는 세지 않는다. 쿼터를 소모하지 않는 것으로
+    보이지만 **미확인**이라, 세지 않는 쪽이 틀렸다면 이 함수가 과소 대기한다.
+    """
+    now = time.monotonic()
+    _POLYGON_CALL_TIMES[:] = [t for t in _POLYGON_CALL_TIMES if now - t < 60]
+    if len(_POLYGON_CALL_TIMES) >= POLYGON_CALLS_PER_MIN:
+        wait = 60 - (now - _POLYGON_CALL_TIMES[0]) + 1
+        print(f"  · 분당 호출 제한 대기 {wait:.0f}s")
+        time.sleep(wait)
+        now = time.monotonic()
+        _POLYGON_CALL_TIMES[:] = [t for t in _POLYGON_CALL_TIMES if now - t < 60]
+    _POLYGON_CALL_TIMES.append(time.monotonic())
+
+
 def recent_weekday(back_days: int = 5) -> date:
     """최근의 평일 하나를 돌려준다(거래일 추정용).
 
@@ -250,6 +285,7 @@ def probe_prices(session: requests.Session, api_key: str) -> int:
     print(f"\n③ 본 요청 — {probe_day.isoformat()}")
     payload: dict[str, Any] = {}
     for _ in range(5):
+        pace_polygon()
         response, err = get(session, url, {"adjusted": "true"}, auth)
         if response is None:
             print(f"  ✗ 네트워크 실패: {err} → 판정 불가")
@@ -293,6 +329,7 @@ def probe_prices(session: requests.Session, api_key: str) -> int:
     today = datetime.now(tz=timezone.utc).date()
     sunday = today - timedelta(days=(today.weekday() + 1) % 7 or 7)
     closed_url = f"{POLYGON_BASE}{POLYGON_GROUPED_PATH}/{sunday.isoformat()}"
+    pace_polygon()
     closed, err = get(session, closed_url, {"adjusted": "true"}, auth)
     if closed is None or not closed.ok:
         code = closed.status_code if closed is not None else err
@@ -309,30 +346,78 @@ def probe_prices(session: requests.Session, api_key: str) -> int:
 
     # ── ⑤ 🔴 과거 경계 측정 — 이 값이 PARTITION_START_DATE를 정한다 ──────
     print("\n⑤ 과거 경계 (파티션 시작일의 근거)")
-    oldest_ok: date | None = None
-    for years in POLYGON_LOOKBACK_PROBE_YEARS:
-        past = recent_weekday(back_days=365 * years + 5)
-        past_url = f"{POLYGON_BASE}{POLYGON_GROUPED_PATH}/{past.isoformat()}"
-        past_response, err = get(session, past_url, {"adjusted": "true"}, auth)
-        label = f"  {years}년 전 {past.isoformat()}:"
-        if past_response is None:
-            print(f"{label} 네트워크 실패({err})")
-            continue
-        if past_response.status_code in (401, 403):
-            print(f"{label} {past_response.status_code} 권한 없음")
-            continue
-        if not past_response.ok:
-            print(f"{label} {past_response.status_code}")
-            continue
-        count = past_response.json().get("resultsCount", 0)
-        print(f"{label} {count:,}건")
-        if count:
-            oldest_ok = past
-    if oldest_ok is None:
-        print("  ⚠ 과거 경계를 재지 못했다 — **미확인**. 시작일을 보수적으로 잡는다")
+
+    def classify(day: date) -> str:
+        """그날의 조회 결과를 ok/denied/empty/unknown으로 가른다.
+
+        🔴 `empty`(200 + 0건)를 `denied`로 읽지 않는다. 공휴일도 0건이라
+        둘을 섞으면 경계가 휴일 쪽으로 밀린다 — 값은 그럴듯하고 틀렸다.
+
+        Args:
+            day: 질의할 날짜.
+
+        Returns:
+            "ok" | "denied" | "empty" | "unknown".
+        """
+        pace_polygon()
+        probe_url = f"{POLYGON_BASE}{POLYGON_GROUPED_PATH}/{day.isoformat()}"
+        resp, fail = get(session, probe_url, {"adjusted": "true"}, auth)
+        if resp is None:
+            print(f"  {day.isoformat()}: 네트워크 실패({fail}) → 미확인")
+            return "unknown"
+        if resp.status_code in (401, 403):
+            print(f"  {day.isoformat()}: {resp.status_code} 권한 없음")
+            return "denied"
+        if not resp.ok:
+            print(f"  {day.isoformat()}: {resp.status_code} → 미확인")
+            return "unknown"
+        count = resp.json().get("resultsCount", 0)
+        print(f"  {day.isoformat()}: {count:,}건")
+        return "ok" if count else "empty"
+
+    def classify_near(day: date) -> str:
+        """휴장일을 피해 최대 3영업일 물러나며 판정한다."""
+        for _ in range(3):
+            verdict = classify(day)
+            if verdict != "empty":
+                return verdict
+            day -= timedelta(days=1)
+            while day.weekday() >= 5:
+                day -= timedelta(days=1)
+        return "unknown"
+
+    budget = POLYGON_LOOKBACK_BUDGET
+    far = recent_weekday(back_days=POLYGON_LOOKBACK_MAX_DAYS)
+    near = probe_day  # ③에서 데이터가 있음이 확인된 날
+    far_verdict = classify_near(far)
+    budget -= 1
+    if far_verdict == "ok":
+        print(f"  → {far.isoformat()}까지 열려 있다 — 경계가 탐색 범위 밖이다")
+        print("    PARTITION_START_DATE는 이 날짜 이후 아무 데나 잡아도 된다")
+    elif far_verdict != "denied":
+        print("  ⚠ 먼 쪽을 판정하지 못했다 — 경계는 **미확인**이다")
     else:
-        print(f"  → 확인된 최고령 조회 가능일: **{oldest_ok.isoformat()}**")
-        print("    PARTITION_START_DATE를 이 날짜 **이후**로 잡는다(리터럴 고정)")
+        # 이분 탐색: (denied, ok] 구간을 해상도까지 좁힌다.
+        lo, hi = far, near
+        while (hi - lo).days > POLYGON_LOOKBACK_RESOLUTION_DAYS and budget > 0:
+            mid = lo + timedelta(days=(hi - lo).days // 2)
+            while mid.weekday() >= 5:
+                mid -= timedelta(days=1)
+            verdict = classify_near(mid)
+            budget -= 1
+            if verdict == "ok":
+                hi = mid
+            elif verdict == "denied":
+                lo = mid
+            else:
+                print("  ⚠ 중간점 판정 불가 — 탐색을 중단한다")
+                break
+        gap = (hi - lo).days
+        print(f"  → 경계는 {lo.isoformat()} ~ {hi.isoformat()} 사이 (폭 {gap}일)")
+        print(f"    PARTITION_START_DATE는 **{hi.isoformat()} 이후**로 잡는다")
+        print("    (리터럴로 고정한다 — 계산식은 파티션 집합을 매일 밀어낸다)")
+        print("    ⚠️ 이것은 경계의 **상한**이다 — 더 이른 날짜가 열려 있을 수 있고,")
+        print("       그만큼은 이 탐색의 해상도가 버린 것이다(잔여 폭 위에 적힌 값).")
 
     print(f"\n{'=' * 64}\n✓ [시세] 통과")
     return EXIT_OK
@@ -367,7 +452,12 @@ def probe_news(session: requests.Session, api_key: str) -> int:
     # 🔴 이것이 RSS와 갈리는 지점이다. 날짜로 질의되면 롤링 윈도우 유실이 없고
     #    **append가 아니라 일자 파티션 교체**로 갈 수 있다(멱등·백필 가능).
     probe_day = recent_weekday()
-    print(f"\n② 본 요청 — published_utc {probe_day.isoformat()} 하루")
+    print(f"\n② 본 요청 — published_utc {probe_day.isoformat()} 하루 (최신순)")
+    # 🔴 **내림차순으로 받는다.** 오름차순 첫 페이지는 그날 **이른 시간대만** 담아
+    #    ③의 "마감 후 기사" 집계를 0으로 만든다 — 실측에서 실제로 그랬고, 그 0을
+    #    데이터의 성질로 읽었다면 세션 배정 모델을 불필요하다고 판단했을 것이다.
+    #    페이징이 걸린 집계는 **모집단이 페이지지 하루가 아니다.**
+    pace_polygon()
     response, err = get(
         session,
         url,
@@ -376,7 +466,7 @@ def probe_news(session: requests.Session, api_key: str) -> int:
             "published_utc.lt": f"{(probe_day + timedelta(days=1)).isoformat()}"
             "T00:00:00Z",
             "limit": "50",
-            "order": "asc",
+            "order": "desc",
             "sort": "published_utc",
         },
         auth,
@@ -434,10 +524,16 @@ def probe_news(session: requests.Session, api_key: str) -> int:
     print(f"  ✓ 최초 {unique[0]} · 최종 {unique[-1]}")
 
     # 🔴 세션 경계를 넘는 기사가 실재하는지 — 누수 방지 설계의 존재 이유.
+    # 🔴 **계측 단위**: 아래 수는 "그날 전체"가 아니라 **최신순 첫 페이지**를 센다.
+    #    내림차순이라 마감 후 기사가 있다면 이 페이지에 반드시 들어오므로,
+    #    ">0"은 실재의 증거가 된다. 그러나 "0"은 "그날 없었다"가 아니라
+    #    "이 페이지에 없었다"이다 — 두 방향의 강도가 다르다.
     after_close = [s for s in stamps if s[11:16] >= "20:00"]
-    print(f"    20:00Z(=16:00 ET) 이후 발행 {len(after_close)}건")
+    print(f"    20:00Z(=16:00 ET) 이후 {len(after_close)}건 / 최신 {len(stamps)}건 중")
     if after_close:
         print("    → 장 마감 후 기사가 실재한다. 세션 배정 모델이 반드시 필요하다")
+    else:
+        print("    ⚠ 이 페이지에는 없다 — 그날 없었다는 뜻이 아니다(모집단=페이지)")
 
     # ── ④ 티커 태그 ─────────────────────────────────────────────────────
     print("\n④ 티커 태그 (조인 키)")
