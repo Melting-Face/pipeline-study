@@ -83,7 +83,7 @@ cp .env.example .env
 ```
 
 [`.env.example`](../.env.example)이 키·형식의 정본이고 각 키의 의도가 주석으로 붙어 있다.
-그룹은 여덟이다(아래 표의 행 수 — 세는 대상은 *키*가 아니라 *그룹*이다).
+그룹은 아홉이다(아래 표의 행 수 — 세는 대상은 *키*가 아니라 *그룹*이다).
 
 | 그룹 | 무엇을 가리키나 |
 | --- | --- |
@@ -95,6 +95,7 @@ cp .env.example .env
 | `SPARK_REMOTE` · `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` | dbt-spark ↔ Spark Connect 접속 |
 | `AWS_*_CHECKSUM_*` | SeaweedFS 호환(§8 참조) |
 | `PHYSIONET_*` | 원천 획득 — MIMIC-IV·eICU 다운로드 계정(개인 DUA 크리덴셜) |
+| `POLYGON_API_KEY` · `FRED_API_KEY` | 원천 획득 — 시장 데이터 API 키(§6-2) |
 
 비밀값은 **§3을 돌린 뒤** 클러스터 Secret에서 꺼내 채운다(그래서 `.env` 완성은 §3 이후다).
 
@@ -342,6 +343,9 @@ uv run scripts/iceberg_changelog_probe.py   # Iceberg changelog 판독
 
 # 외부(physionet.org) 접속 — 원천 획득을 처음 켜기 직전
 uv run scripts/physionet_access_probe.py    # 인증 방식·무결성 정본 판정
+
+# 외부(시장 데이터 API) 접속 — 시세·뉴스·경제지표 자산을 처음 켜기 직전
+uv run scripts/stock_source_access_probe.py --source all   # 키 유효성·응답 계약 판정
 ```
 
 > 🔴 **`spark_connect_smoke.py`의 종료코드는 셋이다** — `0`=통과 / `1`=회귀 /
@@ -376,6 +380,23 @@ uv run scripts/physionet_access_probe.py    # 인증 방식·무결성 정본 �
 > 접근이 막혔을 때의 폴백은 로컬 파일 미러다(이미 받아둔 파일이 있을 때도 이쪽이 빠르다).
 > `uv run scripts/upload_raw_to_seaweedfs.py -n ./data/raw`로 먼저 목록을 확인한 뒤 `-n`을 뺀다.
 > 로컬 구조가 곧 S3 구조이므로 `./data/raw/mimiciv/icu/...` 형태로 둔다.
+
+## 6-2. 시장 데이터 원천 (API 키 발급)
+
+주식예측 파이프라인(`defs/polygon_market`·`defs/fred_calendar`)은 두 곳에서 키를 받아야 돈다.
+둘 다 무료 플랜이 있고 카드 등록을 요구하지 않으며, 발급은 심사 없이 즉시다.
+
+| 사이트 | `.env` 키 | 무엇에 쓰나 |
+| --- | --- | --- |
+| Polygon.io — Dashboard → API Keys | `POLYGON_API_KEY` | 일별 시세·뉴스 |
+| FRED — `fredaccount.stlouisfed.org/apikeys` | `FRED_API_KEY` | 경제지표 관측치·릴리스 일정 |
+
+값을 `.env`에 채운 뒤 `uv run scripts/stock_source_access_probe.py --source all`로 판정한다(§6).
+**종료코드 `0`이어야 자산을 켠다.** 키가 없어도 정의 로드는 성공하고 해당 자산 실행에서만
+실패하므로 다른 데이터셋은 계속 돈다.
+
+발급 절차·무료 플랜의 한계·재배포 제한·뉴스 축 폴백은
+[`setup/market-data-keys.md`](setup/market-data-keys.md)가 정본이다.
 
 ## 7. 노트북 (옵션)
 
