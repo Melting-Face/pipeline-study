@@ -54,6 +54,7 @@ GROUPED_PAYLOAD = {
             "l": 508.25,
             "c": 512.75,
             "v": 18_400_000,
+            "vw": 511.9,
             "t": 1790136000000,
             "n": 210_000,
         },
@@ -64,6 +65,7 @@ GROUPED_PAYLOAD = {
             "l": 249.1,
             "c": 252.8,
             "v": 44_100_000,
+            "vw": 251.3,
             "t": 1790136000000,
             "n": 480_000,
         },
@@ -107,6 +109,38 @@ def test_grouped_maps_bars_into_rows() -> None:
     assert table.schema == OHLCV_SCHEMA
     assert table.column("close").to_pylist() == [252.8, 512.75]
     assert table.column("volume").to_pylist() == [44_100_000.0, 18_400_000.0]
+
+
+def test_grouped_keeps_vwap_and_trade_count() -> None:
+    """VWAP(`vw`)과 거래 건수(`n`)를 버리지 않는다.
+
+    🔴 이 두 컬럼은 **지금 담지 않으면 영구히 잃는다.** 무료 플랜의 과거 범위가
+    롤링 윈도우라(프로브 실측) 나중에 컬럼을 추가해 재적재하려 할 때는 초기
+    파티션이 이미 권한 밖으로 밀려나 있다. 필수 필드는 아니지만 **버리는 비용이
+    비대칭**이라 받아 둔다.
+    """
+    table = _grouped_to_arrow(GROUPED_PAYLOAD, TRADE_DATE, INGESTED_AT)
+
+    assert table.column("vwap").to_pylist() == [251.3, 511.9]
+    assert table.column("trade_count").to_pylist() == [480_000, 210_000]
+
+
+def test_grouped_tolerates_missing_vwap_and_trade_count() -> None:
+    """`vw`·`n`이 없으면 null로 담고 행은 버리지 않는다.
+
+    필수 필드(`REQUIRED_BAR_FIELDS`)와 축이 다르다 — 이 둘이 없어도 OHLCV
+    레코드는 성립하므로 KeyError로 멈추지 않는다.
+    """
+    bar = {
+        k: v for k, v in GROUPED_PAYLOAD["results"][0].items() if k not in ("vw", "n")
+    }
+    table = _grouped_to_arrow(
+        {"status": "OK", "resultsCount": 1, "results": [bar]}, TRADE_DATE, INGESTED_AT
+    )
+
+    assert table.num_rows == 1
+    assert table.column("vwap").to_pylist() == [None]
+    assert table.column("trade_count").to_pylist() == [None]
 
 
 def test_grouped_sorts_by_ticker() -> None:

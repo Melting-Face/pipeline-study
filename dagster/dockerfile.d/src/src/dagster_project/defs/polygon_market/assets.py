@@ -23,10 +23,36 @@
 `from __future__ import annotations`(어노테이션 문자열화)를 사용하지 않는다.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import pyarrow as pa
+from dagster_iceberg.resource import IcebergTableResource
+
+import dagster as dg
+from dagster import AssetExecutionContext
+from dagster_project.common.helper import replace_partition_in_iceberg
+from dagster_project.common.polygon import PolygonResource
+from dagster_project.defs.polygon_market.constants import (
+    GROUP_NAME,
+    GROUPED_DAILY_PATH,
+    NEWS_PAGE_LIMIT,
+    NEWS_PATH,
+    PARTITION_START_DATE,
+    PARTITION_TIMEZONE,
+)
+
+# 일자 파티션. 시작일 리터럴 고정·타임존 UTC의 근거는 constants.py 주석 참조
+# (둘 다 조용히 어긋나는 축이고, 시작일은 프로브 실측값이다).
+DAILY_PARTITIONS = dg.DailyPartitionsDefinition(
+    start_date=PARTITION_START_DATE,
+    timezone=PARTITION_TIMEZONE,
+)
+
+# 뉴스 페이징 상한. 🔴 `while next_url`을 무한히 돌리지 않는다 — 원천이 커서를
+# 잘못 주면 같은 페이지를 영원히 받으며 쿼터만 태운다. 상한에 닿으면 조용히
+# 끊지 않고 **실패**시킨다(잘린 파티션을 정상으로 적재하는 것이 더 비싸다).
+NEWS_MAX_PAGES = 20
 
 # 🔴 **프로브와 짝을 이루는 상수다.**
 # `scripts/stock_source_access_probe.py`의 `POLYGON_BAR_FIELDS`·`POLYGON_NEWS_FIELDS`와
@@ -63,6 +89,11 @@ OHLCV_SCHEMA = pa.schema(
         ("low", pa.float64()),
         ("close", pa.float64()),
         ("volume", pa.float64()),
+        # 🔴 필수는 아니지만 **버리는 비용이 비대칭이라** 받아 둔다.
+        # 무료 플랜의 과거 범위가 롤링 윈도우여서(프로브 실측), 나중에 컬럼을
+        # 추가해 재적재하려 하면 **초기 파티션은 이미 권한 밖**이다. 없으면 null.
+        ("vwap", pa.float64()),
+        ("trade_count", pa.int64()),
         # 처리시간(수집 시각).
         ("ingested_at", pa.timestamp("us", tz="UTC")),
     ]
@@ -148,6 +179,9 @@ def _grouped_to_arrow(
             "low": float(bar["l"]),
             "close": float(bar["c"]),
             "volume": float(bar["v"]),
+            # `.get()`으로 받는다 — 없어도 레코드가 성립한다(필수 축과 다르다).
+            "vwap": None if bar.get("vw") is None else float(bar["vw"]),
+            "trade_count": None if bar.get("n") is None else int(bar["n"]),
             "ingested_at": ingested_at,
         }
         # 티커로 정렬해 담는다 — 같은 파티션을 다시 받아도 행 순서가 흔들리지 않아
@@ -221,3 +255,141 @@ def _parse_published_utc(raw: str) -> datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+@dg.asset(
+    group_name=GROUP_NAME,
+    partitions_def=DAILY_PARTITIONS,
+    kinds={"python", "iceberg", "bronze"},
+)
+def equity_ohlcv_daily(
+    context: AssetExecutionContext,
+    polygon: PolygonResource,
+    polygon_market_ohlcv_table: IcebergTableResource,
+) -> dg.MaterializeResult:
+    """하루치 전 미국 티커 OHLCV를 bronze 테이블에 파티션 단위로 적재한다.
+
+    같은 파티션을 여러 번 실행해도 **행 수가 늘지 않는다**(멱등). 원천이 하루를
+    한 번의 호출로 주므로 파티션당 요청이 1건이고, 그날 거래된 종목 전체가 응답
+    그 자체라 **별도 유니버스 자산이 필요 없다.**
+
+    🔴 **휴장일은 0행이고 그것이 정상이다.** 그래도 교체를 건너뛰지 않는다 —
+    이전 실행이 잘못된 값을 넣어 뒀다면 지워야 하기 때문이다(멱등의 일부).
+    """
+    trade_date = context.partition_key
+    ingested_at = datetime.now(tz=timezone.utc)
+
+    payload = polygon.fetch(f"{GROUPED_DAILY_PATH}/{trade_date}", {"adjusted": "true"})
+    arrow = _grouped_to_arrow(payload, trade_date, ingested_at)
+
+    # 🔴 원천이 에코한 날짜 집합. 휴장일 대체를 드러내는 유일한 관측점이다.
+    source_dates = sorted(set(arrow.column("source_date").to_pylist()))
+    results_count = payload.get("resultsCount")
+    context.log.info(
+        "OHLCV %s: %d rows (resultsCount=%s)", trade_date, arrow.num_rows, results_count
+    )
+
+    return replace_partition_in_iceberg(
+        context,
+        iceberg_table=polygon_market_ohlcv_table,
+        arrow=arrow,
+        partition_column="trade_date",
+        partition_value=trade_date,
+        extra_metadata={
+            # 🔴 응답이 스스로 신고한 수와 우리가 담은 행 수를 나란히 둔다 —
+            # 조용한 잘림(페이징 누락 등)은 이 둘이 갈릴 때만 드러난다.
+            "results_count": results_count,
+            "source_dates": ", ".join(source_dates) or "(없음)",
+            # 🔴 판정하지 않고 값만 남긴다(data-quality **관측** 등급).
+            "date_matches_request": dg.MetadataValue.bool(
+                source_dates in ([trade_date], [])
+            ),
+            "is_trading_day": dg.MetadataValue.bool(arrow.num_rows > 0),
+            "api_requests": 1,
+        },
+    )
+
+
+@dg.asset(
+    group_name=GROUP_NAME,
+    partitions_def=DAILY_PARTITIONS,
+    kinds={"python", "iceberg", "bronze"},
+)
+def news_articles(
+    context: AssetExecutionContext,
+    polygon: PolygonResource,
+    polygon_market_news_table: IcebergTableResource,
+) -> dg.MaterializeResult:
+    """하루치 뉴스 메타데이터를 bronze 테이블에 파티션 단위로 적재한다.
+
+    🔴 **페이징을 끝까지 따라간다.** 원천이 하루에 `NEWS_PAGE_LIMIT`을 넘는 기사를
+    주면 첫 페이지만 담는 것은 **조용한 유실**이다 — 행은 생기고 수만 모자라서
+    어디서도 에러가 나지 않는다. 상한에 닿으면 끊지 않고 실패시킨다.
+
+    🔴 **장 마감 이후 기사를 버리지 않는다.** 그 기사들이 세션 배정 모델이 필요한
+    이유이고(실측: 최신 50건 중 45건이 20:00Z 이후), bronze에서 걸러내면 silver의
+    누수 검사 모집단이 비어 **게이트가 0건으로 조용히 통과**한다.
+    """
+    published_date = context.partition_key
+    ingested_at = datetime.now(tz=timezone.utc)
+    start = date.fromisoformat(published_date)
+    end = start + timedelta(days=1)
+
+    # 정렬은 오름차순으로 고정한다 — 커서 페이징이 안정적이고, 전 페이지를 받으므로
+    # 정렬 방향이 결과를 바꾸지 않는다(프로브는 페이지 편향을 피하려고 내림차순을 쓴다).
+    payload = polygon.fetch(
+        NEWS_PATH,
+        {
+            "published_utc.gte": f"{start.isoformat()}T00:00:00Z",
+            "published_utc.lt": f"{end.isoformat()}T00:00:00Z",
+            "limit": str(NEWS_PAGE_LIMIT),
+            "order": "asc",
+            "sort": "published_utc",
+        },
+    )
+    results = list(payload.get("results") or [])
+    pages = 1
+    next_url = payload.get("next_url")
+    while next_url:
+        if pages >= NEWS_MAX_PAGES:
+            message = (
+                f"{published_date}: 뉴스 페이지가 상한 {NEWS_MAX_PAGES}을 넘었다 — "
+                "커서가 끝나지 않는다. 잘린 파티션을 정상으로 적재하지 않는다."
+            )
+            raise RuntimeError(message)
+        payload = polygon.fetch_next(next_url)
+        results.extend(payload.get("results") or [])
+        pages += 1
+        next_url = payload.get("next_url")
+
+    arrow = _news_to_arrow({"results": results}, published_date, ingested_at)
+
+    stamps = arrow.column("published_at").to_pylist()
+    # ⚠️ 20:00Z는 **EDT 기준 마감**이다(EST면 21:00Z). 정확한 세션 경계는 silver의
+    # `trading_calendar`가 DST까지 반영해 정하고, 여기서는 **관측만** 한다 —
+    # 이 수가 0이면 누수 검사의 모집단이 비었다는 신호다.
+    after_close = sum(1 for stamp in stamps if stamp.hour >= 20)
+    tagged = sum(1 for row in arrow.column("tickers").to_pylist() if row)
+    context.log.info(
+        "뉴스 %s: %d건 / %d페이지 (마감후 %d)",
+        published_date,
+        arrow.num_rows,
+        pages,
+        after_close,
+    )
+
+    return replace_partition_in_iceberg(
+        context,
+        iceberg_table=polygon_market_news_table,
+        arrow=arrow,
+        partition_column="published_date",
+        partition_value=published_date,
+        extra_metadata={
+            "pages": pages,
+            "api_requests": pages,
+            # 🔴 관측 셀 — 누수 방지 설계가 겨냥하는 모집단의 크기다.
+            "after_session_close_approx": after_close,
+            "with_ticker_tags": tagged,
+            "distinct_published_at": len({stamp.isoformat() for stamp in stamps}),
+        },
+    )

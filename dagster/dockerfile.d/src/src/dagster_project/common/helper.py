@@ -216,6 +216,7 @@ def _request(
     *,
     timeout_s: int,
     retries: int,
+    headers: dict[str, str] | None = None,
 ) -> requests.Response:
     """공개 API를 GET하고 성공 응답을 반환한다(429·5xx만 백오프 재시도).
 
@@ -226,11 +227,15 @@ def _request(
     ⚠️ **크리덴셜을 쿼리 파라미터로 받는 API에는 이 함수를 그대로 쓰지 않는다.**
     `requests`의 `HTTPError`·`ConnectionError` 메시지에는 **쿼리스트링을 포함한
     전체 URL**이 담겨, 4xx 한 번에 키가 Dagster 이벤트 로그에 평문으로 박힌다.
-    현재 호출자(USGS 수문·Frankfurter 환율)는 **둘 다 무인증**이라 이 축이
-    열려 있지 않다 — 키가 필요한 원천을 붙일 때 예외 재포장·마스킹을 함께 넣는다.
+    ⇒ 그래서 **`headers`가 있다.** 키를 헤더로 보내는 API(예: Polygon의
+    `Authorization: Bearer`)는 쿼리스트링에 크리덴셜이 실리지 않아 이 축이 아예
+    닫힌다. 키가 필요한 원천은 **가능하면 헤더 경로를 고르고**, 쿼리 파라미터뿐인
+    원천(예: FRED `?api_key=`)만 호출부에서 예외 재포장·마스킹을 함께 넣는다.
+
+    ⚠️ `headers`는 **재시도마다 그대로 다시 보낸다.** 일회용 토큰에는 맞지 않는다.
     """
     for attempt in range(retries + 1):
-        response = requests.get(url, params=params, timeout=timeout_s)
+        response = requests.get(url, params=params, headers=headers, timeout=timeout_s)
         if response.ok:
             return response
 
@@ -254,9 +259,15 @@ def fetch_json(
     *,
     timeout_s: int = 30,
     retries: int = 3,
+    headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """공개 API에서 JSON을 받아 파싱해 반환한다."""
-    return _request(url, params, timeout_s=timeout_s, retries=retries).json()
+    """공개 API에서 JSON을 받아 파싱해 반환한다.
+
+    `headers`는 키를 헤더로 보내는 원천용이다 — 근거는 `_request` 독스트링.
+    """
+    return _request(
+        url, params, timeout_s=timeout_s, retries=retries, headers=headers
+    ).json()
 
 
 def fetch_text(

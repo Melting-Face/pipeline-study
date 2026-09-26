@@ -32,10 +32,12 @@ from dagster_project.common.constants import (
 )
 from dagster_project.common.dbt import build_dbt_resource
 from dagster_project.common.physionet import PhysioNetResource
+from dagster_project.common.polygon import PolygonResource
 from dagster_project.common.trino import TrinoResource
 from dagster_project.defs.eicu.constants import NAMESPACE as EICU_NS
 from dagster_project.defs.frankfurter_fx.constants import NAMESPACE as FRANKFURTER_FX_NS
 from dagster_project.defs.mimic_iv.constants import NAMESPACE as MIMICIV_NS
+from dagster_project.defs.polygon_market.constants import NAMESPACE as POLYGON_MARKET_NS
 from dagster_project.defs.usgs_water.constants import NAMESPACE as USGS_WATER_NS
 
 
@@ -63,6 +65,11 @@ def resources() -> dg.Definitions:
                 username=dg.EnvVar("PHYSIONET_USERNAME"),
                 password=dg.EnvVar("PHYSIONET_PASSWORD"),
             ),
+            # 원천 획득: Polygon(Massive) 시장 데이터(시세·뉴스).
+            # 🔴 같은 이유로 `dg.EnvVar`다 — 키가 없는 webserver에서도 정의가 뜬다.
+            # 🔴 키는 `Authorization: Bearer` **헤더**로 나가 URL에 실리지 않는다
+            #    (common/polygon.py — helper._request의 쿼리 파라미터 경고 참조).
+            "polygon": PolygonResource(api_key=dg.EnvVar("POLYGON_API_KEY")),
             "dbt": build_dbt_resource(),
             # Spark Connect 접속(Iceberg 유지보수 프로시저용 — defs/maintenance.py).
             # 카탈로그 설정은 **서버 측**에 있어 여기엔 주소만 온다(비밀정보 비노출).
@@ -209,6 +216,45 @@ def resources() -> dg.Definitions:
                 name=CATALOG_NAME,
                 namespace=FRANKFURTER_FX_NS,
                 table="fx_rates_daily",
+                config=IcebergCatalogConfig(
+                    properties={
+                        "type": "sql",
+                        "uri": ICEBERG_CATALOG_URI,
+                        "warehouse": WAREHOUSE,
+                        "s3.endpoint": S3_ENDPOINT,
+                        "s3.access-key-id": S3_ACCESS_KEY_ID,
+                        "s3.secret-access-key": S3_SECRET_ACCESS_KEY,
+                        "s3.region": AWS_REGION,
+                        "s3.path-style-access": "true",
+                    }
+                ),
+            ),
+            # Polygon 시세 bronze. 일자 파티션 교체라 IO 매니저를 쓰지 않는다
+            # (근거는 위 frankfurter 주석과 같다).
+            "polygon_market_ohlcv_table": IcebergTableResource(
+                name=CATALOG_NAME,
+                namespace=POLYGON_MARKET_NS,
+                table="equity_ohlcv_daily",
+                config=IcebergCatalogConfig(
+                    properties={
+                        "type": "sql",
+                        "uri": ICEBERG_CATALOG_URI,
+                        "warehouse": WAREHOUSE,
+                        "s3.endpoint": S3_ENDPOINT,
+                        "s3.access-key-id": S3_ACCESS_KEY_ID,
+                        "s3.secret-access-key": S3_SECRET_ACCESS_KEY,
+                        "s3.region": AWS_REGION,
+                        "s3.path-style-access": "true",
+                    }
+                ),
+            ),
+            # Polygon 뉴스 bronze. 🔴 **append가 아니라 파티션 교체다** — 원천이
+            # `published_utc` 날짜 구간 질의를 지원해 RSS의 롤링 윈도우 유실 축이
+            # 없고, 그래서 재실행이 행 수를 늘리지 않는다.
+            "polygon_market_news_table": IcebergTableResource(
+                name=CATALOG_NAME,
+                namespace=POLYGON_MARKET_NS,
+                table="news_articles",
                 config=IcebergCatalogConfig(
                     properties={
                         "type": "sql",

@@ -8,10 +8,15 @@
   테이블이 15분마다 재적재된다.
 - Frankfurter 환율 잡·스케줄 1쌍 — **파티션 잡이라 스케줄을 직접 쓰지 않고
   파티션 정의에서 파생**시킨다(아래).
+- Polygon 시장 데이터 잡·스케줄 **2쌍**(시세·뉴스) — 같은 원천·같은 주기라도
+  요청 예산이 달라 분리한다(아래 주석). 둘 다 파티션 잡이다.
 """
 
 import dagster as dg
 from dagster_project.defs.frankfurter_fx.constants import SCHEDULE_HOUR_UTC
+from dagster_project.defs.polygon_market.constants import (
+    SCHEDULE_HOUR_UTC as POLYGON_SCHEDULE_HOUR_UTC,
+)
 
 dbt_all_job = dg.define_asset_job(
     "dbt_all_job",
@@ -99,5 +104,41 @@ frankfurter_fx_rates_schedule = dg.build_schedule_from_partitioned_job(
     name="frankfurter_fx_rates_schedule",
     hour_of_day=SCHEDULE_HOUR_UTC,
     # 외부 API를 주기 호출하므로 기본 정지. 켜는 시점은 사람이 정한다.
+    default_status=dg.DefaultScheduleStatus.STOPPED,
+)
+
+# ── Polygon(Massive) 시장 데이터 적재 ────────────────────────────────────────
+# 선언 방식은 위 Frankfurter와 같다(파티션 잡 → 스케줄 파생, 타임존은
+# `polygon_market/constants.py`의 `PARTITION_TIMEZONE`이 명시).
+#
+# 🔴 **잡을 둘로 나눈다.** 시세와 뉴스는 같은 원천·같은 주기·같은 파티션인데도
+# 한 잡으로 묶지 않는다 — 뉴스는 페이징이 걸려 요청 수가 하루치마다 다르고,
+# 한쪽이 상한 초과로 실패할 때 다른 쪽까지 되돌리면 **멀쩡한 시세를 다시 받아야
+# 한다**(요청 예산이 곧 비용이다). 같은 이유로 `usgs_water`도 두 쌍이다.
+#
+# ⚠️ **무료 플랜은 분당 호출 수가 제한된다.** 백필은 파티션당 1요청(뉴스는 N요청)
+# 이므로 **동시 실행 수가 곧 순간 요청 수**다 — 대량 백필 전에
+# `max_concurrent_runs`를 함께 본다(docs/resource-sizing.md).
+polygon_equity_ohlcv_job = dg.define_asset_job(
+    "polygon_equity_ohlcv_job",
+    selection=dg.AssetSelection.assets("equity_ohlcv_daily"),
+)
+
+polygon_equity_ohlcv_schedule = dg.build_schedule_from_partitioned_job(
+    polygon_equity_ohlcv_job,
+    name="polygon_equity_ohlcv_schedule",
+    hour_of_day=POLYGON_SCHEDULE_HOUR_UTC,
+    default_status=dg.DefaultScheduleStatus.STOPPED,
+)
+
+polygon_news_job = dg.define_asset_job(
+    "polygon_news_job",
+    selection=dg.AssetSelection.assets("news_articles"),
+)
+
+polygon_news_schedule = dg.build_schedule_from_partitioned_job(
+    polygon_news_job,
+    name="polygon_news_schedule",
+    hour_of_day=POLYGON_SCHEDULE_HOUR_UTC,
     default_status=dg.DefaultScheduleStatus.STOPPED,
 )
