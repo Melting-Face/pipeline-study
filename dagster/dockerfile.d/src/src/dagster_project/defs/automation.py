@@ -10,10 +10,19 @@
   파티션 정의에서 파생**시킨다(아래).
 - Polygon 시장 데이터 잡·스케줄 **2쌍**(시세·뉴스) — 같은 원천·같은 주기라도
   요청 예산이 달라 분리한다(아래 주석). 둘 다 파티션 잡이다.
+- FRED 경제지표 잡·스케줄 **2쌍** — 🔴 **선언 방식이 서로 다르다.** 릴리스 일정은
+  일자 파티션이라 파생시키지만, 관측치는 **정적 파티션(시리즈)** 이라 파생 함수를
+  쓸 수 없고 시리즈마다 `RunRequest`를 내는 스케줄을 직접 쓴다.
 """
+
+from collections.abc import Iterator
 
 import dagster as dg
 from dagster_project.defs.frankfurter_fx.constants import SCHEDULE_HOUR_UTC
+from dagster_project.defs.fred_calendar.constants import (
+    SCHEDULE_HOUR_UTC as FRED_SCHEDULE_HOUR_UTC,
+)
+from dagster_project.defs.fred_calendar.constants import SERIES_IDS
 from dagster_project.defs.polygon_market.constants import (
     SCHEDULE_HOUR_UTC as POLYGON_SCHEDULE_HOUR_UTC,
 )
@@ -140,5 +149,61 @@ polygon_news_schedule = dg.build_schedule_from_partitioned_job(
     polygon_news_job,
     name="polygon_news_schedule",
     hour_of_day=POLYGON_SCHEDULE_HOUR_UTC,
+    default_status=dg.DefaultScheduleStatus.STOPPED,
+)
+
+# ── FRED(ALFRED) 경제지표 적재 ───────────────────────────────────────────────
+# 🔴 **두 자산의 선언 방식이 또 다르다.** 릴리스 일정은 일자 파티션이라 위와 같이
+# 파생시키지만, 관측치는 **정적 파티션(시리즈)** 이라
+# `build_schedule_from_partitioned_job`을 쓸 수 없다 — 그 함수는 시간 윈도우
+# 파티션 전용이다. 시리즈마다 `RunRequest`를 내는 스케줄을 직접 쓴다.
+#
+# 파티션 키가 날짜가 아니므로 여기서는 `execution_timezone="Asia/Seoul"`이 **맞다** —
+# 파티션 키가 API의 날짜 파라미터로 나가는 축이 아예 없어서, 날짜 파티션 자산에서
+# 타임존을 UTC로 묶었던 이유가 여기엔 적용되지 않는다.
+fred_observations_job = dg.define_asset_job(
+    "fred_observations_job",
+    selection=dg.AssetSelection.assets("fred_series_observations"),
+)
+
+
+@dg.schedule(
+    job=fred_observations_job,
+    name="fred_observations_schedule",
+    cron_schedule="0 15 * * *",
+    execution_timezone="Asia/Seoul",
+    default_status=dg.DefaultScheduleStatus.STOPPED,
+)
+def fred_observations_schedule(
+    context: dg.ScheduleEvaluationContext,
+) -> Iterator[dg.RunRequest]:
+    """추적 중인 시리즈마다 run을 하나씩 낸다.
+
+    🔴 매 실행이 **구간 전체를 다시 받는다**(증분이 아니다). 개정은 과거 관측일의
+    vintage 구간을 쪼개므로, 뒤만 붙이면 이미 적재된 열린 구간이 닫히지 않고 남아
+    as-of 조인이 두 값을 집는다. 전량 교체가 그 축을 닫는다.
+
+    `run_key`에 날짜를 넣어 같은 tick이 두 번 평가돼도 중복 run이 생기지 않게 한다.
+
+    Args:
+        context: 스케줄 평가 컨텍스트(발화 시각을 run_key에 쓴다).
+
+    Yields:
+        시리즈별 `RunRequest`.
+    """
+    stamp = context.scheduled_execution_time.date().isoformat()
+    for series_id in SERIES_IDS:
+        yield dg.RunRequest(run_key=f"{stamp}-{series_id}", partition_key=series_id)
+
+
+fred_release_dates_job = dg.define_asset_job(
+    "fred_release_dates_job",
+    selection=dg.AssetSelection.assets("fred_release_dates"),
+)
+
+fred_release_dates_schedule = dg.build_schedule_from_partitioned_job(
+    fred_release_dates_job,
+    name="fred_release_dates_schedule",
+    hour_of_day=FRED_SCHEDULE_HOUR_UTC,
     default_status=dg.DefaultScheduleStatus.STOPPED,
 )

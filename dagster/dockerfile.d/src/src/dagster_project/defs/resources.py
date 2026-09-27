@@ -31,11 +31,13 @@ from dagster_project.common.constants import (
     WAREHOUSE,
 )
 from dagster_project.common.dbt import build_dbt_resource
+from dagster_project.common.fred import FredResource
 from dagster_project.common.physionet import PhysioNetResource
 from dagster_project.common.polygon import PolygonResource
 from dagster_project.common.trino import TrinoResource
 from dagster_project.defs.eicu.constants import NAMESPACE as EICU_NS
 from dagster_project.defs.frankfurter_fx.constants import NAMESPACE as FRANKFURTER_FX_NS
+from dagster_project.defs.fred_calendar.constants import NAMESPACE as FRED_CALENDAR_NS
 from dagster_project.defs.mimic_iv.constants import NAMESPACE as MIMICIV_NS
 from dagster_project.defs.polygon_market.constants import NAMESPACE as POLYGON_MARKET_NS
 from dagster_project.defs.usgs_water.constants import NAMESPACE as USGS_WATER_NS
@@ -70,6 +72,11 @@ def resources() -> dg.Definitions:
             # 🔴 키는 `Authorization: Bearer` **헤더**로 나가 URL에 실리지 않는다
             #    (common/polygon.py — helper._request의 쿼리 파라미터 경고 참조).
             "polygon": PolygonResource(api_key=dg.EnvVar("POLYGON_API_KEY")),
+            # 원천 획득: FRED(ALFRED) 경제지표.
+            # 🔴 Polygon과 달리 **키가 쿼리 파라미터로만** 나간다(헤더 인증이 없다).
+            #    그래서 `common/fred.py`가 예외를 `raise_masked`로 재포장한다 —
+            #    4xx 한 번에 키가 이벤트 로그에 평문으로 박히는 것을 막는다.
+            "fred": FredResource(api_key=dg.EnvVar("FRED_API_KEY")),
             "dbt": build_dbt_resource(),
             # Spark Connect 접속(Iceberg 유지보수 프로시저용 — defs/maintenance.py).
             # 카탈로그 설정은 **서버 측**에 있어 여기엔 주소만 온다(비밀정보 비노출).
@@ -255,6 +262,43 @@ def resources() -> dg.Definitions:
                 name=CATALOG_NAME,
                 namespace=POLYGON_MARKET_NS,
                 table="news_articles",
+                config=IcebergCatalogConfig(
+                    properties={
+                        "type": "sql",
+                        "uri": ICEBERG_CATALOG_URI,
+                        "warehouse": WAREHOUSE,
+                        "s3.endpoint": S3_ENDPOINT,
+                        "s3.access-key-id": S3_ACCESS_KEY_ID,
+                        "s3.secret-access-key": S3_SECRET_ACCESS_KEY,
+                        "s3.region": AWS_REGION,
+                        "s3.path-style-access": "true",
+                    }
+                ),
+            ),
+            # FRED 관측치 bronze. 🔴 파티션 축이 **날짜가 아니라 시리즈**라
+            # 교체 필터도 `series_id`다(근거는 fred_calendar/assets.py 독스트링).
+            "fred_calendar_observations_table": IcebergTableResource(
+                name=CATALOG_NAME,
+                namespace=FRED_CALENDAR_NS,
+                table="fred_series_observations",
+                config=IcebergCatalogConfig(
+                    properties={
+                        "type": "sql",
+                        "uri": ICEBERG_CATALOG_URI,
+                        "warehouse": WAREHOUSE,
+                        "s3.endpoint": S3_ENDPOINT,
+                        "s3.access-key-id": S3_ACCESS_KEY_ID,
+                        "s3.secret-access-key": S3_SECRET_ACCESS_KEY,
+                        "s3.region": AWS_REGION,
+                        "s3.path-style-access": "true",
+                    }
+                ),
+            ),
+            # FRED 릴리스 일정 bronze(일자 파티션).
+            "fred_calendar_releases_table": IcebergTableResource(
+                name=CATALOG_NAME,
+                namespace=FRED_CALENDAR_NS,
+                table="fred_release_dates",
                 config=IcebergCatalogConfig(
                     properties={
                         "type": "sql",

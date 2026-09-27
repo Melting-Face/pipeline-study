@@ -161,6 +161,20 @@ FRED_BASE = "https://api.stlouisfed.org/fred"
 FRED_VINTAGE_SERIES = "GDPC1"
 FRED_VINTAGE_OLD_DATE = "2015-06-01"
 
+# 🔴 **파서와 짝을 이루는 상수다**(`defs/fred_calendar/assets.py`).
+# `realtime_start`가 필수인 것이 이 원천의 급소다 — 빠지면 vintage 축이 사라지고
+# as-of 조인이 아무 값이나 집는다. 갈라짐은 AST 대조 테스트가 막는다.
+FRED_OBSERVATION_FIELDS = ("date", "realtime_end", "realtime_start", "value")
+FRED_RELEASE_FIELDS = ("date", "release_id", "release_name")
+
+FRED_OBSERVATION_KNOWN_FIELDS = ("date", "realtime_end", "realtime_start", "value")
+FRED_RELEASE_KNOWN_FIELDS = (
+    "date",
+    "release_id",
+    "release_last_updated",
+    "release_name",
+)
+
 # UA는 반드시 보낸다 — 기본 `python-requests/x.y`는 차단 대상이 되기 쉽다.
 # (SEC EDGAR 계열로 폴백할 경우 **연락처 포함 UA가 정책 요구사항**이다.
 #  실측: UA에 연락처가 없으면 403, 있으면 200 + application/atom+xml.)
@@ -639,11 +653,24 @@ def probe_fred(session: requests.Session) -> int:
     print(f"  ✓ {response.status_code} — 키를 실제로 검증한다")
 
     # ── ③ 본 요청: 릴리스 캘린더 ────────────────────────────────────────
-    print("\n③ 본 요청 — releases/dates")
+    # 🔴 **자산과 같은 요청 형태로 보낸다**(realtime을 하루로 고정).
+    #    지정하지 않으면 기본값(오늘~9999)으로 가는데, 그때는 응답에
+    #    `release_last_updated`가 **오지 않는다**(실측). 즉 필드 존재가 요청
+    #    파라미터에 달려 있어서, 프로브가 자산과 다른 요청을 보내면 계약 검사가
+    #    **자산이 실제로 받는 모양을 검사하지 않는다.** 통과가 의미를 잃는다.
+    as_of = recent_weekday().isoformat()
+    print(f"\n③ 본 요청 — releases/dates (realtime {as_of} 고정)")
     response, err = get(
         session,
         f"{FRED_BASE}/releases/dates",
-        {"file_type": "json", "limit": "5", "api_key": api_key},
+        {
+            "file_type": "json",
+            "limit": "5",
+            "api_key": api_key,
+            "realtime_start": as_of,
+            "realtime_end": as_of,
+            "include_release_dates_with_no_data": "true",
+        },
     )
     if response is None:
         print(f"  ✗ 네트워크 실패: {err} → 판정 불가")
@@ -664,6 +691,7 @@ def probe_fred(session: requests.Session) -> int:
         print(f"  ✗ 기대 필드 부재. 실제 키: {sorted(sample)} → 판정 불가")
         return EXIT_UNDETERMINED
     print(f"  ✓ {len(dates)}건 · 필드 {sorted(sample)}")
+    report_field_drift(sample, FRED_RELEASE_KNOWN_FIELDS)
     # 페이징 필요 여부 — 적재 자산이 limit을 넘기면 조용히 잘린다.
     print(f"  count={payload.get('count')} limit={payload.get('limit')}")
 
@@ -691,9 +719,16 @@ def probe_fred(session: requests.Session) -> int:
         print(f"  ✗ {old_response.status_code}/{new_response.status_code} → 판정 불가")
         return EXIT_UNDETERMINED
 
-    old_by_date = {
-        o["date"]: o["value"] for o in old_response.json().get("observations", [])
-    }
+    old_observations = old_response.json().get("observations", [])
+    if old_observations:
+        report_field_drift(old_observations[0], FRED_OBSERVATION_KNOWN_FIELDS)
+        missing_obs = [
+            f for f in FRED_OBSERVATION_FIELDS if f not in old_observations[0]
+        ]
+        if missing_obs:
+            print(f"  ✗ 필수 필드 누락 {missing_obs} → vintage 축이 깨진다. 판정 불가")
+            return EXIT_UNDETERMINED
+    old_by_date = {o["date"]: o["value"] for o in old_observations}
     new_by_date = {
         o["date"]: o["value"] for o in new_response.json().get("observations", [])
     }
@@ -711,7 +746,10 @@ def probe_fred(session: requests.Session) -> int:
     example = revised[0]
     print(f"  ✓ 예: {example}")
     print(f"    과거 {old_by_date[example]} → 현재 {new_by_date[example]}")
-    print("    → vintage 축이 실재한다. vintage_date 파티션 설계가 성립한다.")
+    print("    → vintage 축이 실재한다. as-of 조인 설계가 성립한다.")
+    print("      (파티션 축은 vintage 날짜가 아니라 **시리즈**다 — vintage 하루를")
+    print("       고정하면 전체 히스토리가 통째로 와서 저장이 2차로 증가한다.")
+    print("       realtime을 구간으로 주면 개정된 관측일만 여러 행이 된다.)")
 
     print(f"\n{'=' * 64}\n✓ [FRED] 통과")
     return EXIT_OK
