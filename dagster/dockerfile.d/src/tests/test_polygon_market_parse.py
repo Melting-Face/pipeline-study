@@ -41,8 +41,10 @@ INGESTED_AT = datetime(2026, 9, 25, 12, 0, tzinfo=timezone.utc)
 TRADE_DATE = "2026-09-23"
 PUBLISHED_DATE = "2026-09-23"
 
-# grouped daily 응답. `t`는 그 거래일의 epoch ms(ET 자정 기준)다.
-# 1790136000000 = 2026-09-23T04:00:00Z = 2026-09-23 00:00 EDT.
+# grouped daily 응답. `t`는 그 거래일 **16:00 America/New_York**의 epoch ms다.
+# 1790193600000 = 2026-09-23T20:00:00Z = 16:00 EDT (EST 구간이면 21:00Z).
+# ⚠️ 초안은 "ET 자정"으로 적혀 있었는데 실측이 반증했다 — 값은 맞고 근거가 틀린
+#    상태였다(자정이든 마감이든 UTC 날짜는 같아서 `source_date`가 안 깨졌다).
 GROUPED_PAYLOAD = {
     "status": "OK",
     "adjusted": True,
@@ -57,7 +59,7 @@ GROUPED_PAYLOAD = {
             "c": 512.75,
             "v": 18_400_000,
             "vw": 511.9,
-            "t": 1790136000000,
+            "t": 1790193600000,
             "n": 210_000,
         },
         {
@@ -68,7 +70,7 @@ GROUPED_PAYLOAD = {
             "c": 252.8,
             "v": 44_100_000,
             "vw": 251.3,
-            "t": 1790136000000,
+            "t": 1790193600000,
             "n": 480_000,
         },
     ],
@@ -218,6 +220,30 @@ def test_grouped_echoes_requested_and_source_date() -> None:
 
     assert table.column("trade_date").to_pylist() == [TRADE_DATE, TRADE_DATE]
     assert table.column("source_date").to_pylist() == ["2026-09-23", "2026-09-23"]
+
+
+def test_grouped_keeps_bar_timestamp_not_just_the_date() -> None:
+    """`t`를 날짜로 줄이지 않고 **타임스탬프 그대로** 담는다.
+
+    🔴 이 컬럼 하나가 dispatch 매크로 하나를 없앤다. silver의 거래일 달력은
+    "세션 마감 = 16:00 America/New_York"을 UTC로 바꿔야 하는데, 그 변환은
+    엔진마다 문법이 갈려(`to_utc_timestamp` ↔ `with_timezone ... at time zone`)
+    방언 매크로 + sqlfluff 스텁 한 쌍이 필요하다. 그런데 **원천이 이미 그 값을
+    준다** — `t`는 EDT면 20:00Z, EST면 21:00Z로 와서 DST가 반영돼 있다.
+
+    ⚠️ 이름을 `session_close_utc`로 하지 않는다. 실측상 `t`는 **16:00 ET에 고정된
+    집계 창 표식**이고 조기 폐장일(13:00 ET)에도 같은 값이 온다 — 실제 마감이
+    아니다. bronze는 원천이 준 것을 원천의 의미로 담고, "세션 마감"이라는 해석은
+    가정을 함께 적어 silver가 붙인다.
+    """
+    table = _grouped_to_arrow(GROUPED_PAYLOAD, TRADE_DATE, INGESTED_AT)
+
+    stamps = table.column("bar_timestamp").to_pylist()
+    assert stamps == [
+        datetime(2026, 9, 23, 20, 0, tzinfo=timezone.utc),
+        datetime(2026, 9, 23, 20, 0, tzinfo=timezone.utc),
+    ]
+    assert all(stamp.tzinfo is not None for stamp in stamps)
 
 
 def test_grouped_detects_stale_echo() -> None:

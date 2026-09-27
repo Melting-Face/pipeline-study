@@ -105,6 +105,17 @@ OHLCV_SCHEMA = pa.schema(
         ("trade_date", pa.string()),
         # 응답 bar의 `t`(epoch ms)에서 유도한 날짜. trade_date와 다를 수 있다.
         ("source_date", pa.string()),
+        # 🔴 `t`를 **타임스탬프 그대로** 담는다(날짜로 줄이지 않는다).
+        # 이 컬럼 하나가 dispatch 매크로 하나를 없앤다 — silver의 거래일 달력이
+        # "16:00 America/New_York → UTC"를 SQL에서 계산하려면 엔진별 방언
+        # (`to_utc_timestamp` ↔ `with_timezone ... at time zone`)을 흡수하는
+        # 매크로와 sqlfluff 스텁 한 쌍이 필요한데, **원천이 이미 그 값을 준다**
+        # (EDT 20:00Z / EST 21:00Z — DST가 반영돼 있다).
+        #
+        # ⚠️ 이름을 `session_close_utc`로 하지 않는 이유는 `_epoch_ms_to_date`
+        # 독스트링에 적었다 — 조기 폐장일에도 16:00 ET로 와서 **실제 마감이
+        # 아니다.** 해석은 가정과 함께 silver가 붙인다.
+        ("bar_timestamp", pa.timestamp("us", tz="UTC")),
         ("ticker", pa.string()),
         ("open", pa.float64()),
         ("high", pa.float64()),
@@ -214,6 +225,7 @@ def _grouped_to_arrow(
         {
             "trade_date": trade_date,
             "source_date": _epoch_ms_to_date(bar["t"]),
+            "bar_timestamp": datetime.fromtimestamp(bar["t"] / 1000, tz=timezone.utc),
             "ticker": bar["T"],
             "open": float(bar["o"]),
             "high": float(bar["h"]),
