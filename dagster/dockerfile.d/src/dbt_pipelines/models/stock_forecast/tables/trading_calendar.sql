@@ -36,7 +36,18 @@ select
     session_close_utc,
     bar_timestamp_variants,
     ticker_count,
-    true as session_close_assumed,
-    lag(trade_date) over (order by trade_date) as prev_trade_date,
-    lead(trade_date) over (order by trade_date) as next_trade_date
+    true as session_close_assumed
 from sessions
+
+-- 🔴 `prev_trade_date`·`next_trade_date`를 두지 않는다.
+-- 초안에는 있었으나 **쓰는 모델이 하나도 없었고**, `next_trade_date`는
+-- `lead()`라서 "미래 참조는 라벨 모델에만" 게이트
+-- (`tests/test_stock_forecast_models.py`)에 걸렸다.
+--
+-- 거래소 일정은 미리 공개되므로 경제적 의미의 누수는 아니다. 그러나 예외를
+-- 허용하려면 게이트에 allowlist를 파야 하고, **쓰지도 않는 컬럼 때문에 게이트를
+-- 무르게 만드는 것**은 값이 맞지 않는다. 필요해지면 그때 되살리고 그때
+-- 예외를 논의한다.
+--
+-- 라벨의 "다음 거래일"은 이 컬럼이 아니라 `labels_forward_return`의
+-- `lead()`가 낸다 — 종목이 실제로 거래된 날을 집어야 하기 때문이다.

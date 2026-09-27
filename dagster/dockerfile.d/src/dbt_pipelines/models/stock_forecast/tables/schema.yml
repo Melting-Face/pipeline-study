@@ -121,3 +121,116 @@ models:
               arguments:
                 min_value: 0
                 inclusive: true
+
+  - name: macro_observations_pit
+    description: >-
+      경제지표 관측치. 같은 observation_date가 vintage마다 여러 행인 것이 정상이다.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [series_id, observation_date, realtime_start]
+    columns:
+      - name: series_id
+        data_tests:
+          - not_null
+      - name: realtime_start
+        description: "이 값이 유효해진 날. 없으면 vintage 축이 사라진다."
+        data_tests:
+          - not_null
+      - name: realtime_end
+        data_tests:
+          - not_null
+
+  - name: macro_features_daily
+    description: >-
+      거래일마다 그날 알 수 있었던 지표값(as-of). 개정 전 날짜에 개정 후 값이
+      붙지 않는 것이 이 모델의 존재 이유다.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [trade_date, series_id]
+    columns:
+      - name: trade_date
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('trading_calendar')
+                field: trade_date
+      - name: observation_value
+        data_tests:
+          - not_null
+
+  - name: macro_release_calendar_asof
+    description: "거래일별 경제지표 발표 건수(그날 일어난 발표)."
+    columns:
+      - name: trade_date
+        data_tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('trading_calendar')
+                field: trade_date
+
+  - name: feature_store_daily
+    description: >-
+      종목별·거래일별 피처. 🔴 라벨 컬럼이 하나도 없다 — 학습 테이블은 gold이며
+      여기서 만들지 않는다. 모든 윈도우가 과거만 본다.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ticker, trade_date]
+    columns:
+      - name: ticker
+        data_tests:
+          - not_null
+      - name: trade_date
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('trading_calendar')
+                field: trade_date
+      - name: close_price
+        data_tests:
+          - not_null
+      - name: news_article_count
+        description: "뉴스가 없는 날은 0이다(null과 구분한다)."
+        data_tests:
+          - not_null
+
+  - name: labels_forward_return
+    description: >-
+      🔴 미래 정보만 담는다. 피처와 분리한 것이 설계의 핵심이며 lead()가 등장하는
+      유일한 모델이다.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ticker, trade_date, horizon_days]
+    columns:
+      - name: ticker
+        data_tests:
+          - not_null
+      - name: trade_date
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('trading_calendar')
+                field: trade_date
+      - name: horizon_days
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 5, 20]
+                quote: false
+      - name: label_trade_date
+        description: >-
+          라벨이 가리키는 실제 거래일. 구간 끝에서는 null이며
+          assert_label_uses_next_trading_day가 유효성을 검사한다.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('trading_calendar')
+                field: trade_date
