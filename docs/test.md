@@ -61,6 +61,18 @@ dbt 기본 타깃은 **`spark_connect`** 다. 아래 명령의 `--target dev`는
   - SOFA 장기 점수(`*_24hours`)는 `0~4`, 총점 `sofa_24hours`는 `0~24`,
     플래그(`sepsis3`·`suspected_infection`·`positive_culture`)는 `[0, 1]`.
 
+**실사례는 `models/stock_forecast/tables/schema.yml`이다.** 이 계층을 최우선으로 두고도 오래
+실코드가 없었고, 그 데이터셋이 첫 사례가 됐다. 함께 볼 것 둘 —
+ⓐ 등급을 전부 **차단**으로 둔 근거(`warn`을 읽는 자리가 없다,
+[`conventions/data-quality.md`](conventions/data-quality.md) §3)
+ⓑ 스키마 테스트로 표현할 수 없는 **교차 테이블 불변식**을 singular 넷으로 나눠 맡긴 방식
+(한 테스트가 두 축을 보면 실패 원인을 못 가른다 —
+[`dataset_schema/stock-forecast.md`](dataset_schema/stock-forecast.md)).
+
+⚠️ **생성 테스트의 인자는 `arguments:` 아래 둔다.** 바로 밑 예시처럼 인자를 테스트 이름 밑에
+직접 쓰면 최신 dbt가 **deprecation 경고**를 낸다. 경고가 쌓이면 배경 소음이 되어 진짜 회귀를
+가리므로, 새 테스트는 `arguments:`를 쓴다(아래 예시는 기존 모델의 현행 형태다).
+
 ```yaml
 # models/mimic_iv/tables/schema.yml — grain·범위 테스트 예
 models:

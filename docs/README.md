@@ -65,7 +65,9 @@
 
 ## 데이터셋 · 분석
 
-- [데이터셋 스키마·피처](dataset_schema.md) — MIMIC-IV·eICU 원천 스키마와 SOFA→Sepsis-3 매핑
+- [데이터셋 스키마·피처](dataset_schema.md) — 원천 스키마 정본(의료·환율·수문·시장·거시)과 SOFA→Sepsis-3 매핑
+- ↳ [주식예측 실버](dataset_schema/stock-forecast.md) — 누수 방지 3축(세션 배정·as-of·라벨 격리)과
+  그 게이트·**선언된 공백**
 - [분석 컨벤션](conventions/analysis.md) — 규칙 정본
 - [`notebooks/README.md`](../notebooks/README.md) — Jupyter Lab 실행·Spark Connect 접속·셀 출력 통제
 - 리포트는 `docs/analyses/<NN>-<slug>.md`에 쌓는다
