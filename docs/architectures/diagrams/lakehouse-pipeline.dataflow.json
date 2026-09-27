@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "레이크하우스 적재 파이프라인",
+    "quality_profile": "showcase",
+    "viewBox": [1068, 570],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "default": { "label": "일반 흐름" },
+        "emphasis": { "label": "주 경로" },
+        "security": { "label": "인증 · DUA" },
+        "dashed": { "label": "배치 · 파생" },
+        "database": { "label": "Iceberg 테이블" }
+      }
+    },
+    "views": [
+      {
+        "id": "two-mechanisms",
+        "label": "적재 두 갈래",
+        "focus": ["path_io", "path_direct", "bronze"],
+        "note": "IO 매니저를 타는 것은 경로 A뿐이고 B·C·D는 테이블 리소스에 직결한다."
+      },
+      {
+        "id": "s3-asymmetry",
+        "label": "S3 착지 비대칭",
+        "focus": ["physionet", "raw_landing", "apis", "path_direct"],
+        "note": "PhysioNet만 raw/ 에 착지한다 — API 원천은 곧장 Iceberg로 간다."
+      },
+      {
+        "id": "downstream",
+        "label": "하류 소비",
+        "focus": ["bronze", "silver", "flink_stream"],
+        "note": "silver 22개가 전부이고 gold 태그는 0건이다."
+      }
+    ]
+  },
+  "stages": [
+    { "label": "원천 (외부 HTTP)" },
+    { "label": "S3 착지" },
+    { "label": "적재 경로" },
+    { "label": "Iceberg bronze" },
+    { "label": "변환 · 소비" }
+  ],
+  "nodes": [
+    { "id": "physionet", "type": "external", "label": "PhysioNet", "sublabel": "mimiciv", "tag": "HTTPS Basic", "stage": 0, "row": 0, "width": 148, "height": 80 },
+    { "id": "apis", "type": "external", "label": "USGS · FX", "sublabel": "JSON", "stage": 0, "row": 2, "width": 148, "height": 80 },
+    { "id": "raw_landing", "type": "cloud", "label": "raw/ 착지", "sublabel": "warehouse", "tag": ".sha256", "stage": 1, "row": 0, "width": 148, "height": 80 },
+    { "id": "path_io", "type": "backend", "label": "IO 매니저", "sublabel": "pa.Table", "tag": "경로 A", "stage": 2, "row": 0, "width": 148, "height": 80 },
+    { "id": "path_direct", "type": "backend", "label": "직결 적재", "sublabel": "B · C · D", "tag": "IO 미사용", "stage": 2, "row": 2, "width": 148, "height": 80 },
+    { "id": "bronze", "type": "database", "label": "Iceberg bronze", "sublabel": "17 테이블", "tag": "JDBC", "stage": 3, "row": 1, "yOffset": 7, "width": 148, "height": 80 },
+    { "id": "silver", "type": "database", "label": "dbt silver", "sublabel": "22 모델", "tag": "gold 0건", "stage": 4, "row": 1, "width": 148, "height": 80 },
+    { "id": "flink_stream", "type": "messagebus", "label": "Flink 스트림", "sublabel": "usgs_water", "tag": "증분 전용", "stage": 4, "row": 2, "width": 148, "height": 80 }
+  ],
+  "flows": [
+    { "id": "f-physionet", "from": "physionet", "to": "raw_landing", "label": "인증 다운로드", "variant": "security", "labelDy": -34 },
+    { "id": "f-landing-io", "from": "raw_landing", "to": "path_io", "label": "CSV", "variant": "emphasis" },
+    { "id": "f-api-direct", "from": "apis", "to": "path_direct", "label": "JSON" },
+    { "id": "f-io-bronze", "from": "path_io", "to": "bronze", "label": "적재", "variant": "emphasis" },
+    { "id": "f-direct-bronze", "from": "path_direct", "to": "bronze", "label": "직결" },
+    { "id": "f-silver", "from": "bronze", "to": "silver", "label": "dbt source()", "variant": "emphasis" },
+    { "id": "f-flink", "from": "bronze", "to": "flink_stream", "label": "증분 스캔" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "적재는 네 경로다",
+      "items": [
+        "A 일반(read_csv_gz_table → IO 매니저) · B 대용량(청크 append, 1M행) · C API 누적(append) · D 파티션(overwrite(filter))",
+        "IO 매니저를 타는 것은 A뿐이고 B·C·D는 IcebergTableResource에 직결한다 — 대용량은 전량 메모리 적재를 피하려 청크로 쪼갠다"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "S3 착지와 멱등",
+      "items": [
+        "PhysioNet만 s3://warehouse/raw/ 에 착지한다. fetch.py가 「외부 HTTP → S3」, helper.py가 「원천 → Iceberg」로 레이어를 가르므로 C·D는 S3를 거치지 않는다",
+        "멱등은 사이드카 .sha256 ↔ 상류 SHA256SUMS.txt로 판정하고, 쓰기 순서는 데이터 → 사이드카다. 역순이면 깨진 객체를 영영 스킵한다"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "선언된 공백",
+      "items": [
+        "dbt 모델 22개는 전부 tags=['silver']이고 gold 태그는 0건이다. models/eicu/ 는 source.yml만 있고 모델이 0개라 이 그림의 silver는 mimic_iv뿐이다",
+        "append-only 경계: Flink가 증분 스캔으로 읽는 테이블은 스트리밍 소스뿐 아니라 조인 상대까지 replace/overwrite가 금지된다"
+      ]
+    }
+  ]
+}
