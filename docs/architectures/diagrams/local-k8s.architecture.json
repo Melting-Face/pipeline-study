@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "로컬 K8s 레이크하우스 (kind on Podman)",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "external": { "label": "호스트" },
+        "cloud": { "label": "진입 · 레지스트리" },
+        "security": { "label": "TLS 발급" },
+        "backend": { "label": "컴퓨트" },
+        "frontend": { "label": "오케스트레이터" },
+        "database": { "label": "스토어 (셸 소유)" }
+      }
+    },
+    "views": [
+      {
+        "id": "catalog-share",
+        "label": "카탈로그 공유",
+        "focus": ["dagster", "sparkconnect", "flinksession", "catalogpg"],
+        "note": "세 엔진이 같은 Iceberg JDBC 카탈로그를 본다 — 같은 서버, 다른 DB, 다른 롤."
+      },
+      {
+        "id": "exposure",
+        "label": "노출 경로",
+        "focus": ["podman", "ingress", "certmgr", "dagster", "sparkconnect"],
+        "note": "고정 진입점은 kind 8080/8443 둘뿐이고 gRPC는 TLS가 전제다."
+      },
+      {
+        "id": "submit",
+        "label": "컴퓨트 제출",
+        "focus": ["dagster", "sparkconnect", "flinksession", "registry"],
+        "note": "Spark은 CRD 생성, Flink는 kubectl exec — 제출 경로가 다르다."
+      }
+    ]
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [56, 56],
+    "cols": 4,
+    "gapX": 96,
+    "gapY": 64,
+    "cellW": 152,
+    "cellH": 64
+  },
+  "components": [
+    { "id": "registry", "type": "cloud", "label": "kind-registry", "sublabel": "127.0.0.1:5001", "row": 2, "col": 1 },
+    { "id": "podman", "type": "external", "label": "podman machine", "sublabel": "rootful", "tag": "8 vCPU / 26GB", "row": 1, "col": 0 },
+    { "id": "ingress", "type": "cloud", "label": "ingress-nginx", "sublabel": "v1.15.1", "tag": "hostPort 80/443", "row": 1, "col": 1 },
+    { "id": "certmgr", "type": "security", "label": "cert-manager", "sublabel": "lakehouse-ca", "tag": "ECDSA-256", "row": 0, "col": 1 },
+    { "id": "sparkconnect", "type": "backend", "label": "Spark Connect", "sublabel": "gRPC :15002", "tag": "온디맨드", "row": 0, "col": 2 },
+    { "id": "dagster", "type": "frontend", "label": "Dagster", "sublabel": "webserver + daemon", "tag": "Terraform", "row": 1, "col": 2 },
+    { "id": "flinksession", "type": "backend", "label": "Flink 세션 JM", "sublabel": "SQL ConfigMap", "tag": "워크로드", "row": 2, "col": 2 },
+    { "id": "seaweedfs", "type": "database", "label": "SeaweedFS", "sublabel": "S3 :8333", "tag": "PVC 20Gi", "row": 0, "col": 3 },
+    { "id": "catalogpg", "type": "database", "label": "catalog-postgres", "sublabel": "-rw :5432", "tag": "CNPG Cluster", "row": 1, "col": 3 }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "kind 클러스터 lakehouse",
+      "wraps": ["registry", "ingress", "certmgr", "sparkconnect", "dagster", "flinksession", "seaweedfs", "catalogpg"]
+    },
+    {
+      "kind": "security-group",
+      "label": "TLS 종단 · lakehouse-ca",
+      "wraps": ["ingress", "certmgr"]
+    }
+  ],
+  "connections": [
+    { "id": "host-entry", "from": "podman", "to": "ingress", "label": "8080 / 8443", "variant": "emphasis" },
+    { "id": "tls-issue", "from": "certmgr", "to": "ingress", "label": "spark-grpc-tls", "variant": "security", "labelDy": 24 },
+    { "id": "ui-http", "from": "ingress", "to": "dagster", "label": "HTTP", "variant": "emphasis", "labelDy": 18 },
+    { "id": "grpc-tls", "from": "ingress", "to": "sparkconnect", "label": "gRPC + TLS", "variant": "security" },
+    { "id": "image-pull", "from": "registry", "to": "dagster", "label": "image pull", "variant": "dashed" },
+    { "id": "spark-remote", "from": "dagster", "to": "sparkconnect", "label": "sc:// 평문" },
+    { "id": "flink-exec", "from": "dagster", "to": "flinksession", "label": "kubectl exec", "labelDy": 24 },
+    { "id": "dagster-catalog", "from": "dagster", "to": "catalogpg", "label": "psycopg2", "variant": "emphasis", "labelDx": -38 },
+    { "id": "spark-catalog", "from": "sparkconnect", "to": "catalogpg", "label": "JDBC" },
+    { "id": "flink-catalog", "from": "flinksession", "to": "catalogpg", "label": "JDBC" },
+    { "id": "spark-s3", "from": "sparkconnect", "to": "seaweedfs", "label": "S3A + S3FileIO" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "카탈로그 공유",
+      "items": [
+        "Dagster(pyiceberg)·Spark Connect·Flink가 같은 Iceberg JDBC 카탈로그를 본다 — 카탈로그 이름은 전 엔진 iceberg로 통일한다",
+        "같은 서버·다른 DB·다른 롤이다. ICEBERG_CATALOG_USER 미지정 시 POSTGRES_USER로 폴백해 접속은 되고 테이블 접근에서 거부되는 부분 성공이 생긴다"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "노출과 소유권",
+      "items": [
+        "in-cluster는 sc://spark-connect:15002 평문 gRPC, 호스트는 spark-grpc.localtest.me:8443 + CA 주입으로 경로가 갈린다",
+        "소유권 4축: Terraform(helm 3 + manifest 18) / 셸(스테이트풀 — destroy 시 PVC 소실) / 온디맨드 / 워크로드. kubectl apply로 TF 소유 리소스를 덮으면 필드 소유권이 kubectl-patch로 넘어가 plan은 잡고 apply는 실패한다"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "이 그림이 그리지 않는 것",
+      "items": [
+        "오퍼레이터 3종(Spark 1.8.0 · Flink 1.15.0 · CNPG 0.29.0)은 Terraform이 helm으로 설치한다 — 제어 평면이라 데이터·노출 경로인 이 그림에서 뺐다",
+        "선언만 있고 배선되지 않은 것: spark-thrift-server.yaml은 미배포, CNPG spec.plugins는 주석 처리라 Barman은 설치됐지만 미배선(SeaweedFS PutObject InternalError, 원인 미규명)"
+      ]
+    }
+  ]
+}
