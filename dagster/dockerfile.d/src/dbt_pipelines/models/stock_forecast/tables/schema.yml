@@ -1,0 +1,236 @@
+# 주식예측 silver 모델의 스키마·테스트.
+#
+# 🔴 **이 저장소의 첫 dbt `data_tests`다.** `docs/test.md` §1이 이 계층을 ★★★★★로
+# 두고도 실코드가 0건이었다 — 규칙만 있고 수단이 없던 칸이다.
+#
+# 🔴 **전부 `error`(차단)로 둔다.** 규약이 차단/경고/관측 3등급을 정하지만,
+# `warn`은 **읽는 사람이 있어야 등급**이고 지금 dbt warn을 상시로 보는 주체가
+# 없다. 관측자 없는 warn은 관측이 아니라 무시이며 커버리지 표에는 초록으로
+# 잡힌다 — 그래서 올린다. 관측 경로가 생기면 그때 내린다.
+version: 2
+
+models:
+  - name: trading_calendar
+    description: >-
+      거래일 달력. 시세가 존재하는 날이 곧 거래일이라 데이터에서 유도한다.
+      session_close_utc는 16:00 ET 가정이며 조기 폐장을 반영하지 않는다.
+    columns:
+      - name: trade_date
+        description: "거래일(UTC 날짜 문자열). 이 파이프라인의 시간 축 정본."
+        data_tests:
+          - not_null
+          - unique
+      - name: session_close_utc
+        description: "원천 bar_timestamp = 16:00 America/New_York의 UTC 표현."
+        data_tests:
+          - not_null
+      - name: bar_timestamp_variants
+        description: >-
+          한 거래일 안의 고유 bar_timestamp 수. 1이 아니면 원천이 기준을 바꿨다.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1]
+                quote: false
+
+  - name: equity_prices_daily
+    description: "일별 시세 silver. 그날 행이 있는 티커가 곧 그날의 유니버스다."
+    data_tests:
+      # 🔴 적재가 파티션 교체라 유일성은 보장되지만, 이 테스트가 **그것을 검사하는
+      #    유일한 지점**이다. 모델에서 dedup을 하지 않은 이유가 이것이다.
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ticker, trade_date]
+    columns:
+      - name: ticker
+        data_tests:
+          - not_null
+      - name: trade_date
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('trading_calendar')
+                field: trade_date
+      - name: close_price
+        data_tests:
+          - not_null
+
+  - name: news_articles_dedup
+    description: >-
+      article_id 기준 최초 수집본. 원천이 published_utc를 정정하면 같은 기사가
+      파티션을 가로질러 두 벌 남는데, 그 축을 막는 유일한 지점이다.
+    columns:
+      - name: article_id
+        data_tests:
+          - not_null
+          - unique
+      - name: published_at
+        description: "이벤트타임. 누수 방지 설계 전체가 이 컬럼 위에 선다."
+        data_tests:
+          - not_null
+
+  - name: news_session_assignment
+    description: >-
+      기사를 그 정보를 쓸 수 있었던 첫 거래일에 배정한다.
+      마감 전 기사는 그날, 마감 후·주말·휴장일 기사는 다음 거래일이다.
+    columns:
+      - name: article_id
+        data_tests:
+          - not_null
+          - unique
+      - name: effective_trade_date
+        description: >-
+          배정된 거래일. 마지막 세션 이후 발행 기사는 NULL이 정상이며
+          그 경계는 assert_news_assignment_is_complete가 검사한다.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('trading_calendar')
+                field: trade_date
+
+  - name: news_features_daily
+    description: "종목별·거래일별 뉴스 건수와 원천 감성 집계(과거 정보만)."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ticker, trade_date]
+    columns:
+      - name: ticker
+        data_tests:
+          - not_null
+      - name: trade_date
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('trading_calendar')
+                field: trade_date
+      - name: article_count
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                inclusive: true
+      - name: sentiment_tagged_count
+        description: >-
+          감성이 달린 기사 수. sentiment_net의 분모이며, article_count보다 작다.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: true
+
+  - name: macro_observations_pit
+    description: >-
+      경제지표 관측치. 같은 observation_date가 vintage마다 여러 행인 것이 정상이다.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [series_id, observation_date, realtime_start]
+    columns:
+      - name: series_id
+        data_tests:
+          - not_null
+      - name: realtime_start
+        description: "이 값이 유효해진 날. 없으면 vintage 축이 사라진다."
+        data_tests:
+          - not_null
+      - name: realtime_end
+        data_tests:
+          - not_null
+
+  - name: macro_features_daily
+    description: >-
+      거래일마다 그날 알 수 있었던 지표값(as-of). 개정 전 날짜에 개정 후 값이
+      붙지 않는 것이 이 모델의 존재 이유다.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [trade_date, series_id]
+    columns:
+      - name: trade_date
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('trading_calendar')
+                field: trade_date
+      - name: observation_value
+        data_tests:
+          - not_null
+
+  - name: macro_release_calendar_asof
+    description: "거래일별 경제지표 발표 건수(그날 일어난 발표)."
+    columns:
+      - name: trade_date
+        data_tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('trading_calendar')
+                field: trade_date
+
+  - name: feature_store_daily
+    description: >-
+      종목별·거래일별 피처. 🔴 라벨 컬럼이 하나도 없다 — 학습 테이블은 gold이며
+      여기서 만들지 않는다. 모든 윈도우가 과거만 본다.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ticker, trade_date]
+    columns:
+      - name: ticker
+        data_tests:
+          - not_null
+      - name: trade_date
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('trading_calendar')
+                field: trade_date
+      - name: close_price
+        data_tests:
+          - not_null
+      - name: news_article_count
+        description: "뉴스가 없는 날은 0이다(null과 구분한다)."
+        data_tests:
+          - not_null
+
+  - name: labels_forward_return
+    description: >-
+      🔴 미래 정보만 담는다. 피처와 분리한 것이 설계의 핵심이며 lead()가 등장하는
+      유일한 모델이다.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ticker, trade_date, horizon_days]
+    columns:
+      - name: ticker
+        data_tests:
+          - not_null
+      - name: trade_date
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('trading_calendar')
+                field: trade_date
+      - name: horizon_days
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 5, 20]
+                quote: false
+      - name: label_trade_date
+        description: >-
+          라벨이 가리키는 실제 거래일. 구간 끝에서는 null이며
+          assert_label_uses_next_trading_day가 유효성을 검사한다.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('trading_calendar')
+                field: trade_date

@@ -41,6 +41,18 @@ models:
     # 메달리온 레이어는 스키마 접두어가 아니라 tag/kind로 표기한다.
     eicu:
       +schema: eicu
+    # 주식예측 silver. 🔴 **group을 재정의한다** — 전역 기본값
+    # `meta.dagster.group: dbt_ingest`를 그대로 두면 `automation.py`의
+    # `dbt_all_job`(= `AssetSelection.groups("dbt_ingest")`)이 **매시각 이 모델까지
+    # 끌고 간다.** 이 모델들은 전용 잡이 소유한다.
+    stock_forecast:
+      +schema: stock_forecast
+      +meta:
+        dagster:
+          group: stock_forecast_silver
+      tables:
+        +materialized: table
+        +file_format: iceberg
     mimic_iv:
       +schema: mimiciv
       # 실버 모델은 물리 테이블로 구체화한다(dbt 기본값 view 재정의).

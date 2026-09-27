@@ -65,7 +65,9 @@
 
 ## 데이터셋 · 분석
 
-- [데이터셋 스키마·피처](dataset_schema.md) — MIMIC-IV·eICU 원천 스키마와 SOFA→Sepsis-3 매핑
+- [데이터셋 스키마·피처](dataset_schema.md) — 원천 스키마 정본(의료·환율·수문·시장·거시)과 SOFA→Sepsis-3 매핑
+- ↳ [주식예측 실버](dataset_schema/stock-forecast.md) — 누수 방지 3축(세션 배정·as-of·라벨 격리)과
+  그 게이트·**선언된 공백**
 - [분석 컨벤션](conventions/analysis.md) — 규칙 정본
 - [`notebooks/README.md`](../notebooks/README.md) — Jupyter Lab 실행·Spark Connect 접속·셀 출력 통제
 - 리포트는 `docs/analyses/<NN>-<slug>.md`에 쌓는다
@@ -83,6 +85,7 @@
 | 문서 | 내용 |
 | --- | --- |
 | [환경 세팅](setup.md) | 절차 정본 — 사전 요구·기동·검증·회수·함정 |
+| ↳ [시장 데이터 키 발급](setup/market-data-keys.md) | 외부 API 키 절차·무료 플랜 한계·**재배포 금지**·뉴스 축 폴백 |
 | [환경변수·운영 정책](operations.md) | `.env`→compose→`EnvVar` 전파 체인, 보존 정책, 토큰 비용 계측, 클러스터 재생성 |
 | [리소스 산정](resource-sizing.md) | 호스트 자원에 따른 서비스 옵션 조정 |
 | [리스크 관리 규약](risk.md) | 분류 4축·등급의 **가역성 축**·비가역 작업 한 벌·**사후 인시던트 대응** |

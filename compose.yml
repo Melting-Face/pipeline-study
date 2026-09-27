@@ -35,6 +35,13 @@ x-dagster-common: &dagster-common
     # 성공하고 수집 자산 실행에서만 실패한다 — 코드가 dg.EnvVar로 받는다.
     - PHYSIONET_USERNAME=${PHYSIONET_USERNAME:-}
     - PHYSIONET_PASSWORD=${PHYSIONET_PASSWORD:-}
+    # 금융 시장 원천(주식예측). 같은 이유로 `:-` 폴백을 둔다.
+    # 🔴 정본은 in-cluster다 — k8s/dagster/** 의 Secret 배선을 함께 봐야
+    #    클러스터에서만 조용히 실패하는 상태를 피한다.
+    - POLYGON_API_KEY=${POLYGON_API_KEY:-}
+    - FRED_API_KEY=${FRED_API_KEY:-}
+    # SEC EDGAR 폴백 시에만 쓰인다(연락처 포함 UA). 비밀 아님.
+    - NEWS_RSS_USER_AGENT=${NEWS_RSS_USER_AGENT:-}
     # SeaweedFS는 AWS SDK의 aws-chunked 체크섬 업로드를 못 푼다(객체가 깨진다).
     - AWS_REQUEST_CHECKSUM_CALCULATION=${AWS_REQUEST_CHECKSUM_CALCULATION:-when_required}
     - AWS_RESPONSE_CHECKSUM_VALIDATION=${AWS_RESPONSE_CHECKSUM_VALIDATION:-when_required}

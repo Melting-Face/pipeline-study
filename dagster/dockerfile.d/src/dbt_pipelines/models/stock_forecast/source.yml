@@ -1,0 +1,50 @@
+# 주식예측 silver의 원천 — Dagster가 적재한 bronze 테이블들.
+#
+# 🔴 **이 디렉터리는 bronze 서브프로젝트와 1:1이 아니다.** 다른 데이터셋
+# (eicu·mimic_iv)은 `models/<dataset>/`가 같은 이름의 `defs/<dataset>/`을 받지만,
+# 여기는 **두 원천(polygon_market·fred_calendar)을 가로질러** 조인하는 것이 존재
+# 이유다. 그래서 소유자를 `defs/stock_forecast/`라는 별도 서브프로젝트에 두고
+# 그 디렉터리에는 `@asset`을 두지 않는다(dbt 소유권만 갖는다).
+#
+# - database  : 명시하지 않는다(dbt-spark가 `Cannot set database in spark!`로 죽는다).
+# - schema    : Iceberg 네임스페이스 = 각 데이터셋 constants.py의 NAMESPACE.
+# - meta.dagster.asset_key: bronze 자산이 단일 세그먼트 키라 기본값
+#       ([source_name, table])이 아니라 명시한다. 어긋나면 lineage가 조용히 끊긴다.
+version: 2
+
+sources:
+  - name: polygon_market
+    description: "Polygon(Massive) 시세·뉴스 bronze. Dagster defs/polygon_market가 적재."
+    schema: polygon_market
+    tables:
+      - name: equity_ohlcv_daily
+        description: >-
+          하루치 전 미국 티커 OHLCV. 파티션 키 trade_date.
+          bar_timestamp는 16:00 America/New_York의 UTC 표현이다(DST 반영).
+        meta:
+          dagster:
+            asset_key: ["equity_ohlcv_daily"]
+      - name: news_articles
+        description: >-
+          뉴스 메타데이터. 파티션 키 published_date.
+          published_at이 이벤트타임이고 누수 방지 설계 전체가 이 컬럼 위에 선다.
+        meta:
+          dagster:
+            asset_key: ["news_articles"]
+
+  - name: fred_calendar
+    description: "FRED(ALFRED) 경제지표 bronze. Dagster defs/fred_calendar가 적재."
+    schema: fred_calendar
+    tables:
+      - name: fred_series_observations
+        description: >-
+          시리즈별 전 vintage. 파티션 키 series_id.
+          같은 observation_date가 realtime 구간을 달리해 여러 행으로 나오는 것이 정상이다.
+        meta:
+          dagster:
+            asset_key: ["fred_series_observations"]
+      - name: fred_release_dates
+        description: "그날 유효했던 릴리스 일정. 파티션 키 as_of_date."
+        meta:
+          dagster:
+            asset_key: ["fred_release_dates"]
