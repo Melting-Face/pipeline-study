@@ -80,9 +80,19 @@ COMMON: dict[str, dict[str, tuple[str, ...]]] = {
     # 🔴 `dagster_project/`·`dbt/`로 적혀 있던 시절이 있는데 **둘 다 추적 파일
     #    0건**이라 아무것도 막지 못했다("배선됨"과 "겨냥이 맞음"은 다른 층이다).
     #    실제 코드는 `dagster/dockerfile.d/src/` 아래다.
+    # 🔴 **오케스트레이터 중립 경로(`pipeline/src/`)로 이관하는 중이라 둘 다 등재한다.**
+    #    `deny`는 넓히는 쪽이 fail-safe이므로(CLAUDE.md §permissions 글롭 방향) 이동
+    #    **전에** 새 경로를 먼저 넣는다 — 순서를 뒤집으면 이동 시점부터 갱신 시점까지
+    #    경계가 **에러 없이 비어 있는** 창이 생긴다. 위 주석의 사고가 재발하는 경로다.
+    #    이관 완료 후 `dagster/` 항목을 뺀다.
+    # 🔴 파이썬 루트는 `pipeline/src/`이고 `pipeline/dockerfile.d/src/`가 **아니다.**
+    #    경계 배분이 이 배치를 요구한다 — `devops-engineer`는 Dockerfile을 써야 하고
+    #    파이썬 소스는 못 써야 하는데, `src/` 한 겹만 deny하면 둘이 자연히 갈린다.
+    #    레이아웃을 바꾸려면 **이 표를 먼저** 고친다(안 그러면 접두어가 조용히 죽는다).
     "devops-engineer": {
         "deny": (
             "dagster/dockerfile.d/src/",
+            "pipeline/src/",
             "notebooks/",
             "docs/analyses/",
             ".env",
