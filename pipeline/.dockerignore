@@ -1,0 +1,53 @@
+# 🔴 패턴은 **빌드 컨텍스트 루트 기준**이고, 이 트리의 컨텍스트 루트는 `pipeline/`이다
+# (`dockerfile.d/`가 아니다 — 사유는 `dockerfile.d/Dockerfile` 머리 주석). 엔진은
+# `.dockerignore`를 컨텍스트 루트에서만 읽으므로 이 파일의 자리가 곧 발효 조건이다.
+#
+# 🔴 구 트리의 교훈을 그대로 적용한다(2026-08-27 실측 — 구 트리의 `dockerfile.d/.dockerignore`):
+#   컨텍스트에 존재하지 않는 경로를 겨냥한 패턴 4개가 **전부 죽은 규칙**이었고, 그 결과
+#   `src/.venv`(1.2GB, macOS 바이너리)가 이미지에 들어가 3.64GB가 됐다.
+#   "규칙이 있다"와 "매칭된다"는 다른 축이다.
+# ⚠️ 여기를 고칠 때는 `du -sh` 또는 이미지 크기로 **효과를 확인**한다 —
+#    잘못된 패턴은 에러를 내지 않고 조용히 통과한다.
+#
+# 신 레이아웃에서도 코드가 `src/` 아래라 접두어는 구 파일과 같다(우연이 아니라 `pipeline/src/`가
+# 파이썬 루트이기 때문이다). 단 **구 파일의 Dagster 전용 항목은 옮기지 않았다** —
+# `src/storage/`·`src/.telemetry/`·`src/.dg/`는 `DAGSTER_HOME` 산출물이다.
+#
+# `dockerfile.d/` 자신은 제외하지 않는다 — 컨텍스트에 들어가도 `COPY src/`가 집지 않아
+# 이미지에 착지하지 않고, Dockerfile/.dockerignore를 ignore 대상으로 넣었을 때 빌더가 어떻게
+# 처리하는지는 엔진별로 **미확인**이라 건드리지 않는 쪽을 택했다(수 KB 비용).
+
+# 가상환경 — 호스트(macOS/arm64) 바이너리라 리눅스 이미지에서 쓸 수도 없다.
+# 🔴 현재 `pipeline/src/.venv`가 **실재**한다(3.13.9) — 이 한 줄이 가장 load-bearing하다.
+src/.venv/
+
+# 호스트 실행이 남긴 런타임 산출물
+src/logs/
+# TODO(P0-f): 오케스트레이터 확정 시 그쪽 인스턴스 홈 산출물을 추가한다
+#   (Airflow라면 `src/airflow.db`·`src/airflow.cfg`·`src/*.pid` 계열).
+#   구 트리의 `storage/`·`.telemetry/`는 Dagster 전용이라 옮기지 않았다.
+
+# 🔴 dbt 산출물. 안 빼면 호스트 산출물이 먼저 COPY되고 그 위를 `dbt deps && dbt parse`가
+# 덮는데, **겹치지 않는 파일은 그대로 살아남아** 이미지가 비결정적이 된다.
+# ⚠️ `dbt_pipelines/`는 단계 11에서 `git mv`로 들어온다 — 지금은 매칭 0건이다.
+#    **선반영이 의도다**: 이관 시점에 이 파일을 함께 고치는 것을 잊으면 위에 적은 3.64GB
+#    계열 사고가 재발하는데, 미매칭 패턴은 에러도 비용도 없다(fail-safe 방향).
+src/dbt_pipelines/target/
+src/dbt_pipelines/dbt_packages/
+src/dbt_pipelines/logs/
+
+# 테스트·캐시·락은 런타임에 불필요
+src/tests/
+src/uv.lock
+src/.mypy_cache/
+src/.ruff_cache/
+src/.pytest_cache/
+
+# 레포 어디에 있든
+**/__pycache__/
+**/*.log
+**/*.duckdb
+
+# 🔴 크리덴셜은 어느 깊이에 있든 뺀다
+**/.env
+**/.user.yml

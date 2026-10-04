@@ -35,6 +35,13 @@ shared/
 **/__pycache__/
 .ruff_cache/
 .mypy_cache/
+# 🔴 pytest 캐시는 **루트에서 덮어야 한다**(2026-10-01 추가, 오케스트레이터 중립 경로 이관).
+# 구 트리는 그 `src/` 안의 중첩 `.gitignore`(GitHub Python 템플릿)가 이걸 갖고 있었지만,
+# 신 트리 `pipeline/src/`에는 중첩 `.gitignore`가 없다 — 그 경로의 소유자가 다른 워커라
+# 레이아웃상 루트가 덮는 것이 맞는 자리다. 지금은 pytest가 캐시 디렉터리 안에 스스로
+# 넣는 `.gitignore`(내용 `*`)에만 의존하는 상태인데, 그건 도구 구현에 기댄 것이라
+# 축으로 삼지 않는다. 슬래시가 안쪽에 없어 **모든 깊이**에 매칭된다(위 두 줄과 같은 형태).
+.pytest_cache/
 **/*.log
 **/*.duckdb
 **/secrets.toml
@@ -53,6 +60,9 @@ values.yaml
 # `uv run`을 루트에서 돌릴 때 생기는 빈 산출물이라 재현성에 기여하지 않는다.
 # 실제 프로젝트 락(dagster/dockerfile.d/src/uv.lock)도 같은 이유로 제외한다
 # (이미지 빌드는 `pip install -e` 사용 — 그쪽 .gitignore에 사유 기재).
+# 중립 경로 락(pipeline/src/uv.lock)도 **같은 한 줄이 덮는다** — 패턴에 슬래시가 없어
+# 모든 깊이에 매칭되므로 경로별 줄을 더하지 않는다. 단 이것이 CI에 전제를 만든다:
+# 락이 미추적이므로 `.github/workflows/ci.yml`의 두 잡 모두 `uv sync --frozen`을 쓸 수 없다.
 # 근거: docs/conventions/git.md §5
 uv.lock
 
@@ -106,6 +116,21 @@ dagster/dockerfile.d/src/storage/
 dagster/dockerfile.d/src/.telemetry/
 dagster/dockerfile.d/src/history/
 dagster/dockerfile.d/src/schedules/
+
+# 오케스트레이터 중립 경로(pipeline/) — 위 Dagster 블록의 대응 항목(2026-10-01).
+# 🔴 위 4줄은 **그대로 남는다** — 구 트리는 아직 돌고 있는 정본이고, 이 블록은 이동이 아니라
+#    공존 기간의 **추가**다.
+# 현재 `pipeline/src/`가 만드는 산출물은 **이미 전부 기존 줄이 덮는다**(실측 `git check-ignore -v`):
+#   .venv → `.venv/`(1행) · uv.lock → `uv.lock`(위 블록) · __pycache__ → `**/__pycache__/`
+#   · .pytest_cache → 위에 추가한 `.pytest_cache/` · logs/ → `logs/`(모든 깊이 매칭)
+# ⇒ 그래서 **지금 추가할 경로 패턴이 0건이다.** "빠뜨렸다"와 구분되게 적어 둔다
+#   (docs/philosophy.md 원칙 7 — 부정 결과는 모집단을 함께 적는다).
+# TODO(P0-f): 오케스트레이터 확정 후 인스턴스 홈 산출물을 여기 추가한다. Airflow라면
+#   `pipeline/src/airflow.db`·`airflow.cfg`·`*.pid`·`standalone_admin_password.txt` 계열이고,
+#   `logs/`만 기존 줄에 덮인다. 버전·배치가 확정되기 전에는 **추정 경로를 적지 않는다**
+#   (틀린 경로는 에러를 내지 않고 조용히 통과하는 죽은 규칙이 된다 — 같은 파일 §.dockerignore 교훈).
+# TODO(단계 11): `dbt_pipelines/` 이관 시 중첩 `.gitignore`(target/·dbt_packages/·logs/)가
+#   `git mv`로 함께 따라오는지 확인한다 — 따라오면 루트에 더할 것이 없다.
 
 # Claude Code 프로젝트 스코프 스킬 — 외부 코드(2026-08-21 기준 6종·brainstorming만 1,432행)라
 # 저장소에 넣지 않는다. `.claude/skills/<name>`은 **엔트리마다 갈린다** — 일부는

@@ -1,6 +1,8 @@
 # hadolint 설정 (Dockerfile 린터)
-# 대상 3개: dagster/dockerfile.d/Dockerfile · k8s/spark/Dockerfile.spark-runner
-#           · k8s/flink/Dockerfile.flink-runner
+# 대상 4개: dagster/dockerfile.d/Dockerfile · k8s/spark/Dockerfile.spark-runner
+#           · k8s/flink/Dockerfile.flink-runner · pipeline/dockerfile.d/Dockerfile
+# 🔴 네 번째는 오케스트레이터 중립 경로 이관(단계 0-d)으로 **추가**된 것이다 — 첫 번째를
+#    대체하는 것이 아니라 공존한다. 숫자를 세는 문장이라 함께 고친다(계측 단위).
 # pre-commit `hadolint` 훅(로컬 바이너리)이 이 설정을 자동 탐지한다.
 # info 이하는 출력만 하고 실패시키지 않는다(예: DL3066 — 베이스 이미지가 정한
 # 비수치 사용자 `spark`·`flink`를 수치 UID로 바꾸는 편이 더 깨지기 쉽다).
