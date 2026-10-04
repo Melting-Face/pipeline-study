@@ -1,0 +1,88 @@
+[project]
+name = "pipeline-project"
+requires-python = ">=3.10,<3.15"
+version = "0.1.0"
+# 🔴 **오케스트레이터 중립 트리다 — `dagster*` 패키지를 넣지 않는다.**
+#    이 트리는 Dagster를 import하지 않으며, 의존을 남겨두면 "아직 Dagster를 쓴다"는
+#    잘못된 신호가 되고 이미지 크기·해석 시간도 그대로 따라온다.
+#
+# ✅ P0-f 완료 — `apache-airflow`는 아래에 선언했다(외부 1차 출처 확인).
+#    `astronomer-cosmos`는 **아직 넣지 않는다** — 근거는 아래 §Cosmos 보류.
+#
+# 선언 원칙은 원본(`dagster/dockerfile.d/src/pyproject.toml`)과 같다 —
+# **직접 import하는 것만** 적고, 상한은 "미지원 경로에 얹혀 있는가"로만 건다.
+dependencies = [
+  # HTTP 원천 획득(`common/helper.py`·`common/fetch.py`·`common/physionet.py`).
+  # 원본과 같은 고정 버전을 유지한다(원본이 `==`로 박아둔 유일한 런타임 의존).
+  "requests==2.32.5",
+  # S3(SeaweedFS) 접속 — `boto3.s3.transfer.TransferConfig`·`botocore.exceptions`를
+  # 직접 import한다. 원본에서는 `dagster-aws`의 전이 의존으로 들어왔으나
+  # 이 트리에는 그 경로가 없으므로 **명시 선언**한다.
+  #
+  # 🔴 **하한이 load-bearing이다.** `common/constants.py`의 체크섬 셰임
+  #    (`AWS_REQUEST_CHECKSUM_CALCULATION=when_required`)은 **botocore가 그 변수를
+  #    읽어야** 효과가 있다. 실측(dist-info 대조): botocore 1.35.99는 이 변수를
+  #    `configprovider.py`에서 **모르고**(0건), 1.42.17은 **안다**(1건).
+  #    정확한 도입 버전은 **미확인**이라, 추정값을 쓰지 않고 **확인된 하한**을 쓴다.
+  #    (셰임이 무효가 되면 SeaweedFS가 aws-chunked 프레이밍을 객체에 그대로 저장해
+  #     다음 *읽기*에서 깨진다 — 쓰기는 성공하므로 오진하기 쉽다.)
+  "boto3>=1.42.17",
+  # Arrow — csv.gz 스트리밍 파싱과 Iceberg 적재 단위.
+  "pyarrow>=16",
+  # Iceberg 카탈로그 직접 접근(`common/catalog.py`). extra 근거:
+  #   pyarrow      : `PyArrowFileIO`(s3:// 기본 FileIO) + Arrow 왕복
+  #   sql-postgres : 운영 카탈로그가 `postgresql+psycopg2://`(sqlalchemy + psycopg2)
+  #                  이며, 같은 extra가 주는 sqlalchemy가 테스트의 SQLite 카탈로그
+  #                  (`pyiceberg.catalog.sql.SqlCatalog`)도 함께 만족한다
+  #                  → `sql-sqlite`를 따로 적지 않는다(sqlalchemy 중복 선언 회피).
+  # 하한은 원본과 같이 낮게 둔다 — binding constraint가 되면 안 된다.
+  "pyiceberg[pyarrow,sql-postgres]>=0.9",
+  # 오케스트레이터. 현재 유일한 importer는 `tests/test_dagbag.py`이고, DAG 배선
+  # 파일(`dags/*.py`)이 단계 2부터 import한다.
+  #
+  # 🔴 **상한은 minor로 묶는다.** 이 저장소의 선례와 같은 축이다 — 비공식·계약 밖
+  #    경로가 섞여 있으면 상한을 좁히고 **상한 인상 직전에 스모크를 통과시킨다**
+  #    (`dbt-spark<1.12`·`pyspark<3.6`의 사유). Airflow 3은 메이저 전환 직후라
+  #    마이너 간 동작 변화가 실재하고(예: `catchup_by_default` 기본값 반전),
+  #    그 변화가 **에러가 아니라 스케줄 동작 차이**로 나타난다.
+  #
+  # 외부 1차 출처(A등급, 2026-10-01 확인):
+  #   · 최신 마이너 3.3.2 / 상태 "Maintenance" — airflow.apache.org
+  #     .../stable/installation/supported-versions.html (Version Life Cycle 표)
+  #   · 지원 Python "3.10, 3.11, 3.12, 3.13, 3.14" — 같은 사이트 prerequisites.html
+  #     ⇒ 위 `requires-python = ">=3.10,<3.15"`와 **정확히 일치**한다(우연이지만
+  #       일치하므로 좁히지 않는다 — 좁히면 근거 없는 제약이 된다).
+  "apache-airflow>=3.3,<3.4",
+]
+
+# 🔴 §Cosmos 보류 — `astronomer-cosmos`를 **지금 넣지 않는다**(2026-10-01 판단).
+#    ① dbt 이관은 **단계 11**이고 P0의 dagbag 게이트는 Cosmos를 요구하지 않는다.
+#       소비자 없는 의존은 해석·이미지 비용만 늘린다.
+#    ② **Cosmos의 최신 릴리스 버전이 `미확인`이다.** 확인된 것은 ⓐ호환성 정책 페이지의
+#       `"Supported versions: 2.9, 2.10, 2.11, 3.0, 3.1, 3.2, 3.3"`(= 현 릴리스가 덮는
+#       Airflow 범위, Airflow 3.3 포함) ⓑAirflow 3 지원이 **1.10.0**(2025-05-01)에
+#       도입됐다는 CHANGELOG 기록까지다. 지금 상한을 박으면 그것은 추정이다.
+#    🔴 ③ **"cosmos 1.13.1은 Airflow 3 비호환"이라는 단서는 지지 근거가 없었다.**
+#       1왕복 검색 스니펫에서 나온 주장이고, CHANGELOG 1.13.1 항목 전체를 열어 보니
+#       `"ci: upgrade Airflow version to 3.1 in MyPy type-check job"` 뿐이다.
+#       **스니펫을 근거로 버전을 피하지 않는다** — 단계 11에서 최신 릴리스를 확인해 넣는다.
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "ruff",
+  "mypy",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# 자동 탐지에 기대지 않고 명시한다(패키지명 ↔ 배포명 정규화에 의존하지 않는다).
+packages = ["src/pipeline_project"]
+
+# 린트·포맷·타입체크 도구(ruff·sqlfluff·mypy) 설정은 repo 루트 pyproject.toml이 갖는다.
+# 이 파일은 패키징(`[project]`·`[build-system]`)만 둔다.
+#
+# 🔴 `[tool.dg]`는 옮기지 않는다 — Dagster `dg` CLI 전용 설정이다.

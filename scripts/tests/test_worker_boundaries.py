@@ -215,6 +215,48 @@ class WorkerBoundariesTest(unittest.TestCase):
             assert decide("data-engineer", "dagster_project/defs/probe.py") == {}
             assert decide("devops-engineer", "terraform/probe.tf") == {}
 
+    def test_neutral_pipeline_source_is_denied_to_devops_in_both_runtimes(self) -> None:
+        """🔴 중립 경로 `pipeline/src/`가 `devops-engineer`에게 막힌다(양 런타임).
+
+        오케스트레이터 이름을 뺀 경로로 이관하는 중이라
+        **경계 문자열이 실제로 움직인다.**
+        `worker_boundaries.py`의 주석이 기록한 사고(`dagster_project/`로 적혀 있던 시절
+        추적 파일 0건이라 아무것도 막지 못했다)가 재발하는 자리가 바로 여기다.
+
+        이 셀이 생기기 전 상태를 정직하게 적어 둔다 — 등재 직후 `security`가 합성
+        페이로드로 12셀을 확인했으나 그것은 **테스트가 아니라 1회 관측**이었고,
+        `test_worker_boundaries.py`에 문자열 `pipeline`이 0건이어서 가드 테스트
+        62개 통과는 **이 항목에 대해 아무 말도 하지 않았다.**
+
+        🔴 **경계 배분이 레이아웃을 요구한다** — `devops-engineer`는 Dockerfile을
+        **써야 하고** 파이썬 소스는 **못 써야** 한다. 그래서 `pipeline/` 전체가 아니라
+        `pipeline/src/` 한 겹만 deny다. 아래 PASS 대조군이 그 분할을 고정한다.
+        """
+        for decide in (self._claude_decision, self._codex_decision):
+            for target in (
+                "pipeline/src/pyproject.toml",
+                "pipeline/src/src/pipeline_project/common/catalog.py",
+                "pipeline/src/tests/test_dagbag.py",
+                # 막는 축은 대소문자를 무시한다(macOS에서 같은 실파일).
+                "Pipeline/Src/pyproject.toml",
+            ):
+                denied = decide("devops-engineer", target)
+                assert denied.get("permissionDecision") == "deny", target
+
+            # 🔴 PASS 대조군 2종 — 없으면 "전부 막는다"와 구분이 안 된다.
+            #    `pipeline/` 전체를 deny하면 여기가 빨개져 과차단이 드러난다.
+            assert decide("devops-engineer", "pipeline/dockerfile.d/Dockerfile") == {}
+            assert decide("devops-engineer", "pipeline/README.md") == {}
+
+            # 🔴 공존 기간 — 구 경로도 **여전히** 막혀야 한다(「신설 → 삭제」 2박자).
+            #    구 경로를 지우는 것은 이관 완료 후다. 지금 열리면 경계에 창이 생긴다.
+            old = decide("devops-engineer", "dagster/dockerfile.d/src/probe.py")
+            assert old.get("permissionDecision") == "deny"
+
+            # 🔴 「누가」 축 대조군 — 같은 경로가 `data-engineer`에게는 열린다.
+            #    경계는 경로만으로 정해지지 않는다(워커별로 갈린다).
+            assert decide("data-engineer", "pipeline/src/pyproject.toml") == {}
+
     # ── 매칭 축 · 방향 (표가 같아도 여기서 갈린다) ──────────────────────
     #
     # 🔴 아래 셋은 **같은 방향으로 통일하면 안 된다.** `deny`·`except`는 대소문자를

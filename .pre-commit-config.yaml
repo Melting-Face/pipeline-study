@@ -403,6 +403,32 @@ repos:
         files: '^(\.claude/settings\.json|scripts/permission_glob_check\.py)$'
         stages: [pre-commit]
 
+  # 워커 경계 접두어가 **실재하는 추적 경로를 덮는지** 검사한다.
+  #
+  # 🔴 `worker_boundaries.py`의 주석이 기록한 사고를 기계화한 것이다 —
+  #    `devops-engineer.deny`가 `dagster_project/`·`dbt/`로 적혀 있던 시절 **둘 다 추적
+  #    파일 0건**이라 아무것도 막지 못했다. 「배선됨」과 「겨냥이 맞음」은 다른 층이고,
+  #    틀렸을 때 증상이 **에러가 아니라 침묵**이라 사람이 못 잡는다.
+  #
+  # 🔴 **`always_run: true`이고 `files:`를 두지 않는다** — 둘을 함께 두면 `hook-files`가
+  #    「모집단이 전체인지 files 매치분인지 가를 수 없다」로 거부한다. 그리고 여기서는
+  #    **전체가 맞다**: 이 검사의 판정은 *어떤 파일이 바뀌었는가*가 아니라
+  #    **추적 파일 집합 전체**에 달려 있다. 경계 아래 마지막 파일을 지우는 커밋은
+  #    `worker_boundaries.py`를 건드리지 않으므로, `files:`로 좁히면 바로 그 커밋에서
+  #    훅이 Skipped가 된다(막아야 할 바로 그 순간에 침묵한다).
+  #
+  # ⚠️ 보증 범위는 「0건이 아니다」까지다 — 접두어가 **옳은 대상**을 겨냥하는지,
+  #    커버리지가 줄지 않았는지는 보지 않는다(스크립트 머리 주석 §보증하지 않는 것).
+  - repo: local
+    hooks:
+      - id: boundary-paths
+        name: 워커 경계 접두어가 실재 추적 경로를 덮는가
+        language: system
+        entry: python3 scripts/boundary_path_check.py
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
   # Terraform 포매터 — conventions/terraform.md §3이 요구하던 게이트의 집행 수단
   # (규약은 있었으나 훅이 없어 terraform/oci-k3s 는 한 번도 검사받은 적이 없었다).
   #
