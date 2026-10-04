@@ -194,6 +194,37 @@ class WorktreeGuardTest(unittest.TestCase):
         target = self.main_tree / ".claude" / "settings.local.json"
         assert self.decide_path(target) is None
 
+    def test_research_state_is_not_whitelisted(self):
+        """🔴 `.claude/.research/**`는 화이트리스트가 **아니다** — 철회된 항목이다.
+
+        2026-10-03에 넣었다가 `security` 반려로 철회했다. **이 셀이 재발을 막는다.**
+
+        넣은 사유는 그럴듯했다 — `research_gate_guard.py`가 `$CLAUDE_PROJECT_DIR` 아래
+        `.claude/.research/approved.json`을 읽는데 **하네스는 worktree 세션에서도
+        `CLAUDE_PROJECT_DIR`를 루트로 넘기고**(루트 `queries.jsonl`에 worktree 세션
+        id로 deny 기록이 남아 확인), worktree는 의무라 승인을 쓸 자리가 없다.
+        그래서 `.claims` 선례를 따라 열었다.
+
+        🔴 **틀린 유추였다.** 당시 주석은 "「누가」 축은 안 넓어진다 — `Bash` deny가
+        받쳐 준다"고 단언했는데, **그 deny는 도구 스코프가 `Bash`**이고 화이트리스트가
+        여는 것은 **`Edit`/`Write`** 경로다. **두 축이 만나지 않는다** — 명령 글롭
+        규칙은 파일 도구 경로를 받치지 않는다(파일 도구 축의 현행 통제 상태는
+        posture 참조 — 실태는 저장소 밖에 둔다).
+        ⇒ 실제로 여는 유일한 것은 **루트 세션에서 에이전트가 자기 승인을 쓰는
+        경로**이고, 그것은 이 게이트가 막으려는 바로 그 행위다(외부 발신은 비가역).
+
+        ⚠️ **승인 주입은 설계상 사람이 `!`로 한다** — `!`는 이 가드와 하네스 격리를
+        모두 타지 않는다(실측). 그것이 우회가 아니라 **의도된 마지막 게이트**다.
+        """
+        target = self.main_tree / ".claude" / ".research" / "approved.json"
+        assert self.decide_path(target) == "deny"
+        # 🔴 접두어만 다른 이름도 같은 판정이어야 한다. 과거에 화이트리스트를 열 때는
+        #    `(?:/.*)?$` 끝 앵커로 이 축을 막아야 했는데, 항목이 없어진 지금은
+        #    **열릴 경로 자체가 없다**. 그래도 함께 치는 이유는 누가 다시 열 때
+        #    앵커 없는 정규식을 쓰면 이 줄이 **먼저** 빨개지게 하려는 것이다.
+        leak = self.main_tree / ".claude" / ".research-backup" / "approved.json"
+        assert self.decide_path(leak) == "deny"
+
     def test_settings_json_is_not_whitelisted(self):
         """🔴 `settings.json`은 화이트리스트가 **아니다**.
 
@@ -204,17 +235,28 @@ class WorktreeGuardTest(unittest.TestCase):
         assert self.decide_path(self.main_tree / ".claude" / "settings.json") == "deny"
 
     def test_env_is_not_whitelisted(self):
-        """🔴 `.env`는 링크 자산 **3종 중 유일하게** 화이트리스트가 아니다.
+        """🔴 `.env`는 화이트리스트가 아니다 — 제외 **2종 중 하나**다.
 
-        `worktree-new.sh`의 `LINK_ASSETS`는 `.env`·`.claude/.claims`·
-        `.claude/settings.local.json` **3종**인데 `WHITELIST_RE`는 **2종**이다.
-        셋 다 루트로 향하는 링크라 `resolve()` 결과가 루트 경로인데 `.env`만
-        목록에 없어 `deny`된다 — 비밀정보이고 워커가 편집할 대상이 아니기 때문이다.
+        `worktree-new.sh`의 `LINK_ASSETS`는 **4종**(`.env`·`.claude/.claims`·
+        `.claude/settings.local.json`·`.claude/.research`)인데 `WHITELIST_RE`는
+        **2종**이다. 넷 다 루트로 향하는 링크라 `resolve()` 결과가 루트 경로인데,
+        목록에 없는 둘은 `deny`된다.
+
+        🔴 **제외 사유가 서로 다르다 — 이것이 이 셀과 짝 셀이 따로 있는 이유다.**
+          · `.env` — **비밀정보**이고 커밋 금지이며 워커가 편집할 대상이 아니다.
+          · `.claude/.research` — **외부 발신 승인 게이트**다. 열면 에이전트가 자기
+            승인을 쓰는 경로가 된다(`test_research_state_is_not_whitelisted` 참조).
+        사유를 하나로 묶어 "둘 다 민감하니까"로 읽으면, 한쪽 사유가 사라졌을 때
+        다른 쪽까지 함께 열게 된다.
 
         ⚠️ **이 셀이 없으면 그 차이는 주석에만 있다.** 누가 `LINK_ASSETS`와
         「맞춘다」며 `.env`를 화이트리스트에 더해도 **아무 게이트도 빨개지지 않는다**
-        (3종↔2종이 어긋나 보이는 것이 오히려 정정 동기가 된다 — 실제로 피어가
+        (4종↔2종이 어긋나 보이는 것이 오히려 정정 동기가 된다 — 실제로 피어가
         "누락이냐"고 물었다). 선언된 차이는 **산문이 아니라 셀로** 고정한다.
+
+        ⚠️ 종수 이력: 3↔2 → (2026-09-30) 4↔3 → (2026-10-03 철회) **4↔2**.
+        **이 숫자를 고칠 때 이 셀과 `WHITELIST_RE` 주석을 함께 본다** — 한쪽만
+        고치면 산문이 실태를 앞지른다.
         """
         assert self.decide_path(self.main_tree / ".env") == "deny"
 

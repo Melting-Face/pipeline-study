@@ -29,7 +29,34 @@ SRC_DIR="dagster/dockerfile.d/src"
 #   .env                        — 비밀정보. 복사하면 사본이 늘고 회전 시 어긋난다.
 #   .claude/.claims             — 세션 레지스트리. 공유되지 않으면 피어 감지가 죽는다(위 참고).
 #   .claude/settings.local.json — 권한 오버라이드. 갈라지면 worktree마다 프롬프트가 달라진다.
-LINK_ASSETS=(".env" ".claude/.claims" ".claude/settings.local.json")
+#   .claude/.research           — 조사 게이트 상태. 아래 🔴 참고.
+#
+# 🔴 **`.claude/.research`를 링크하는 사유는 `.claims`와 다르다 — 섞어 읽지 마라.**
+#    `.claims`는 **쓰기를 공유해야** 기능이 성립한다(세션 레지스트리). `.research`는
+#    **쓰기를 공유하려고 링크하는 것이 아니다** — 쓰기는 오히려 막혀야 한다.
+#
+#    링크하는 이유는 **팬텀 매니페스트 방지**다. `research_gate_guard.py`는
+#    `$CLAUDE_PROJECT_DIR/.claude/.research/approved.json`을 읽고, **하네스는 worktree
+#    세션에서도 `CLAUDE_PROJECT_DIR`를 루트로 넘긴다**(루트 `queries.jsonl`에 worktree
+#    세션의 `session_id`로 deny 기록이 남아 2026-09-30 확인). 링크가 없으면 worktree에
+#    **가드가 영원히 읽지 않는 사본**이 생기고, 승인을 거기 써도 전건 `deny`가 된다.
+#
+# 🔴 실패 모양이 배선 갭으로 보이지 않는 것이 이 항목의 급소다 — **"승인했는데 영원히
+#    deny"** 는 *배선이 빠졌다*보다 *승인을 잘못 적었다*로 읽힌다(실제로 그렇게 오진하다
+#    로그 위치로 갈라냈다). 링크를 두면 경로가 하나로 수렴해 그 오진 자체가 사라진다.
+#
+# ⚠️ **그러면 누가 승인을 쓰는가 — 사람이 `!`로 쓴다.** 에이전트 도구 쓰기는
+#    ① `worktree_guard.py`(루트 경로, 화이트리스트에 **없다**) ② 하네스 워크트리 격리
+#    (심볼릭 링크를 해석해 shared-checkout 쓰기 거부) 두 층에 막힌다. 그것이 우회가
+#    아니라 **의도된 설계**다 — 외부 발신은 비가역이고 마지막 게이트는 사람이 갖는다.
+#    🔴 `worktree_guard.py`의 화이트리스트에 이 경로를 **넣지 마라**(2026-10-03에
+#    넣었다가 철회했다 — 그쪽 주석에 경위가 있다).
+LINK_ASSETS=(
+    ".env"
+    ".claude/.claims"
+    ".claude/settings.local.json"
+    ".claude/.research"
+)
 
 # 새 브랜치의 기본 시작점. 🔴 **현재 HEAD를 쓰지 않는다**(축 1 주석 참고) —
 # 공유 루트의 HEAD는 다른 세션이 옮길 수 있고, 그러면 새 브랜치가 남의 브랜치 위에 선다.
