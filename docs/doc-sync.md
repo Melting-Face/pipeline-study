@@ -85,7 +85,7 @@
 
 | 가드 | 배선처 |
 | --- | --- |
-| `journal_guard` · `protected_paths_guard` · `session_sync_guard` · `plan_mirror_guard` | `.claude/settings.json` |
+| `journal_guard` · `protected_paths_guard` · `worktree_guard` · `plan_mirror_guard` | `.claude/settings.json` |
 | `analyst_path_guard` · `worker_path_guard` · `research_gate_guard` · `skill_gate_guard` | **각 워커 프론트매터** |
 
 - 🔴 **`BOUNDARIES`에 워커를 추가하면 그 워커 정의의 `hooks`도 함께 잇는다.**

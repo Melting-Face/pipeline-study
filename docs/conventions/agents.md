@@ -22,8 +22,6 @@ AI 세션의 작업을 **2계층(supervisor → worker)** 으로 나누고, "누
 | [`agents/gates.md`](agents/gates.md) | 승인 게이트 · `security` 컨펌(G1·G2·Δ) · 조사 프로토콜 · 에스컬레이션 |
 | [`agents/journal.md`](agents/journal.md) | 저널 저장 위치 · 포맷 · 기록 주체 · 기록 시점 |
 | [`agents/plan-mirror.md`](agents/plan-mirror.md) | 계획서 볼트 미러 · opt-out 규칙 |
-| [`agents/parallel.md`](agents/parallel.md) | 병렬 세션 가드 · hook 결정값 · 세션 지목 |
-| [`agents/peer.md`](agents/peer.md) | 세션 간 협업 규율 · 제안 처리 · 비대기 협상 |
 
 > 이 표는 `agents/**` 하위 문서만 담는다. **열린 작업의 정본인 GitHub Issue 규약은 표 밖**이고
 > [`issue.md`](issue.md)가 갖는다 — 조회 절차만 아래 §미션 개시에 둔다.

@@ -260,8 +260,8 @@ python3 scripts/tests/run_guard_tests.py
 
 | 축 | 가드 |
 | --- | --- |
-| 테스트 있음(이 계층) | `journal_guard` · Claude/Codex `worker_path_guard` · `plan_mirror_guard`(일부) |
-| **테스트 0건** | `analyst_path_guard` · `skill_gate_guard` · `research_gate_guard` · `protected_paths_guard` · `session_sync_guard` · `commit_manifest_guard` |
+| 테스트 있음(이 계층) | `journal_guard` · Claude/Codex `worker_path_guard` · `plan_mirror_guard`(일부) · `worktree_guard` |
+| **테스트 0건** | `analyst_path_guard` · `skill_gate_guard` · `research_gate_guard` · `protected_paths_guard` · `commit_manifest_guard` |
 
 이 훅의 초록을 **「가드 전부가 검증됐다」로 읽지 않는다**. 잔여 6종은 별도 항목이다(Issue #55).
 

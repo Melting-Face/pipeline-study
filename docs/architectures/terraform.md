@@ -255,10 +255,9 @@ CI 잡은 `terraform/*/`를 순회해 스택이 늘어도 자동으로 집고, *
 흡수돼 다시 raw git 에러가 된다. 원래 코드는 항상 `-b`를 붙였으므로 **둘째와 셋째를 같은 문구**
 (`fatal: a branch named … already exists`)로 냈다 — 막히기는 했으나 왜 막혔는지는 알 수 없었다.
 
-맨손 `git worktree add`로 우회하려면 `LINK_ASSETS` 3종
-(`.env`·`.claude/.claims`·`.claude/settings.local.json`)을 **직접 링크**해야 한다 —
-`.claims`가 빠지면 피어 감지가, `settings.local.json`이 빠지면 권한 범위가 **조용히** 달라진다.
-링크 후에는 `ListAgents`로 피어가 여전히 보이는지 **확인하고** 작업을 시작한다(선언으로 닫지 않는다).
+맨손 `git worktree add`로 우회하려면 `LINK_ASSETS` 2종
+(`.env`·`.claude/settings.local.json`)을 **직접 링크**해야 한다 —
+`settings.local.json`이 빠지면 권한 범위가 **조용히** 달라진다.
 
 ## 참고
 

@@ -33,7 +33,7 @@ r"""가드 단위 테스트를 돌리고 **「돌지 않은 것」을 통과로 
 보증하지 않는 것:
     이 러너는 `scripts/tests/` 아래 테스트가 **돌았는지**만 본다. 테스트가 없는 가드는
     여기서도 보이지 않는다 — `analyst_path_guard` · `research_gate_guard` ·
-    `protected_paths_guard` · `session_sync_guard`는 **테스트 0건**이다.
+    `protected_paths_guard`는 **테스트 0건**이다.
     가드별 축 전수 현황은 **볼트**가 갖는다(Issue #55 §행선지 — 공백 지도).
 """
 

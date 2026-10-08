@@ -12,13 +12,8 @@
 #    정작 못 쓰게 된다. 축을 다 세지 않으면 분기 하나로 닫고 **고쳤다고 믿는데 안 고쳐진**
 #    상태가 된다(원칙 7).
 #
-# 🔴 **`.claude/.claims`는 복사가 아니라 심볼릭 링크다.** 이게 이 스크립트의 핵심이다.
-#    worktree는 **파일**을 격리하지만 **클러스터·컨테이너**는 격리하지 못한다. 그런데
-#    세션 간 충돌 감지(`session_sync_guard.py`)는 `$CLAUDE_PROJECT_DIR/.claude/.claims`를
-#    보므로, worktree마다 레지스트리가 따로 생기면 **모든 세션이 "나 혼자"로 보인다**.
-#    즉 worktree 도입이 피어 감지를 **조용히 끈다**(에러 없음 — 원칙 7 계열).
-#    링크로 두면 가드 수정 없이 레지스트리가 공유된다(`Path.resolve()`가 링크를 따라가
-#    `/.claude/.claims/` 매칭도 그대로 성립한다).
+# 병렬 세션은 세션 하나 = worktree 하나로 격리한다. 세션 간 레지스트리 공유는 없다 —
+# 같은 파일 충돌은 PR 머지 시점에 git이 드러낸다(재정비 스펙 §설계 1).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,9 +22,8 @@ SRC_DIR="dagster/dockerfile.d/src"
 
 # 링크로 공유할 비커밋 자산(단일 출처 유지가 이득인 것들).
 #   .env                        — 비밀정보. 복사하면 사본이 늘고 회전 시 어긋난다.
-#   .claude/.claims             — 세션 레지스트리. 공유되지 않으면 피어 감지가 죽는다(위 참고).
 #   .claude/settings.local.json — 권한 오버라이드. 갈라지면 worktree마다 프롬프트가 달라진다.
-LINK_ASSETS=(".env" ".claude/.claims" ".claude/settings.local.json")
+LINK_ASSETS=(".env" ".claude/settings.local.json")
 
 # 새 브랜치의 기본 시작점. 🔴 **현재 HEAD를 쓰지 않는다**(축 1 주석 참고) —
 # 공유 루트의 HEAD는 다른 세션이 옮길 수 있고, 그러면 새 브랜치가 남의 브랜치 위에 선다.
@@ -154,11 +148,9 @@ cat <<EOF
   git -C "${REPO_ROOT}" branch -D ${BRANCH}      # 병합 완료 후
 
   \`remove\`가 "contains modified or untracked files"로 거부하면 \`--force\`를 붙인다.
-  링크가 무시되지 않는 리비전을 체크아웃한 worktree에서 그렇다(.gitignore의
-  \`.claude/.claims\` 패턴이 슬래시 없이 들어간 커밋 이후로는 불필요).
   \`--force\`가 링크 **원본**을 지우지 않는다는 것은 실측으로 확인했다.
 
-🔴 링크된 자산(.env·.claims·settings.local.json)은 **메인 트리와 같은 실체**다.
+🔴 링크된 자산(.env·settings.local.json)은 **메인 트리와 같은 실체**다.
    링크를 **통해 쓴 내용**은 원본에 그대로 반영된다(그게 목적이다).
    반면 링크 자체를 지우는 것(\`rm\`·\`git worktree remove\`)은 원본을 건드리지 않는다 —
    \`rm -rf\`는 심볼릭 링크를 따라 들어가지 않고 링크만 끊는다.
