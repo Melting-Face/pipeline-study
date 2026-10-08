@@ -48,7 +48,9 @@ dependencies = [
   "dagster-aws==0.28.12",
   # dagster-iceberg(preview)가 pyiceberg[pyarrow]를 동반 설치한다.
   "dagster-iceberg==0.3.14",
-  "kubernetes>=36.0.3",
+  # 37.0.0부터 타입 정보가 노출돼 defs/poc·defs/flink의 resources.py가 mypy를 통과하지 못한다
+  # (Optional 메타데이터·status 접근). 타입 오류를 고치고 37로 올리기 전까지 상한을 둔다.
+  "kubernetes>=36.0.3,<37",
   # ── 아래 셋은 위 패키지들의 전이 의존이나 **직접 import하므로 명시 선언**한다
   #    (`trino`와 같은 처리 — explicit dependencies). 안 적으면 상류가 의존을 떨궜을 때
   #    적재 헬퍼(`common/helper.py`)가 조용히 깨진다.
