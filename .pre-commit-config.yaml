@@ -323,9 +323,9 @@ repos:
   # 🔴 `uv run`을 쓰지 않는다 — CI `lint` 잡에 **uv가 없다**(`setup-uv`는 `commit-msg`·`defs`
   #    잡에만 있다). 위 훅들과 같은 `language: system` + 호스트 `python3` 형태다.
   # ⚠️ **보증 범위는 가드 3종까지다** — `journal_guard` · Claude/Codex `worker_path_guard` ·
-  #    `plan_mirror_guard` 일부. 나머지 6종(`analyst_path_guard`·`skill_gate_guard`·
-  #    `research_gate_guard`·`protected_paths_guard`·`session_sync_guard`·
-  #    `commit_manifest_guard`)은 **테스트 0건**이다(Issue #55). 이 훅의 초록을
+  #    `plan_mirror_guard` 일부. 나머지 5종(`analyst_path_guard`·`skill_gate_guard`·
+  #    `research_gate_guard`·`protected_paths_guard`·`commit_manifest_guard`)은
+  #    **테스트 0건**이다(Issue #55). 이 훅의 초록을
   #    「가드 전부가 검증됐다」로 읽지 마라.
   # ⚠️ `files:`에 `.codex/hooks/**`를 넣는 것은 **Codex 짝을 고치면 테스트가 돌게** 하기
   #    위해서다(Issue #53의 사전 조건) — 두 런타임의 같은 가드는 짝으로 유지된다.

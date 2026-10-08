@@ -1,7 +1,7 @@
 # 가드 배선과 실발동 확인
 
 > 에이전트 규약 인덱스는 [`../agents.md`](../agents.md).
-> 통제 5층·경로 경계는 [`permissions.md`](permissions.md), hook 결정값은 [`parallel.md`](parallel.md).
+> 통제 5층·경로 경계는 [`permissions.md`](permissions.md).
 
 규약 중 **기계가 판정할 수 있는 것**은 문서가 아니라 hook이 강제한다.
 규약은 각 세션의 컨텍스트 안에만 있고 **파일시스템은 하나**이기 때문이다.
@@ -16,7 +16,7 @@
 | --- | --- | --- |
 | [`journal_guard.py`](../../../scripts/journal_guard.py) | 런타임별 저널 `NN` 경합 · 규약 위반 생성 · 기록 누락 | Claude `settings.json` + Codex `hooks.json` |
 | [`protected_paths_guard.py`](../../../scripts/protected_paths_guard.py) | 보호 경로의 `Bash` 우회 쓰기 | `settings.json` |
-| [`session_sync_guard.py`](../../../scripts/session_sync_guard.py) | 세션 간 중복 작업 · 워킹트리 전역 git | `settings.json` |
+| [`worktree_guard.py`](../../../scripts/worktree_guard.py) | 루트 워킹트리의 파일 도구 쓰기 · 커밋 | `settings.json` |
 | [`analyst_path_guard.py`](../../../scripts/analyst_path_guard.py) | `analyst` 경로 경계 | **`analyst.md` 프론트매터** |
 | [`worker_path_guard.py`](../../../scripts/worker_path_guard.py) | 워커별 경로 경계(워커명을 인자로) | **각 워커 프론트매터** |
 | [`research_gate_guard.py`](../../../scripts/research_gate_guard.py) | 미승인 `WebFetch` · 질의문 로깅 | **`researcher.md` 프론트매터** |
@@ -198,7 +198,7 @@ Codex hook 셋은 `scripts/journal_guard.py`를 **서브프로세스로 중계**
   합친 것은 **표**뿐이다(아래 §짝 가드의 단일 출처). 표가 같아도 매칭이 갈리면
   결과는 갈리므로, 이 두 함수는 **대조 수단이 없는 상태로 남아 있다.**
   ⚠️ **그 경계의 결정값은 `ask`이고, 파일 도구의 `ask`는 auto 모드 분류기가 흡수한다**
-  ([`parallel.md`](parallel.md) §hook 결정값) — **뜨지만 멈추지는 않는다.** 경로 축이던 때와
+  — **뜨지만 멈추지는 않는다.** 경로 축이던 때와
   **동등이지 강화가 아니다.** 그리고 판정이 frontmatter `agent:` **한 필드**에 걸려 있어
   그 값이 역할명 등으로 오염되면 경계가 함께 흔들린다(실발생 — 오늘자 저널 하나가
   `agent: archivist`로 적혔다). 오염의 방향은 안전하지만(더 막힌다) **그 "더"가 `ask`라서
@@ -233,7 +233,7 @@ Codex hook 셋은 `scripts/journal_guard.py`를 **서브프로세스로 중계**
 - 🔴 **대조군이 성공하지 않으면 위반 셀의 `deny`는 근거가 못 된다** —
   "막혔다"와 "도구가 아예 안 돌았다"가 구분되지 않는다.
 - **차단 문구가 어느 분기의 원문인지까지 대조한다.** 통과 후 다른 이유로 걸린 것과
-  의도한 축이 발동한 것은 문구로만 갈린다([`parallel.md`](parallel.md) §차단 문구의 출처).
+  의도한 축이 발동한 것은 문구로만 갈린다(원문은 각 가드 스크립트의 `*_REASON` 상수다).
 - **프로브가 판정층에 도달하는지 먼저 확인한다.** `Edit`에 **존재하지 않는 `old_string`** 을 주면
   도구가 문자열 매칭에서 **hook보다 먼저** 실패해 경계 안이든 밖이든 출력이 같아진다.
   원문을 지키려 넣은 fail-safe가 곧 **관측 불능의 원인**이 된다.
@@ -256,7 +256,7 @@ Codex hook 셋은 `scripts/journal_guard.py`를 **서브프로세스로 중계**
 
 ⚠️ 마지막 칸이 이 표의 존재 이유다 — **문구 출처를 대조하지 않으면 "가드가 막았다"가
 거짓이 될 수 있다.** 분류기가 막은 것과 가드가 막은 것은 **결과가 같고 원인이 다르다**
-(문구 판별은 [`parallel.md`](parallel.md) §차단 문구의 출처).
+(문구 판별은 가드 스크립트의 `*_REASON` 상수와 대조한다).
 
 ### 반영 시점을 헷갈리지 않는다
 

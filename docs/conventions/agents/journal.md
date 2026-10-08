@@ -2,7 +2,7 @@
 
 > 에이전트 규약 인덱스는 [`../agents.md`](../agents.md).
 > 이 문서는 **무엇을 어디에 어떤 포맷으로 언제 기록하는가**를 담는다.
-> 계획서 미러는 [`plan-mirror.md`](plan-mirror.md), 피어 세션 기록은 [`peer.md`](peer.md).
+> 계획서 미러는 [`plan-mirror.md`](plan-mirror.md).
 
 ## 기록관(archivist)
 

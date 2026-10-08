@@ -202,12 +202,6 @@
           },
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/session_sync_guard.py bash-pre",
-            "statusMessage": "워킹트리 전역 변경 검사",
-            "timeout": 10
-          },
-          {
-            "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/commit_manifest_guard.py",
             "statusMessage": "커밋 대상 ↔ G1 매니페스트 대조",
             "timeout": 10
@@ -215,25 +209,8 @@
         ]
       },
       {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/session_sync_guard.py agent-pre",
-            "statusMessage": "서브에이전트 중복 호출 검사",
-            "timeout": 10
-          }
-        ]
-      },
-      {
         "matcher": "Edit|Write|NotebookEdit",
         "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/session_sync_guard.py file-pre",
-            "statusMessage": "동일 파일 동시편집 검사",
-            "timeout": 10
-          },
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/protected_paths_guard.py file-pre",
@@ -259,7 +236,7 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/worktree_guard.py bash-pre",
-            "statusMessage": "루트 워킹트리 쓰기 차단(Bash)",
+            "statusMessage": "루트 워킹트리 커밋 차단(Bash)",
             "timeout": 10
           }
         ]
@@ -267,41 +244,12 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/session_sync_guard.py agent-post",
-            "statusMessage": "서브에이전트 결과 공유 기록",
-            "timeout": 10
-          }
-        ]
-      },
-      {
         "matcher": "Edit|Write|NotebookEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/session_sync_guard.py file-post",
-            "statusMessage": "파일 리스 갱신",
-            "timeout": 10
-          },
-          {
-            "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/plan_mirror_guard.py post",
             "statusMessage": "계획 파일·저널 경로 수집",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/session_sync_guard.py session-end",
-            "statusMessage": "세션 점유 해제",
             "timeout": 10
           }
         ]

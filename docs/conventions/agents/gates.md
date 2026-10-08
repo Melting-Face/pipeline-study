@@ -2,7 +2,7 @@
 
 > 에이전트 규약 인덱스는 [`../agents.md`](../agents.md).
 > 이 문서는 **무엇을 실행하기 전에 누구의 승인을 받는가**를 담는다.
-> 기계 강제층은 [`parallel.md`](parallel.md) §hook 결정값.
+> 기계 강제층은 [`enforcement.md`](enforcement.md).
 
 ## 승인 게이트 (approval gate)
 
@@ -111,7 +111,7 @@ supervisor가 제출한 목록을 **검증 없이 재료로 삼지 않는다.**
 | `WebFetch` | `url` | `.claude/.research/approved.json`과 대조 — 없으면 **`deny`** |
 
 - **키가 없으면 통과가 아니라 `deny`** 로 떨어뜨린다 — matcher가 두 도구에 걸치는데
-  읽는 필드 이름이 갈리는 구조라 [`parallel.md`](parallel.md) §matcher 함정에 해당한다.
+  읽는 필드 이름이 갈리는 구조다(matcher 함정 — 한 키만 읽으면 그 도구에만 투명해진다).
 - 이 가드는 **입력 축까지 fail-closed**다. 입력 파싱 실패·키 부재·매니페스트 파손이
   전부 `deny`다 — **여기는 이 층이 유일**해서, 통과시키면
   **파일 하나 깨뜨리는 것이 게이트를 여는 수단**이 된다.
