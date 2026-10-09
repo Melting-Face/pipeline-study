@@ -41,8 +41,9 @@ source scripts/k8s-env.sh                 # KUBECONFIG export(가드는 require_
 ```
 
 > 위 기본값(`lakehouse`, 8080/8443)은 **교체(PR2) 뒤의 기본 경로**다. 검증 중에는 스택 A에
-> `-var cluster_name=lakehouse-next -var http_host_port=8082 -var https_host_port=8445`를 넘기고
-> 스택 B에도 같은 포트를 넘긴다([argocd-gitops.md](docs/argocd-gitops.md) §6).
+> `-var cluster_name=lakehouse-next -var http_host_port=8082 -var https_host_port=8445`를 넘기고,
+> 스택 B에는 `-var kubeconfig_path=~/.kube/lakehouse-next.config -var kube_context=kind-lakehouse-next
+> -var http_host_port=8082 -var target_revision=<브랜치>`를 넘긴다(B는 `https_host_port`가 없다, [argocd-gitops.md](docs/argocd-gitops.md) §6).
 
 클러스터는 **Terraform 스택 A**, ingress-nginx·ArgoCD는 **스택 B**가 만들고, 오퍼레이터 이하는
 **ArgoCD가 `gitops/charts/`에서 수렴**시킨다(`git push`로 바뀐다). 순서와 이유는 아래 링크가 정본이다.

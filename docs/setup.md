@@ -130,7 +130,9 @@ scripts/k8s-secrets.sh                    # PR2 산출물 — 아직 존재하�
   바꾼다. 수렴 확인은 ArgoCD UI 또는 `kubectl get applications -n argocd`.
 - 위 기본값(`lakehouse`, 8080/8443)은 **교체(PR2) 뒤의 기본 경로**다. 검증 중에는 스택 A에
   `-var cluster_name=lakehouse-next -var http_host_port=8082 -var https_host_port=8445`를 넘기고,
-  스택 B에도 같은 포트·`-var target_revision=<브랜치>`를 넘긴다(상세 [`argocd-gitops.md`](argocd-gitops.md) §6).
+  스택 B에는 `-var kubeconfig_path=~/.kube/lakehouse-next.config -var kube_context=kind-lakehouse-next
+  -var http_host_port=8082 -var target_revision=<브랜치>`를 넘긴다
+  (B는 `https_host_port`가 없다. 상세 [`argocd-gitops.md`](argocd-gitops.md) §6).
 - **`k8s-poc-storage.sh`는 과도기 스크립트다** — Barman CRD를 설치하던 주체가 사라져 그 선행 검사에서
   멈춘다(데이터 층이 차트로 이전되는 PR2에서 철거).
 
