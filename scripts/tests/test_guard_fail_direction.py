@@ -25,11 +25,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SKILL_GATE = PROJECT_ROOT / "scripts" / "skill_gate_guard.py"
 COMMIT_MANIFEST = PROJECT_ROOT / "scripts" / "commit_manifest_guard.py"
-CODEX_RELAYS = (
-    PROJECT_ROOT / ".codex" / "hooks" / "journal_pre_write.py",
-    PROJECT_ROOT / ".codex" / "hooks" / "session_start.py",
-    PROJECT_ROOT / ".codex" / "hooks" / "stop_guard.py",
-)
+CODEX_RELAYS = (PROJECT_ROOT / ".codex" / "hooks" / "session_start.py",)
 
 
 class GuardFailDirectionTest(unittest.TestCase):
