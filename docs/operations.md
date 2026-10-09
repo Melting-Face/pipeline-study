@@ -83,8 +83,13 @@ aws --endpoint-url http://localhost:8333 \
 
 ### 1-2. 호스트 실행과 컨테이너 실행의 값이 다른 키
 
-Dagster는 **클러스터 안**에서 돌고 메타 Postgres도 **CNPG의 `dagster` DB**다
-([conventions/k8s.md](conventions/k8s.md) §8). 실행 위치가 셋이라 같은 키의 값이 **셋으로 갈린다**.
+**메타 Postgres의 현행 사실(단일 서술)** — 구 `lakehouse` 클러스터에서는 CNPG `catalog-postgres`의
+`dagster` DB가 메타 DB였다. 그 선언(`Database` CR, `k8s/dagster/dagster-meta-db.yaml`)은 철거됐고
+`k8s/catalog-postgres.yaml`에는 `dagster` **롤만** 남는다. **새 클러스터에는 메타 DB가 없고** 위치는
+PR2가 정한다([argocd-gitops.md](argocd-gitops.md) D6). 그동안 compose 실행(`--profile host-dagster`)은
+compose `postgres`를 쓰고, 호스트 `dg dev`는 `.env`의 `POSTGRES_HOST`·`POSTGRES_PORT`가 가리키는 곳을 쓴다
+(예시 기본값 15432는 **구 클러스터** CNPG의 port-forward다 — 구 클러스터가 내려가면 함께 사라진다).
+실행 위치에 따라 같은 키의 값이 갈린다(in-cluster 열은 철거 전 기록).
 
 | 키 | compose 컨테이너 | 호스트(`dg dev`) | in-cluster |
 | --- | --- | --- | --- |
@@ -96,9 +101,9 @@ Dagster는 **클러스터 안**에서 돌고 메타 Postgres도 **CNPG의 `dagst
 
 ⚠️ **호스트 경로의 `POSTGRES_PORT`가 급소다.** 5432면 compose DB를, 15432면 CNPG DB를 본다 —
 둘 다 이름이 `dagster`라 **접속은 어느 쪽이든 성공하고 run 이력만 조용히 갈린다.**
-정본은 CNPG이므로 호스트 실행 시 port-forward + 15432를 쓴다.
+어느 쪽을 정본으로 삼을지는 PR2 결정 전까지 **한 곳으로 고정해 섞지 않는 것**이 규칙이다.
 
-in-cluster 값의 정본은 `k8s/dagster/dagster-deploy.yaml`의 ConfigMap이다(`.env`가 아니다).
+in-cluster Dagster 매니페스트는 철거돼(새 클러스터에 배포하지 않는다) 값의 정본은 호스트 `.env`다.
 
 - `dagster.yaml`의 `hostname`은 **하드코딩하지 않고** `env: POSTGRES_HOST`로 참조한다.
   하드코딩하면 호스트 실행 시 이름 해석이 안 돼 `too many retries for DB connection`으로 죽는다(실측).
@@ -285,7 +290,7 @@ kind 클러스터를 다시 만드는 절차다. **재생성은 PVC를 통째로
 치르지 않아도 될 재적재를 치르지 않으려면 이 표를 먼저 본다.
 
 **재생성이 확정되면 바꿀 것을 전부 모아서 한 번에 한다.** 창을 여러 번 열면 재적재도 여러 번이다.
-선반영 대상: `k8s/kind-cluster.yaml`(포트·마운트) · `k8s/catalog-postgres.yaml`(`storage.size`) ·
+선반영 대상: `terraform/cluster/kind`(포트·마운트 변수) · `k8s/catalog-postgres.yaml`(`storage.size`) ·
 `scripts/k8s-env.sh`(머신 자원 선언).
 
 ### 4-2. 무엇이 소멸하고 비용이 얼마인가
@@ -335,20 +340,16 @@ kubectl exec catalog-postgres-1 -c postgres -- pg_dump -U iceberg iceberg > <저
 ### 4-4. 재생성과 복구
 
 ```shell
-./scripts/k8s-down.sh          # kind + 레지스트리 컨테이너 삭제 (machine·이미지 볼륨은 보존)
-./scripts/k8s-up.sh
-./scripts/k8s-operators.sh
-terraform -chdir=terraform/lakehouse-platform apply \
-    -target=helm_release.spark_operator -target=helm_release.flink_operator -target=helm_release.cnpg
-./scripts/k8s-poc-storage.sh
-terraform -chdir=terraform/lakehouse-platform apply
-./scripts/k8s-dagster.sh
+./scripts/k8s-down.sh          # ⚠️ 현재는 kind + 레지스트리 컨테이너를 직접 삭제한다(PR2에서 스택 A destroy로 정리 예정)
+./scripts/k8s-up.sh            # podman 머신 · 레지스트리
+terraform -chdir=terraform/cluster/kind apply
+terraform -chdir=terraform/platform apply
+source scripts/k8s-env.sh      # KUBECONFIG + 컨텍스트 가드
 ```
 
-⚠️ **`terraform apply`를 빼면 이 경로는 깨진다** — `k8s-poc-storage.sh`가 요구하는 CNPG CRD를
-Terraform이 만든다. 클러스터를 지우면 CRD도 함께 사라지므로 여기서는 **최초 구축과 같은 2단계**가
-필요하다(빈 클러스터에서 단일 apply가 안 되는 이유는 [setup.md §3](setup.md#3-로컬-kubernetes)).
-state에 남은 구 리소스는 refresh가 소멸을 감지해 재생성 계획에 넣으므로 손댈 것이 없다.
+오퍼레이터(cert-manager·CNPG·Spark·Flink)는 ArgoCD가 `git`에서 수렴시키므로 따로 올리지 않는다.
+데이터 층(SeaweedFS·카탈로그 DB·Secret)은 PR2에서 ArgoCD로 옮겨 오며, 그 전까지의 과도기 스크립트
+`scripts/k8s-poc-storage.sh`는 Barman CRD 선행 검사에서 멈춘다([argocd-gitops.md](argocd-gitops.md) §8).
 
 ⚠️ **복구 순서는 SeaweedFS(S3 객체) → 카탈로그 PG(메타)** 다. 반대로 하면 **테이블은 보이는데
 읽기가 실패**한다 — 메타가 가리키는 객체가 아직 없기 때문이다. 이 저장소가 두 번 겪은

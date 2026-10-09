@@ -218,7 +218,7 @@ spec:
                             port:
                                 number: 4040
 ---
-# gRPC 엔드포인트용 리프 인증서 — 발급자는 k8s/local-ca.yaml의 로컬 CA.
+# gRPC 엔드포인트용 리프 인증서 — 발급자는 gitops/charts/cert-manager/templates/local-ca.yaml의 로컬 CA.
 # 호스트 클라이언트는 그 CA 하나만 신뢰하면 되므로, 이 리프가 갱신돼도 재배포가 필요 없다.
 apiVersion: cert-manager.io/v1
 kind: Certificate

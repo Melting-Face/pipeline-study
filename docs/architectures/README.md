@@ -11,13 +11,14 @@
 | --- | --- | --- |
 | [overview.md](overview.md) | 🚧 | 현행 스택 스냅샷·데이터 흐름(Dagster·dbt·Iceberg·SeaweedFS) — **재설계 이행 중**이라 Trino 경로는 제거 대상이고, 스냅샷은 관측 시점과 함께 읽는다 |
 | [docker.md](docker.md) | ✅ | 컨테이너·compose 배포(채택) |
-| [dagster.md](dagster.md) | ✅ | 오케스트레이터 — **in-cluster 배포**. raw 매니페스트 · `DefaultRunLauncher` 유지 이유와 대안 비교 |
+| [argocd.md](argocd.md) | ✅ | GitOps 컨트롤러 — **`git push`로 클러스터가 수렴**. ApplicationSet + 재시도 수렴을 고른 이유와 기각한 대안, 데이터 보호 3겹 |
+| [dagster.md](dagster.md) | ✅ | 오케스트레이터 — 배치 결정 기록(in-cluster 배포는 ArgoCD 전환으로 철거, 현행은 호스트 실행). raw 매니페스트 · `DefaultRunLauncher` 유지 이유와 대안 비교 |
 | [spark.md](spark.md) | 🚧 | 배치 엔진 — 대용량 인제스트 · dbt-spark 마트 · Iceberg 유지보수. 버전은 **최신이 아니라 Iceberg가 지원하는 짝**으로 고른다 |
 | [flink.md](flink.md) | 🚧 | 스트림 엔진 — 실시간 조기경보. Iceberg bronze 스트리밍 읽기를 소스로 쓴다 |
 | [k8s.md](k8s.md) | 🚧 | 컨테이너 오케스트레이션 — 컴퓨트·데이터 서비스 이전(이행중) |
 | [operators.md](operators.md) | ✅ | 오퍼레이터 패턴 3종(Spark·Flink·PostgreSQL) — **왜 셋 중 둘만 전용 이미지를 굽는가**. 판단축은 오퍼레이터가 아니라 런타임의 확장 적재 방식이다 |
 | [storage.md](storage.md) | ✅ | 오브젝트 스토리지 — 현행 **SeaweedFS**. 교체 검토의 동기는 **정확성 축 하나**이고, 후보 판정 수단은 **실측 프로브뿐**이다 |
-| [terraform.md](terraform.md) | 🚧 | IaC — 로컬 K8s 플랫폼을 셸에서 이행. 분할 축은 부트스트랩이 아니라 **폭발반경**이다 |
+| [terraform.md](terraform.md) | ✅ | IaC — 스택 A(cluster)·B(platform)가 ArgoCD까지 설치. 분할 축은 부트스트랩이 아니라 **폭발반경**이다 |
 | [oci.md](oci.md) | 🔎 | 클라우드 이행 — OCI Always Free A1(ARM) + Terraform + k3s(학습·확장 경로) |
 | [trino.md](trino.md) | 🔎 | MPP SQL 엔진 — 현행 compose까지 채택, **재설계로 제거**(dbt→dbt-spark) |
 | [monitoring.md](monitoring.md) | 🔎 | 모니터링·관측 — Grafana·Loki·Robusta 등을 **지금 쓰지 않는 이유** |

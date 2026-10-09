@@ -1,6 +1,7 @@
 # Kubernetes 규칙 (이행)
 
-> **상태**: 🚧 **채택·이행중**. 재설계로 **컴퓨트·데이터 서비스를 K8s로 이전**했고 **Dagster도 클러스터로 들어왔다**
+> **상태**: 🚧 **채택·이행중**. 재설계로 **컴퓨트·데이터 서비스를 K8s로 이전**했고,
+> 클러스터 선언은 **ArgoCD GitOps**로 옮겨 가는 중이다(Dagster는 새 클러스터에 배포하지 않는다)
 > 전체 로드맵은 [../redesign.md](../redesign.md), PoC 게이트는 그 Phase 0.
 > 아래 §1~8은 [docker.md](docker.md)의 원칙(이미지 고정·자원 한도·비밀 참조·non-root)을 K8s 리소스로 옮긴 공통 규칙,
 > §9~12는 **본 재설계 고유 규칙**(Spark Operator·노출·로컬 클러스터·CNPG 카탈로그 PG)이다.
@@ -57,10 +58,17 @@ resources:
 
 ## 7. 패키징은 Helm
 
+- **ArgoCD가 sync하는 앱은 `gitops/charts/<app>/` umbrella 차트 하나**다. 업스트림 차트는 `Chart.yaml`
+  dependency로 감싸고 `Chart.lock`을 커밋하며(`charts/*.tgz`는 gitignore) 버전은 정확 고정한다.
+  로컬 매니페스트는 `templates/`, 값은 `values.yaml`이 정본, 정적 게이트는 `scripts/gitops-charts-check.sh`.
+  **상태 보호 3겹**(`Prune=false,Delete=false`·CRD `resource-policy: keep`)은 [../argocd-gitops.md](../argocd-gitops.md) §4.
 - 환경별 차이는 `values-<env>.yaml`로 분리(값 오버라이드), 템플릿은 공통. 차트 버전·appVersion을 관리한다.
 - compose profiles(옵션 기능)는 Helm values 토글(`monitoring.enabled` 등)로 옮긴다.
 
-## 8. Dagster 배치 — in-cluster
+## 8. Dagster 배치 — in-cluster (새 클러스터에는 배포하지 않는다)
+
+> ⚠️ `k8s/dagster/`·`scripts/k8s-dagster.sh`는 삭제됐다([../argocd-gitops.md](../argocd-gitops.md) D6).
+> 아래는 복원 시 참조이며 현행 실행 경로는 호스트 Dagster다.
 
 - **원칙**(in-cluster 이전 전): webserver·daemon을 **클러스터 안 Deployment 2개**로 두고 UI는 Ingress로 낸다.
   run launcher는 **`DefaultRunLauncher` 유지**(run = daemon 파드 내 서브프로세스). `K8sRunLauncher`는 후속 과제다.
@@ -76,8 +84,8 @@ resources:
 - **차트 버전 ≠ appVersion**(설치 시 최다 실수): GA **appVersion 1.0.0**은 **chart 1.8.0**이다.
   `--version 1.0.0`을 주면 **appVersion 0.2.0**이 깔린다.
   `helm search repo … --versions`로
-  대조하고 `terraform/lakehouse-platform/variables.tf`의 `spark_operator.chart_version`에
-  **chart 버전**을 핀한다(오퍼레이터 설정은 셸에서 이 스택으로 이관됐다).
+  대조하고 `gitops/charts/spark-operator/Chart.yaml`의 dependency `version`에
+  **chart 버전**을 핀한다(오퍼레이터 설정은 ArgoCD 차트가 소유한다).
 - **CRD**: `apiVersion: spark.apache.org/**v1**`, `kind: SparkApplication`.
   chart 1.8.0의 CRD는 **`v1beta1`(served) + `v1`(served·**storage**) 2버전**이고 `storedVersions=["v1"]`이라
   **`v1`이 정본**이다(라이브 실측 — `kubectl get crd sparkapplications.spark.apache.org -o json`).
@@ -121,7 +129,7 @@ resources:
 - **정리 권한 보완(deletecollection)**: 차트의 `spark-workload-clusterrole`은 verbs가 템플릿에 하드코딩돼
   **`deletecollection`이 빠져 있다**(values로 조정 불가). driver는 종료 시 라벨 셀렉터로 일괄 삭제를 호출하므로,
   없으면 잡이 성공해도 `*-driver-svc`·PVC가 남고 ERROR가 찍힌다. 최소권한(§5)에 맞춰 **잡 네임스페이스 한정 Role**로
-  `deletecollection`만 보완한다 → `k8s/spark/spark-workload-cleanup-rbac.yaml`.
+  `deletecollection`만 보완한다 → `gitops/charts/spark-operator/templates/spark-workload-cleanup-rbac.yaml`.
 - **로그 회수를 위한 retain 정책**: Dagster가 **종료 후** driver 로그를 읽어 materialization 메타
   (행 수 등)를 남기므로 `applicationTolerations.resourceRetainPolicy: **Always**` + `resourceRetainDurationMillis`
   (예: `600000`=10분)를 준다. `OnFailure`면 **성공 즉시 driver 파드가 삭제**돼 로그가 사라진다.
@@ -183,11 +191,11 @@ resources:
 
 ## 9-2. Flink Operator·FlinkDeployment 규칙 (스트리밍)
 
-> ✅ **오퍼레이터는 기본 설치된다**. Flink Operator는 이제 `terraform/lakehouse-platform/`이
+> ✅ **오퍼레이터는 기본 설치된다**. Flink Operator는 이제 ArgoCD 앱(`gitops/charts/flink-operator/`)이
 > 소유하며 **항상 설치된다** — 구 `INSTALL_FLINK` 다이얼은 이관과 함께 사라졌다.
 > 그 다이얼을 `true`로 두었던 이유는 유효하다: **opt-in으로 남기면 "문서엔 있는데 기본 기동엔
 > 없는" 드리프트를 재생산**하기 때문이고, 이제는 선언 자체가 그 상태를 만들 수 없다.
-> 빼야 한다면 `variables.tf`가 아니라 **스택에서 리소스를 제거**하는 결정이다.
+> 빼야 한다면 값이 아니라 `terraform/platform`의 `var.apps`에서 **앱을 제거**하는 결정이다.
 > 한때 제거했던 이유(잡 없는 세션 클러스터가 1 CPU / 2Gi를 상주 점유)는
 > **예산 상향과 동시 기동 실측**으로 해소됐다(§9-3). VM 실측값의 정본은
 > [resource-sizing.md](../resource-sizing.md) §(A)이고 **여기에 수치를 복제하지 않는다**
@@ -209,10 +217,10 @@ resources:
 - **`watchNamespaces={<잡 ns>}`를 반드시 준다** — 비우면 잡 SA(`flink`)와 Role이 **오퍼레이터 ns에만** 생겨
   잡 ns에서 파드가 못 뜬다(Spark 차트의 `workloadResources.namespaces`와 같은 함정).
   단, 지정하면 RBAC이 네임스페이스로 좁아지면서 **두 구멍**이 생긴다 → 아래 보완 매니페스트로 메운다.
-  - `k8s/flink/flink-operator-webhook-rbac.yaml` — mutating webhook이 `flinkdeployments`를
+  - `gitops/charts/flink-operator/templates/flink-operator-webhook-rbac.yaml` — mutating webhook이 `flinkdeployments`를
     **클러스터 스코프로 list**한다. 없으면 `FlinkSessionJob` 생성 자체가 403으로 거부된다.
-  - `k8s/flink/flink-workload-rbac.yaml` — JM 파드 **안에서** 잡을 제출하면 `<name>-rest` **Service를 조회**한다.
-    없으면 **DDL·SHOW는 되는데 쿼리 실행만** `services ... is forbidden`으로 실패해 원인을 헷갈리게 한다.
+  - `gitops/charts/flink-operator/templates/flink-workload-rbac.yaml` — JM 파드 **안에서** 잡을 제출하면
+    `<name>-rest` **Service를 조회**한다. 없으면 **DDL·SHOW는 되고 쿼리 실행만** `services ... is forbidden`으로 실패.
 - **`jarURI: local://`은 application 모드 전용**이다. `FlinkSessionJob`은 **오퍼레이터가 jar를 받아** JM에
   업로드하므로 Flink FileSystem 스킴(`https://` 등)이 필요하고, `local://`은
   `UnsupportedFileSystemSchemeException`으로 죽는다. (webhook 허용목록
@@ -388,9 +396,7 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
   ```
 
   **태그를 올렸으면 그 태그를 참조하는 매니페스트를 함께 올린다** — 한쪽만 올리면 구 이미지가 계속 돈다.
-  참조처 전수 확인은 `grep -rn 'image: localhost:5001' k8s/`이며, 현재 Spark 2곳·Flink 1곳·**Dagster 1곳**
-  (`k8s/dagster/dagster-deploy.yaml` — init 컨테이너 포함이라 한 파일 안에 4회)이다.
-  Dagster 이미지는 `scripts/k8s-dagster.sh`가 빌드·push하고 **적용 전에 태그 일치를 대조**한다.
+  참조처 전수 확인은 `grep -rn 'image: localhost:5001' k8s/`이며, 현재 Spark 2곳·Flink 1곳이다.
 - **Iceberg의 `io-impl`(S3FileIO)만으로는 부족한 작업이 있다** — `spark.hadoop.fs.s3*`(S3A)를 **함께** 준다.
   S3FileIO는 **카탈로그가 아는 파일**만 다루므로, warehouse 디렉터리를 직접 나열해야 하는
   `remove_orphan_files`(카탈로그가 *모르는* 파일을 찾는 게 목적)는 **Hadoop FileSystem**을 탄다.
@@ -407,14 +413,16 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
   동시에 **인증 없이 잡 제출·취소가 가능한 면**이 열린다는 뜻이다. kind가 `127.0.0.1`로만 바인딩해
   위험은 낮지만 **"UI만 열었다"로 읽지 않는다**(노출 범위는 포트가 아니라 그 포트가 제공하는 API가 정한다).
 - **kind는 공개 포트를 클러스터 생성 시점에만 정할 수 있다.** 노드가 컨테이너라 사후에 포트를 추가할 수 없어,
-  `kind-cluster.yaml`에 **`extraPortMappings`가 없으면 Ingress·NodePort 둘 다 호스트에서 닿지 않는다**
+  스택 A(`terraform/cluster/kind`)의 **`extraPortMappings`가 없으면
+  Ingress·NodePort 둘 다 호스트에서 닿지 않는다**
   (`hostNetwork: true`도 소용없다 — 노드는 podman VM 안이라 VM 네트워크까지만 닿는다).
   빠뜨렸다면 **클러스터 재생성**이 유일한 방법이므로 처음부터 넣어둔다(실측 후 도입).
   - 호스트 포트는 **8080/8443**을 쓴다. macOS에서 1024 미만 바인딩은 root가 필요한데
     podman의 포트 포워딩(gvproxy)은 사용자 권한으로 돈다.
-  - 재생성 시 **`k8s-down.sh`를 쓰지 말고 `kind delete cluster`만** 한다. down 스크립트는
-    **레지스트리까지 지워** 러너 이미지를 잃는다(재빌드 수 분). 클러스터만 지우면 `k8s-up.sh`가 멱등적으로 다시 붙인다.
-- **Ingress 규칙**: 컨트롤러는 **ingress-nginx**(kind provider 매니페스트, 버전은 `k8s-env.sh`에 핀).
+  - 클러스터는 스택 A가 소유하므로 재생성은 `terraform destroy`/`apply`(스택 A)로 한다. `k8s-down.sh`는
+    아직 `kind delete cluster`를 직접 수행해 state와 어긋나고 **레지스트리까지 지워** 러너 이미지를 잃는다
+    (PR2 정리 대상).
+- **Ingress 규칙**: 컨트롤러는 **ingress-nginx**(Terraform 스택 B가 helm 차트로 설치, 버전은 `terraform/platform`에 핀).
   호스트명은 **`<service>.localtest.me`** — 공개 DNS가 127.0.0.1로 응답해 `/etc/hosts` 수정이 필요 없다.
   - Flink는 오퍼레이터 네이티브 **`FlinkDeployment.spec.ingress`**(`template`·`className`)를 쓴다.
   - Spark(Connect UI)는 일반 `Ingress` 리소스로 4040을 노출한다(`spark.localtest.me`, 평문 HTTP).
@@ -431,8 +439,8 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
   (평문으로 내려면 새 호스트 포트가 필요한데, kind는 포트를 **생성 시점에만** 정한다 = 클러스터 재생성).
 - **호스트를 나눈다** — `backend-protocol`은 **Ingress 단위** 설정이라 같은 호스트에 HTTP(UI)와 GRPC를
   함께 둘 수 없다. `*.localtest.me`는 전부 127.0.0.1로 응답하므로 호스트를 늘리는 비용은 0이다.
-- **인증서는 로컬 CA 체인**(`k8s/local-ca.yaml`)에서 발급한다. 부트스트랩 Issuer → `isCA: true` CA →
-  리프 순서다. **selfSigned로 리프를 바로 만들면 `CA:FALSE`라 신뢰 앵커로 못 쓴다.**
+- **인증서는 로컬 CA 체인**(`gitops/charts/cert-manager/templates/local-ca.yaml`)에서 발급한다.
+  부트스트랩 Issuer → `isCA: true` CA → 리프 순서다. **selfSigned로 리프를 만들면 `CA:FALSE`라 신뢰 앵커로 못 쓴다.**
 - **클라이언트 신뢰 주입 수단은 하나뿐이다** — `sc://` URL에는 CA를 지정하는 옵션이 **없다**.
   gRPC 코어 환경변수 **`GRPC_DEFAULT_SSL_ROOTS_FILE_PATH`** 로만 주입된다.
 
@@ -483,7 +491,7 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
 요지만: 오퍼레이터는 CNPG(chart 0.29.0 = app 1.30.0), 서비스는 **`-rw`/`-ro`/`-r` 접미사**,
 크리덴셜은 **선언 시크릿 + `managed.roles`**(bootstrap은 초기화 1회라 회전이 안 된다),
 probe·RBAC·securityContext는 **CR에 쓰지 않는다**(오퍼레이터가 채운다), PVC는 **사후 확장 불가**,
-Dagster 메타 DB는 같은 클러스터의 **`Database` CR**로 둔다.
+Dagster 메타 DB는 **새 클러스터에 없다**(구 클러스터의 `Database` CR 선언은 철거, 위치는 PR2가 정한다).
 
 ## 참고
 

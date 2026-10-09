@@ -12,18 +12,15 @@
 2.   .env                              (호스트)
 3.   로컬 Kubernetes — 컴퓨트·스토리지  (kind on Podman)
 4.   러너 이미지                        (로컬 레지스트리)
-5.   Dagster                           (in-cluster)
+5.   Dagster                           (호스트 — 새 클러스터에는 배포하지 않음)
 ```
 
-**Dagster도 클러스터 안에서 돈다**(구 규약은 호스트 실행이었다 — 폐기).
-스토리지(SeaweedFS)·카탈로그(Postgres)·컴퓨트(Spark·Flink)와 같은 클러스터에 있다.
+**Dagster는 새 클러스터에 배포하지 않는다**(호스트 실행, §5). 스토리지(SeaweedFS)·카탈로그(Postgres)·
+컴퓨트(Spark·Flink)는 같은 클러스터에 있다.
 
-**선언의 소유자가 둘로 갈린다.** 오퍼레이터 3종·로컬 CA·워크로드 RBAC·Dagster 매니페스트는
-**Terraform**(`terraform/lakehouse-platform/` = 스택 C)이 소유하고, 클러스터·레지스트리·스토리지·
-카탈로그 DB는 **셸 스크립트**가 소유한다. 그래서 §3의 순서에 `terraform apply`가 끼어든다.
+**선언의 소유자가 셋으로 갈린다.** 클러스터는 **Terraform 스택 A**, ingress-nginx·ArgoCD는 **스택 B**,
+그 위의 오퍼레이터 이하는 **ArgoCD**(`gitops/charts/`)가 소유하고, 레지스트리 컨테이너·Secret은 **사람(셸)** 이 만든다.
 가르는 기준은 **destroy 가 무엇을 파괴하는가**다([`architectures/terraform.md`](architectures/terraform.md)).
-
----
 
 ## 0. 사전 요구 도구
 
@@ -112,95 +109,55 @@ kubectl get secret spark-grpc-tls  -o jsonpath='{.data.ca\.crt}'      | base64 -
 ## 3. 로컬 Kubernetes
 
 **kind on Podman**(rootful 머신 필수) + 로컬 레지스트리 `localhost:5001`.
-설정 단일 출처는 [`scripts/k8s-env.sh`](../scripts/k8s-env.sh)이고, 모든 값이 `${VAR:-기본값}`이라
-환경변수로 덮을 수 있다.
+클러스터는 **Terraform 스택 A**(`terraform/cluster/kind/`), ingress-nginx·ArgoCD는 **스택 B**
+(`terraform/platform/`), 오퍼레이터 이하 전부는 **ArgoCD가 `gitops/charts/`에서 수렴**시킨다.
+셸 설정 단일 출처는 [`scripts/k8s-env.sh`](../scripts/k8s-env.sh)이고, 모든 값이 `${VAR:-기본값}`이라
+환경변수로 덮을 수 있다. 설계·근거는 [`argocd-gitops.md`](argocd-gitops.md).
 
-### 빈 클러스터에서 처음 올릴 때 — **6단계**
-
-```shell
-./scripts/k8s-up.sh          # podman machine + kind 클러스터 + 레지스트리 + ingress-nginx
-./scripts/k8s-operators.sh   # 네임스페이스 3종 + cert-manager + Barman Cloud 플러그인
-
-# ⚠️ 최초 1회만 — 오퍼레이터를 먼저 만든다(아래 "왜 두 번인가")
-terraform -chdir=terraform/lakehouse-platform apply \
-    -target=helm_release.spark_operator \
-    -target=helm_release.flink_operator \
-    -target=helm_release.cnpg
-
-./scripts/k8s-poc-storage.sh # Secret 3종 + SeaweedFS + 버킷 3개 + CNPG Cluster(카탈로그 DB)
-terraform -chdir=terraform/lakehouse-platform apply   # 매니페스트 18종(로컬 CA·RBAC·Dagster)
-./scripts/k8s-dagster.sh     # Dagster 이미지 빌드·push + ConfigMap + 수렴 대기
-```
-
-### 이미 있는 클러스터를 다시 올릴 때
-
-CRD가 남아 있으므로 `terraform apply`가 **한 번으로 합쳐진다.**
+### 빈 환경에서 처음 올릴 때
 
 ```shell
-./scripts/k8s-up.sh && ./scripts/k8s-operators.sh
-terraform -chdir=terraform/lakehouse-platform apply
-./scripts/k8s-poc-storage.sh && ./scripts/k8s-dagster.sh
+scripts/k8s-up.sh                         # podman 머신 · 레지스트리
+terraform -chdir=terraform/cluster/kind apply
+terraform -chdir=terraform/platform apply
+source scripts/k8s-env.sh                 # KUBECONFIG export(가드는 require_cluster_context 호출 스크립트가 건다)
+scripts/k8s-secrets.sh                    # PR2 산출물 — 아직 존재하지 않는다
 ```
 
-### 왜 `terraform apply`가 두 번인가
-
-빈 클러스터에서 **한 번으로는 안 된다.** 스택 C가 적용하는 매니페스트 18개 중
-`Database/default/dagster` 하나만 `postgresql.cnpg.io/v1`인데, 그 CRD를 **같은 apply의
-`helm_release.cnpg`가 만든다.** `kubernetes_manifest`는 plan 시점에 `/apis`로 GVK를 해석하므로
-`depends_on`(apply 순서만 보장)으로는 못 미루고, plan이 이렇게 죽는다.
-
-```
-Error: API did not recognize GroupVersionKind from manifest (CRD may not be installed)
-  no matches for kind "Database" in group "postgresql.cnpg.io"
-```
-
-⚠️ 나머지 20개는 정상 계획되어 **`Plan: 20 to add`를 띄운 채 실패**한다 — 부분 성공처럼 보이니
-"거의 됐다"로 읽지 않는다. CRD가 생긴 뒤로는 단일 apply로 돈다.
+- **`apply` 두 번은 스택이 둘이어서**다(A: 클러스터, B: ArgoCD). 한 스택 안의 CRD 선행 문제는
+  appset을 두 번째 `helm_release`로 분리해 푼다([`architectures/argocd.md`](architectures/argocd.md)).
+- 오퍼레이터(cert-manager·CNPG·Spark·Flink)는 `terraform apply`가 아니라 **`git push`로** 올라오고
+  바꾼다. 수렴 확인은 ArgoCD UI 또는 `kubectl get applications -n argocd`.
+- 위 기본값(`lakehouse`, 8080/8443)은 **교체(PR2) 뒤의 기본 경로**다. 검증 중에는 스택 A에
+  `-var cluster_name=lakehouse-next -var http_host_port=8082 -var https_host_port=8445`를 넘기고,
+  스택 B에도 같은 포트·`-var target_revision=<브랜치>`를 넘긴다(상세 [`argocd-gitops.md`](argocd-gitops.md) §6).
+- **`k8s-poc-storage.sh`는 과도기 스크립트다** — Barman CRD를 설치하던 주체가 사라져 그 선행 검사에서
+  멈춘다(데이터 층이 차트로 이전되는 PR2에서 철거).
 
 ### 각 단계가 무엇을 만드는가
 
-**`k8s-up.sh`** — 클러스터 바닥. podman machine(rootful) → 레지스트리 컨테이너(이미지는
-**명명 볼륨**에 남아 `k8s-down.sh`로 사라지지 않는다) → kind 클러스터 → 각 노드에 `certs.d`
-주입 → 레지스트리를 kind 네트워크에 연결 → ingress-nginx.
+**`k8s-up.sh`** — 클러스터 바깥 바닥만. podman machine(rootful) → 레지스트리 컨테이너(이미지는
+**명명 볼륨**에 남아 `k8s-down.sh`로 사라지지 않는다). kind 클러스터는 스택 A가 만든다.
 
-**`k8s-operators.sh`** — **Terraform의 선행 조건**만 만든다. 오퍼레이터는 여기서 설치하지 않는다.
-네임스페이스 `cnpg-system`·`spark-operator`·`flink-operator` → cert-manager → Barman Cloud 플러그인.
+**스택 A** — kind 클러스터 + 노드의 containerd가 `localhost:5001`을 쓰게 하는 설정 + 레지스트리
+네트워크 연결 + 전용 kubeconfig(`~/.kube/<cluster_name>.config`).
 
-> ⚠️ **네임스페이스 3종은 아무도 안 만들기 때문에 여기서 만든다.** Barman 플러그인의 원격
-> 매니페스트는 `cnpg-system`을 **참조만 하고 `kind: Namespace`를 담지 않으며**, helm 릴리스 3종은
-> `create_namespace = false`다. 이 단계를 빼면 Barman `kubectl apply`가
-> `namespaces "cnpg-system" not found`로 죽는데, **클러스터 스코프(CRD·ClusterRole)는 먼저
-> 생성되어 부분 성공처럼 보인다.**
+**스택 B** — ingress-nginx · ArgoCD · ApplicationSet(`var.apps` 목록의 앱마다 Application 하나).
 
-**`terraform apply`** — 오퍼레이터 3종(Spark·Flink·CNPG) + 로컬 CA 발급 체인 + 워크로드 RBAC +
-Dagster(ConfigMap·SA·Role·Deployment 2·Service·Ingress·`Database` CR).
+**ArgoCD** — `gitops/charts/` 하위 전부(cert-manager + 로컬 CA · CNPG · Spark·Flink 오퍼레이터와 RBAC).
+앱 사이 순서는 재시도 수렴, 앱 안 순서는 sync-wave다.
 
-**`k8s-poc-storage.sh`** — 데이터가 앉을 자리. Secret `lakehouse-creds`·`catalog-pg-app`·
-`dagster-meta-pg-app` → SeaweedFS StatefulSet → 버킷 `warehouse`·`pg-backup`·`dagster-logs` →
-백업 구성(ObjectStore·ScheduledBackup, **조건부**) → `Cluster/catalog-postgres`.
-
-> ⚠️ **백업 구성은 `Cluster` CR의 `plugins` 배선이 있을 때만 적용된다** — 스크립트가
-> `k8s/catalog-postgres.yaml`을 읽어 판정한다(클러스터 상태가 아니라 **선언 파일**).
-> **현재 그 배선은 주석 처리되어 있어 백업 단계는 건너뛴다**(로그에 "백업 구성 건너뜀"이 찍힌다).
-> 플러그인 설치 자체는 `k8s-operators.sh`에서 **항상** 하므로 되살리기는 주석 해제 한 단계지만,
-> **형태가 `    plugins:`(4칸 들여쓰기 + 행말 즉시 종료)여야** 한다 — 행말 주석·2칸·flow 표기면
-> §0-3 형태 검사가 `exit 1`로 멈춘다(Secret·SeaweedFS보다 앞이라 만들어 둔 것 없이 선다).
-> 끈 이유와 재활성 조건은 [`conventions/k8s/cnpg.md`](conventions/k8s/cnpg.md)에 있다.
-
-**`k8s-dagster.sh`** — 이미지 빌드·push + `spark-app-manifests` ConfigMap + rollout 대기.
-매니페스트는 적용하지 않는다(Terraform 소유).
-
-> ✅ **`terraform apply`가 `k8s-dagster.sh`보다 먼저라 Dagster 파드는 이미지 없이 먼저 생긴다** —
-> `Init:ErrImagePull`을 한 번 거치는 것이 정상이다. 이미지를 push하면 **kubelet이 스스로 재시도해
-> 같은 파드가 그대로 올라오므로** `rollout restart`는 필요 없다.
+**`k8s-secrets.sh`·`k8s-poc-storage.sh`** — 데이터가 앉을 자리(Secret·SeaweedFS·버킷·CNPG Cluster).
+Git에는 Secret 이름만 두고 값은 수동으로 만든다.
 
 주요 다이얼 — 전부 환경변수로 덮는다.
 
-- `INSTALL_INGRESS=false` — ingress-nginx 제외
 - `MACHINE_CPUS` · `MACHINE_MEMORY_MIB` · `MACHINE_DISK_GIB` — VM 자원.
   예산 근거는 [`resource-sizing.md`](resource-sizing.md)
-- 오퍼레이터 쪽 값(ns·차트 좌표·버전·자원)은 셸이 아니라
-  [`terraform/lakehouse-platform/variables.tf`](../terraform/lakehouse-platform/variables.tf)가 정본이다
+- 오퍼레이터 쪽 값(차트 좌표·버전)은 셸이 아니라 `gitops/charts/<app>/Chart.yaml`·`values.yaml`이 정본이다
+- 앱 목록과 추적 리비전은 [`terraform/platform/variables.tf`](../terraform/platform/variables.tf)의
+  `apps`·`target_revision`이 정본이다
+
 
 정리는 이렇다. **podman machine은 기본 보존**된다.
 
@@ -217,7 +174,7 @@ HTTP UI와 gRPC는 **Ingress**로 나가고(`*.localtest.me:8080` — `localtest
 
 | 경로 | 주소 | 조건 |
 | --- | --- | --- |
-| **Dagster UI** | http://dagster.localtest.me:8080 | **상시**(오케스트레이터는 회수 대상이 아니다) |
+| **ArgoCD UI** | http://argocd.localtest.me:8080 | **상시**(GitOps 컨트롤러) |
 | Flink Web UI | http://flink.localtest.me:8080 | 세션 클러스터가 떠 있을 때 |
 | Spark Web UI | http://spark.localtest.me:8080 | Spark Connect가 `--replicas=1`일 때 |
 | Spark Connect (gRPC) | `sc://spark-grpc.localtest.me:8443/;use_ssl=true` | `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` 필요 |
@@ -265,9 +222,7 @@ podman push --tls-verify=false localhost:5001/spark-runner:0.5.0
 podman build -f k8s/flink/Dockerfile.flink-runner -t localhost:5001/flink-runner:0.3.0 k8s/flink
 podman push --tls-verify=false localhost:5001/flink-runner:0.3.0
 
-# Dagster 이미지는 scripts/k8s-dagster.sh 가 빌드·push한다(§5). 수동으로 하려면:
-#   podman build -t localhost:5001/dagster:0.1.0 dagster/dockerfile.d
-#   podman push --tls-verify=false localhost:5001/dagster:0.1.0
+# Dagster는 새 클러스터에 배포하지 않는다(§5) — 호스트 실행용 이미지는 compose가 빌드한다.
 
 # 최초 1회: Spark Connect Deployment·Service·Ingress·Certificate 생성
 # (이 파일은 온디맨드 컴퓨트라 Terraform 스택 밖이다 — 그래서 kubectl apply 가 맞다)
@@ -286,27 +241,21 @@ kubectl scale deploy/spark-connect --replicas=0  # 평시 자원 회수
 > grep -rn "image:" k8s/spark/*.yaml k8s/flink/*.yaml
 > ```
 
-## 5. Dagster (in-cluster — 정본)
+## 5. Dagster (호스트 실행 — 새 클러스터에는 배포하지 않는다)
+
+**in-cluster Dagster는 철거됐다**(`k8s/dagster/`·`scripts/k8s-dagster.sh` 삭제 — Airflow 전환 예정이라
+실행 경로 없는 파일을 남기지 않는다. [`argocd-gitops.md`](argocd-gitops.md) D6). 이미지·코드
+(`dagster/dockerfile.d`)는 호스트 Dagster용으로 남는다. 새 클러스터의 SeaweedFS·카탈로그에 붙는지는
+스토리지 층이 ArgoCD로 옮겨오는 단계(PR2)에서 확인한다.
+
+### 호스트 `dg dev`
+
+**메타 DB는 새 클러스터에 없다** — 구 `lakehouse` 클러스터의 CNPG `dagster` DB 선언은 철거됐고
+(롤만 남음) 위치는 PR2가 정한다. 아래 port-forward는 **구 클러스터**를 향한다(현행 사실의 단일 서술은
+[operations.md](operations.md) §1-2).
 
 ```shell
-./scripts/k8s-dagster.sh                   # 이미지 빌드·push → ConfigMap → rollout·Ingress 대조
-# UI: http://dagster.localtest.me:8080
-```
-
-**메타 DB·RBAC·Deployment·Service·Ingress는 이 스크립트가 만들지 않는다** — 전부
-`terraform/lakehouse-platform/`이 소유하며 §3의 `terraform apply`에서 이미 생겼다. 여기 남은 것은
-Terraform이 다루지 않는 둘, **이미지**와 `spark-app-manifests` **ConfigMap**이다. 매니페스트를
-고쳤다면 `kubectl apply`가 아니라 `terraform apply`를 돌린다(서버사이드 apply의 필드 소유권이
-`kubectl`로 넘어가면 Terraform이 drift를 보고도 못 덮는다).
-
-스크립트는 **빌드 전에** 매니페스트의 `image:` 태그와 `DAGSTER_IMAGE_TAG`를 대조하고,
-마지막에 `/server_info`가 **버전 JSON을 돌려주는지**까지 본다(상태코드 200으로 닫지 않는다).
-이미 빌드된 이미지를 재사용하려면 `--skip-build`.
-
-### 호스트 `dg dev` (개발 루프 대안)
-
-```shell
-kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 메타 DB(dagster) + 카탈로그(iceberg)
+kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 구 클러스터: 메타 DB(dagster) + 카탈로그(iceberg)
 kubectl port-forward svc/seaweedfs           18333:8333   # S3 (compute log·Iceberg)
 
 cd dagster/dockerfile.d/src
@@ -314,10 +263,10 @@ export DAGSTER_HOME="$PWD"                 # dagster.yaml이 있는 디렉터리
 uv run dg dev                              # http://localhost:3000
 ```
 
-⚠️ **in-cluster와 동시에 띄우지 않는다.** 같은 서비스가 두 곳에 살아 있으면 관측 확인을 전부
-통과하면서 레거시가 정본 대신 답한다([conventions/monitoring.md](conventions/monitoring.md) §3-④).
-또 `.env`의 `POSTGRES_PORT`가 **15432**(port-forward)여야 한다 — 5432면 compose DB를 보게 돼
-**run 이력이 두 벌로 갈린다.**
+⚠️ **메타 DB를 한 곳으로 고정한다.** `.env`의 `POSTGRES_PORT`가 15432면 port-forward한 CNPG를,
+5432면 compose `postgres`를 본다 — 둘 다 이름이 `dagster`라 **접속은 성공하고 run 이력만 두 벌로 갈린다.**
+같은 이유로 compose `--profile host-dagster`(compose `postgres` 사용)와 호스트 `dg dev`를 섞어 쓰지 않는다
+([conventions/monitoring.md](conventions/monitoring.md) §3-④).
 
 `compose.yml`은 이제 **기본 `up`으로 아무것도 띄우지 않는다**(전부 `profiles` opt-in):
 `host-dagster`=webserver·daemon·postgres · `legacy-meta`=postgres만 ·
@@ -469,8 +418,8 @@ uv run --group notebook jupyter lab --port 8889 --notebook-dir ../../../notebook
 - **rootful이 아니면 `k8s-up.sh`가 멈춘다** — `podman machine set --rootful`로 바꾼다.
 - **머신이 이미 있으면 `MACHINE_CPUS`·`MACHINE_MEMORY_MIB`가 반영되지 않는다**(재사용 경로).
   자원을 바꾸려면 머신을 다시 만들어야 한다.
-- **kind 노드의 공개 포트는 클러스터 생성 시점에만 정할 수 있다** — `k8s/kind-cluster.yaml`의
-  `extraPortMappings`를 빠뜨리면 **재생성이 유일한 해법**이다.
+- **kind 노드의 공개 포트는 클러스터 생성 시점에만 정할 수 있다** — 스택 A(`terraform/cluster/kind`)의
+  `http_host_port`·`https_host_port`를 빠뜨리면 **재생성이 유일한 해법**이다.
 
 ### dbt 타깃별 전제
 

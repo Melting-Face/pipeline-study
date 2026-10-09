@@ -230,8 +230,8 @@
 ### 인프라 · IaC
 
 - **로컬 K8s(현행 검증 환경)**: **kind on Podman**(rootful 머신 필수) 클러스터 `lakehouse` +
-  로컬 레지스트리 `localhost:5001`. 기동은 `k8s-up.sh` → `k8s-operators.sh` → **`terraform apply`**
-  → `k8s-poc-storage.sh` → `terraform apply` → `k8s-dagster.sh`. **Dagster도 in-cluster**다.
+  로컬 레지스트리 `localhost:5001`. 기동은 `k8s-up.sh` → **`terraform apply`**(`cluster/kind`) → **`terraform apply`**
+  (`platform`: ArgoCD가 `gitops/charts/`를 수렴, 설계 `docs/argocd-gitops.md`). **Dagster는 미배포**(호스트)다.
   규칙 [`docs/conventions/k8s.md`](docs/conventions/k8s.md), 예산·배분 [`docs/resource-sizing.md`](docs/resource-sizing.md).
   클러스터에는 **Spark Operator**(배치)·**Spark Connect**(dbt-spark 접속용 상주)가 있고,
   Spark·Flink가 **같은 Iceberg JDBC 카탈로그**를 공유한다.
@@ -245,7 +245,7 @@
   재기동만으로 카탈로그가 소멸했다). 서비스명에 **`-rw`/`-ro`/`-r` 접미사**가 붙고 접미사 없는 이름은 없다.
   **비밀번호 회전은 Secret·DB 롤·`.env`·워크로드 재기동을 한 벌로** 한다 — 한쪽만 바꾸면
   **성공한 것처럼 보이는데 안 바뀐 상태**가 된다(§12에 해소 내역).
-  **메타 Postgres도 같은 CNPG**에 `Database` CR로 둔다(롤·시크릿은 카탈로그와 분리).
+  **메타 Postgres는 새 클러스터에 없다**(구 CNPG `dagster` DB 선언 철거·롤만 남음, PR2가 정함).
   **SeaweedFS는 오퍼레이터 미채택**(상주 +500m/+1Gi인데 이미 PVC라 급소가 아니다).
   엔진 버전은 **최신이 아니라 Iceberg가 지원하는 짝**으로 고정한다(예: `iceberg-flink-runtime`이 2.1까지라 Flink는 2.1).
   Spark Connect는 **`--master k8s://`(client mode)** 로 돌아 **executor 파드 1개가 함께 상주**하므로
@@ -266,9 +266,9 @@
   **상한 인상 직전에 `scripts/spark_connect_smoke.py`를 통과**시킨다([`docs/test/manual-gates.md`](docs/test/manual-gates.md) §5-1).
   **노출은 HTTP(UI·REST)와 gRPC를 Ingress**로 내고 JDBC·S3만 `port-forward`를 쓴다 — kind는 **공개 포트를
   생성 시점에만** 정할 수 있어 `extraPortMappings`를 빠뜨리면 재생성이 유일한 해법이다.
-  **gRPC Ingress는 TLS가 전제**다(nginx는 HTTP/2를 TLS 리스너에서만 협상) — 발급은 `k8s/local-ca.yaml`
-  로컬 CA 체인이고, **클라이언트 신뢰 주입 수단은 `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` 하나뿐**이다
-  (`sc://` URL에 CA 옵션이 없다). `backend-protocol`이 Ingress 단위라 **UI와 호스트를 나눈다**.
+  **gRPC Ingress는 TLS가 전제**다(nginx는 HTTP/2를 TLS 리스너에서만 협상) — 발급은
+  `gitops/charts/cert-manager`의 로컬 CA 체인이고, **클라이언트 신뢰 주입 수단은
+  `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` 하나뿐**이다. `backend-protocol`이 Ingress 단위라 **UI와 호스트를 나눈다**.
   **Flink는 REST와 UI가 같은 포트**라 UI를 내면 **잡 제출 API도 함께 나간다**("UI만 열었다"로 읽지 않는다).
   컴퓨트 **러너 이미지는 로컬 레지스트리에 직접 push**하고(`kind load` 불필요) **태그와 매니페스트를 함께 올린다**.
   상세·실측은 [`docs/conventions/k8s.md`](docs/conventions/k8s.md)(§8 Dagster·§9 Spark·§9-2 Flink·§9-3 동시 기동·§11 스토어)와

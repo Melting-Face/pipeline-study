@@ -68,7 +68,6 @@
 | `compose.yml` | 공용 앵커 `x-dagster-common`의 env |
 | `.env.example` | 호스트 실행·외부 도구용 기본값 |
 | `dagster_project/common/constants.py` | `os.environ.setdefault` — 환경 누락 시 조용한 손상 방지 |
-| `k8s/dagster/dagster-deploy.yaml` | ConfigMap env |
 | `k8s/spark/spark-connect-server.yaml` | `spark.executorEnv.*`(executor) + 파드 env(driver 자신) |
 | `k8s/spark/sparkapplication-poc.yaml` | `driverEnv` + `executorEnv` **양쪽** |
 | `k8s/flink/flinkdeployment-session.yaml` | `podTemplate` env — **JM·TM 양쪽** |

@@ -6,13 +6,14 @@
 적재하는** 로컬 레이크하우스 학습 프로젝트다.
 
 > ⚠️ **이 문서의 compose 서술은 이제 대부분 폐기 전 판본이다.** 재설계로 컴퓨트·스토리지가
-> **로컬 Kubernetes로 이전**했고 **Dagster도 클러스터로 들어갔다**. 목표 토폴로지는
+> **로컬 Kubernetes로 이전**했고, 클러스터 선언은 ArgoCD GitOps로 옮겨 가는 중이다
+> (Dagster는 새 클러스터에 배포하지 않고 호스트에서 돈다). 목표 토폴로지는
 > [../redesign.md](../redesign.md), 클러스터 규칙은 [../conventions/k8s.md](../conventions/k8s.md),
 > Dagster 배치 결정은 [dagster.md](dagster.md).
-> **실제로 도는 구성**: kind 클러스터 하나 — Dagster(webserver·daemon) ·
+> **실제로 도는 구성**: kind 클러스터 하나 — ArgoCD ·
 > Spark Operator · SeaweedFS · 카탈로그/메타 Postgres(CNPG) · Flink Operator · ingress-nginx.
 > **compose는 기본 `up`으로 아무것도 띄우지 않는다**(전부 profile opt-in이 됐다).
-> **Flink Operator는 설치돼 상주한다** — `terraform/lakehouse-platform/`이 소유하며 부트스트랩에
+> **Flink Operator는 설치돼 상주한다** — ArgoCD 앱(`gitops/charts/flink-operator/`)이 소유하며 부트스트랩에
 > 항상 포함된다. 상주하는 것은 **오퍼레이터까지**이고, 자원을 먹는 **세션 클러스터(JM/TM)는 띄우지
 > 않는다** — 잡을 돌릴 때 따로 세우고 끝나면 내린다([flink.md](flink.md)).
 > trino와 같은 **"중단"과 "삭제"의 분리**가 여기서는 오퍼레이터/워크로드 경계로 나타난다.
@@ -380,19 +381,20 @@ def raw_mimiciv_admissions(context, s3, physionet, config: RawFetchConfig) -> dg
 명령을 중복 정의하지 않는다(단일 출처 — [`../doc-sync.md`](../doc-sync.md)).
 
 재설계 이후 기동은 **"전체 스택 `compose up`" 하나가 아니라 여러 단계**이며 **compose는 등장하지 않는다**.
-셸과 Terraform이 **선언을 나눠 소유**해서 둘이 번갈아 나온다.
+Terraform(스택 A·B)과 ArgoCD가 **선언을 나눠 소유**한다.
 
 1. **`.env` 작성** — `.env.example` 복사([`../operations.md`](../operations.md) §1-2)
-2. **클러스터·선행 조건** — `scripts/k8s-up.sh` → `k8s-operators.sh`(네임스페이스·cert-manager·Barman)
-3. **플랫폼 스택** — `terraform -chdir=terraform/lakehouse-platform apply`(오퍼레이터·RBAC·Dagster)
-4. **스토리지·카탈로그** — `scripts/k8s-poc-storage.sh`
-5. **Dagster 이미지** — `scripts/k8s-dagster.sh` → http://dagster.localtest.me:8080
+2. **클러스터·선행 조건** — `scripts/k8s-up.sh`(podman 머신·레지스트리) →
+   `terraform -chdir=terraform/cluster/kind apply`
+3. **플랫폼 스택** — `terraform -chdir=terraform/platform apply`(ingress-nginx·ArgoCD) → 오퍼레이터는 ArgoCD가 수렴
+4. **스토리지·카탈로그** — `scripts/k8s-poc-storage.sh`(과도기 — PR2에서 ArgoCD 차트로 이전)
+5. **Dagster** — 새 클러스터에는 배포하지 않는다(호스트 `host-dagster` profile)
 
-> **빈 클러스터 최초 구축은 3이 두 번으로 갈린다**(오퍼레이터 `-target` → 스토리지 → 전체 apply).
-> CRD가 없으면 `Database` CR의 GVK 해석이 실패해 plan이 죽기 때문이다 — 절차 정본은 `../setup.md` §3.
+> 단계 순서와 이유의 정본은 `../setup.md` §3, 설계는 [../argocd-gitops.md](../argocd-gitops.md).
 
 > 호스트 `uv run dg dev`(http://localhost:3000)는 **개발 루프 대안**으로 남는다 —
-> 메타 DB·S3에 port-forward가 전제이고, **in-cluster와 동시에 띄우지 않는다**
+> 메타 DB·S3에 port-forward가 전제이고(메타 DB는 새 클러스터에 없다 — [../operations.md](../operations.md) §1-2),
+> **메타 DB를 한 곳으로 고정해 compose와 섞지 않는다**
 > (같은 서비스의 이중 존재 — [../conventions/monitoring.md](../conventions/monitoring.md) §3-④).
 > compose의 `dagster-*`·`postgres`·`trino`·`seaweedfs`·`prometheus`는 **전부 profile opt-in**이라
 > 기본 `up`으로는 **아무것도 뜨지 않는다**(예: `podman compose --profile host-dagster up -d`).
@@ -411,7 +413,7 @@ dbt 모델 추가는 스캐폴딩이 필요 없다 — `models/<dataset>/`에 `.
 | 9333 | SeaweedFS master UI             | `legacy-storage`·`legacy-sql`·`monitoring` |
 | 9000 | Prometheus (컨테이너 9090 매핑) | `monitoring`                               |
 
-> 🔴 **호스트 8080은 kind ingress-nginx가 점유**한다(`k8s/kind-cluster.yaml`의 `extraPortMappings`).
+> 🔴 **호스트 8080은 kind ingress-nginx가 점유**한다(스택 A `terraform/cluster/kind`의 호스트 포트 매핑).
 > 그래서 Trino 게시 포트를 8081로 옮겼다 — 컨테이너 내부 포트는 8080 그대로라
 > `dbt_pipelines/profiles.yml`(`host: trino`, `port: 8080`)은 영향받지 않는다([trino.md](trino.md)).
 > 클러스터 UI(`*.localtest.me:8080`)와 노트북 Jupyter Lab(:8889)은 compose 밖이다.

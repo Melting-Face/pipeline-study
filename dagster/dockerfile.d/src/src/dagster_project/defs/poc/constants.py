@@ -26,7 +26,7 @@ NAMESPACE = os.environ.get("POC_NAMESPACE", "default")
 #   이미지: /opt/dagster/dagster_home/src/dagster_project/defs/poc/constants.py
 #           → `COPY src/ $DAGSTER_HOME/`이 바깥 src/ 한 겹을 벗겨내 parents[7] = "/" ❌
 #   그래서 in-cluster에서는 `POC_SPARKAPP_MANIFEST` override가 **필수**다
-#   (k8s/dagster/dagster-deploy.yaml의 ConfigMap이 ConfigMap 마운트 경로를 준다).
+#   (철거된 k8s/dagster/dagster-deploy.yaml의 ConfigMap이 ConfigMap 마운트 경로를 준다).
 #   ⚠️ 같은 축의 common/dbt.py `parents[3]`은 우연히 양쪽에서 맞는다 —
 #      "경로 계산은 다 깨진다"도 "다 괜찮다"도 아니다. 단계 수마다 따로 확인해야 한다.
 _DEFAULT_MANIFEST = (

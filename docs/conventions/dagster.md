@@ -335,20 +335,21 @@ delete/overwrite 스냅샷이 생기고 `IncrementalAppendScan`은 그것을 다
 ## 실행
 
 ```bash
-./scripts/k8s-dagster.sh                    # 정본 — 이미지·수렴 (http://dagster.localtest.me:8080)
-dg dev                                      # 개발 루프 대안 (일체형, http://localhost:3000)
+dg dev                                      # 호스트 실행 (일체형, http://localhost:3000)
 ```
 
-> `dg dev`는 webserver·daemon·code server가 **한 프로세스**라 개발 중 재로드가 빠르지만,
-> 메타 DB(CNPG)와 S3에 **port-forward가 전제**다. 정본 토폴로지는 아래 §K8s in-cluster 배포.
+> `dg dev`는 webserver·daemon·code server가 **한 프로세스**라 개발 중 재로드가 빠르고,
+> 메타 DB(CNPG)와 S3에 **port-forward가 전제**다. in-cluster 배포는 ArgoCD 전환으로 철거됐다
+> (아래 §K8s in-cluster 배포는 복원 시 참조).
 
 ## K8s in-cluster 배포
 
-Dagster는 **kind 클러스터 안**에서 돈다(구 "호스트 유지" 규약 폐기 — [k8s.md](k8s.md) §8).
-선언은 `k8s/dagster/` 3파일이고 **적용은 `terraform/lakehouse-platform/`**(`manifests.tf`)이다.
-`scripts/k8s-dagster.sh`가 맡는 것은 **이미지 빌드·push와 ConfigMap, 그리고 수렴 대기**다.
-🔴 이 3파일을 `kubectl apply`로 다시 넣지 않는다 — 서버사이드 apply의 필드 소유권이 `kubectl`로
-넘어가면 Terraform이 drift를 감지하고도 덮지 못한다.
+> ⚠️ **현행: 새 클러스터에는 배포하지 않는다**([../argocd-gitops.md](../argocd-gitops.md) D6 —
+> `k8s/dagster/`·`scripts/k8s-dagster.sh` 삭제, git 이력으로 복원). 아래는 철거 전 배치의 기록이다.
+
+Dagster는 **kind 클러스터 안**에서 돌았다(구 "호스트 유지" 규약 폐기 — [k8s.md](k8s.md) §8).
+선언은 `k8s/dagster/` 3파일, 적용은 Terraform, 이미지 빌드는 `k8s-dagster.sh`였다(모두 철거).
+복원할 때 `kubectl apply`로 넣으면 서버사이드 apply의 필드 소유권이 `kubectl`로 넘어가 drift를 덮지 못한다.
 
 ### 토폴로지
 
@@ -375,14 +376,14 @@ in-cluster에서 이 둘이 **처음으로 갈린다**. 앞은 메타 DB(`dagste
 빠뜨리면 `dagster` 계정으로 `iceberg` DB에 붙는다 — **접속은 성공하고 테이블 접근에서 거부**된다.
 부분 성공이라 오진하기 쉽다. ⇒ in-cluster에서 `ICEBERG_CATALOG_*`는 선택이 아니라 **필수**다.
 
-값의 정본은 `k8s/dagster/dagster-deploy.yaml`의 ConfigMap이고, 호스트 실행분은 `.env`다.
+값의 정본은 호스트 실행분의 `.env`다(철거 전에는 `dagster-deploy.yaml`의 ConfigMap).
 in-cluster는 port-forward 주소 대신 서비스 DNS를 쓴다 —
 `catalog-postgres-rw:5432` · `seaweedfs:8333` · `sc://spark-connect:15002`(평문 gRPC).
 
 ### 이미지
 
 - 하나의 이미지를 compose와 K8s가 공유한다(`dagster/dockerfile.d/`). 태그는 **구체 버전 고정**이고
-  올릴 때는 매니페스트의 `image:`를 **같은 커밋에서** 올린다(`k8s-dagster.sh`가 적용 전에 대조한다).
+  올릴 때는 그 태그를 참조하는 곳(compose)을 **같은 커밋에서** 올린다.
 - 베이스는 **Python 3.12**다. `pyspark[connect]`가 `numpy<2`를 요구하는데 numpy 1.26.x에는
   cp313 휠이 없어 3.13에서는 소스 빌드로 떨어지고 `-slim`에 컴파일러가 없어 빌드가 실패한다.
 - `pip install -e .`이지 `-e ".[dev]"`가 아니다 — 상세는 [docker.md](docker.md) §2.

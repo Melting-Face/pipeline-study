@@ -3,13 +3,13 @@
 > [k8s.md](../k8s.md) §12에서 분리(상위 문서가 doc_lint 500줄 상한에 닿았다).
 > 상위 규칙은 [k8s.md](../k8s.md), 자원 수치는 [../../resource-sizing.md](../../resource-sizing.md)에 있다.
 
-- **오퍼레이터**: [CloudNativePG](https://cloudnative-pg.io/)(CNCF). **`terraform/lakehouse-platform/`**
-  (`helm_release.cnpg`)가 `ns=cnpg-system`에 설치한다 — 그 **네임스페이스는 `k8s-operators.sh`가**
-  미리 만들고(`create_namespace = false`), `Cluster` CR은 `k8s/catalog-postgres.yaml`(적용은
-  `k8s-poc-storage.sh`). 즉 CNPG 하나에 세 주체가 걸쳐 있어 **순서가 곧 전제**다([`../../setup.md`](../../setup.md) §3).
+- **오퍼레이터**: [CloudNativePG](https://cloudnative-pg.io/)(CNCF). **ArgoCD 앱 `gitops/charts/cnpg-operator/`**
+  가 `ns=cnpg-system`에 설치한다(`CreateNamespace=true`). `Cluster` CR은 `k8s/catalog-postgres.yaml`이고
+  적용은 아직 `k8s-poc-storage.sh`(과도기 — PR2에서 `catalog-postgres` 차트로 이전). 오퍼레이터와
+  CR의 주체가 달라 **순서가 전제**다([`../../setup.md`](../../setup.md) §3).
 - **차트 버전 ≠ appVersion**(§9 Spark 오퍼레이터와 같은 함정): chart **0.29.0** = CNPG **1.30.0**.
   `helm search repo cnpg/cloudnative-pg --versions`로 대조하고
-  `terraform/lakehouse-platform/variables.tf`의 `cnpg.chart_version`에 핀한다(오퍼레이터 설정은 셸에서 이관됐다).
+  `gitops/charts/cnpg-operator/Chart.yaml`의 dependency `version`에 핀한다.
 - **서비스 이름에 접미사가 붙는다** — `<cluster>-rw`(쓰기)·`-ro`(읽기 전용)·`-r`(전체)만 생기고
   `<cluster>` 이름의 서비스는 **만들어지지 않는다**. jdbc URI는 `catalog-postgres-rw:5432`다.
 - **자동생성 시크릿(`<cluster>-app`)을 쓰지 않는다** — Dagster·dbt가 이 DB에 직접 붙으므로
@@ -59,7 +59,8 @@
   실패한 채 배선을 남겨두면 **아카이빙 못 한 WAL이 PVC(5Gi)를 채워 DB가 선다** → 참조를 뺐다.
   ⚠️ 이 문서는 한동안 인과를 **정반대로** 적고 있었다("플러그인이 없으면 WAL이 쌓인다").
   같은 결과를 반대 조건에 귀속시키면 되살릴 때 **틀린 쪽을 만진다**.
-  - **설치는 능력, 적용은 배선** — 플러그인 설치(`k8s-operators.sh`)와 CRD 선행 검사는 **유지**한다.
+  - **설치는 능력, 적용은 배선** — CRD 선행 검사는 **유지**한다
+    (플러그인 설치 주체는 철거돼 ArgoCD 쪽에 아직 없다 — 재활성 시 `catalog-postgres` 차트에 함께 넣는다).
     재활성을 **CR 주석 해제 1단계**로 남기기 위해서다(설치는 상주 비용이 아니라 능력이다).
     단 해제한 줄은 **`    plugins:`(4칸 들여쓰기 + 행말 즉시 종료)** 여야 한다(아래 형태 검사).
   - **적용은 배선과 한 벌** — `k8s-poc-storage.sh`는 CR에 `plugins` 배선이 있을 때만
@@ -73,7 +74,7 @@
     `spec.plugins`가 남은 경우**다 — `ObjectStore` 없이 아카이빙만 시도돼 **끈 이유(WAL이 PVC를
     채운다)가 로그상 "미수행"인 채로 재현**된다(카탈로그 정지 = 전 테이블 메타 접근 불가).
     선언 파일 주석이 **라이브 CR의 필드까지 지운다는 보장은 없다**(client-side apply의 prune 동작 —
-    이 저장소에는 필드 소유권이 `kubectl-patch`로 넘어간 실측이 `terraform/lakehouse-platform/manifests.tf`에
+    이 저장소에는 필드 소유권이 `kubectl-patch`로 넘어간 실측이 철거된 Terraform 스택 이력에
     있다). **prune 여부는 미확인**이니 배선을 끈 뒤 처음 재실행하는 클러스터는 **두 축을 다** 본다.
 
     ```shell
@@ -94,7 +95,8 @@
   PHI 경로는 아니다 — [security.md](../../security.md) 4-4).
 - **PVC 사후 확장이 안 된다** — kind 기본 SC(`rancher.io/local-path`)는 `ALLOWVOLUMEEXPANSION=false`다
   (실측). 용량은 처음에 넉넉히 잡고, 늘리려면 클러스터 재생성이다.
-- **메타 Postgres(Dagster)도 이 클러스터가 갖는다**. 별도 Cluster를 세우지 않고
-  같은 `catalog-postgres`에 **`Database` CR로 `dagster` DB만** 더한다(CRD `databases.postgresql.cnpg.io`).
-  롤은 `managed.roles`의 **`dagster`** 로 카탈로그(`iceberg`)와 분리하고 시크릿도 따로 둔다.
-  구 근거 "Dagster가 호스트라 순환 의존"은 §8 개정으로 소멸했다 — 이제 kind 기동 순서만 지키면 된다.
+- **메타 Postgres(Dagster) — 구 `lakehouse` 클러스터 기록**. 별도 Cluster를 세우지 않고
+  같은 `catalog-postgres`에 **`Database` CR로 `dagster` DB만** 더했었다(CRD `databases.postgresql.cnpg.io`).
+  ⚠️ 그 선언은 철거됐고 새 클러스터에는 메타 DB가 없다 — 위치는 PR2가 정한다([operations.md](../../operations.md) §1-2).
+  롤은 `managed.roles`의 **`dagster`** 로 카탈로그(`iceberg`)와 분리하고 시크릿도 따로 둔다(이 롤 선언은 남아 있다).
+  Dagster가 다시 호스트 실행이 돼 구 근거 "Dagster가 호스트라 순환 의존"이 되살아났다 — PR2 결정의 입력이다.

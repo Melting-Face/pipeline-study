@@ -39,8 +39,9 @@ from dagster_project.common.helper import parse_s3_uri
 # 멀티파트 파라미터.
 #
 # 🔴 **chunksize는 daemon 메모리와 강결합이다.** 자산은 `DefaultRunLauncher`로
-#    daemon in-process 서브프로세스에서 돌고, `k8s/dagster/dagster-deploy.yaml`의
-#    daemon `limits.memory`와 `DAGSTER_MAX_CONCURRENT_RUNS`가 상한을 정한다.
+#    daemon in-process 서브프로세스에서 돌고,
+#    (철거된) `k8s/dagster/dagster-deploy.yaml`의 daemon `limits.memory`와
+#    `DAGSTER_MAX_CONCURRENT_RUNS`가 상한을 정한다.
 #    기존 업로드 스크립트는 64MB를 쓰지만 그것은 **호스트에서** 도는 일회성
 #    스크립트다. 여기서는 32MB로 내린다.
 # 🔴 **use_threads=False** — 메모리를 청크 1개분으로 묶는다. 다운로드가 병목이라
