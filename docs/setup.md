@@ -16,6 +16,25 @@ GitOps 전환의 데이터 층(SeaweedFS·카탈로그 Postgres·Secret)은 PR2�
 | §6 `dg check defs` | ⚠️ 의존성 결함으로 실패 |
 | §2 비밀값 · §3-1 port-forward · §3-2 컴퓨트 · §4 Spark Connect · §5 Dagster · §6-1 원천 · §7 노트북 | ⏸ PR2 |
 
+## 검증 환경
+
+이 절차는 아래 환경에서만 검증했다. 다른 OS(Linux·Windows)와 Intel Mac은 **미검증**이다.
+값을 바꿀 때는 이 표가 아니라 **출처 열의 파일**을 고친다.
+
+| 항목 | 값 | 출처 |
+| --- | --- | --- |
+| 호스트 | macOS · Apple Silicon(arm64) | — |
+| 컨테이너 런타임 | podman 5.x · `podman machine`(applehv VM) · **rootful** | [`k8s-up.sh`](../scripts/k8s-up.sh) |
+| VM 크기 | 8 CPU · 26702 MiB · 93 GiB — VM 총량이며 노드 Allocatable은 이보다 작다 | [`k8s-env.sh`](../scripts/k8s-env.sh) |
+| 로컬 레지스트리 | `docker.io/library/registry:2.8.3` → `127.0.0.1:5001` | [`k8s-env.sh`](../scripts/k8s-env.sh) |
+| kind 노드 | `kindest/node:v1.35.0`(digest 고정) | [`cluster/kind/variables.tf`](../terraform/cluster/kind/variables.tf) |
+| Terraform | `>= 1.5.0` | 두 스택의 `versions.tf` |
+| 스택 A 프로바이더 | `tehcyx/kind 0.11.0` · `hashicorp/external 2.4.2` | [`cluster/kind/versions.tf`](../terraform/cluster/kind/versions.tf) |
+| 스택 B 프로바이더 | `hashicorp/helm 3.0.2` | [`platform/versions.tf`](../terraform/platform/versions.tf) |
+
+- 호스트 CLI(`podman`·`kind`·`kubectl`·`helm`·`terraform`)는 버전을 고정하지 않는다(`brew` 최신).
+  클러스터 버전을 정하는 것은 `kind` CLI가 아니라 위의 노드 이미지와 프로바이더다.
+
 ## 0. 사전 요구 도구
 
 ```shell
@@ -74,8 +93,24 @@ kubectl get secret spark-grpc-tls  -o jsonpath='{.data.ca\.crt}'      | base64 -
 
 ## 3. 로컬 Kubernetes
 
-podman machine·레지스트리 → **스택 A**(kind 클러스터) → **스택 B**(ingress-nginx·ArgoCD) →
-ArgoCD가 `gitops/charts/`의 오퍼레이터를 수렴시킨다. 설계는 [`argocd-gitops.md`](argocd-gitops.md).
+설계는 [`argocd-gitops.md`](argocd-gitops.md).
+
+### 층 지도
+
+아래 층부터 쌓인다. 각 층은 바로 아래 층이 있어야 만들어진다.
+
+| 층 | 만드는 주체 | 소유하는 것 | 확인 |
+| --- | --- | --- | --- |
+| ① VM | `scripts/k8s-up.sh` | podman machine(rootful) | `podman machine list` |
+| ② 레지스트리 | `scripts/k8s-up.sh` | 컨테이너 `kind-registry` · 볼륨 `kind-registry-data` | `podman ps -a --filter name=kind-registry` |
+| ③ 클러스터 | 스택 A `terraform/cluster/kind` | kind 노드 · 포트 매핑 · kubeconfig · 노드의 레지스트리 설정 | `kind get clusters` |
+| ④ 플랫폼 | 스택 B `terraform/platform` | `helm_release` 3개(ingress-nginx · argo-cd · appset) | `helm list -A` |
+| ⑤ 오퍼레이터 | ArgoCD | `gitops/charts/<app>` | `kubectl get applications -n argocd` |
+
+- **Terraform이 관리하는 것은 ③부터**다. ①②는 Terraform state에 없다.
+- 그래도 ③은 ②에 묶여 있다. 스택 A가 `local-exec`로 호스트의 podman을 직접 부르기 때문이다(아래 「스택 A가 하는 일」).
+- ⑤는 `terraform apply`로 바뀌지 않는다. `gitops/charts/`에 커밋하고 push하면 ArgoCD가 반영한다.
+- ④·⑤의 확인 명령은 `KUBECONFIG`를 export한 뒤에 쓴다(아래 「올리기」 마지막 줄).
 
 ### 올리기
 
@@ -83,7 +118,7 @@ ArgoCD가 `gitops/charts/`의 오퍼레이터를 수렴시킨다. 설계는 [`ar
 Terraform 명령은 저장소 **루트**에서 실행한다(아래 §내리기 참고).
 
 ```shell
-scripts/k8s-up.sh
+scripts/k8s-up.sh                         # ① VM · ② 레지스트리 — 손으로 하는 방법은 아래
 
 terraform -chdir=terraform/cluster/kind init
 terraform -chdir=terraform/cluster/kind apply \
@@ -94,15 +129,60 @@ terraform -chdir=terraform/platform apply \
   -var kubeconfig_path=~/.kube/lakehouse-next.config -var kube_context=kind-lakehouse-next \
   -var http_host_port=8082 -var target_revision=main
 
-export CLUSTER_NAME=lakehouse-next
-source scripts/k8s-env.sh                 # KUBECONFIG=~/.kube/lakehouse-next.config
+export KUBECONFIG=~/.kube/lakehouse-next.config   # 스택 A가 쓴 클러스터 전용 kubeconfig
 ```
 
-- `CLUSTER_NAME`을 빼고 `source`하면 `KUBECONFIG`가 없는 파일(`~/.kube/lakehouse.config`)을 가리킨다.
+- `scripts/k8s-env.sh`를 `source`해도 같은 `KUBECONFIG`가 잡힌다. 다만 그 전에 `CLUSTER_NAME=lakehouse-next`를
+  export해야 한다. 빼면 없는 파일(`~/.kube/lakehouse.config`)을 가리킨다.
 - `kubectl`에 옵션을 붙이는 대신 `KUBECONFIG`를 export한다(zsh는 `$K` 형태의 명령 변수를 쪼개지 않는다).
 - 기능 브랜치를 클러스터에서 검증할 때만 `target_revision=<브랜치>`로 바꾸고, 그 전에 브랜치를 push한다.
 - PR2 뒤에는 `-var` 없이 기본값(`lakehouse`, 8080/8443)으로 올린다.
 - ⏸ `scripts/k8s-secrets.sh`(PR2)는 아직 없고 `scripts/k8s-poc-storage.sh`는 지금 돌지 않는다.
+
+#### `k8s-up.sh`가 하는 일 — 손으로 하기
+
+스크립트 대신 아래 명령을 직접 쳐도 ①②가 같은 상태가 된다. 숫자는 `scripts/k8s-env.sh`의 기본값이다.
+
+```shell
+# ① VM — 실행 중인 podman machine이 없을 때만 만든다
+podman machine init dagster-k8s --rootful --cpus 8 --memory 26702 --disk-size 93
+podman machine start dagster-k8s
+
+# ② 레지스트리 — 푸시한 이미지는 명명 볼륨에 남아 컨테이너를 지워도 보존된다
+podman run -d --restart=always \
+  -p 127.0.0.1:5001:5000 \
+  -v kind-registry-data:/var/lib/registry \
+  --name kind-registry docker.io/library/registry:2.8.3
+```
+
+스크립트는 여기에 분기 두 개를 더한다.
+
+- **VM**: 이미 실행 중인 머신이 있으면 새로 만들지 않고 그 머신을 쓴다. 그 머신이 rootless면 멈춘다
+  (kind의 podman provider는 rootful이 필요하다). 전용 머신 `dagster-k8s`를 강제하려면 `MANAGE_MACHINE=true`.
+- **레지스트리**: 상태가 셋이다 — 실행 중이면 그대로, 중지면 `podman start kind-registry`, 없을 때만 `podman run`.
+- `k8s-env.sh`는 `KIND_EXPERIMENTAL_PROVIDER=podman`도 export한다. 이 변수는 `kind` **CLI**만 읽는다.
+  Terraform 프로바이더는 이 변수를 보지 않고 PATH에서 런타임을 자동으로 고른다(docker → nerdctl → podman).
+
+#### 스택 A가 `kind_cluster` 말고 하는 일
+
+[`terraform/cluster/kind/main.tf`](../terraform/cluster/kind/main.tf)의 `terraform_data` 2개가
+`local-exec`로 podman을 부른다. 손으로 하면 다음과 같다.
+
+```shell
+# registry_certs — 노드 containerd가 localhost:5001을 kind-registry:5000으로 보내게 한다
+podman exec lakehouse-next-control-plane mkdir -p /etc/containerd/certs.d/localhost:5001
+podman exec -i lakehouse-next-control-plane \
+  sh -c "cat > '/etc/containerd/certs.d/localhost:5001/hosts.toml'" \
+  < terraform/cluster/kind/registry/hosts.toml
+
+# registry_network — 레지스트리를 kind 네트워크에 붙여 노드가 kind-registry 이름을 해석한다
+podman network connect kind kind-registry       # 이미 연결돼 있으면 스택 A는 건너뛴다
+```
+
+- 이 둘은 **클러스터가 새로 만들어질 때만** 다시 돈다. 노드 안의 설정이 지워져도 Terraform state는 그 사실을
+  모르므로 `plan`에 차이가 나오지 않는다.
+- `plan` 단계의 precondition(`scripts/detect-runtime.sh`)은 PATH에 잡히는 런타임이 `podman`인지만 본다.
+  VM이 멈춰 있어도 통과하므로, VM이 떠 있는지는 `podman machine list`로 따로 확인한다.
 
 ### 수렴 확인
 
@@ -138,6 +218,19 @@ REMOVE_MACHINE=true scripts/k8s-down.sh    # + VM 삭제(데이터 소멸)
   그래서 Terraform은 **저장소 루트에서만** 실행한다([`conventions/terraform.md`](conventions/terraform.md) §4).
 - worktree에서 apply했다면 그 worktree를 지우기 전에 state를 루트로 옮기고,
   **apply 때와 같은 `-var`로** `plan`해 `No changes.`를 확인한다. `-var`를 빼면 기본값과 비교돼 교체가 나온다.
+
+#### `k8s-down.sh`가 하는 일 — 손으로 하기
+
+```shell
+kind delete cluster --name lakehouse-next     # 남아 있을 때만. destroy를 먼저 했다면 이미 없다
+podman rm -f kind-registry                    # 컨테이너만 지운다. 볼륨 kind-registry-data는 남는다
+
+podman machine stop <머신>                    # STOP_MACHINE=true 에 해당
+podman volume rm -f kind-registry-data        # REMOVE_MACHINE=true 에 해당 — 푸시한 이미지가 사라진다
+podman machine rm -f <머신>                   #   〃 VM 안의 데이터가 모두 사라진다
+```
+
+- `<머신>`은 `podman machine list`로 확인한다. ①에서 기존 머신을 재사용했다면 `dagster-k8s`가 아니다.
 
 ### 다이얼
 
