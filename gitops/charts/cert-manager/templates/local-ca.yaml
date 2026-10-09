@@ -16,13 +16,16 @@
 #   정상 사용법이다(개인키는 Secret `lakehouse-ca-tls`에 남고 밖으로 나가지 않는다).
 #   내보내기: docs/conventions/k8s.md §10.
 #
-# 전제: cert-manager(scripts/k8s-env.sh의 `ensure_cert_manager`가 보장 — Flink 웹훅·CNPG barman과 공용).
+# 전제: cert-manager(같은 차트의 서브차트가 먼저 설치 — Flink 웹훅·CNPG barman과 공용).
+#   CR 은 CRD·웹훅이 뜬 뒤여야 하므로 각 문서에 sync-wave "1" 을 단다(docs/argocd-gitops.md §5).
 ---
 # 부트스트랩 발급자 — 아래 CA 인증서 자신을 서명하기 위해서만 쓴다.
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
     name: selfsigned-bootstrap
+    annotations:
+        argocd.argoproj.io/sync-wave: "1"
     namespace: default
 spec:
     selfSigned: {}
@@ -32,6 +35,8 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
     name: lakehouse-ca
+    annotations:
+        argocd.argoproj.io/sync-wave: "1"
     namespace: default
 spec:
     isCA: true
@@ -52,6 +57,8 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
     name: lakehouse-ca-issuer
+    annotations:
+        argocd.argoproj.io/sync-wave: "1"
     namespace: default
 spec:
     ca:
