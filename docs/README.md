@@ -92,10 +92,8 @@
 | [리소스 산정](resource-sizing.md) | 호스트 자원에 따른 서비스 옵션 조정 |
 | [리스크 관리 규약](risk.md) | 분류 4축·등급의 **가역성 축**·비가역 작업 한 벌·**사후 인시던트 대응** |
 | [보안·데이터 거버넌스 **정책**](security.md) | ISMS-P·의료데이터 규제 매핑, 통제 방침과 보증 범위 |
-| [Agent Skills](skills.md) | Claude/Codex 공용 스킬 카탈로그와 통제 규칙 (허브) |
-| ↳ [출처 등급·통제](skills/sourcing.md) | A~D 등급 정의·C등급 통제·lock 관리의 **정본** |
-| ↳ [C등급 단서](skills/caveats.md) | 등재의 **조건**이 되는 단서 원문 |
-| ↳ [배선 메커니즘](skills/wiring.md) | `tools:`/`disallowedTools`/`skills:` 프로브·프리로드 자격 |
+| [Agent Skills](skills.md) | 설치된 스킬별 **용도 안내**(카테고리별 표) |
+| ↳ [스킬 통제 규칙](skills/governance.md) | 출처 등급·설치 절차·워커 배선·C등급 단서 |
 | ↳ 인벤토리 실측 | **볼트로 이관** — `$OBSIDIAN_VAULT/status/skills-inventory.md`(스냅샷·비공개) |
 
 > **보안 실태는 이 저장소에 없다.** 저장소가 공개이고 이 경로가 GitHub Security Policy 페이지의
