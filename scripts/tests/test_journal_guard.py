@@ -108,6 +108,14 @@ class JournalGuardTest(unittest.TestCase):
         assert "(blocked)" in result.stdout, result.stdout
         assert "WIP" not in result.stdout, result.stdout
 
+    def test_planned_listed_but_not_counted_in_wip(self) -> None:
+        """planned도 열린 미션 목록에는 나오지만 WIP 수치에서는 빠진다."""
+        for index in range(1, 5):
+            self._write_journal(0, f"0{index}-m{index}.md", "planned")
+        result = self._run_guard("session-start")
+        assert "(planned)" in result.stdout, result.stdout
+        assert "WIP" not in result.stdout, result.stdout
+
     def test_dropped_is_not_open(self) -> None:
         """dropped는 닫힌 미션이라 목록에도 WIP에도 없다."""
         self._write_journal(0, "01-gone.md", "dropped")

@@ -20,6 +20,16 @@ WIRED_SCRIPT_RE = re.compile(r"(?:scripts|\.codex/hooks)/[\w./-]+?\.(?:py|sh)\b"
 INTERPRETER_RE = re.compile(r"(?:^|[\s\"'])(?:python3?|uv run|bash|sh)\s")
 
 
+HOOK_COMMAND_LINE_RE = re.compile(r"(?:\"command\"|^\s*command):")
+
+
+def hook_command_text(text: str) -> str:
+    """hook `command` 줄만 남긴다 — permission 규칙 문자열은 배선이 아니다."""
+    return "\n".join(
+        line for line in text.splitlines() if HOOK_COMMAND_LINE_RE.search(line)
+    )
+
+
 def wired_references(text: str) -> list[tuple[str, bool]]:
     """`text`에서 (저장소 상대 스크립트 경로, 직접 실행 여부)를 뽑는다.
 
@@ -56,6 +66,18 @@ class WiredReferencesTest(unittest.TestCase):
         assert wired_references("uv run scripts/a.py") == [("scripts/a.py", False)]
         codex_form = 'python3 \\"$(git rev-parse --show-toplevel)/.codex/hooks/x.py\\"'
         assert wired_references(codex_form) == [(".codex/hooks/x.py", False)]
+
+    def test_only_hook_command_lines_are_scanned(self) -> None:
+        """permission 규칙 문자열은 배선이 아니다 — hook `command` 줄만 남긴다."""
+        settings_like = (
+            '"Bash(*scripts/k8s-down.sh*)",\n'
+            '"command": "\\"$CLAUDE_PROJECT_DIR\\"/scripts/a_guard.py x",\n'
+        )
+        frontmatter_like = '  command: "$CLAUDE_PROJECT_DIR/scripts/b_guard.py"\n'
+        settings_refs = wired_references(hook_command_text(settings_like))
+        frontmatter_refs = wired_references(hook_command_text(frontmatter_like))
+        assert [path for path, _ in settings_refs] == ["scripts/a_guard.py"]
+        assert [path for path, _ in frontmatter_refs] == ["scripts/b_guard.py"]
 
     def test_ignores_non_script_files(self) -> None:
         """`.md` 등 스크립트가 아닌 경로는 뽑지 않는다."""
@@ -97,7 +119,9 @@ class GuardFailDirectionTest(unittest.TestCase):
         wired = [
             reference
             for source in sources
-            for reference in wired_references(source.read_text(encoding="utf-8"))
+            for reference in wired_references(
+                hook_command_text(source.read_text(encoding="utf-8"))
+            )
         ]
         assert len(wired) >= 4, f"배선 참조 추출이 {len(wired)}건 — 추출이 죽었다"
         missing = sorted(
