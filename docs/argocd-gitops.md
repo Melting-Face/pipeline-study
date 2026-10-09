@@ -120,7 +120,9 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
 - ⚠️ keep은 문서상 **`Delete=false`와 동등**이고 `Prune=false`와의 관계는 문서에 없다(R3).
   겹 3은 "삭제 방지"까지만 보증한다.
 - ⚠️ **겹 1이 List 원소 제거에도 적용되는지는 문서에 명시가 없다**(R2 — 문서는 Application 삭제만 말한다).
-  §7 관문 ③이 이것을 **실측으로 판정**한다. 판정 전까지 `var.apps`에서 **데이터 층 앱을 빼지 않는다**.
+  §7 관문 ③ 관측: `spark-operator` 원소를 빼자 Application만 사라지고 Deployment·CRD·RBAC는 **남았다**.
+  단 Application에 `resources-finalizer`가 원래 없어(템플릿이 달지 않는다) 비연쇄 삭제가 기본이므로,
+  **이 잔존이 겹 1 덕인지는 가르지 못했다**. 그래서 데이터 층 앱은 여전히 `var.apps`에서 **빼지 않는다**.
 - SeaweedFS의 PVC는 StatefulSet `volumeClaimTemplates`가 만들며 기본 보존(Retain)이다 — ArgoCD 추적 대상이 아니다.
 
 ## 5. sync 정책 — 앱 사이는 재시도, 앱 안은 wave
@@ -266,7 +268,8 @@ PR마다 함께 갱신할 단일 출처: [setup.md](setup.md) §3(부트스트�
   **호스트 Dagster**(`host-dagster` profile)로 돌린다. 이 경로가 새 클러스터의 SeaweedFS·카탈로그에 붙는지는
   PR2 관문 ④에서 확인한다.
 - **수렴 순서가 비결정적**이라 첫 sync에서 일시적 Degraded·재시도 로그가 정상이다 — 관문 ①은 최종 상태로만 판정한다.
-- **겹 1의 List 원소 제거 적용 여부 미확인**(§4)은 관문 ③ 전까지 데이터 층 앱 제거 금지로 완화한다.
+- **겹 1의 List 원소 제거 적용 여부 미확인**(§4 — 관문 ③에서 잔존은 관측했으나 기제는 못 갈랐다)은
+  데이터 층 앱 제거 금지로 완화한다. 재검토 트리거: 템플릿에 `resources-finalizer`를 다는 변경.
 - **Spark·Flink CRD는 sync 시점 prune에 무방비**(§4 겹 3의 선언된 공백) — 겹 1은 Application 삭제만 막으므로
   업스트림 차트 갱신으로 CRD가 템플릿에서 빠지면 prune이 CRD를 지우고 그 CR이 연쇄 삭제될 수 있다.
   현재는 그 CR이 온디맨드 컴퓨트(D7)라 데이터 손실이 아니라 **실행 중 잡 소실**로 끝나는 것을 수용한다.
