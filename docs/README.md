@@ -23,6 +23,7 @@
 | 문서 | 내용 |
 | --- | --- |
 | [재설계 로드맵](redesign.md) | K8s로의 이행. 목표 토폴로지·급소·PDCA |
+| [ArgoCD GitOps 전환](argocd-gitops.md) | 설계(리뷰 대기). Terraform A·B + ApplicationSet, 오퍼레이터→데이터→Airflow 단계 |
 | [전체 아키텍처](architectures/overview.md) | Dagster · dbt · Iceberg · SeaweedFS 스택과 bronze 적재 템플릿 |
 | [Dagster](architectures/dagster.md) | 오케스트레이터 — in-cluster 배포 결정과 대안 비교 |
 | [Docker/Compose](architectures/docker.md) | 현행 채택 |
