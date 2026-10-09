@@ -1,0 +1,116 @@
+# argo-cd 차트 10.9.6 (ArgoCD v3.5.3) values. 지금은 변수 보간이 없지만 templatefile() 호출
+# 방식(argocd.tf)을 유지해, values 에 변수가 필요해져도 바로 확장할 수 있게 둔다.
+# 주석 안에서도 달러+중괄호 보간 표기는 해석되므로 쓰지 않는다(리터럴이 필요하면 달러를 두 번 쓴다).
+#
+# 🔴 server.ingress.hostname 은 단수 문자열이다. 구버전 예제의 hosts: [...] 배열 형태를
+# 쓰면 Helm 이 조용히 버리고 Ingress 가 global.domain 기본값(argocd.example.com)으로 뜬다.
+configs:
+  params:
+    # TLS 종료는 Ingress(ingress-nginx)가 한다 - ArgoCD 서버 자체는 평문 HTTP 로 띄운다.
+    server.insecure: true
+
+# 로컬 단일 사용자라 SSO(dex)·알림(notifications)은 쓰지 않는다. 읽는 사람이 없는 알림은
+# 관측이 아니다(docs/argocd-gitops.md §3). 남는 컴포넌트는 아래 5개다.
+dex:
+  enabled: false
+notifications:
+  enabled: false
+
+server:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hostname: argocd.localtest.me
+    path: /
+    pathType: Prefix
+    tls: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# repo-server probe 타임아웃 연장.
+#
+# 차트 기본값(helm show values argo/argo-cd --version 10.9.6 의 repoServer.livenessProbe·
+# readinessProbe)은 timeoutSeconds: 1 이고, liveness 는 httpPath: /healthz?full=true(가벼운
+# 핑이 아니라 전체 점검)라 더 걸리기 쉽다. VM 을 다른 클러스터와 공유하면 일시적인 스케줄링
+# 지연이 1초를 넘겨 kubelet 이 컨테이너를 재시작한다. 재시작 시 lastState.terminated 가
+# reason=Completed exit=0 이면 크래시가 아니라 probe 가 죽인 것이다(둘을 가르는 것이 진단의
+# 핵심). repo-server 는 sync 때 매니페스트를 fetch·render 하므로 도중 재시작은 원인 모를 sync
+# 실패로 보인다. 5초는 이론적 최적이 아니라 기본 1초보다 넉넉한 여유로 고른 값이다.
+# readiness 도 같은 기본값이라 함께 올렸다.
+#
+# resources: 차트 기본값은 비어 있다(전 컴포넌트 resources: {}). repo-server 는 umbrella 차트의
+# dependency 를 받고 렌더하므로 컨트롤러 다음으로 메모리 한도를 넉넉히 둔다. 시작값이며
+# OOMKilled·CPU throttling 이 관측되면 그때 올린다.
+repoServer:
+  livenessProbe:
+    timeoutSeconds: 5
+  readinessProbe:
+    timeoutSeconds: 5
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # 초기화 컨테이너(copyutil)도 컨테이너라 같은 규칙을 적용한다.
+  copyutil:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: 50m
+        memory: 64Mi
+
+# 아래 resources 는 모두 같은 근거다 - 차트 기본값이 비어 있어 로컬 단일 사용자 규모의
+# 시작값을 직접 정한다. 컨트롤러는 클러스터 전체 리소스를 감시·캐시하므로 메모리가 가장 크다.
+controller:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+applicationSet:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+redis:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# 설치 시 한 번 도는 Job 이지만 컨테이너라 같은 규칙을 적용한다.
+redisSecretInit:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+# root Application 을 이 릴리스의 extraObjects 에 두지 않는다. 이 차트는 CRD 를 Helm 의 특수
+# crds/ 디렉터리가 아니라 평범한 templates/ 파일로 담고 있어, 한 번의 helm install 로 CRD 와
+# 그 CR 을 함께 만들면 Helm 이 매니페스트를 빌드하는 단계(RESTMapper 로 GVK 해석)에서
+# `no matches for kind ... ensure CRDs are installed first` 로 즉시 실패한다. 그래서
+# ApplicationSet 은 두 번째 helm_release(argocd.tf 의 helm_release.appset)로 분리하고
+# depends_on + wait = true 로 "이 릴리스가 끝난 뒤"에만 적용한다. kubernetes_manifest 는
+# plan 시점에 CRD 스키마를 조회해 최초 plan 이 죽으므로 쓰지 않는다.

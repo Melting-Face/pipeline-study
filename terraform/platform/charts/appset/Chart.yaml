@@ -1,0 +1,9 @@
+# ApplicationSet 전용 최소 Helm chart. 별도 릴리스로 분리한 이유 —
+# ApplicationSet CR 은 argo-cd 차트가 설치하는 CRD 에 의존하므로, plan 시점에 CRD 가 없어
+# kubernetes_manifest 를 쓸 수 없고, helm_release.argo_cd 가 CRD 설치를 끝낸 뒤
+# (depends_on + wait) 적용되는 별도 helm_release 로 만든다.
+apiVersion: v2
+name: appset
+description: ArgoCD ApplicationSet(apps) 하나만 만드는 최소 chart - list generator 로 앱 목록을 펼친다
+type: application
+version: 0.1.0
