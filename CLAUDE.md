@@ -296,7 +296,7 @@
     체크리스트 1회 + 사용자 승인(`permissions.ask`는 규칙이 있는 명령만 받친다 — 반출·`compose.yml`은 절차뿐).
     판정 정본은 [`docs/risk.md`](docs/risk.md) §4.
   - **미션 규칙** — ①미션 = PR 하나, 머지되면 done이고 저널은 메인 세션이 그때 1회 쓴다
-    ②범위 동결 — 작업 중 발견한 결함은 Issue 한 줄로만(현재 PR을 깨는 것만 예외) ③WIP 상한 3.
+    ②범위 동결 — 작업 중 발견한 결함은 Issue 한 줄로만(현재 PR을 깨는 것만 예외) ③WIP(in-progress) 상한 3.
   - **분해 전 3문항** — ①무엇을 ②왜 지금(Rule of Three) ③성공을 어떻게 아는가.
     하나라도 못 답하면 분해하지 말고 사용자에게 선택지·권고안과 함께 묻는다.
   - **경계는 프론트매터 `disallowedTools`로만** 건다. `model`·`disallowedTools`를 명시한다(`model` 생략 = `inherit`).

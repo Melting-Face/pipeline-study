@@ -1,13 +1,14 @@
 ---
 description: 현재 세션을 기록관 저널(Obsidian 볼트)에 기록·갱신한다
 argument-hint: [mission-slug] (생략 시 현재 작업에서 유추)
-allowed-tools: Read, Write, Edit, Glob, Bash(date:*), Bash(ls:*), Bash(mkdir:*), Bash(scripts/journal_guard.py:*)
+allowed-tools: Read, Write, Edit, Bash(date:*), Bash(ls:*), Bash(mkdir:*), Bash(scripts/journal_guard.py:*)
 ---
 
 현재 세션의 작업을 **기록관 저널**에 기록·갱신한다. 규약 정본은 @docs/conventions/agents.md 다.
 
 > 기록 주체는 **메인 세션**이고, 기록 시점은 **미션(=PR)이 머지될 때 1회**다. 이 커맨드가 그 절차다.
 > 머지 전에 세션이 끝나면 `status: in-progress`로 중간 기록을 남겨도 된다.
+> status 값: `planned | in-progress | done | blocked | dropped` — `dropped`는 대체·철거로 폐기한 미션이다.
 > 시각은 **반드시 `date`로 실측**해 적는다 — 추정 시각은 기록 신뢰도를 통째로 무너뜨린다.
 
 ## 절차

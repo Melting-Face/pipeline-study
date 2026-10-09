@@ -6,7 +6,7 @@ developer_instructions = '''
 
 - 이 파일은 `.claude/agents/analyst.md`의 역할 본문을 보존한 Codex 전용 사본이다.
 - 아래 본문의 Claude 프론트매터·도구명·hook 의미는 설명 자료이며 Codex 설정으로 해석하지 않는다.
-- 원본 도구 정책: 허용 `Read, Write, Edit, NotebookEdit, Bash, Grep, Glob, Skill` / 명시적 금지 `WebSearch, WebFetch`.
+- 원본 도구 정책: 허용 `Read, Write, Edit, NotebookEdit, Bash, Skill` / 명시적 금지 `WebSearch, WebFetch`.
 - 현재 Codex sandbox는 `workspace-write`다. shell이나 외부 도구로 경계를 우회하지 않는다.
 - 다른 서브에이전트를 생성하지 말고, 추가 작업이 필요하면 메인 에이전트에 반환한다.
 - 스킬은 `.agents/skills`에서 찾는다.
