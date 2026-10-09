@@ -162,8 +162,8 @@ Python 변경은 `ruff check`, SQL 변경은 `sqlfluff lint`, Terraform 변경�
 - 프로젝트 스킬 정본은 `.agents/skills/<name>/SKILL.md`다.
 - 사용자 요청이나 작업 설명이 스킬의 trigger와 일치하면 해당 스킬을 사용한다.
 - 스킬 지침보다 프로젝트 규칙과 사용자 지시가 우선한다.
-- 외부 출처의 스킬은 `skills-lock.json`의 출처·해시와 `docs/skills.md`의 보안 판정을
-  확인한다.
+- 외부 출처의 스킬은 `skills-lock.json`의 출처·해시와 `docs/skills/governance.md`의 출처 등급·
+  C등급 단서를 확인한다.
 - 스킬 설치·삭제·lock 변경은 공급망 변경이므로 사용자 요청과 보안 검토 없이 하지
   않는다.
 

@@ -201,7 +201,7 @@ git push origin v0.1.0
 
 ⚠️ **파일을 쓰는 축은 이것으로 닫히지 않는다.** 에이전트가 워크플로를 쓰고 실행은 나중에
 **다른 주체인 CI 러너**가 하므로, 에이전트의 `Bash` 문자열만 보는 매처는 원리상 그 경로를
-볼 수 없다. 이 경로의 잔여 위험은 [`../skills/sourcing.md`](../skills/sourcing.md) G-1 행에 있다.
+볼 수 없다. 이 경로의 잔여 위험은 [`../skills/governance.md`](../skills/governance.md) §워크플로 발신 공백에 있다.
 
 ## 문서 작성 규약
 

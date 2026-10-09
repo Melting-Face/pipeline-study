@@ -33,10 +33,10 @@ SQLite가 OLTP에서 차지하는 자리를 OLAP에서 차지하는 설계다.
 ⚠️ 위는 **저장소 파일 기준**이다. 개인 개발 환경에 DuckDB CLI가 깔려 있는지 여부는 별개 축이고
 이 문서의 판단에 들어가지 않는다 — 저장소가 재현을 보증하는 범위 밖이다.
 
-⚠️ [../skills/caveats.md](../skills/caveats.md)·[../skills/sourcing.md](../skills/sourcing.md)에
-DuckDB 항목이 남아 있는 것은 **활성 배선이 아니라 강등 근거의 보존**이다
-([../skills/scoring.md](../skills/scoring.md)가 그렇게 명시한다). 근거를 지우면 다음 심사가
-같은 판단을 처음부터 다시 하게 되므로 남긴다 — **"기록이 있다"를 "쓰고 있다"로 읽지 않는다.**
+`duckdb` 스킬의 강등 근거(보안 검토·채점)는 스킬 문서를 단순화하면서 본문에서 빠졌다.
+근거는 git 이력에 남아 있다. 재검토할 때는 삭제 전 경로
+`docs/skills/scoring.md` §reviewer(★2 강등)·§analyst(죽은 참조 제거)와
+`docs/skills/sourcing.md` §C등급 5종 판정(D-1·D-2)을 `git log --all -- <경로>`로 찾아 출발점으로 삼는다.
 
 ### 왜 매력적인가
 
