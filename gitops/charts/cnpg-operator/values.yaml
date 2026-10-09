@@ -1,0 +1,6 @@
+# 서브차트(cloudnative-pg) 값 — 업스트림 키는 `cloudnative-pg:` 아래에 둔다.
+# 자원 근거: docs/resource-sizing.md §(B). 최상위 `resources` 가 오퍼레이터 파드 자원이다.
+cloudnative-pg:
+    resources:
+        requests: {cpu: 100m, memory: 200Mi}
+        limits: {cpu: 250m, memory: 384Mi}

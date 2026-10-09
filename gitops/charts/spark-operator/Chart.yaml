@@ -1,0 +1,9 @@
+apiVersion: v2
+name: spark-operator
+description: Spark Kubernetes Operator + 워크로드 정리 RBAC(umbrella)
+type: application
+version: 0.1.0
+dependencies:
+    - name: spark-kubernetes-operator
+      version: 1.8.0
+      repository: https://apache.github.io/spark-kubernetes-operator
