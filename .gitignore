@@ -4,7 +4,7 @@ data/          # 로컬 원천 덤프(csv.gz) — scripts/upload_raw_to_seaweedf
 # 원천 진료 데이터 파일 — 분석 경로에 데이터가 착지하는 것을 막는 1층(2026-08-22).
 # 🔴 이건 **보조**다: 조용히 무시할 뿐 이유를 말하지 않고, `git add -f`와 **이미 추적 중인
 #    파일**에는 무력하다. 설명·강제는 `.pre-commit-config.yaml`의 `no-health-data-files` 훅이 한다.
-#    반출 경로는 저장소 밖 `$DATA_EXTRACT_DIR`(기본 `~/extracts`)이며 담당은 `data-extractor`다.
+#    반출 경로는 저장소 밖 `$DATA_EXTRACT_DIR`(기본 `~/extracts`)이며 담당은 `analyst`다.
 notebooks/**/*.csv
 notebooks/**/*.tsv
 notebooks/**/*.parquet
@@ -88,7 +88,7 @@ kubeconfig-oci
 
 # 조사 게이트 런타임 상태 — `researcher`의 승인 URL 목록(approved.json)과 질의 로그
 # (queries.jsonl). 생성 주체는 scripts/research_gate_guard.py.
-# 🔴 **감사 근거라 저장소 *안*에 둔다**(`security`가 G2에서 읽는다) — 그러나 조회 대상·
+# 🔴 **감사 근거라 저장소 *안*에 둔다**(`reviewer`가 보안 체크리스트에서 읽는다) — 그러나 조회 대상·
 # 질의문이 박제되므로 형상관리 대상은 아니다. 세션 수명의 런타임 상태다.
 # `.claude/.claims`와 같은 이유로 **끝 슬래시를 붙이지 않는다**(슬래시는 디렉터리만 매칭).
 # 🔴 gitignore는 보조다 — `git add -f`와 이미 추적 중인 파일에는 무력하므로

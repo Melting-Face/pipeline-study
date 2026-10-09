@@ -334,8 +334,8 @@ C등급 금지의 근거(*"스크립트는 실행이다"*)가 **제거**되고, 
 | 경로 | 수단 | 현황 |
 | --- | --- | --- |
 | **프리로드** | 프론트매터 `skills:` — 기동 시 **`SKILL.md` 본문이 컨텍스트에 주입**된다 | `data-engineer` × `dagster-expert` **1건뿐** |
-| **온디맨드** | `tools:`의 **`Skill`** — 워커가 필요할 때 호출해 로드한다 | `data-engineer`·`devops-engineer`(표 있음) · `analyst`·`reviewer`(표 없음) |
-| **미부여** | `tools:`에 `Skill` 없음 — 호출 자체가 막힌다 | `researcher`(사유는 아래) |
+| **온디맨드** | `tools:`의 **`Skill`** — 워커가 필요할 때 호출해 로드한다 | `data-engineer`·`devops-engineer`·`analyst`(전원 표 있음) |
+| **미부여** | `Skill` 없음 또는 `disallowedTools` — 호출 자체가 막힌다 | `researcher`·`reviewer`(사유는 아래) |
 
 🔴 **`skills:`는 화이트리스트가 아니다.** 공식 문서 원문 —
 *"이 필드는 어떤 skills를 미리 로드할지 제어하며, **subagent가 액세스할 수 있는 skills를 제어하지 않습니다**.
@@ -358,7 +358,8 @@ C등급 금지의 근거(*"스크립트는 실행이다"*)가 **제거**되고, 
 그래도 **지시문 표가 매핑의 정본이고 §③은 파생 인덱스**다([`doc-sync.md`](doc-sync.md) 실무 규칙 2 —
 어긋나면 코드/설정이 사실이다). 정합은 메인 세션이 수동 감사에서 **워커 → 문서 방향**으로 대조한다.
 
-**미부여는 `researcher` 하나다** — **등재 0건**(쓸 것이 없다).
+**미부여는 `researcher`·`reviewer` 둘이다.** `researcher`는 **등재 0건**(쓸 것이 없다)이고,
+`reviewer`는 읽기 전용 판정자라 **감사 기준이 스킬이 아니라 정본**이다(`disallowedTools: Skill`).
 ⚠️ 한때 **네 번째 사유**가 있었다: 폐기된 `skill-matcher`는 **감사자**라 스킬을 호출하면
 그 본문이 컨텍스트에 주입돼 **감사 대상이 감사자를 오염**시켰다 — "열어도 쓸 게 없다"가 아니라
 "열면 안 된다"였다. **같은 `미부여`가 다른 단위였다.** 그 축은 워커 폐기와 함께 사라졌지만,
@@ -377,14 +378,14 @@ C등급 금지의 근거(*"스크립트는 실행이다"*)가 **제거**되고, 
 
 **아래는 전수 재채점(3패스 분할 + 앵커 대조) 결과를 워커 5종 체제로 옮긴 것이다.**
 통합 전 판정 워커·추출 워커의 채점 근거는 [scoring.md](skills/scoring.md)에 보존한다.
-`analyst`·`reviewer`에 표를 다시 두려면 그 근거를 출발점으로 **재채점**한다(그대로 재사용하지 않는다).
+`reviewer`에 스킬을 다시 열려면 그 근거를 출발점으로 **재채점**한다(그대로 재사용하지 않는다).
 
 | 워커 | 주 스킬 | 제약 |
 | --- | --- | --- |
 | `data-engineer` | `dagster-expert` · `dagster-integrations` · `using-dbt-for-analytics-engineering` · `running-dbt-commands` · `adding-dbt-unit-test` · `sql-optimization` · `dignified-python` | 범용 Python 스킬은 **프로젝트 컨벤션 우선**. `dagster-integrations`는 **업스트림 소멸 — 유일 사본** — [근거](skills/scoring.md#data-engineer) |
 | `devops-engineer` | `multi-stage-dockerfile` · `kubernetes-specialist`**(C)** · `spark-optimization`**(C)** · `terraform-style-guide`(A) | **C등급 단서가 등재의 조건**([단서](skills/caveats.md)). `terraform-test`·`terraform-stacks`·`spark-engineer` 미등재 — [근거](skills/scoring.md#devops-engineer) |
-| `analyst` | **없음** — 지시문에 표가 없다(`Skill` 도구는 있다) | 통합 전 채점은 근거 문서에 보존. 읽기 질의·gold **제안만**은 **지시문 규율**이다 — [근거](skills/scoring.md#analyst) |
-| `reviewer` | **없음** — 지시문에 표가 없다(`Skill` 도구는 있다) | 통합 전 판정 워커들의 채점은 근거 문서에 보존. 감사 기준은 **스킬이 아니라 정본**이다 — [근거](skills/scoring.md#reviewer) |
+| `analyst` | `using-dbt-for-analytics-engineering` · `sql-optimization` | gold는 **초안만**, DDL 권고 미실행. `spark-optimization` 금지(쓰기 경로 최적화) — [근거](skills/scoring.md#analyst) |
+| `reviewer` | **미부여** — `disallowedTools: Skill` | 통합 전 판정 워커들의 채점은 근거 문서에 보존. 감사 기준은 **스킬이 아니라 정본**이다 — [근거](skills/scoring.md#reviewer) |
 | `researcher` | **없음** — 후보 조사 요청은 메인 세션의 수동 감사가 낸다 | 등재 가능 **0건** — 이 워커는 CLI를 조작하지 않아 축1이 구조적으로 탈락한다 — [근거](skills/scoring.md#researcher) |
 | 메인 세션 | 해당 없음 — 워커 지시문이 없다 | 문서 작성·저널 기록을 맡는다. 구 문서 워커 채점(등재 0건)은 [근거](skills/scoring.md#메인-세션) |
 

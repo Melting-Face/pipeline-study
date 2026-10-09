@@ -38,7 +38,8 @@ DAY_DIR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # 미션이 아직 열려 있다고 보는 status 값
 OPEN_STATUSES = ("planned", "in-progress", "blocked")
 
-# 열린 미션 **목록 표시** 범위(폴더 수). WIP **집계**는 전체 폴더를 센다 —
+# 열린 미션 **목록 표시** 범위 — 날짜가 아니라 **날짜 폴더 수**다(저널이 없는 날은
+# 폴더가 없어 7개가 7일보다 길 수 있다). WIP **집계**는 전체 폴더를 센다 —
 # 오래 방치된 미션일수록 상한에 잡혀야 하기 때문이다.
 RECENT_DAYS = 7
 
@@ -143,7 +144,9 @@ def main() -> None:
     if numbers:
         print(f"- 오늘 기존 저널: {', '.join(name[:-3] for _, name in numbers)}")
     if open_missions:
-        print(f"- 열린 미션(최근 {RECENT_DAYS}일): {' / '.join(open_missions)}")
+        print(
+            f"- 열린 미션(최근 날짜 폴더 {RECENT_DAYS}개): {' / '.join(open_missions)}"
+        )
     if open_count > WIP_LIMIT:
         print(
             f"- ⚠️ WIP {open_count}/{WIP_LIMIT} — 새 미션을 열기 전에 "

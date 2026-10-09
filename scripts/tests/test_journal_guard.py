@@ -76,6 +76,13 @@ class JournalGuardTest(unittest.TestCase):
         result = self._run_guard("session-start")
         assert "WIP 4/3" in result.stdout, result.stdout
 
+    def test_open_mission_label_counts_folders_not_days(self) -> None:
+        """목록 범위 라벨은 세는 대상(날짜 폴더 수)을 그대로 적는다(계측 단위)."""
+        self._write_journal(0, "01-open.md", "in-progress")
+        result = self._run_guard("session-start")
+        assert "최근 날짜 폴더 7개" in result.stdout, result.stdout
+        assert "최근 7일" not in result.stdout, result.stdout
+
     def test_no_wip_warning_at_limit(self) -> None:
         """열린 미션이 정확히 상한이면 경고하지 않는다."""
         for index in range(1, 4):

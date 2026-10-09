@@ -34,14 +34,18 @@
 | 등급 | 대상 | 게이트 |
 | --- | --- | --- |
 | 가역 | PR로 되돌릴 수 있는 코드·문서·모델 | CI와 사용자의 PR 머지 |
-| 비가역 | apply·삭제·`DROP`·`--full-refresh`·외부 발신·데이터 반출·스킬 설치·통제 배선 변경 | `permissions.ask` + 실행 전 `reviewer` 보안 체크리스트(E) 1회 + 사용자 승인 |
+| 비가역 | apply·삭제·`DROP`·`--full-refresh`·외부 발신·데이터 반출·스킬 설치·통제 배선 변경 | 실행 전 `reviewer` 보안 체크리스트(E) 1회 + 사용자 승인. 명령이 `permissions.ask`에 걸리면 프롬프트가 한 번 더 받친다 |
+
+⚠️ **`permissions.ask`가 모든 비가역 항목을 덮지는 않는다.** 명령 동사 규칙(apply·삭제·커밋·푸시 등)과
+일부 `Edit(<경로>)` 규칙만 있다. 데이터 반출(`$DATA_EXTRACT_DIR` 쓰기)과 `compose.yml` 편집에는
+기계 `ask`가 없고 **절차(E + 사용자 승인)만** 있다.
 
 비가역 작업의 순서는 다음과 같다.
 
 1. 워커나 메인 세션이 실행하지 않고 계획(대상·명령·롤백)을 만든다.
 2. `reviewer`가 체크리스트 E로 점검한다. 가역성 판정, 도달 범위, 계획 밖 쓰기·발신 여부를 본다.
    E를 맡길 때는 `Agent` 호출의 `model`에 상위 모델을 지정한다(평시 A~D는 프론트매터의 sonnet).
-3. 사용자가 승인한다. 실행은 `permissions.ask` 프롬프트를 거친다.
+3. 사용자가 승인한다. 해당 명령에 `permissions.ask` 규칙이 있으면 실행 때 프롬프트가 한 번 더 뜬다.
 
 통제 배선은 `CLAUDE.md`·`AGENTS.md`·`.claude/settings.json`·`.claude/agents/**`·`.codex/**`·
 `scripts/*_guard.py`·`skills-lock.json`·`compose.yml`을 말한다.
@@ -101,7 +105,7 @@ gh issue list --label "area:<범위>" --state open
 | 수단 | 막는 것 | 실패 방향 |
 | --- | --- | --- |
 | `permissions.deny`/`ask` | 외부 발신·비가역 명령(서브에이전트에도 적용) | 매칭기가 먼저 평가 |
-| `scripts/worktree_guard.py` | 루트 워킹트리의 파일 쓰기·커밋 | 판정 불가 시 deny |
+| `scripts/worktree_guard.py` | 루트 워킹트리의 파일 쓰기·커밋 | 경로 판정 불가 시 deny, hook 입력 JSON 파싱 실패 시 통과(의도된 fail-open) |
 | `scripts/research_gate_guard.py` | 미승인 URL `WebFetch` | 판정 불가 시 deny |
 | `scripts/journal_guard.py` | 없음(SessionStart 알림) | 알림 누락 |
 | 프론트매터 `disallowedTools` | 워커별 도구 | 런타임이 도구를 주지 않음 |
