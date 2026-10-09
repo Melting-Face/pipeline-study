@@ -30,10 +30,10 @@
 ```
 podman machine
 ├─ compose: seaweedfs (독립 기동, 127.0.0.1:8333 ← 호스트 도구 직결, port-forward 18333 폐지)
-│     │  (TF terraform_data.seaweedfs_network: podman network connect kind seaweedfs — 컨테이너 없으면 경고·skip)
+│     │  (TF terraform_data.seaweedfs_network: network connect --alias seaweedfs-ext — 없으면 경고·skip)
 └─ network kind
      └─ kind node → pod
-          Service seaweedfs (ExternalName → seaweedfs 컨테이너명)
+          Service seaweedfs (ExternalName → 별칭 seaweedfs-ext; 같은 이름이면 CNAME 자기참조 위험)
           http://seaweedfs:8333  (Spark Connect/Thrift/SparkApplication/Flink/CNPG backup 무변경)
           catalog-postgres-rw:5432/iceberg (CNPG, 이제 ArgoCD 관리)
 ```
@@ -46,7 +46,7 @@ podman machine
 - `gitops/charts/storage-external/`: `Service seaweedfs` `type: ExternalName` 1개.
   `terraform/platform/variables.tf` `var.apps` 등록.
 - `terraform/cluster/kind/main.tf`: `terraform_data.seaweedfs_network`(registry_network와 같은 모양, 멱등).
-- `scripts/k8s-up.sh`: compose 재기동으로 풀린 연결을 멱등 재연결.
+- `scripts/storage-up.sh`(신규): compose 기동·`s3.json` 생성·버킷 생성·kind 네트워크 멱등 재연결.
 - `scripts/`: 버킷 초기화(`warehouse`·`pg-backup`·`dagster-logs`),
   K8s→compose sync(PEP 723, 절차형 `main()`, `when_required`).
 - `k8s/seaweedfs.yaml` 제거, `k8s-poc-storage.sh`에서 SeaweedFS apply·버킷 생성 제거.
@@ -79,7 +79,7 @@ podman machine
 |---|---|---|
 | 레거시가 정본 대신 답함(이중 존재) | `kubectl get endpoints seaweedfs` | `replicas=0` 먼저, Service 교체는 그 뒤 |
 | 키 불일치 → 나열 OK·`load_table` `ACCESS_DENIED` | 실증을 `load_table`까지 | `s3.json`·`lakehouse-creds`·`.env` 한 벌 갱신 |
-| compose 재기동으로 kind 네트워크 연결 해제 | `k8s-up.sh` 점검 | 멱등 재연결, 문서 명시 |
+| compose 재기동으로 kind 네트워크 연결 해제 | `storage-up.sh` 재실행 | 멱등 재연결, 문서 명시 |
 | aws-chunked 손상 | 사이드카 해시 대조 | sync에도 `when_required` |
 | ArgoCD 채택 시 CNPG Cluster 재생성 | `argocd app diff` | diff 0 확인 후 sync, `Prune=false` |
 
