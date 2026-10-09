@@ -115,7 +115,8 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
   검사기는 `tests/expect.yaml`의 `crd_keep_exempt`에 **CRD 이름을 명시**해 면제하고(새 CRD는 면제되지 않는다)
   통과와 구분해 `(b) 면제 N개`로 출력한다. 업스트림 CRD를 복사해 소유하는 안은 범위 밖이라 기각했다.
   재검토 트리거: 두 오퍼레이터의 CR이 상태·데이터를 담게 되거나, 업스트림 차트가 CRD 어노테이션 키를 추가할 때.
-  ArgoCD가 Helm `crds/`를 기본으로 포함하는지는 이 저장소의 근거로 **미확인**이며 관문 ①·③이 관측한다.
+  ArgoCD가 Helm `crds/`를 렌더에 포함하는지는 **확인됐다** —
+  Spark·Flink CRD 6종이 클러스터에 존재하고 두 Application이 추적한다.
 - ⚠️ keep은 문서상 **`Delete=false`와 동등**이고 `Prune=false`와의 관계는 문서에 없다(R3).
   겹 3은 "삭제 방지"까지만 보증한다.
 - ⚠️ **겹 1이 List 원소 제거에도 적용되는지는 문서에 명시가 없다**(R2 — 문서는 Application 삭제만 말한다).
@@ -156,7 +157,12 @@ syncPolicy:
   `argocd-study`가 걷어낸 루트 Application 구조로 돌아간다),
   ApplicationSet Progressive Sync(별도 활성화가 필요한 기능).
 - syncPolicy는 **블록 스타일**로 쓴다 — flow 스타일은 영구 drift를 낸다(`argocd-study` appset 템플릿 주석).
-- `ignoreDifferences`는 **비워 두고 시작**한다. 반복 OutOfSync가 관측되면 그 필드만 추가한다.
+- `ignoreDifferences`는 **비워 두고 시작**했고, 반복 OutOfSync가 관측된 필드만 추가한다. 첫(현재 유일한) 항목은
+  spark-operator·flink-operator의 영구 OutOfSync 때문이다 — 두 차트의 `crds/` CRD 6종이
+  `additionalPrinterColumns[].priority: 0`을 선언하는데 API server가 기본값이라 떨어뜨려 diff가 영구히 남는다.
+  범위는 **CRD printer-column `priority`** 하나이고, appset 템플릿이 아니라 **ArgoCD 시스템 수준
+  (`argocd-cm`, `terraform/platform/values/argocd.yaml.tftpl`의 `configs.cm`)** 에 둔다 — 전 Application에
+  균일하게 적용되고 템플릿은 그대로다. 렌더 여부는 `terraform test`가 확인한다.
 
 ### 추적할 리비전
 

@@ -151,3 +151,17 @@ run "reject_forbidden_http_port" {
 
   expect_failures = [var.http_host_port]
 }
+
+# argocd values 에 CRD printer-column priority 무시 설정이 렌더에 실리는지 본다.
+# 빠지면 Spark·Flink Application 이 영구 OutOfSync 로 돌아온다(docs/argocd-gitops.md §5).
+run "argocd_values_ignore_crd_priority_drift" {
+  command = plan
+
+  assert {
+    condition = (
+      yamldecode(templatefile("${path.module}/values/argocd.yaml.tftpl", {})).configs.cm["resource.customizations.ignoreDifferences.apiextensions.k8s.io_CustomResourceDefinition"] != null
+      && strcontains(yamldecode(templatefile("${path.module}/values/argocd.yaml.tftpl", {})).configs.cm["resource.customizations.ignoreDifferences.apiextensions.k8s.io_CustomResourceDefinition"], "additionalPrinterColumns[]?.priority")
+    )
+    error_message = "argocd values 에 CRD priority ignoreDifferences 가 없다"
+  }
+}

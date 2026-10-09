@@ -8,6 +8,13 @@ configs:
   params:
     # TLS 종료는 Ingress(ingress-nginx)가 한다 - ArgoCD 서버 자체는 평문 HTTP 로 띄운다.
     server.insecure: true
+  cm:
+    # Spark·Flink 오퍼레이터 차트의 crds/ CRD 는 additionalPrinterColumns[].priority: 0 을
+    # 선언하는데, API server 는 기본값 0 을 저장 시 떨어뜨린다. 그래서 라이브 상태에 이 필드가
+    # 없어 Application 이 영구 OutOfSync 로 남는다(lakehouse-next 에서 관측). 그 필드만 무시한다.
+    resource.customizations.ignoreDifferences.apiextensions.k8s.io_CustomResourceDefinition: |
+      jqPathExpressions:
+        - '.spec.versions[].additionalPrinterColumns[]?.priority'
 
 # 로컬 단일 사용자라 SSO(dex)·알림(notifications)은 쓰지 않는다. 읽는 사람이 없는 알림은
 # 관측이 아니다(docs/argocd-gitops.md §3). 남는 컴포넌트는 아래 5개다.
