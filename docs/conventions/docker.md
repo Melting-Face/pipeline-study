@@ -194,6 +194,23 @@ RUN pip install --no-cache-dir --compile --prefer-binary -e . \
 USER 1000
 ```
 
+## 3. 이미지 발행 (GHCR)
+
+Airflow 커스텀 이미지(`images/airflow/` — 공식 base + DAG)는 **CI가 GHCR에 발행**한다.
+Spark·Flink 러너 이미지는 이 경로가 아니라 로컬 레지스트리 `localhost:5001`에 사람이 push한다([k8s.md](k8s.md)).
+
+- **트리거는 `airflow-vX.Y.Z` 태그 push**다(`.github/workflows/airflow-image.yml`).
+  `v*`는 저장소 릴리스(`release.yml`)가 쓰므로 접두어로 공간을 나눈다.
+  이미지 태그는 접두어를 뗀 `vX.Y.Z`이고 이름은 `ghcr.io/melting-face/dagster-study-airflow`다.
+- **태그는 불변이다** — 같은 태그가 레지스트리에 있으면 워크플로가 실패한다. 롤백은 이전 태그를 다시
+  가리키는 것이지 덮어쓰기가 아니다. 태그 커밋은 **`main`의 조상**이어야 한다(브랜치 작업물 발행 차단).
+- **발행 전 로컬 검증**: `bash images/airflow/tests/dag-import.test.sh`(podman arm64 빌드 → DagBag 파싱,
+  import 오류 0건 + DAG `hello` 존재). DB 없이 파싱만 하므로 클러스터가 필요 없다.
+- **첫 발행 뒤 패키지를 public으로 전환**한다 — GHCR 새 패키지의 기본 가시성은 private이라 kind 노드가
+  인증 없이 pull하지 못한다. 확인: `podman logout ghcr.io` 후
+  `podman pull --platform linux/arm64 ghcr.io/melting-face/dagster-study-airflow:<태그>`가 성공한다.
+- 이미지는 `linux/arm64` 단일 아키텍처다(현행 검증 환경이 arm64 호스트 위 kind).
+
 ## 참고
 
 - Docker Compose — `deploy.resources`: https://docs.docker.com/reference/compose-file/deploy/#resources
@@ -201,3 +218,4 @@ USER 1000
 - Docker — logging drivers(json-file): https://docs.docker.com/config/containers/logging/json-file/
 - Trino — release types(LTS): https://trino.io/docs/current/release.html
 - hadolint: https://github.com/hadolint/hadolint
+- GitHub — Working with the Container registry: https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry
