@@ -207,10 +207,12 @@ Spark·Flink 러너 이미지는 이 경로가 아니라 로컬 레지스트리 
   다음 패치 버전으로 전진한다. 태그 커밋은 **`main`의 조상**이어야 한다(브랜치 작업물 발행 차단).
 - **발행 전 로컬 검증**: `bash images/airflow/tests/dag-import.test.sh`(podman arm64 빌드 → DagBag 파싱,
   import 오류 0건 + DAG `hello` 존재). DB 없이 파싱만 하므로 클러스터가 필요 없다.
-- **첫 발행 뒤 패키지를 public으로 전환**한다 — GHCR 새 패키지의 기본 가시성은 private이라 kind 노드가
-  인증 없이 pull하지 못한다. 확인: `podman logout ghcr.io` 후
-  `podman pull --platform linux/arm64 ghcr.io/melting-face/pipeline-study-airflow:<태그>`가 성공한다.
-  public 전환은 되돌릴 수 없는 작업으로 취급한다 — 전환 전에 레이어가 base 위 `dags/` 하나뿐인지 확인한다.
+- **발행은 곧 공개다** — 이 패키지는 public 저장소에 연결돼 **처음 생길 때부터 public**이었다(실측).
+  「private으로 올리고 확인한 뒤 공개」하는 단계가 없으므로, 공개 전 게이트는 **발행 전**에 있다:
+  위 로컬 검증과 `images/airflow/` 변경의 PR 리뷰. 빌드 컨텍스트에 비밀·데이터가 들어갈 경로를 만들지 않는다
+  (`.dockerignore`, `COPY`는 `dags/`만).
+- **발행 후 확인**: 인증 없이 pull되는지 본다 — `podman logout ghcr.io` 후
+  `podman pull --platform linux/arm64 ghcr.io/melting-face/pipeline-study-airflow:<태그>`.
 - 이미지는 `linux/arm64` 단일 아키텍처다(현행 검증 환경이 arm64 호스트 위 kind).
 
 ## 참고
