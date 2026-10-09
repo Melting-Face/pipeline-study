@@ -92,7 +92,19 @@
 | `receiving-code-review` | 리뷰 피드백을 검증한 뒤 반영 | obra/superpowers (C) |
 | `using-git-worktrees` | 격리 작업 공간(worktree) 준비 | obra/superpowers (C) |
 | `grilling` | 계획·결정을 집요한 질문으로 검증 | mattpocock/skills (C) |
-| `grill-me` | `grilling`과 같은 용도의 짧은 인터뷰형 | mattpocock/skills (C) |
+| `grill-me` | `/grill-me` 사용자 호출 전용 별칭 — 본문은 `grilling` 호출 한 줄 | mattpocock/skills (C) |
+
+#### 설계 스킬은 언제 쓰나
+
+매 세션 고정으로 부르지 않고 미션 성격으로 고른다. `brainstorming`은 끝에서 `writing-plans`를
+스스로 호출하고, 질문 단계가 `grilling`의 인터뷰와 겹친다. 스킬 본문은 불러온 뒤 그 세션의 모든
+요청에 함께 실리므로 겹쳐 부르면 비용만 쌓인다(CLAUDE.md §비용).
+
+| 미션 성격 | 쓰는 스킬 |
+| --- | --- |
+| 분해 전 3문항에 모두 답할 수 있고 가역·소규모 | 없음(plan mode로 충분) |
+| 무엇을·어떻게가 불확실(새 데이터셋·기능·인프라) | `brainstorming` → 자동으로 `writing-plans` |
+| 계획 초안이 있고 비가역·고위험(apply·삭제·스키마 변경) | `grilling`(`/grill-me`)으로 계획 검증 |
 
 ### 저장소 보조
 
