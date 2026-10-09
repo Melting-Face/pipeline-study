@@ -1,8 +1,9 @@
 # Terraform / IaC 규칙 (도입)
 
-> **상태**: ✅ **채택**. 운영 중인 스택은 **로컬 K8s 플랫폼**
-> ([`terraform/lakehouse-platform/`](../../terraform/lakehouse-platform/) — 오퍼레이터·RBAC·Dagster,
-> 재구축과 destroy→apply 검증 완료)이고, **OCI Always Free A1 + k3s**
+> **상태**: ✅ **채택**. 운영 중인 스택은 **로컬 K8s 플랫폼** 둘 —
+> A [`terraform/cluster/kind/`](../../terraform/cluster/kind/)(클러스터)·B [`terraform/platform/`](../../terraform/platform/)
+> (ingress-nginx·ArgoCD·ApplicationSet; 오퍼레이터 이하는 `gitops/charts/`를 ArgoCD가 수렴)이고,
+> **OCI Always Free A1 + k3s**
 > ([`terraform/oci-k3s/`](../../terraform/oci-k3s/README.md))는 ⏸ 보류다(A1 용량 부족).
 > 결정 배경·대안 비교는 [architectures/terraform.md](../architectures/terraform.md)·
 > [architectures/oci.md](../architectures/oci.md).
@@ -12,7 +13,7 @@
 ## 1. 디렉터리·파일 구조 — 스택 단위로 분리
 
 - 인프라는 **스택 단위 서브디렉터리** `terraform/<stack>/`에 둔다
-  (예: `terraform/lakehouse-platform/`·`terraform/oci-k3s/`).
+  (예: `terraform/cluster/kind/`·`terraform/platform/`·`terraform/oci-k3s/`).
 - 파일은 **역할별 표준 이름**으로 나눈다(추적성 — grep/점프 용이):
   - `versions.tf` — `required_version`·`required_providers`(버전 고정)
   - `provider.tf` — 프로바이더 설정(인증은 변수 참조)

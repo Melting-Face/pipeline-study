@@ -1,0 +1,45 @@
+# ingress-nginx values — substrate 프로파일 "kind" 전용.
+#
+# kind 노드는 컨테이너라 LoadBalancer Service 를 외부에서 받을 방법이 없다. 대신
+# controller 파드를 호스트 포트에 직접 바인딩(hostPort)해, terraform/cluster/kind 가 생성
+# 시점에 뚫어둔 extraPortMappings(80/443 -> var.http_host_port·https 호스트 포트)로 트래픽을 받는다.
+controller:
+  hostPort:
+    enabled: true
+
+  # hostPort 를 쓸 때는 Service 를 NodePort 로 둔다(ClusterIP 로는 클러스터 밖에서 못 닿고,
+  # LoadBalancer 는 kind 에 컨트롤러가 없어 <pending> 으로 멈춘다).
+  service:
+    type: NodePort
+
+  # 🔴 hostPort 는 노드에서 배타적이라 기본 RollingUpdate 가 교착한다.
+  # replicas=1 에서 maxSurge 25% -> 1(올림), maxUnavailable 25% -> 0(내림)로
+  # 반올림돼 "구버전을 죽이기 전에 신버전을 먼저 띄우려" 하는데, 이 클러스터는 단일 노드라
+  # 신버전이 구버전이 쥔 hostPort 80/443 을 잡지 못해 Pending 에 영원히 갇히고, 구버전은
+  # 신버전이 Ready 돼야 죽는다 — 서로를 기다리며 terraform apply(wait=true)가 타임아웃까지
+  # 매달린다(values 파일을 고쳐 재적용할 때마다 재현). Recreate 로 구버전을 먼저 내리고
+  # 신버전을 띄운다 — 단일 레플리카 hostPort 컨트롤러에서 짧은 다운타임은 감수하지만
+  # 교착은 감수하지 않는다.
+  updateStrategy:
+    type: Recreate
+
+  # terraform/cluster/kind 가 control-plane 노드에 이미 붙여둔 레이블이다
+  # (kubectl get node -o jsonpath='{.items[0].metadata.labels}' 로 확인:
+  # "ingress-ready":"true"). 이 레이블이 있는 노드에만 컨트롤러를 스케줄한다 —
+  # kind 싱글노드 구성에서도 "어디에 뜰지"를 명시해 둔다.
+  nodeSelector:
+    ingress-ready: "true"
+
+  # control-plane 기본 taint(NoSchedule)를 넘어 컨트롤러를 그 노드에 스케줄하도록 허용한다.
+  # kind 공식 ingress-nginx 배포 매니페스트(kind provider deploy.yaml)와 동일한 톨러레이션이다.
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Equal
+      effect: NoSchedule
+
+  # watchIngressWithoutClass 는 의도적으로 켜지 않는다(기본값 false 유지).
+  # 이 저장소의 모든 Ingress(ArgoCD UI)는 ingressClassName: nginx 를 명시하므로 "클래스 없는 Ingress"가 작동할 시나리오가
+  # 아예 없다 — 이 설정을 켜서 얻는 이득이 없다. 반대로 켜두면, 누군가 실수로
+  # ingressClassName 을 빠뜨려도 조용히 라우팅되어 "내가 뭘 빠뜨렸는지" 영원히 모르게
+  # 된다. 이 저장소는 그런 침묵 실패를 만들지 않기로 한다 —
+  # 클래스 누락은 404 로 드러나야 하고, 그 404 를 만나 원인을 찾는 것이 학습이다.

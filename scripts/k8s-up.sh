@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
-# 로컬 K8s(kind on Podman) 클러스터 + 로컬 레지스트리 기동 (재설계 PoC Phase 0)
+# 로컬 K8s 선행 조건 기동: podman machine + 로컬 레지스트리 컨테이너
+# kind 클러스터·certs.d·레지스트리 네트워크 연결은 terraform/cluster/kind가 소유한다.
 # 사용: ./scripts/k8s-up.sh
 # 자원 override 예: MACHINE_MEMORY_MIB=24576 ./scripts/k8s-up.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=scripts/k8s-env.sh
 source "${SCRIPT_DIR}/k8s-env.sh"
 
-REGISTRY_DIR="/etc/containerd/certs.d/localhost:${REGISTRY_PORT}"
-
-require_cli podman kind kubectl
+require_cli podman
 
 # 1) podman machine — macOS podman은 동시 1개 VM만 활성.
 #    이미 실행 중인 머신이 있으면 재사용(비파괴적). 전용 머신을 강제하려면 MANAGE_MACHINE=true.
@@ -73,77 +71,5 @@ else
         --name "${REGISTRY_NAME}" "${REGISTRY_IMAGE}"
 fi
 
-# 3) kind 클러스터 생성
-# 🔴 여기도 상태가 **셋**이다(§2 레지스트리와 같은 축) — 없음 / 있고 도는 중 / **있는데 중지**.
-#    `kind get clusters`는 노드 컨테이너가 멈춰 있어도 이름을 그대로 보여준다. 그래서
-#    "존재하면 통과"로 두면 다음 단계의 `podman exec`가 죽는다(2026-08-27 실측: 노드가
-#    exit 137로 남아 있었다 — VM 재부팅·OOM이면 흔한 경로다).
-if ! kind get clusters | grep -qx "${CLUSTER_NAME}"; then
-    log "kind 클러스터 생성: ${CLUSTER_NAME} (provider=podman)"
-    kind create cluster --name "${CLUSTER_NAME}" --config "${REPO_ROOT}/k8s/kind-cluster.yaml"
-else
-    log "kind 클러스터 존재: ${CLUSTER_NAME} — 중지된 노드가 있으면 기동한다"
-    for node in $(kind get nodes --name "${CLUSTER_NAME}"); do
-        if [ "$(podman inspect -f '{{.State.Running}}' "${node}" 2>/dev/null || echo absent)" != "true" ]; then
-            log "노드 재시작: ${node}"
-            podman start "${node}"
-        fi
-    done
-    # 노드가 방금 떴다면 API 서버가 아직 안 받는다 — 응답할 때까지 기다린다.
-    for _ in $(seq 1 60); do
-        kubectl --context "kind-${CLUSTER_NAME}" get --raw='/readyz' >/dev/null 2>&1 && break
-        sleep 5
-    done
-fi
-
-# 3-1) 🔴 컨텍스트를 고정한다 — 아래 단계들(ConfigMap·ingress-nginx)은 `--context`를 주지 않아
-#      **current-context 로 나간다**. 신규 생성 경로는 kind 가 컨텍스트를 자동 전환해 우연히
-#      맞지만, **위의 "중지된 클러스터 재기동" 분기에는 전환이 없다** — kubeconfig 에 다른 kind
-#      클러스터가 함께 있으면 엉뚱한 클러스터에 깔린다. 나머지 k8s-*.sh 셋은 이미 이 줄이 있다.
-kubectl config use-context "kind-${CLUSTER_NAME}"
-
-# 4) 각 노드에 레지스트리 hosts.toml 주입 (localhost:5001 → kind-registry:5000)
-log "노드 registry certs.d 설정: ${REGISTRY_DIR}"
-for node in $(kind get nodes --name "${CLUSTER_NAME}"); do
-    podman exec "${node}" mkdir -p "${REGISTRY_DIR}"
-    podman exec -i "${node}" sh -c "cat > '${REGISTRY_DIR}/hosts.toml'" <<EOF
-[host."http://${REGISTRY_NAME}:5000"]
-EOF
-done
-
-# 5) 레지스트리를 kind 네트워크에 연결 (노드가 kind-registry 이름 해석)
-if [ "$(podman inspect -f '{{json .NetworkSettings.Networks.kind}}' "${REGISTRY_NAME}" 2>/dev/null || echo null)" = "null" ]; then
-    log "레지스트리를 kind 네트워크에 연결"
-    podman network connect kind "${REGISTRY_NAME}"
-fi
-
-# 6) local-registry-hosting ConfigMap (도구 호환 표준)
-log "local-registry-hosting ConfigMap 적용"
-kubectl apply -f - <<EOF
-apiVersion: v1
-kind: ConfigMap
-metadata:
-    name: local-registry-hosting
-    namespace: kube-public
-data:
-    localRegistryHosting.v1: |
-        host: "localhost:${REGISTRY_PORT}"
-        help: "https://kind.sigs.k8s.io/docs/user/local-registry/"
-EOF
-
-# 7) ingress-nginx (선택) — UI 고정 URL 노출. 노드의 hostPort 80/443을 쓰므로
-#    kind-cluster.yaml의 extraPortMappings가 있어야 호스트까지 닿는다.
-if [ "${INSTALL_INGRESS}" = "true" ]; then
-    log "ingress-nginx 설치 (${INGRESS_NGINX_VERSION}, kind provider)"
-    kubectl apply -f "https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-${INGRESS_NGINX_VERSION}/deploy/static/provider/kind/deploy.yaml"
-    log "ingress-nginx 준비 대기"
-    # `wait --for=condition=ready pod`는 파드가 아직 생성 전이면 "no matching resources found"로
-    # 즉시 실패한다(2026-08-19 실측). Deployment의 rollout을 기다리면 생성 전 상태도 포함된다.
-    kubectl -n ingress-nginx rollout status deploy/ingress-nginx-controller --timeout=300s
-else
-    log "ingress-nginx 건너뜀 (INSTALL_INGRESS=true 로 활성화)"
-fi
-
-log "완료. 다음: ./scripts/k8s-operators.sh (네임스페이스 3종 + cert-manager + Barman)"
-[ "${INSTALL_INGRESS}" = "true" ] && log "Ingress 진입점: http://<host>.localtest.me:${INGRESS_HTTP_PORT}"
-log "확인: kubectl cluster-info --context kind-${CLUSTER_NAME}"
+log "완료: podman machine + 레지스트리(127.0.0.1:${REGISTRY_PORT}) 준비됨"
+log "다음: terraform -chdir=terraform/cluster/kind apply (클러스터), 이후 platform 스택"

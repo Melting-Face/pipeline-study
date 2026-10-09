@@ -1,0 +1,9 @@
+# argocd.tf 의 helm_release.appset 이 values 로 repoUrl·targetRevision·apps 를 덮어쓴다. 나머지는
+# 이 프로젝트 레이아웃이 고정값이라 기본값 그대로 쓴다.
+namespace: argocd
+# 필수값 - 비워 두면 helm template 이 실패한다(templates/applicationset.yaml 주석 참고).
+repoUrl: ""
+# argocd.tf 가 var.target_revision 을 넘긴다. 기본값은 main.
+targetRevision: main
+# 원소는 name·path·namespace 셋뿐이다(이미지 태그는 넣지 않는다). Terraform var.apps 가 채운다.
+apps: []

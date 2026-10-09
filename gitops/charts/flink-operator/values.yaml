@@ -1,0 +1,39 @@
+# 서브차트(flink-kubernetes-operator) 값 — 업스트림 키는 `flink-kubernetes-operator:` 아래에 둔다.
+flink-kubernetes-operator:
+    watchNamespaces: [default]
+    operatorPod:
+        # 차트가 자원을 선언하지 않는다(BestEffort 방지). 근거: docs/resource-sizing.md §(B)
+        resources:
+            requests: {cpu: 200m, memory: 512Mi}
+            limits: {cpu: 500m, memory: 1Gi}
+        webhook:
+            resources:
+                requests: {cpu: 100m, memory: 256Mi}
+                limits: {cpu: 200m, memory: 512Mi}
+    # Flink Kubernetes Operator Helm values (프로젝트 오버라이드)
+    #
+    # 차트 기본 `defaultConfiguration.flink-conf.yaml`은 **문자열 블록**이라 값 병합이 되지 않는다
+    # (하나만 --set 하면 블록 전체가 대체돼 차트 기본 오버라이드가 사라진다).
+    # 그래서 차트 기본 내용을 그대로 옮겨 적고 프로젝트 키를 **아래에 덧붙인다**.
+    # 차트 업그레이드 시 `helm show values ... | sed -n '/flink-conf.yaml/,/log4j-operator/p'`로 대조한다.
+    defaultConfiguration:
+        create: true
+        append: true
+        flink-conf.yaml: |+
+            # --- 차트 기본 오버라이드 (1.15.0 기준, 원문 유지) ---
+            kubernetes.operator.metrics.reporter.slf4j.factory.class: org.apache.flink.metrics.slf4j.Slf4jReporterFactory
+            kubernetes.operator.metrics.reporter.slf4j.interval: 5 MINUTE
+
+            kubernetes.operator.reconcile.interval: 15 s
+            kubernetes.operator.observer.progress-check.interval: 5 s
+
+            # --- 프로젝트 오버라이드 ---
+            # jar 아티팩트 스킴 허용 목록. 기본값은 [https]뿐이라 `local://`(이미지 동봉 jar)이
+            # validating webhook에서 거부된다.
+            # 런타임에 외부 https에서 jar를 끌어오는 것보다 **이미지에 굽는 편이 공급망상 안전**하고
+            # 버전 고정(conventions/docker.md)과도 맞으므로 local을 허용한다.
+            # 🔴 그래서 https는 **뺀다**— 위 주석대로면 https는 남길 이유가 없고,
+            # 남겨두면 `FlinkDeployment`에 URL 한 줄로 **런타임 외부 jar fetch 경로가 열린다**
+            # (공급망 관점의 미검증 코드 주입). 현 PoC는 sql-client 경로라 외부 fetch가 불필요하다.
+            # 되돌리려면 `local;https`로 바꾸고 오퍼레이터를 재설치한다(이 값은 오퍼레이터 기동 시 로드).
+            kubernetes.operator.user.artifacts.allowed-schemes: local

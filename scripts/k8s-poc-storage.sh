@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # PoC 스토리지 배포: Secret(크리덴셜) → SeaweedFS(S3) + Catalog Postgres(CNPG) → warehouse 버킷
 # 사용: ./scripts/k8s-poc-storage.sh
-# 전제: CRD 두 개가 **출처를 달리해** 먼저 있어야 한다(2026-08-28 이관).
-#         clusters.postgresql.cnpg.io  ← CNPG 차트 = **terraform apply**(lakehouse-platform)
-#         objectstores.barmancloud…    ← Barman 플러그인 = **./scripts/k8s-operators.sh**
-#       아래 §2 가 둘을 갈라서 확인하고 각각 맞는 명령을 안내한다.
+# 전제: CRD 두 개가 먼저 있어야 한다.
+#         clusters.postgresql.cnpg.io  ← CNPG 오퍼레이터 = ArgoCD(gitops/charts/cnpg-operator)
+#         objectstores.barmancloud…    ← Barman 플러그인(설치 경로 미정 — PR2에서 재정의)
+#       아래 §2 가 둘을 갈라서 확인하고 각각 안내한다.
 # 크리덴셜은 로컬 PoC 기본값(env override 가능). 실인프라는 외부 시크릿 매니저 사용.
 set -euo pipefail
 
@@ -14,7 +14,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/k8s-env.sh"
 
 require_cli kubectl
-kubectl config use-context "kind-${CLUSTER_NAME}"
+require_cluster_context
 
 # 로컬 PoC 크리덴셜(placeholder — 실값은 env로 주입)
 # 주석은 **gitleaks 문법**(`gitleaks:allow`)이다. 이 레포의 스캐너는 gitleaks이고
@@ -26,7 +26,7 @@ S3_SECRET_KEY="${S3_SECRET_KEY:-poc-local-secret}"    # gitleaks:allow
 PG_USER="${PG_USER:-iceberg}"
 PG_PASSWORD="${PG_PASSWORD:-iceberg-local}"           # gitleaks:allow
 # Dagster 메타 스토리지 계정 — 카탈로그와 **같은 CNPG 클러스터의 다른 DB·다른 롤**이다.
-# 롤 선언은 k8s/catalog-postgres.yaml의 managed.roles, DB 선언은 k8s/dagster/dagster-meta-db.yaml.
+# 롤 선언은 k8s/catalog-postgres.yaml의 managed.roles, DB 선언(Database CR)은 Dagster 배포와 함께 PR2에서 다시 정한다.
 # 🔴 카탈로그 비밀번호를 재사용하지 않는다(폭발반경·회전 경로 분리).
 DAGSTER_PG_USER="${DAGSTER_PG_USER:-dagster}"
 DAGSTER_PG_PASSWORD="${DAGSTER_PG_PASSWORD:-dagster-local}"   # gitleaks:allow
@@ -46,21 +46,14 @@ if [ "${CR_OWNER}" != "${PG_USER}" ]; then
     exit 1
 fi
 
-# 0-2) Dagster 메타 롤·DB 대조 — 같은 형태의 가드를 한 벌 더 건다.
-#      managed.roles의 롤 이름과 Database CR의 owner가 DAGSTER_PG_USER와 **셋 다 같아야** 한다.
-#      어긋나면 롤이 안 만들어지거나 Database CR의 owner 참조가 깨지는데, 둘 다
-#      "Secret은 생겼고 파드는 떴는데 접속에서 죽는" 부분 성공으로 나타난다.
+# 0-2) Dagster 메타 롤 대조 — managed.roles의 롤 이름이 DAGSTER_PG_USER와 같아야 한다.
+#      어긋나면 롤이 안 만들어져 "Secret은 생겼는데 접속에서 죽는" 부분 성공이 된다.
+#      (Database CR owner 대조는 CR 파일이 철거돼 빠졌다 — Dagster 배포를 다시 정할 때 복원한다.)
 CR_ROLES="$(awk '/^ *- name: / {print $3}' "${REPO_ROOT}/k8s/catalog-postgres.yaml")"
 if ! printf '%s\n' "${CR_ROLES}" | grep -qx "${DAGSTER_PG_USER}"; then
     printf 'DAGSTER_PG_USER(%s)가 k8s/catalog-postgres.yaml의 managed.roles에 없다.\n' \
         "${DAGSTER_PG_USER}" >&2
     printf '현재 선언된 롤: %s\n' "$(printf '%s' "${CR_ROLES}" | tr '\n' ' ')" >&2
-    exit 1
-fi
-DB_OWNER="$(awk '/^ *owner:/ {print $2; exit}' "${REPO_ROOT}/k8s/dagster/dagster-meta-db.yaml")"
-if [ "${DB_OWNER}" != "${DAGSTER_PG_USER}" ]; then
-    printf 'DAGSTER_PG_USER(%s) != dagster-meta-db.yaml의 owner(%s)\n' \
-        "${DAGSTER_PG_USER}" "${DB_OWNER}" >&2
     exit 1
 fi
 
@@ -81,9 +74,7 @@ fi
 #    이유이기도 하다 — 이 스크립트가 만드는 것은 전부 stateful이라 되돌리기가 곧 데이터
 #    삭제이고(PVC·카탈로그), 타임아웃은 「실패」가 아니라 「아직 안 끝남」인 경우가 많아
 #    되돌리는 쪽이 틀린 대응이 된다.
-#    ⚠️ 단 **「부작용 0」은 아니다** — 위 `kubectl config use-context`(§상단)가 이미 돌아
-#    현재 컨텍스트가 `kind-${CLUSTER_NAME}`로 바뀌어 있고 여기서 멈춰도 되돌아가지 않는다.
-#    되돌릴 대상이 없다는 것은 **클러스터 자원 축**에 대한 말이지 환경 전체가 아니다.
+#    위 `require_cluster_context`(§상단)도 읽기 검사라 상태를 바꾸지 않는다.
 #    🔴 매칭은 **키 위치에 앵커**한다(`^[[:space:]]*plugins:`). 앵커 없이 `/plugins:/`로 두면
 #    활성 줄의 **행말 주석**(`imageName: foo  # plugins: 아래 참고`)까지 활성 배선으로 집계돼
 #    **아무 배선도 없는데 부트스트랩이 멈춘다**(2026-09-21 security 실측). 이 파일은 주석 밀도가
@@ -184,20 +175,16 @@ fi
 
 # 2) 선행 조건 — 오퍼레이터·플러그인 CRD.
 #    카탈로그 PG는 **CNPG Cluster CR**이고 그 CR이 barman 플러그인을 참조한다.
-#    🔴 두 CRD의 **출처가 다르다**(2026-08-28 이관).
-#      clusters.postgresql.cnpg.io    ← CNPG 차트 = **Terraform** (lakehouse-platform)
-#      objectstores.barmancloud...    ← Barman 플러그인 = **k8s-operators.sh**
-#    그래서 안내도 갈라야 한다 — 예전처럼 "k8s-operators.sh 를 실행하라"로 뭉치면
-#    CNPG 쪽에서 **틀린 안내**가 된다(그 스크립트는 이제 CNPG 를 설치하지 않는다).
+#    🔴 두 CRD의 **출처가 다르다** — CNPG 는 ArgoCD 차트, Barman 플러그인은 설치 경로 미정.
+#    그래서 안내도 갈라야 한다(한 문장으로 뭉치면 한쪽이 틀린 안내가 된다).
 for crd in clusters.postgresql.cnpg.io objectstores.barmancloud.cnpg.io; do
     if ! kubectl get crd "${crd}" >/dev/null 2>&1; then
         case "${crd}" in
             clusters.postgresql.cnpg.io)
-                printf 'CRD 없음(%s) — 먼저 다음을 실행하라:\n' "${crd}" >&2
-                printf '  terraform -chdir=%s/terraform/lakehouse-platform apply\n' "${REPO_ROOT}" >&2
+                printf 'CRD 없음(%s) — ArgoCD가 gitops/charts/cnpg-operator를 sync했는지 확인하라\n' "${crd}" >&2
                 ;;
             *)
-                printf 'CRD 없음(%s) — 먼저 ./scripts/k8s-operators.sh 를 실행하라\n' "${crd}" >&2
+                printf 'CRD 없음(%s) — Barman 플러그인 설치 경로가 철거됐다(PR2에서 재정의)\n' "${crd}" >&2
                 ;;
         esac
         exit 1
@@ -290,8 +277,7 @@ kubectl apply -f "${REPO_ROOT}/k8s/catalog-postgres.yaml"
 kubectl -n default wait --for=condition=Ready \
     cluster.postgresql.cnpg.io/catalog-postgres --timeout=300s
 
-log "완료. 다음: terraform -chdir=${REPO_ROOT}/terraform/lakehouse-platform apply"
-log "  (매니페스트 18종 — 로컬 CA·워크로드 RBAC·Dagster. 그 뒤 ./scripts/k8s-dagster.sh 로 이미지)"
-# Flink는 오퍼레이터(terraform apply)까지만 부트스트랩이고 세션 클러스터는 **워크로드**라 여기서 띄우지 않는다
+log "완료. 다음 단계는 docs/argocd-gitops.md 를 따른다"
+# Flink는 오퍼레이터(ArgoCD sync)까지만 부트스트랩이고 세션 클러스터는 **워크로드**라 여기서 띄우지 않는다
 # — 부트스트랩에 넣으면 클러스터를 올릴 때마다 JM이 자동 상주해 "안 쓰는 컴퓨트 유출"을 구조적으로 재생산한다.
 log "Flink: kubectl apply -f k8s/flink/flinkdeployment-session.yaml (필요할 때만, 사용 후 delete)"

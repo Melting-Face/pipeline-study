@@ -1,0 +1,7 @@
+# 렌더 결과에 대한 기대 — scripts/gitops-charts-check.sh (c)
+min_crds: 2
+# CRD 가 crds/ 에 있고 어노테이션을 넣을 values 키가 없어 keep 을 못 단다(docs/argocd-gitops.md §4 겹 3 선언된 공백).
+# 이름으로 적어 업스트림이 CRD 를 추가하면 (b)가 잡는다.
+crd_keep_exempt:
+    - sparkapplications.spark.apache.org
+    - sparkclusters.spark.apache.org

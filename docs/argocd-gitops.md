@@ -1,7 +1,6 @@
 # ArgoCD GitOps 전환 — 설계
 
-> **상태**: 📝 **설계(spec) — 사용자 리뷰 대기**.
-> 구현은 이 문서 승인 → 구현 계획(writing-plans) 승인 뒤 단계별 PR로 한다.
+> **상태**: 📝 **설계(spec) — 승인됨**. 구현은 단계별 PR로 한다(§8).
 > **동기**: 자매 저장소 `argocd-study`의 GitOps 패턴을 이 저장소의 로컬 K8s 스택에 이식해
 > **두 저장소의 운영 방식을 통일**한다(학습·패턴 통일).
 > **성공 기준**: **`git push`만으로 클러스터가 수렴한다** — 빈 클러스터는 `terraform apply` 2회 + Secret 생성 뒤
@@ -12,9 +11,9 @@
 
 ## 1. 배경 — 무엇을 바꾸나
 
-현행 로컬 클러스터 `lakehouse`는 **세 주체가 번갈아** 세운다([setup.md](setup.md) §3).
+전환 전 로컬 클러스터 `lakehouse`는 **세 주체가 번갈아** 세웠다(철거 전 [setup.md](setup.md) §3 기준).
 
-| 층 | 현행 주체 | 비고 |
+| 층 | 전환 전 주체 | 비고 |
 | --- | --- | --- |
 | 클러스터·레지스트리·ingress-nginx | `k8s-up.sh` | `kind_cluster` import 불가가 셸 유지 근거였다 |
 | cert-manager·Barman 플러그인·네임스페이스 | `k8s-operators.sh` | 원격 매니페스트 `kubectl apply` |
@@ -108,12 +107,22 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
 
 - 겹 3의 차트별 상태: **CNPG**는 CRD 템플릿에 keep이 고정 부착돼 있다(R6).
   **cert-manager**는 `crds.enabled`(기본 false)를 **true로 켜야** CRD가 설치되고, `crds.keep`은 기본 true다(R4).
-  **Spark·Flink** 오퍼레이터 차트의 CRD keep 여부는 **미확인** —
-  구현 시 `helm template`으로 확인하고, 없으면 values·템플릿으로 `Delete=false`를 주입한다.
+  **Spark·Flink** 오퍼레이터 차트는 CRD를 `crds/` 디렉터리로 싣고 어노테이션을 넣을 values 키가 없어,
+  이 둘은 겹 3이 **선언된 공백**이다. 근거: 이 둘의 CR(`SparkApplication`·`FlinkDeployment` 등)은 ArgoCD 밖의
+  온디맨드 컴퓨트(D7)이고 상태·데이터가 아니다(데이터는 Iceberg에 있다). 남는 방어는 겹 1뿐인데,
+  겹 1은 **Application 삭제**만 막는다 — 업스트림 차트 갱신으로 CRD가 사라지는 식의
+  **sync 시점 prune**은 이 둘에서 막는 수단이 없다(§9 열린 위험). 겹 1은 관문 ③에서 확인한다.
+  검사기는 `tests/expect.yaml`의 `crd_keep_exempt`에 **CRD 이름을 명시**해 면제하고(새 CRD는 면제되지 않는다)
+  통과와 구분해 `(b) 면제 N개`로 출력한다. 업스트림 CRD를 복사해 소유하는 안은 범위 밖이라 기각했다.
+  재검토 트리거: 두 오퍼레이터의 CR이 상태·데이터를 담게 되거나, 업스트림 차트가 CRD 어노테이션 키를 추가할 때.
+  ArgoCD가 Helm `crds/`를 렌더에 포함하는지는 **확인됐다** —
+  Spark·Flink CRD 6종이 클러스터에 존재하고 두 Application이 추적한다.
 - ⚠️ keep은 문서상 **`Delete=false`와 동등**이고 `Prune=false`와의 관계는 문서에 없다(R3).
   겹 3은 "삭제 방지"까지만 보증한다.
 - ⚠️ **겹 1이 List 원소 제거에도 적용되는지는 문서에 명시가 없다**(R2 — 문서는 Application 삭제만 말한다).
-  §7 관문 ③이 이것을 **실측으로 판정**한다. 판정 전까지 `var.apps`에서 **데이터 층 앱을 빼지 않는다**.
+  §7 관문 ③ 관측: `spark-operator` 원소를 빼자 Application만 사라지고 Deployment·CRD·RBAC는 **남았다**.
+  단 Application에 `resources-finalizer`가 원래 없어(템플릿이 달지 않는다) 비연쇄 삭제가 기본이므로,
+  **이 잔존이 겹 1 덕인지는 가르지 못했다**. 그래서 데이터 층 앱은 여전히 `var.apps`에서 **빼지 않는다**.
 - SeaweedFS의 PVC는 StatefulSet `volumeClaimTemplates`가 만들며 기본 보존(Retain)이다 — ArgoCD 추적 대상이 아니다.
 
 ## 5. sync 정책 — 앱 사이는 재시도, 앱 안은 wave
@@ -150,7 +159,12 @@ syncPolicy:
   `argocd-study`가 걷어낸 루트 Application 구조로 돌아간다),
   ApplicationSet Progressive Sync(별도 활성화가 필요한 기능).
 - syncPolicy는 **블록 스타일**로 쓴다 — flow 스타일은 영구 drift를 낸다(`argocd-study` appset 템플릿 주석).
-- `ignoreDifferences`는 **비워 두고 시작**한다. 반복 OutOfSync가 관측되면 그 필드만 추가한다.
+- `ignoreDifferences`는 **비워 두고 시작**했고, 반복 OutOfSync가 관측된 필드만 추가한다. 첫(현재 유일한) 항목은
+  spark-operator·flink-operator의 영구 OutOfSync 때문이다 — 두 차트의 `crds/` CRD 6종이
+  `additionalPrinterColumns[].priority: 0`을 선언하는데 API server가 기본값이라 떨어뜨려 diff가 영구히 남는다.
+  범위는 **CRD printer-column `priority`** 하나이고, appset 템플릿이 아니라 **ArgoCD 시스템 수준
+  (`argocd-cm`, `terraform/platform/values/argocd.yaml.tftpl`의 `configs.cm`)** 에 둔다 — 전 Application에
+  균일하게 적용되고 템플릿은 그대로다. 렌더 여부는 `terraform test`가 확인한다.
 
 ### 추적할 리비전
 
@@ -178,7 +192,8 @@ provider `config_context`는 고정하고 `kind-` 접두를 검증한다.
 
 - `scripts/k8s-env.sh`가 `KUBECONFIG="${KUBECONFIG_PATH:-$HOME/.kube/${CLUSTER_NAME}.config}"`를 export한다.
   스크립트는 이미 이 파일을 source하므로 따라오고, 사람은 `source scripts/k8s-env.sh` 한 줄로 맞춘다.
-- **컨텍스트 가드**: `k8s-env.sh`는 현재 컨텍스트가 `kind-${CLUSTER_NAME}`이 아니면 **멈춘다**.
+- **컨텍스트 가드**: `k8s-env.sh`가 정의하는 `require_cluster_context`를 **호출하는 스크립트가**, 현재 컨텍스트가
+  `kind-${CLUSTER_NAME}`이 아니면 **멈춘다**(source만으로는 가드가 돌지 않는다 — 클러스터 생성 전에도 source되기 때문).
   옵션 없는 `kubectl`이 `~/.kube/config`의 다른 클러스터를 조용히 가리키는 것을 막는다.
 
 **Secret** — `scripts/k8s-secrets.sh`(②) 하나가 만든다. **`get || create`** 형태 — 이미 있으면 건드리지 않아
@@ -194,7 +209,7 @@ provider `config_context`는 고정하고 `kind-` 접두를 검증한다.
 scripts/k8s-up.sh                         # podman 머신 · 레지스트리
 terraform -chdir=terraform/cluster/kind apply
 terraform -chdir=terraform/platform apply
-source scripts/k8s-env.sh                 # KUBECONFIG + 컨텍스트 가드
+source scripts/k8s-env.sh                 # KUBECONFIG export(가드는 require_cluster_context 호출 스크립트가 건다)
 scripts/k8s-secrets.sh                    # ② 이후. 순서 강제 아님 — 늦으면 CNPG가 Degraded였다가 재시도로 수렴
 ```
 
@@ -237,7 +252,7 @@ scripts/k8s-secrets.sh                    # ② 이후. 순서 강제 아님 —
 
 | PR | 범위 | 완료 조건 |
 | --- | --- | --- |
-| 설계 | 이 문서 + PR1 구현 계획(`docs/plans/argocd-gitops-pr1.md`) | 사용자 리뷰 |
+| 설계 | 이 문서 + PR1 구현 계획(`docs/plans/argocd-gitops-pr1.md`) | 승인·머지됨 |
 | PR1 | 스택 A·B, appset, ① 오퍼레이터 차트 4종, CI(helm 스텝·재귀 탐색), `k8s-env.sh` 가드, 철거 대상(§3), 문서 갱신 | 정적 게이트 + 관문 ①②③. 머지 시 계획 문서 삭제 |
 | PR2 | ② `seaweedfs`·`catalog-postgres` 차트, `k8s-secrets.sh`, `k8s-poc-storage.sh` 철거, 클러스터 교체 | 관문 ⓪①④ |
 | PR3 | ③ Airflow — Airflow 이행 미션과 합류 | 별도 설계 |
@@ -253,7 +268,14 @@ PR마다 함께 갱신할 단일 출처: [setup.md](setup.md) §3(부트스트�
   **호스트 Dagster**(`host-dagster` profile)로 돌린다. 이 경로가 새 클러스터의 SeaweedFS·카탈로그에 붙는지는
   PR2 관문 ④에서 확인한다.
 - **수렴 순서가 비결정적**이라 첫 sync에서 일시적 Degraded·재시도 로그가 정상이다 — 관문 ①은 최종 상태로만 판정한다.
-- **겹 1의 List 원소 제거 적용 여부 미확인**(§4)은 관문 ③ 전까지 데이터 층 앱 제거 금지로 완화한다.
+- **겹 1의 List 원소 제거 적용 여부 미확인**(§4 — 관문 ③에서 잔존은 관측했으나 기제는 못 갈랐다)은
+  데이터 층 앱 제거 금지로 완화한다. 재검토 트리거: 템플릿에 `resources-finalizer`를 다는 변경.
+- **Spark·Flink CRD는 sync 시점 prune에 무방비**(§4 겹 3의 선언된 공백) — 겹 1은 Application 삭제만 막으므로
+  업스트림 차트 갱신으로 CRD가 템플릿에서 빠지면 prune이 CRD를 지우고 그 CR이 연쇄 삭제될 수 있다.
+  현재는 그 CR이 온디맨드 컴퓨트(D7)라 데이터 손실이 아니라 **실행 중 잡 소실**로 끝나는 것을 수용한다.
+  차트 버전을 올리는 PR에서는 `helm template` 비교로 CRD 증감을 본다.
+  **재검토 트리거**(조건): 두 오퍼레이터의 CR이 상태·데이터를 담게 될 때, 업스트림 차트가 CRD 어노테이션 키를
+  추가할 때, 또는 관문 ①·③에서 Helm `crds/`가 prune 대상임이 관측될 때.
 - **기각·보류**(빠뜨린 것과 구분하려고 적는다):
   AppProject 분리 — 보류. 사용자·저장소가 하나라 격리 대상이 없다. `sourceRepos`를 좁히는 효과는 ③ 단계에서 재판단.
   Sync Windows·Notifications·SSO·RBAC — 기각. 로컬 단일 사용자이고, 읽는 사람 없는 알림은 관측이 아니다.

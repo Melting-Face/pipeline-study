@@ -48,6 +48,10 @@ shared/
 
 # k8s values (로컬 전용)
 values.yaml
+# gitops 차트의 values 는 선언의 일부라 커밋 대상이다
+!gitops/charts/*/values.yaml
+# 부트스트랩 ApplicationSet 차트의 values 도 같은 이유로 커밋 대상이다
+!terraform/platform/charts/appset/values.yaml
 
 # uv 락 — 루트에는 [project]가 없어(도구 설정 전용 pyproject) 잠기는 의존성이 0개다.
 # `uv run`을 루트에서 돌릴 때 생기는 빈 산출물이라 재현성에 기여하지 않는다.
@@ -125,3 +129,6 @@ dagster/dockerfile.d/src/schedules/
 # 노트북 본문(.ipynb)은 커밋 대상이고, 출력 제거는 nbstripout 훅이 담당한다.
 # 근거: docs/security.md (원천 진료 데이터 커밋 금지)
 **/.ipynb_checkpoints/
+
+# gitops 차트 의존성 tarball — helm dependency build 가 만든다(Chart.lock 은 커밋)
+gitops/charts/*/charts/

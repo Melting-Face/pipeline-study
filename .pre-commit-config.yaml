@@ -28,6 +28,9 @@ repos:
       - id: check-toml
       - id: check-yaml
         args: [--allow-multiple-documents]  # k8s 매니페스트(--- 다중 문서) 허용
+        # Helm 템플릿은 렌더 전 Go 템플릿(`{{ }}`)이라 YAML 파서가 못 읽는다.
+        # 템플릿 정합은 helm template 렌더 테스트(render.test.sh·gitops-charts-check.sh)가 본다.
+        exclude: '^(terraform/platform/charts/appset|gitops/charts/[^/]+)/templates/'
       # skills-lock.json·.mcp.json·.claude/settings.json은 손으로 고치는 JSON이라
       # 문법이 깨지면 hook 배선·스킬 재현성이 조용히 죽는다(로드 실패가 에러로 안 보인다).
       - id: check-json
@@ -48,6 +51,8 @@ repos:
     rev: v1.38.0
     hooks:
       - id: yamllint
+        # check-yaml과 같은 이유로 Helm 템플릿은 제외한다(렌더 테스트가 대신 본다)
+        exclude: '^(terraform/platform/charts/appset|gitops/charts/[^/]+)/templates/'
 
   # SQL 린트 (규칙은 pyproject.toml [tool.sqlfluff.*])
   # templater=jinja + 스텁 매크로/library_path 라 **오프라인**으로 돈다(dbt·Spark Connect 불필요).

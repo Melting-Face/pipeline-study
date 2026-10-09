@@ -10,7 +10,7 @@ run_coordinator:
     # in-cluster daemon은 limits.memory 3Gi 안에서 run을 fork한다.
     # 이 값은 daemon 메모리와 **강결합**이다 — 올리면 한도도 같이 올린다
     # (docs/resource-sizing.md §Dagster: 300MB + N × run당 피크 × 1.5).
-    # 값의 단일 출처: 호스트 `.env` / in-cluster `k8s/dagster/dagster-deploy.yaml` ConfigMap.
+    # 값의 단일 출처: 호스트 `.env`(in-cluster ConfigMap은 철거됨).
     max_concurrent_runs:
       env: DAGSTER_MAX_CONCURRENT_RUNS
 

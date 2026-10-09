@@ -11,6 +11,10 @@ Dagster는 **자산(asset) 중심 오케스트레이터**다. "어떤 태스크�
 
 ## 이 프로젝트에서의 위치 — ✅ 채택 (in-cluster)
 
+> ⚠️ **ArgoCD 전환으로 새 클러스터에는 배포하지 않는다**([../argocd-gitops.md](../argocd-gitops.md) D6 —
+> Airflow 전환 예정, `k8s/dagster/` 삭제). 아래는 **배치 결정과 대안 비교의 기록**이며, 현행 실행 경로는
+> 호스트 Dagster(`host-dagster` profile)다.
+
 **오케스트레이터도 클러스터 워크로드다**. webserver·daemon을 kind 클러스터
 `lakehouse`의 Deployment 2개로 두고 UI는 `http://dagster.localtest.me:8080` Ingress로 낸다.
 Spark·Flink·SeaweedFS·CNPG와 **같은 층**에 놓여, 컨트롤 플레인만 다른 실행 환경에 있던 상태가 끝났다.
@@ -69,7 +73,7 @@ Job/파드 형태로 만들지 않는다"*)와 정면 충돌한다. [redesign.md
 ⚠️ **Flink 경로만 세션 클러스터의 수명까지 진다** — 자산의 `finally`가 `teardown()`을 부른다.
 Spark 배치는 잡 1회가 곧 CR 1개라 그 축이 없다. **같은 "제출·폴링"으로 뭉쳐 읽지 않는다.**
 
-권한은 Role **`dagster-compute-submit`** 하나에 모인다(`k8s/dagster/dagster-rbac.yaml`).
+권한은 Role **`dagster-compute-submit`** 하나에 모인다(철거된 `k8s/dagster/dagster-rbac.yaml` — git 이력).
 🔴 그중 **`pods/exec`가 가장 넓다** — Flink 파드 안에서 임의 명령을 실행할 수 있다는 뜻이고,
 편의가 아니라 위 §C5 조건 2의 **대가**다. 범위는 `default` 네임스페이스 Role에 갇혀 있다(ClusterRole 아님).
 

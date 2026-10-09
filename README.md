@@ -34,17 +34,22 @@
 이미 설정된 로컬 환경을 다시 올리는 기본 경로는 다음과 같다.
 
 ```shell
-./scripts/k8s-up.sh
-./scripts/k8s-operators.sh
-terraform -chdir=terraform/lakehouse-platform apply
-./scripts/k8s-poc-storage.sh
-./scripts/k8s-dagster.sh
+scripts/k8s-up.sh                         # podman 머신 · 레지스트리
+terraform -chdir=terraform/cluster/kind apply
+terraform -chdir=terraform/platform apply
+source scripts/k8s-env.sh                 # KUBECONFIG export(가드는 require_cluster_context 호출 스크립트가 건다)
 ```
 
-오퍼레이터·RBAC·Dagster 매니페스트는 **Terraform이 소유**한다. **빈 클러스터에서 처음 올릴 때는
-`terraform apply`가 두 번**이며(CRD가 있어야 나머지가 계획된다) 순서와 이유는 아래 링크가 정본이다.
+> 위 기본값(`lakehouse`, 8080/8443)은 **교체(PR2) 뒤의 기본 경로**다. 검증 중에는 스택 A에
+> `-var cluster_name=lakehouse-next -var http_host_port=8082 -var https_host_port=8445`를 넘기고,
+> 스택 B에는 `-var kubeconfig_path=~/.kube/lakehouse-next.config -var kube_context=kind-lakehouse-next
+> -var http_host_port=8082 -var target_revision=<브랜치>`를 넘긴다(B는 `https_host_port`가 없다, [argocd-gitops.md](docs/argocd-gitops.md) §6).
 
-Dagster UI는 `http://dagster.localtest.me:8080`에서 연다. 컴퓨트 워크로드는 사용할 때만 기동하고
+클러스터는 **Terraform 스택 A**, ingress-nginx·ArgoCD는 **스택 B**가 만들고, 오퍼레이터 이하는
+**ArgoCD가 `gitops/charts/`에서 수렴**시킨다(`git push`로 바뀐다). 순서와 이유는 아래 링크가 정본이다.
+
+ArgoCD UI는 `http://argocd.localtest.me:8080`에서 연다. Dagster는 새 클러스터에 배포하지 않고 호스트에서 돌린다.
+컴퓨트 워크로드는 사용할 때만 기동하고
 검증이 끝나면 회수한다. Spark Connect·Flink 기동 명령과 접속 주소는
 [환경 세팅 §3](docs/setup.md#3-로컬-kubernetes)에 있다.
 

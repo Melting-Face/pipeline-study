@@ -12,8 +12,9 @@
 
 ## Kubernetes 재설계 시나리오 (kind + Podman) 🚧
 
-> 대상: [redesign.md](redesign.md)의 목표 토폴로지. **Dagster도 이 예산 안**, 컴퓨트·데이터
-> 서비스만 로컬 K8s(kind on Podman)에 둔다. 컴퓨트는 **Spark(배치) / Flink(스트리밍)** 2엔진이며,
+> 대상: [redesign.md](redesign.md)의 목표 토폴로지. **Dagster는 새 클러스터에 배포하지 않고**(호스트 실행),
+> 컴퓨트·데이터 서비스와 GitOps 컨트롤러(ArgoCD)만 로컬 K8s(kind on Podman)에 둔다. 컴퓨트는
+> **Spark(배치) / Flink(스트리밍)** 2엔진이며,
 > 실측으로 **시분할 → 동시 기동**으로 규약이 바뀌었다([conventions/k8s.md](conventions/k8s.md) §9-3).
 
 ### (A) 예산의 단위 축은 **셋**이다
@@ -55,7 +56,7 @@
 podman machine init dagster-k8s --rootful --cpus 8 --memory 26702 --disk-size 93
 podman machine start dagster-k8s
 export KIND_EXPERIMENTAL_PROVIDER=podman
-kind create cluster --name lakehouse --config kind-cluster.yaml
+# 클러스터는 Terraform 스택 A가 만든다: terraform -chdir=terraform/cluster/kind apply
 
 # 두 축을 각각 읽는다 (환산식은 위 규칙을 따른다)
 podman machine inspect <machine> --format '{{.Resources.Memory}}'   # MiB, VM 총량 축(선언값)
@@ -72,7 +73,8 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu / memo
 - **호스트 headroom**: VM이 가져간 몫은 **호스트에서 통째로 빠져나간다.** 남는 것으로 macOS와
   (옵션) Jupyter가 함께 돌아야 한다 → **아래 (D) 호스트 축**.
   **메모리를 VM에 더 준 대가는 호스트 축에서 나간다** — 이 배분은
-  *"Dagster를 클러스터로 옮긴다"* 는 전제와 한 벌일 때만 여유롭다.
+  *"Dagster를 호스트에서 돌리되 그 부하가 VM 밖"* 이라는 전제를 지금은 쓰지 않는다 —
+  호스트 Dagster를 켜면 그만큼 호스트 몫이 더 든다.
   ⚠️ **호스트 총량은 사람마다 다르므로 여기 적지 않는다** — 자기 값으로 계산한다.
 - **disk 93 GiB**(≈100 GB 십진, 선언값): SeaweedFS(원천 csv.gz + Iceberg parquet) + 이미지 레이어 대비.
   ⚠️ **디스크는 세 값이 각각 다른 것을 센다** — `df`는 노드 디스크 전체
@@ -110,11 +112,14 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 | | SeaweedFS(master+volume+filer+s3) | 300m | 768Mi | 1 | 1.5Gi |
 | | **CloudNativePG 오퍼레이터**(컨트롤러) | 100m | 200Mi | 250m | 384Mi |
 | | Catalog Postgres(Iceberg JDBC, CNPG `Cluster` 1인스턴스) | 250m | 512Mi | 500m | 768Mi |
-| | **ingress-nginx 컨트롤러**(UI 고정 URL) ² | 100m | 90Mi | — | — |
+| | **ingress-nginx 컨트롤러**(호스트 포트 → Ingress 진입점) ² | 100m | 90Mi | — | — |
 | **Flink Operator** ³ | 컨트롤러 파드 | 200m | 512Mi | 500m | 1Gi |
 | | 웹훅(webhook) 컨테이너 | 100m | 256Mi | 200m | 512Mi |
-| **Dagster**(상주) ⁷ | `dagster-webserver`(UI·GraphQL) | 100m | 768Mi | 500m | 1536Mi |
-| | `dagster-daemon`(스케줄·센서 + run 서브프로세스) | 250m | 1024Mi | 1 | 3Gi |
+| **ArgoCD**(상주) ⁷ | `argocd-application-controller` | 100m | 256Mi | 500m | 512Mi |
+| | `argocd-repo-server` | 50m | 128Mi | 500m | 512Mi |
+| | `argocd-server`(UI·API) | 50m | 128Mi | 250m | 256Mi |
+| | `argocd-applicationset-controller` | 50m | 64Mi | 250m | 128Mi |
+| | `argocd-redis` | 50m | 64Mi | 200m | 128Mi |
 | **온디맨드 상주** | **Spark Connect 서버**(dbt 접속용 · driver 겸용, 미사용 시 `--replicas=0`) | 500m | 1536Mi | 1 | 2Gi |
 | | **Spark Connect executor × 1** ⁸ — `k8s://`라 **함께 상주** | 1000m | 1408Mi | 1 | 1408Mi |
 | | Flink JobManager(세션 클러스터, 잡 없어도 상주) | 1000m | 2048Mi | 1 | 2Gi |
@@ -125,14 +130,14 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 ¹ **kube-system은 선언값이 아니라 실측이다**(kind가 만든 것이라 우리 매니페스트에 없다) —
   값은 볼트 §6-3. ⚠️ **구 문서 값은 틀렸는데 합계만 맞아 오래 살아남았다.**
   **합계가 맞으면 내역이 틀려도 검산을 통과한다** — 행 단위로 재측정한다.
-² ingress-nginx는 **`limits`가 없는 유일한 워크로드**다(외부 매니페스트 그대로,
-  [conventions/k8s.md](conventions/k8s.md) §2 예외). 상주 부하가 작아 예산 영향은 미미하지만 상한이 없다.
+² ingress-nginx는 **`limits`가 없는 유일한 워크로드**다 — 스택 B의 Helm 차트 `ingress-nginx` **4.15.1** values가
+  `resources`를 덮지 않아 **차트 기본값(requests만)** 이 들어간다([conventions/k8s.md](conventions/k8s.md) §2 예외).
 ³ **Flink Operator 차트는 자원을 선언하지 않는다** — `helm show values` 실측 결과
   **`operatorPod.resources: {}` · `operatorPod.webhook.resources: {}`** 로 **둘 다 비어 있다.**
-  `terraform/lakehouse-platform/operators.tf`의 `helm_release.flink_operator`에
-  **`set` 8종**(`operatorPod.resources.{requests,limits}.{cpu,memory}` 4종 +
+  `gitops/charts/flink-operator/values.yaml`에
+  **자원 값 8종**(`operatorPod.resources.{requests,limits}.{cpu,memory}` 4종 +
   `operatorPod.webhook.resources.*` 4종)이 없으면 이 표의 두 행이 **처음부터 거짓**이 된다
-  (구 `scripts/k8s-operators.sh`의 helm 호출에서 이관됨).
+  (구 셸·Terraform의 `--set` 호출에서 이관됨).
   이는 Spark Operator에서 이미 밟은 함정의 **거울상**이다 — 그쪽은 차트 기본값 `1000m/2048Mi`가
   **조용히 적용**됐고(과대), 이쪽은 **0으로 잡혀 BestEffort가 된다**(과소). 방향만 반대이고
   **"helm은 값을 안 줘도 에러를 내지 않는다"** 는 원인은 같다.
@@ -147,18 +152,20 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
   **엔진 버전 축에서 반복되는 경우**다.
 ⁵ 🔴 **executor는 1개로 제한**한다. 하나를 더 붙이면 `+1000m`이 얹혀 Allocatable을 넘긴다 —
   그 시점은 "여유가 없다"가 아니라 **스케줄 자체가 실패**하는 지점이다.
-  ⚠️ **기준선이 둘이라 계산도 둘**이다(Dagster 상주분 포함 여부) — 둘 다 참이고 값은 볼트 §6-2.
+  ⚠️ **기준선이 둘이라 계산도 둘**이다(과거 Dagster 상주분 포함 여부 —
+  지금은 ArgoCD가 대신 상주) — 둘 다 참이고 값은 볼트 §6-2.
   늘려야 하면 **Flink 세션을 먼저 내린다.**
 ⁶ **"일시"는 배치 잡 기준이다** — **스트리밍 잡의 TM은 잡 수명 내내 상주**한다.
   예산상으로는 배치 동시 피크보다 낮지만 **경계 ①의 전제는 여전히 깨진다.**
   ⇒ 이 표는 그대로 둔다. TM 상주는 **상시 구성이 아니라 시연 창 안의 일시 구성**이고,
   상시로 돌려야 할 때 **TM 상주 기준으로 재실측**한다.
 
-⁷ **Dagster 순증은 회수 다이얼이 듣지 않아 모든 시나리오에 상시 더해진다**
-  ([conventions/k8s.md](conventions/k8s.md) §9-3 경계 ④). 순증 실측값은 볼트 §6-2.
-  ⚠️ **동시 기동 피크는 실측이 아니라 산술이다** — 두 실측의 합이고,
-  BATCH+STREAM+Dagster를 **동시에 띄운 관측 창은 아직 열린 적이 없다**. 재측정은 §(C-2) 순서를 따른다.
-  값 자체는 두 실측의 합이라 신뢰할 만하지만 **"관측했다"로 인용하지 않는다.**
+⁷ **ArgoCD 상주분은 회수 다이얼이 듣지 않아 모든 시나리오에 상시 더해진다**(내리면 selfHeal·sync가 멈춘다).
+  ⚠️ **위 값은 선언한 시작값**이다 — 차트 기본값은 전 컴포넌트가 `resources: {}`라 직접 정했고
+  (`terraform/platform/values/argocd.yaml.tftpl`), 설치 시 한 번 도는 Job·초기화 컨테이너 몫은 표에 없다.
+  OOMKilled·throttling이 관측되면 그때 올린다. 실측은 [argocd-gitops.md](argocd-gitops.md) 관문 ①에서 재어 볼트에 둔다.
+  ⚠️ **동시 기동 피크는 실측이 아니라 산술이다** — BATCH+STREAM+ArgoCD를 **동시에 띄운 관측 창은
+  열린 적이 없다**. 재측정은 §(C-2) 순서를 따른다. **"관측했다"로 인용하지 않는다.**
 ⁸ **Spark Connect가 `--master k8s://`로 돌면서 executor 1개가 「일시」가 아니라 「상주」가 됐다.**
   `spark.executor.instances`는 정적 할당이라 **서버 수명 내내** 산다 — Flink TaskManager 상주가
   경계 ①의 전제를 깬 것과 같은 형태다. ⇒ **Connect가 떠 있는 동안 `SparkApplication` 배치 잡을
@@ -187,7 +194,7 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 > **Kubeflow(Go) 오퍼레이터 시절 수치**였다. 이 저장소는 Apache 오퍼레이터(**JVM**)로 갈아탔는데
 > 이 표를 재검토하지 않아, 아래 두 가지가 동시에 성립하고 있었다.
 >
-> 1. **표가 거짓을 말했다** — `scripts/k8s-operators.sh`에 근거 주석만 있고 `--set`이 빠져
+> 1. **표가 거짓을 말했다** — 이전 설치 스크립트에 근거 주석만 있고 `--set`이 빠져
 >    실제로는 **차트 기본값이 조용히 적용**됐다. helm은 값을 지정하지 않아도 에러를
 >    내지 않으므로 **선언과 실제가 배수로 벌어진 채 유지**됐다(격차·실사용은 볼트 §6-3).
 > 2. **표대로 집행했으면 오퍼레이터가 죽었다** — 차트 jvmArgs가 `-XX:MaxRAMPercentage=80`이라
@@ -213,7 +220,7 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
    JM은 **잡이 없어도 `1000m/2048Mi`를 상주 점유**하며(선언값), 이 규율이 깨져 **반나절 넘게 샌 전례**가 있다
    ([conventions/k8s.md](conventions/k8s.md) §9-3 · 전말은 볼트).
    ⚠️ **발견 경로가 성능 이상이 아니라 "안 쓰는 것 정리"였다** — 새는 동안 아무 신호도 없었다.
-2. **★★★★★ `spark.executor.instances` ≤ 1 (Flink 세션이 떠 있는 동안)** — Dagster 상주분이
+2. **★★★★★ `spark.executor.instances` ≤ 1 (Flink 세션이 떠 있는 동안)** — ArgoCD 상주분이
    상시 더해지므로, executor를 하나 더 붙이면 Allocatable을 **넘긴다.**
    이제 "여유가 없다"가 아니라 **스케줄 자체가 실패**한다. 늘려야 하면 **Flink 세션을 먼저 내린다.**
 3. **★★★★☆ Flink TaskManager slot/개수** — 스트리밍 병렬도. 기본 TM 1개(× 2슬롯).
@@ -227,7 +234,7 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
    **Redpanda는 미도입 유지**로 결정됐다(스트림 소스가 Iceberg bronze 스트리밍
    읽기로 바뀜 — [architectures/flink.md](architectures/flink.md)). 이 다이얼은 **당분간 죽은 항목**이며,
    [conventions/k8s.md](conventions/k8s.md) §9-3 **경계 ③(Redpanda 도입 시 재계산)도 발동하지 않는다.**
-5. **★★★☆☆ `DAGSTER_MAX_CONCURRENT_RUNS`** — daemon 파드 안의 run 동시성.
+5. **★★★☆☆ `DAGSTER_MAX_CONCURRENT_RUNS`** — (호스트 Dagster 경로) daemon 프로세스 안의 run 동시성.
    ⚠️ **회수 다이얼이 아니라 처리량 다이얼**이다 — 내려도 상주 자원은 줄지 않는다.
    Dagster 자체는 오케스트레이터라 **회수 대상이 아니다**(내리면 스케줄·센서가 함께 멈춘다).
    올릴 때는 daemon `limits.memory`를 아래 §Dagster 공식대로 **같은 커밋에서** 올린다.
@@ -265,8 +272,8 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 ### (D) 호스트 축 — VM 밖의 예산
 
 **클러스터 예산만 보면 안 된다.** VM이 가져간 몫은 호스트에서 통째로 빠져나간다.
-**Dagster도 VM 안**으로 들어가 호스트 축이 그만큼 가벼워졌다 —
-남은 상시 호스트 소비자는 macOS 자체와 (옵션) Jupyter뿐이다.
+**Dagster는 새 클러스터에 없고 호스트에서 돈다**(`host-dagster` profile) —
+상시 호스트 소비자는 macOS 자체와 (옵션) Jupyter이고, 재적재가 필요할 때 호스트 Dagster가 더해진다.
 
 🔴 **산술상 잔여를 실제 여유로 읽지 않는다.** macOS는 **메모리 압축**으로 버티므로
 `unused`가 수백 MB만 남아도 동작한다 — 성립하는 것과 여유가 있는 것은 다르다.
@@ -422,16 +429,15 @@ daemon 필요 메모리
     300MB + 2 × 4GB × 1.5 = 12.3g → limit 16g
 ```
 
-**결정 절차**: ① 가장 메모리를 많이 쓰는 에셋을 특정 → ② `kubectl top pod -l app=dagster-daemon`
+**결정 절차**: ① 가장 메모리를 많이 쓰는 에셋을 특정 → ② (호스트면 `ps`/활동 모니터)
 또는 UI run 로그로 피크 추정 → ③ 위 공식 적용 → ④ 매니페스트의 **ConfigMap 값과 `resources`를 함께**
 수정 → ⑤ 실측 검증.
 
 **의존성 연동 규칙** — `max_concurrent_runs`와 daemon `memory`는 강결합이다.
 한쪽만 바꾸면 OOM 또는 낭비된 한도가 발생한다.
-⚠️ in-cluster에서는 **둘이 같은 파일에 있다** — `k8s/dagster/dagster-deploy.yaml`의
-ConfigMap `DAGSTER_MAX_CONCURRENT_RUNS`와 daemon `resources.limits.memory`.
-`dagster.yaml`은 그 값을 `env:`로 **참조만** 한다(값을 갖지 않는다). 호스트 실행분은 `.env`.
-아래 표의 `compose.yml` 축은 **호스트 경로(`--profile host-dagster`)에만** 해당한다.
+⚠️ in-cluster Dagster 매니페스트는 철거됐다(복원하면 ConfigMap `DAGSTER_MAX_CONCURRENT_RUNS`와 daemon
+`resources.limits.memory`가 같은 파일에 있던 구조다). 지금은 호스트 실행분의 `.env`와
+`compose.yml`(`--profile host-dagster`)이 그 쌍이다. `dagster.yaml`은 값을 `env:`로 **참조만** 한다.
 
 | 변경 | 연동 필수 | 방향 |
 | --- | --- | --- |
@@ -457,10 +463,10 @@ ConfigMap `DAGSTER_MAX_CONCURRENT_RUNS`와 daemon `resources.limits.memory`.
 - 동시 run·pyiceberg 연결이 늘면 `max_connections`를 상향한다.
 - 카탈로그 쪽은 **테이블 메타만** 담아 데이터가 작다 → `shared_buffers 128MB`로 충분하다.
   접속자는 Dagster(pyiceberg)·Spark·Flink·dbt 4종이라 연결 수가 먼저 병목이 된다.
-- **메타 PG도 이 클러스터에 있다** — 같은 `catalog-postgres`에 `Database` CR로
-  `dagster` DB를 더했다. 구 근거였던 "순환 의존"은 Dagster가 함께 클러스터로 들어오면서 소멸했다
-  (둘 다 없으면 둘 다 없는 것이지 순환이 아니다). ⇒ 접속자는 이제 **메타 축까지 5종**이라
-  `max_connections`를 볼 때 이 축을 함께 센다.
+- **메타 PG는 새 클러스터에 없다** — 구 클러스터의 CNPG `dagster` DB 선언은 철거됐고(롤만 남음) PR2가 정한다.
+  그동안 compose 실행은 compose `postgres`를 쓴다(단일 서술 [operations.md](operations.md) §1-2).
+  지금 이 클러스터의 연결 수는 카탈로그 접속자(pyiceberg·Spark·Flink·dbt)만 센다.
+  메타 축이 돌아오면 `max_connections`에 함께 센다.
 
 ## SeaweedFS
 

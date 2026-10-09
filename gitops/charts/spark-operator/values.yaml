@@ -1,0 +1,16 @@
+# 서브차트(spark-kubernetes-operator) 값 — 업스트림 키는 `spark-kubernetes-operator:` 아래에 둔다.
+spark-kubernetes-operator:
+    operatorDeployment:
+        operatorPod:
+            operatorContainer:
+                # 자원 경로가 Flink 와 다르다(operatorPod.resources 가 아니다). 근거: docs/resource-sizing.md §(B)
+                resources:
+                    requests: {cpu: 250m, memory: 512Mi}
+                    limits: {cpu: 500m, memory: 1Gi}
+    workloadResources:
+        namespaces:
+            create: false
+            # 🔴 비우면 감시 네임스페이스가 없고 workload SA·rolebinding 도 안 생긴다(잡이 조용히 안 뜬다)
+            data: [default]
+        serviceAccount:
+            name: spark

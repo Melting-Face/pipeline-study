@@ -1,0 +1,75 @@
+# apps ApplicationSet - list generator 의 elements 마다 Application 하나를 만든다.
+# 생성된 Application 은 syncPolicy 의 automated·selfHeal·prune 세 스위치를 모두 켠다
+# (docs/argocd-gitops.md §5 - 각각 독립된 스위치이므로 아래에 따로 적는다).
+#
+# 🔴 템플릿이 두 겹이다 - 누가 채우는지를 구분한다:
+#   - generators[0].list.elements 는 Helm 이 .Values.apps 로 채운다(이스케이프 불필요).
+#   - template.* 의 name·path·namespace 자리(이중 중괄호 표현식)는 ApplicationSet 컨트롤러가
+#     elements 의 각 원소로 채운다. Helm 이 먼저 해석하면 .name 이 없어 렌더가 깨지거나
+#     빈 값이 되므로, 백틱 raw 문자열로 감싸 Helm 이 건드리지 않고 그대로 통과시킨다.
+#     (ArgoCD "Template" 문서가 Helm 으로 ApplicationSet 을 배포할 때 권하는 형태)
+#
+# 🔴 주석 안에도 이중 중괄호를 쓰지 않는다 - Helm 은 YAML 주석 안의 표현식도 해석한다(주석에 표현식을
+# 쓰면 렌더 결과에서 빈 문자열로 사라질 수 있다 - argocd-study 에서 겪은 증상).
+#
+# 🔴 문자열 값은 리터럴 따옴표로 감쌌다 - 파이프 함수만 쓰면
+# 렌더 전 원본에서 pre-commit 의 YAML 검사가 이중 중괄호를 flow-mapping 으로 오해한다.
+# 이스케이프 필드는 안쪽에 백틱을 쓰므로 홑따옴표로 감싸 YAML 문자열로 만든다.
+#
+# 🔴 repoUrl 은 required 로 막는다 - 기본값 빈 문자열이면 helm lint(--strict 포함)는 WARN 만
+# 내고 통과하지만 helm template 은 실패한다(argocd-study 에서 확인한 동작). required 메시지가 큰따옴표를
+# 쓰므로 바깥을 홑따옴표로 감쌌다.
+#
+# 🔴 spec.syncPolicy.preserveResourcesOnDeletion 은 ApplicationSet 이 지워질 때(또는 Application 이
+# 삭제될 때) 하위 리소스를 연쇄 삭제하지 않게 하는 데이터 보호 1겹이다(docs/argocd-gitops.md §4).
+# List 원소 제거에도 적용되는지는 문서에 명시가 없어 PR1 검증 관문에서 판정하는 대상이다.
+#
+# 🔴 syncPolicy 는 block-style 로 쓴다 - 빈 맵이나 flow-style 맵은 ArgoCD 가 정규화하며
+# 영구 드리프트를 만든다(docs/argocd-gitops.md §5 - argocd-study appset 템플릿의 같은 주의).
+#
+# goTemplateOptions missingkey=error: elements 에 키가 빠졌을 때 빈 값으로 조용히 넘어가지 않고
+# 오류로 드러낸다.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+  namespace: "{{ .Values.namespace }}"
+spec:
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - list:
+        elements:
+          {{- toYaml .Values.apps | nindent 10 }}
+  template:
+    metadata:
+      name: '{{`{{ .name }}`}}'
+    spec:
+      project: default
+      source:
+        repoURL: '{{ required "repoUrl 은 필수값이다 - values.yaml 기본값이 빈 문자열이면 helm lint 는 통과하지만 ApplicationSet 이 빈 repoURL 로 렌더된다" .Values.repoUrl }}'
+        targetRevision: "{{ .Values.targetRevision }}"
+        path: '{{`{{ .path }}`}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{`{{ .namespace }}`}}'
+      syncPolicy:
+        automated:
+          selfHeal: true
+          prune: true
+        syncOptions:
+          - CreateNamespace=true
+          # 큰 CRD 의 last-applied annotation 크기 한도(262144 bytes)를 피한다.
+          - ServerSideApply=true
+          # 아직 설치되지 않은 리소스 타입은 dry-run 을 생략한다(CRD 보다 CR 이 먼저 sync 될 때).
+          - SkipDryRunOnMissingResource=true
+        # 앱 사이 순서는 확정적이지 않다 - CRD 가 아직 없어 실패한 앱은 재시도로 수렴한다.
+        retry:
+          limit: 10
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m

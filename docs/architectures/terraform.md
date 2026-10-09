@@ -7,121 +7,71 @@ Terraform은 **선언형 인프라 프로비저닝** 도구다. 리소스의 목
 **멱등성이 리소스 모델에 내장**되고, **의존 그래프가 실행 순서를 대체**하며, **선언과 실측의 차이를
 `plan`이 보여준다**.
 
-- 이 저장소 고정: Terraform **1.15.8** · 스택별 프로바이더는 `versions.tf`에 `~>`로 핀
+- 이 저장소 고정: Terraform **1.15.8** · 스택별 프로바이더는 `versions.tf`에 핀 — 스택 A·B(`cluster/kind`·`platform`)는
+  **정확 고정**(`version = "x.y.z"`), 보류 중인 `oci-k3s`만 `~>` 범위다
 
-## 이 프로젝트에서의 위치 — ✅ 채택(스택 C 운영 중)
+## 이 프로젝트에서의 위치 — ✅ 채택(스택 A·B, ArgoCD 부트스트랩)
 
-스택은 둘이다. 클라우드 축 [`terraform/oci-k3s/`](oci.md)는 **⏸ 보류**(A1 용량 부족)이고,
-이 문서가 다루는 것은 **로컬 K8s 플랫폼을 셸에서 Terraform으로 옮기는** 축이다.
+스택은 셋이다. 클라우드 축 [`terraform/oci-k3s/`](oci.md)는 **⏸ 보류**(A1 용량 부족)이고,
+이 문서가 다루는 것은 **로컬 K8s 플랫폼**의 두 스택이다.
 
-### 왜 옮기는가 — 근거는 관념이 아니라 사고 2건이다
-
-`scripts/k8s-up.sh`에서 같은 부류의 버그가 **두 번** 나왔다. 레지스트리 컨테이너와
-kind 노드를 각각 *실행 / 부재* 이분법으로 보다가, 실제 상태가 셋(**실행 / 중지 / 부재**)이라
-중지 상태에서 죽었다. 셸로 멱등성을 손으로 짜는 한 이 부류는 계속 나온다 —
-Terraform의 리소스 모델은 create/read/update가 기본이라 같은 실수가 성립하지 않는다.
-
-목적은 **멱등성·drift 감지**와 **일괄 생성·파괴 재현성** 둘이다.
-버전 중앙 관리는 이미 `scripts/k8s-env.sh`가 하고 있어 이득이 작고, 학습은 목적이 아니다 —
-그래서 **어색한 계층을 억지로 Terraform에 넣지 않는다.**
-
-### 분할 축은 부트스트랩이 아니라 **폭발반경**이다
-
-처음에는 "프로바이더 부트스트랩 닭-달걀"을 기준으로 2스택을 검토했으나,
-스파이크에서 나온 사실 하나가 축을 바꿨다 — **`kind_cluster`는 import를 지원하지 않는다.**
-기존 클러스터를 파괴 없이 인수할 수 없다는 뜻이고, 그러면 "Terraform 채택"이 곧
-"클러스터 재생성"이 된다. 그 비용은 **PVC 2개와 그 안의 데이터**다(내역·실측은 볼트 §8-3).
-
-🔴 **이 문서 초판은 그 비용을 약 100배 과대로 적었다**(교정됨). `du -sh /data`가 보고한 값은
-맞지만, 그것은 SeaweedFS가 **preallocate한 sparse 볼륨 파일의 예약 공간**이다
-(같은 파일이 `ls -la`로는 수만 배 작다). 재적재해야 할 것은 **버킷 합계 + 카탈로그 DB +
-Dagster 메타**이고, 그 합은 `du` 값보다 **두 자릿수 작다.**
-
-**값이 아니라 라벨이 틀렸다** — `du`는 정확히 보고했고, 그 명령이 *무엇을 세는지* 확인하지 않은 채
-**"실데이터"라는 이름을 붙인 것**이 오류였다. 그리고 이 수치가 **분할 축을 정당화하는 근거로 쓰였다.**
-**디스크 점유와 데이터량은 다른 축**이고, 어느 쪽도 틀리지 않았으나 섞으면 판단이 바뀐다.
-⇒ 결론(A·B를 셸에 남긴다)은 유지된다. `kind_cluster` import 불가와 재적재 필요성은 그대로이고,
-데이터가 작아도 원천 csv.gz 없이는 `raw/{eicu,mimiciv}`를 복원할 수 없기 때문이다.
-⚠️ **근거가 바뀌었는데 결론이 같았던 것은 운이다** — 교정 뒤 결론을 **다시 유도**했기에 남은 것이지,
-"결론이 안 바뀌었으니 괜찮다"가 아니다.
-
-⇒ 그래서 **destroy가 무엇을 파괴하는가**로 층을 가른다.
-
-| 스택 | 내용 | `destroy` 시 | 방침 |
+| 스택 | 경로 | 내용 | `destroy` 시 |
 | --- | --- | --- | --- |
-| **A. cluster** | podman machine · kind · 로컬 레지스트리 · ingress-nginx | 실데이터 유실 | 셸 유지 |
-| **B. data** | SeaweedFS · CNPG Cluster · Secret · 버킷 | 실데이터 유실 | 셸 유지 |
-| **C. platform** | 오퍼레이터·컨트롤러 5종 · 로컬 CA · 워크로드 RBAC · Dagster | 안전(재생성 가능) | **Terraform**(구현·검증 완료) |
+| **A. cluster** | `terraform/cluster/kind/` | kind 클러스터 · containerd 레지스트리 설정 · 전용 kubeconfig | 클러스터와 그 안의 PVC 전부 소멸 |
+| **B. platform** | `terraform/platform/` | ingress-nginx · argo-cd · ApplicationSet(`var.apps`) | ArgoCD와 그 앱 정의 소멸(앱이 만든 워크로드는 보호 겹이 따로 있다) |
+| 그 아래 | `gitops/charts/<app>/` | 오퍼레이터 이하 전부 — **ArgoCD가 소유**, Terraform이 아니다 | — |
 
-✅ **스택 C는 구현돼 돌고 있다** — `terraform/lakehouse-platform/`(`helm_release` +
-`kubernetes_manifest`). 리소스 수는 `terraform state list | wc -l`로 그 시점에 센다 —
-스택이 자라는 값이라 여기 박으면 안 자란다. 빈 클러스터에서의 **처음부터 재구축**과
-**일괄 `destroy` → `apply` 재생성**을 버리는 클러스터에서 실측으로 통과했다.
-A(cluster)와 B(data)는 셸에 남아 있어, 부트스트랩은 둘이 번갈아 나온다([`../setup.md`](../setup.md) §3).
+지켜지지 않던 **「셸 유지」 결정을 뒤집었다.** 이전 판은 클러스터(A)·데이터(B)를 셸에 남기기로 했다 —
+`kind_cluster`가 import를 지원하지 않아 Terraform 채택이 곧 클러스터 재생성이고, 그 비용이 데이터
+재적재였기 때문이다. 뒤집은 근거는 사용자 결정 두 가지다([`../argocd-gitops.md`](../argocd-gitops.md) §1):
+ⓐ 클러스터를 Terraform으로 **재생성**한다 ⓑ 기존 데이터는 **폐기하고 원천에서 재적재**한다.
+재생성 비용을 받아들였으므로 import 불가는 더 이상 장애가 아니다.
+⚠️ 근거가 바뀌면 결론도 다시 유도한다 — 이전 판은 비용 수치의 라벨 오류를 교정하고도 결론이 같았고,
+그것은 다시 유도했기 때문이지 결론이 안 바뀌어서가 아니다.
 
-C만 옮겨도 목적 둘이 **데이터 위험 없이** 충족된다. A는 클러스터를 재생성해야 할 일이
-자연히 생기는 시점에 합류시킨다 — 그때는 재생성이 비용이 아니라 **이미 치를 값**이기 때문이다.
+분할 축은 여전히 **destroy가 무엇을 파괴하는가(폭발반경)** 이다. 다만 데이터 층은 셸이 아니라
+ArgoCD가 소유하는 쪽으로 옮겨 가며(PR2), 그 전까지 `scripts/k8s-poc-storage.sh`가 과도기로 남는다.
+Terraform은 **ArgoCD까지** 설치하고 그 위는 `git push`로 수렴한다(`argocd-study`와 같은 경계 — 선택 근거는
+[argocd.md](argocd.md)).
 
 ### 대안 비교
 
 | 선택지 | 판정 | 이유 |
 | --- | --- | --- |
-| **C 스택만 Terraform** | ✅ 채택 | 목적 둘을 충족하면서 폭발반경이 데이터에 닿지 않는다 |
-| 전체(A+B+C) 일괄 이행 | 🔎 미채택 | `kind_cluster` import 불가 → 즉시 재적재. 원천 없이는 복원 불가한 부분이 있다 |
-| helm 계층만 이행 | 🔎 미채택 | 사고 2건이 난 kind·레지스트리 축을 **정작 안 고친다** |
-| 셸 유지 + 멱등성 보강 | 🔎 미채택 | 3상태 분기를 손으로 계속 짜야 한다. 다음 상태 축이 나오면 또 샌다 |
-
-### 매니페스트는 YAML로 남기고 Terraform은 적용자만 한다
-
-`k8s/**`의 YAML에는 "왜 이 값인가"가 주석으로 들어 있다(aws-chunked 함정 · S3FileIO와 S3A의
-역할 분담 · probe가 보증하지 않는 것 …). HCL 타입 리소스로 재작성하면 **그 지식이 사라진다.**
-
-⇒ `kubernetes_manifest { manifest = yamldecode(file(...)) }` 형태로 **YAML을 정본으로 유지**하고
-HCL은 배선만 담는다. 스파이크에서 CNPG `Database` CR로 `plan` 통과를 확인했다.
+| **A·B Terraform + 나머지 ArgoCD** | ✅ 채택 | 클러스터 수명주기를 선언으로 두고, 운영은 push로 수렴 |
+| 이전 판: 오퍼레이터만 Terraform(`helm_release`) | 철거 | 빈 클러스터에서 CRD 해석 때문에 2단 apply, 변경마다 `apply` 필요 |
+| 셸 유지 + 멱등성 보강 | 🔎 미채택 | 3상태 분기(실행/중지/부재)를 손으로 계속 짜야 한다. 다음 상태 축이 나오면 또 샌다 |
 
 ### 실제 구성
 
 ```text
-terraform/lakehouse-platform/
-├── versions.tf     required_version · 프로바이더 핀 · .terraform.lock.hcl 커밋
-├── provider.tf     kubernetes·helm — config_context 고정
-├── variables.tf    ns · 차트 좌표 · 차트 버전 · 자원값(k8s-env.sh 값 이관 — 그쪽 껍데기는 제거됨)
-├── operators.tf    helm_release ×3 (아래 주의)
-└── manifests.tf    k8s/**의 7파일(18문서)을 yamldecode 로 적용 — 로컬 CA·RBAC·Dagster
+terraform/cluster/kind/   스택 A — kind 클러스터 · 레지스트리 설정 · 전용 kubeconfig 출력
+terraform/platform/       스택 B — ingress-nginx · argo-cd · appset(두 번째 helm_release)
+  charts/appset/          ApplicationSet 하나(List generator)
+  values/argocd.yaml.tftpl
+gitops/charts/<app>/      ArgoCD가 sync하는 대상(앱 하나 = umbrella 차트 하나)
 ```
 
-설계 초안의 `security.tf`·`dagster.tf`·`outputs.tf`는 만들지 않았다. **YAML이 정본이고 Terraform은
-적용자**라는 결론에 따라 셋이 `manifests.tf` 하나로 합쳐졌다.
-
-`k8s-dagster.sh`에는 예고대로 **이미지 빌드·push(+ConfigMap·수렴 대기)만** 남았다. 다만
-`scripts/k8s-operators.sh`는 **사라지지 않았다** — 원격 매니페스트 둘(cert-manager·Barman)과,
-그 둘·helm이 요구만 하고 아무도 만들지 않는 **네임스페이스 3종**을 만드는 자리로 남았다.
-⇒ 그래서 이 스크립트의 정체는 "오퍼레이터 설치"가 아니라 **스택 C의 선행 조건**이다.
-
-⚠️ **C의 5종이 전부 helm은 아니다**(실측 — 이 문서 초판이 "helm 5종"으로 적었던 것은 틀렸다).
-
-| 대상 | 설치 방식 | Terraform 대응 |
-| --- | --- | --- |
-| Spark Operator · Flink Operator · CloudNativePG | `helm upgrade --install` | `helm_release` — import 가능 |
-| cert-manager · Barman Cloud 플러그인 | **원격 멀티도큐먼트 매니페스트 `kubectl apply`** | ⚠️ 대응이 자명하지 않다 |
-
-원격 매니페스트 둘은 ingress-nginx와 **같은 문제**다 — URL 하나가 수십 개 오브젝트를 담고 있어
-`kubernetes_manifest` 하나로 못 받는다. 선택지는 셋이고 어느 것도 공짜가 아니다:
-공식 helm 차트로 갈아타기(설치 산출물이 달라진다) · `http` 데이터소스로 받아 `yamldecode` 분해
-(멀티도큐먼트 분해가 HCL에서 지저분하다) · **셸에 남기기**(A 스택과 같은 취급).
-⇒ 초기 이행에서는 **셸에 남긴다**. 이 둘은 버전 고정이 URL에 박혀 있어 drift 위험이 낮다.
-
-Flink Operator는 `--set` 8종(자원)에 더해 **`--values k8s/flink/operator-values.yaml`도 함께** 쓴다.
-import 시 둘 다 HCL로 옮겨야 `plan`이 `0 to change`가 된다.
+스택 B가 appset을 **두 번째 `helm_release`로 분리**한 이유는 argo-cd 차트가 CRD를 `crds/`가 아닌
+`templates/`에 담아, 한 릴리스에서 CRD와 그 CR을 함께 만들면 Helm이 GVK를 해석하다 실패하기 때문이다.
+`kubernetes_manifest`는 plan 시점에 CRD 스키마를 조회해 최초 plan이 죽으므로 쓰지 않는다.
+YAML 매니페스트를 `yamldecode`로 감싸 적용하던 방식은 폐기됐다 — 매니페스트가 `gitops/charts/`의
+차트 템플릿으로 가고 주석("왜 이 값인가")도 함께 간다.
 
 ## 운영 메모
+
+> 이 아래 운영 메모 전체(CRD 폭발반경 · `helm_release` 인수 · 불통 시 `plan` 등)는 철거된
+> `terraform/lakehouse-platform` 스택 기준이며, 현행 스택 A·B는 `kubernetes_manifest`를 쓰지 않는다.
+> 특히 **CRD 폭발반경**과 **`helm_release` 인수** 두 절은 철거된 스택(`terraform/lakehouse-platform/`,
+> 오퍼레이터를 `helm_release`로 설치)에서 얻은 실측이다. 그 스택은 없지만 교훈은 남긴다 — 오퍼레이터
+> 삭제가 CRD와 CR을 연쇄 삭제하는 경로는 ArgoCD에서도 같고, 그 방어는 [argocd.md](argocd.md)의 3겹이다.
 
 ### 🔴 폭발반경은 스택 경계를 새어 나간다 — CRD
 
 C를 "안전하게 destroy 가능"으로 두려면 **오퍼레이터 uninstall이 CRD를 지우지 않아야 한다.**
 CNPG 차트가 CRD를 함께 제거하면 `Cluster` CR이 사라지고 **B의 PVC가 따라간다.**
 
-✅ **일부러 `destroy`를 돌려 확인했다**(버리는 클러스터). 스택 C가 통째로 파괴된 직후:
+✅ **일부러 `destroy`를 돌려 확인했다**(버리는 클러스터). (철거된) 스택 C가 통째로 파괴된 직후:
 
 - **PVC 2개의 UID가 불변**이고 `Cluster/catalog-postgres`(스택 B)가 healthy로 남았다
 - CNPG 오퍼레이터 Deployment는 **사라졌다**(C의 것이므로 정상)
@@ -172,9 +122,9 @@ helm revision만 1씩 올랐다. 이후 `plan`은 `No changes`다.
 **정합을 맞추는 `apply`를 생략하면 안 된다** — diff를 방치하면 `plan`이 영구히
 `3 to change`를 보여주고 **진짜 drift가 그 잡음에 묻힌다**(이 이행의 주목적이 무력화된다).
 
-가장 위험한 것은 Flink Operator다 — `--set` 8종에 더해 `--values`도 쓰는데, 그 값 파일에
-**공급망 통제**(`user.artifacts.allowed-schemes`에서 https 제거)가 들어 있다. 빠뜨리면
-차트 기본값으로 되돌아가 [resource-sizing.md](../resource-sizing.md) 배분표가 거짓이 되고
+가장 위험했던 것은 Flink Operator다 — `--set` 8종에 더해 값 파일도 썼는데, 거기에
+**공급망 통제**(`user.artifacts.allowed-schemes`에서 https 제거)가 들어 있었다(지금은
+`gitops/charts/flink-operator/values.yaml`). 빠뜨리면 차트 기본값으로 되돌아가 [resource-sizing.md](../resource-sizing.md) 배분표가 거짓이 되고
 **런타임 외부 jar fetch 경로가 조용히 열린다.**
 
 ### 게이트는 `fmt`와 `validate`를 **다른 자리에** 둔다

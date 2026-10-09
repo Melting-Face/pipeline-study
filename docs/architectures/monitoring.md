@@ -156,7 +156,7 @@ Robusta의 기존 Prometheus 연동 모드 파드 차분 · `grafana/loki`와 `g
 - 관측 수단을 더하거나 뺄 때의 **규칙**(등록 의무·수집기 정리·생존 확인·수치 기재)은
   [../conventions/monitoring.md](../conventions/monitoring.md)가 정본이다.
 - ⚠️ **이 문서의 무게는 실행 환경에 걸려 있다.** 위 공백들이 지금 수용 가능한 것은 현행 검증 환경이
-  **로컬 단독**이기 때문이다 — kind는 `listenAddress: "127.0.0.1"`(`k8s/kind-cluster.yaml`)이라
+  **로컬 단독**이기 때문이다 — kind는 `listenAddress: "127.0.0.1"`(스택 A `terraform/cluster/kind`)이라
   LAN에서 도달할 수 없고, [oci.md](oci.md)의 OCI 스택은 **⏸ 보류**로 컴퓨트가 서 있지 않다.
   **OCI를 재개해 인터넷에 면한 노드가 생기면 이 판단이 그대로 살아나지 않는다** — 같은 공백이
   **탐지 공백**으로 성격이 바뀌고, 위 표는 그 노드에서 무엇을 못 보는지의 목록이 된다.

@@ -1,0 +1,10 @@
+apiVersion: v2
+name: flink-operator
+description: Flink Kubernetes Operator + RBAC(umbrella)
+type: application
+version: 0.1.0
+dependencies:
+    - name: flink-kubernetes-operator
+      version: 1.15.0
+      # 저장소 URL 에 버전이 박힌다 — 버전을 올리면 URL 도 함께 바꾼다
+      repository: https://archive.apache.org/dist/flink/flink-kubernetes-operator-1.15.0/

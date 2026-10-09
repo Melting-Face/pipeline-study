@@ -1,0 +1,5 @@
+# 렌더 결과에 대한 기대 — scripts/gitops-charts-check.sh (c)
+kinds_with_wave:
+    Issuer: "1"
+    Certificate: "1"
+min_crds: 6

@@ -102,7 +102,7 @@ finally:
 오퍼레이터 네임스페이스에만 생겨 정작 잡이 뜨는 곳에서 파드가 안 뜬다.
 
 그런데 범위를 지정하는 순간 오퍼레이터 자신의 권한도 네임스페이스로 좁아진다.
-`k8s/flink/flink-operator-webhook-rbac.yaml`의 주석이 그 경로를 기록해 뒀다.
+`gitops/charts/flink-operator/templates/flink-operator-webhook-rbac.yaml`의 주석이 그 경로를 기록해 뒀다.
 
 ```text
 mutating webhook의 `FlinkMutator.mutateSessionJob`은 대상 FlinkDeployment를
@@ -120,7 +120,7 @@ mutating webhook의 `FlinkMutator.mutateSessionJob`은 대상 FlinkDeployment를
 클러스터 스코프로 되돌리는 것이다. 규칙 본문은 이 세 줄이 전부다.
 
 ```yaml
-# k8s/flink/flink-operator-webhook-rbac.yaml — 최소권한으로 뚫은 구멍
+# gitops/charts/flink-operator/templates/flink-operator-webhook-rbac.yaml — 최소권한으로 뚫은 구멍
 kind: ClusterRole                       # 웹훅이 클러스터 스코프로 보므로 Role로는 안 된다
 rules:
     - apiGroups: ["flink.apache.org"]
@@ -154,7 +154,7 @@ rules:
 
 첫째는 정직하다. 아무것도 안 되니 바로 권한을 본다.
 둘째는 **정상 경로가 여럿 통과한 뒤**에 온다.
-`k8s/flink/flink-workload-rbac.yaml`의 주석이 그 이유를 짚는다.
+`gitops/charts/flink-operator/templates/flink-workload-rbac.yaml`의 주석이 그 이유를 짚는다.
 
 ```text
 JobManager 파드 안에서 `sql-client.sh`로 잡을 제출하면 Flink의 Kubernetes
@@ -167,7 +167,7 @@ JobManager 파드 안에서 `sql-client.sh`로 잡을 제출하면 Flink의 Kube
 이쪽 보완도 최소권한이다. 클러스터 스코프가 아니라 **잡 네임스페이스 한정 Role**이다.
 
 ```yaml
-# k8s/flink/flink-workload-rbac.yaml
+# gitops/charts/flink-operator/templates/flink-workload-rbac.yaml
 kind: Role                              # ClusterRole이 아니다
 rules:
     - apiGroups: [""]
@@ -192,7 +192,7 @@ rules:
 먼저 막힌 것은 웹훅의 아티팩트 허용목록이다. 그건 오퍼레이터 값으로 열 수 있었다.
 
 ```yaml
-# k8s/flink/operator-values.yaml — 기본값은 [https]뿐이라 local이 거부된다
+# gitops/charts/flink-operator/values.yaml — 기본값은 [https]뿐이라 local이 거부된다
 kubernetes.operator.user.artifacts.allowed-schemes: local
 ```
 
@@ -454,7 +454,7 @@ kubectl exec <JM 파드> -- ls /opt/flink/plugins  # 통과: s3-fs-hadoop 이 �
 | Maven Central | https://repo1.maven.org/maven2/ |
 
 본문 인용은 전부 **저장소 파일**에서 왔다 — 매니페스트 넷(`flinkdeployment-session` ·
-`flink-operator-webhook-rbac` · `flink-workload-rbac` · `operator-values`),
+`flink-operator-webhook-rbac` · `flink-workload-rbac` · `values`; 뒤의 셋은 `gitops/charts/flink-operator/` 아래),
 SQL ConfigMap 셋(`iceberg-batch-job` · `iceberg-stream-job` · `usgs-water-stream-job`),
 `Dockerfile.flink-runner`, Dagster 자산 코드.
 

@@ -45,7 +45,7 @@ Spark·Flink는 🚧([spark.md](spark.md)·[flink.md](flink.md)), 플랫폼 전�
 | 축 | Spark | Flink | PostgreSQL |
 | --- | --- | --- | --- |
 | 오퍼레이터 | `apache/spark-kubernetes-operator` | `apache/flink-kubernetes-operator` | CloudNativePG(CNCF) |
-| 설치 주체 | `terraform/lakehouse-platform/` | 같음(값 파일 동반) | 같음 |
+| 설치 주체 | ArgoCD(`gitops/charts/spark-operator/`) | 같음(값 파일 동반) | 같음 |
 | CRD 그룹 | `spark.apache.org` | `flink.apache.org` | `postgresql.cnpg.io` |
 | 주 kind | `SparkApplication` | `FlinkDeployment` | `Cluster` · `Database` |
 | 워크로드 수명 | 배치 잡 = 일시 | 세션 클러스터 = JM 상주 | 영구 상주 |
@@ -54,9 +54,10 @@ Spark·Flink는 🚧([spark.md](spark.md)·[flink.md](flink.md)), 플랫폼 전�
 
 **세 줄 단서** — 표만 보면 어긋나는 지점이다.
 
-- **네임스페이스는 Terraform이 만들지 않는다.** 세 릴리스 모두 `create_namespace = false`이고
-  `scripts/k8s-operators.sh`가 미리 만드는 **계약**이다. cert-manager와 Barman Cloud 플러그인은
-  원격 멀티도큐먼트 매니페스트라 `helm_release`로 받지 못해 셸에 남는다([terraform.md](terraform.md)).
+- **네임스페이스는 ArgoCD Application의 `CreateNamespace=true`가 만든다.** 이전의 셸·Terraform 계약
+  (`create_namespace = false` + 선행 스크립트)은 철거됐다. cert-manager는 차트 dependency로 옮겨졌고
+  Barman Cloud 플러그인은 옮기지 않았다(백업 배선이 꺼져 있다 —
+  [../argocd-gitops.md](../argocd-gitops.md) §3 「Barman 백업 플러그인은 옮기지 않는다」).
 - **Spark Connect는 오퍼레이터 워크로드가 아니다.** 상시 SQL 엔드포인트는 `SparkApplication`이
   아니라 **평범한 Deployment**이고, 다만 **같은 러너 이미지**를 쓴다. 그래서 굽는 이유는
   공유하지만 수명·회수 다이얼은 다르다([spark.md](spark.md) §Spark Connect).
@@ -101,8 +102,8 @@ Spark·Flink는 🚧([spark.md](spark.md)·[flink.md](flink.md)), 플랫폼 전�
    **로컬만 허용하고 원격을 뺐다** — 남겨두면 CR 한 줄로 **런타임 외부 jar fetch 경로**가
    열리기 때문이다(공급망). ⇒ **여기서는 굽는 것이 곧 통제다.**
 
-⚠️ 3의 통제는 **값 파일에 얹혀 있다** — Flink 릴리스만 `--set`과 값 파일을 함께 쓰고,
-파일을 빠뜨리면 그 통제가 **조용히 풀린다**(`terraform/lakehouse-platform/operators.tf` 주석).
+⚠️ 3의 통제는 **값 파일에 얹혀 있다** — Flink 차트만 자원 값과 통제 값을 함께 쓰고,
+`gitops/charts/flink-operator/values.yaml`에서 빠뜨리면 그 통제가 **조용히 풀린다**.
 
 #### C. PostgreSQL이 안 굽는 이유
 
@@ -185,9 +186,8 @@ Terraform으로 옮겨갈 때 한쪽 산문만 갱신돼, 두 파일이 **서로
 ⚠️ **산문이 말하는 app 버전은 저장소의 주장**이다. 외부 1차 출처로 확인된 값이 아니므로
 이 문서도 그것을 확정 사실로 다루지 않는다 — 판정이 필요하면 상류 릴리스에서 대조한다.
 
-- **핀의 정본은 `terraform/lakehouse-platform/variables.tf`** 의 각 변수
-  `default.chart_version`이다. 오퍼레이터 설정은 셸에서 그쪽으로 이관됐고,
-  셸에 남은 `*_VERSION`은 cert-manager·ingress·백업 플러그인이지 **오퍼레이터 차트가 아니다.**
+- **핀의 정본은 `gitops/charts/<app>/Chart.yaml`** 의 dependency `version`(+ `Chart.lock`)이다.
+  오퍼레이터 설정은 셸·Terraform에서 그쪽으로 이관됐다.
 - **Flink 차트는 저장소 URL 자체에 버전이 박힌다.** 상류가 현행 릴리스만 보관해
   **구버전 URL이 404가 되고 설치가 깨진다** — 버전을 올릴 때 URL도 함께 움직인다.
 
@@ -242,7 +242,7 @@ Terraform으로 옮겨갈 때 한쪽 산문만 갱신돼, 두 파일이 **서로
   · 릴리스: https://github.com/apache/spark-kubernetes-operator/releases
 - Flink Kubernetes Operator — **릴리스 문서를 본다.**
   경로는 `nightlies.apache.org`의 `flink-kubernetes-operator-docs-release-<차트버전>` 계열이고
-  `<차트버전>`은 `terraform/lakehouse-platform/variables.tf`의 `flink_operator.chart_version`이다.
+  `<차트버전>`은 `gitops/charts/flink-operator/Chart.yaml`의 dependency `version`이다.
   ⚠️ **`-docs-main`(나이틀리)을 보지 않는다** — 미출시 필드가 섞여
   *"문서엔 있는데 설치된 오퍼레이터는 모르는 키"* 가 나온다.
 - Flink 차트 저장소(현행 릴리스만 보관 — 구버전 404의 출처): https://downloads.apache.org/flink/

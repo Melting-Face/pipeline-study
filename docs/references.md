@@ -51,6 +51,12 @@
 | [Apache Spark](https://spark.apache.org/docs/latest/) | 🚧 채택·이행중 | [architectures/spark.md](architectures/spark.md) |
 | [Apache Flink](https://flink.apache.org/documentation/flink-stable/) | 🚧 채택·이행중 | [architectures/flink.md](architectures/flink.md) |
 | [Kubernetes](https://kubernetes.io/docs/home/) | 🚧 채택·이행중 | [architectures/k8s.md](architectures/k8s.md) · [conventions/k8s.md](conventions/k8s.md) |
+| [Argo CD — Sync Options](https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/) — ServerSideApply·SkipDryRun·Prune=false·Delete=false (R1) | ✅ 채택(GitOps) | [architectures/argocd.md](architectures/argocd.md) · [argocd-gitops.md](argocd-gitops.md) |
+| [Argo CD — ApplicationSet 리소스 변경 통제](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Controlling-Resource-Modification/) — preserveResourcesOnDeletion (R2) | ✅ 채택(GitOps) | [architectures/argocd.md](architectures/argocd.md) |
+| [Argo CD — Helm](https://argo-cd.readthedocs.io/en/stable/user-guide/helm/) — `helm.sh/resource-policy: keep` 지원 (R3) | ✅ 채택(GitOps) | [architectures/argocd.md](architectures/argocd.md) |
+| [cert-manager Helm values](https://raw.githubusercontent.com/cert-manager/cert-manager/master/deploy/charts/cert-manager/values.yaml) — `crds.enabled`·`crds.keep` (R4) | ✅ 채택(GitOps) | [architectures/argocd.md](architectures/argocd.md) |
+| [ASF Release Distribution Policy](https://infra.apache.org/release-distribution.html) — 구버전 링크 삭제·archive 보관 (R5) | ✅ 채택(GitOps) | [architectures/argocd.md](architectures/argocd.md) |
+| [CloudNativePG charts](https://github.com/cloudnative-pg/charts) — CRD 템플릿의 keep (R6) | ✅ 채택(GitOps) | [architectures/argocd.md](architectures/argocd.md) |
 | [Helm](https://helm.sh/docs/) | 🔎 K8s 패키징 | [conventions/k8s.md](conventions/k8s.md) |
 | [Prometheus](https://prometheus.io/docs/introduction/overview/) | 🔎 미채택 | [architectures/monitoring.md](architectures/monitoring.md) · [conventions/monitoring.md](conventions/monitoring.md) |
 | [Apache Kafka](https://kafka.apache.org/) | 🔎 미도입 유지 | [architectures/kafka.md](architectures/kafka.md) · [architectures/flink.md](architectures/flink.md) |

@@ -1,0 +1,65 @@
+# 로컬 자체서명 CA — 클러스터 안에서 TLS 엔드포인트를 낼 때 쓰는 발급 체인
+#
+# 왜 필요한가: **gRPC를 Ingress로 내보내려면 TLS가 사실상 필수**다. ingress-nginx의 gRPC 백엔드
+#   (`backend-protocol: GRPC`)는 HTTP/2 위에서만 동작하는데, nginx는 HTTP/2를 **TLS 리스너에서만**
+#   협상한다(평문 h2c는 이 경로로 못 쓴다). 그래서 인증서가 필요하고, 로컬 클러스터라
+#   공인 CA를 쓸 수 없으므로 자체 CA를 세운다.
+#
+# 왜 2단(부트스트랩 → CA → 리프)인가: selfSigned 발급자로 **리프를 바로** 만들면 그 인증서는
+#   `CA:FALSE`라 신뢰 앵커로 쓰기에 부적합하다. `isCA: true` 중간 CA를 한 번 만들고 그것으로
+#   리프를 발급해야 클라이언트가 **CA 파일 하나만 신뢰**하면 이후 리프 교체에도 재배포가 필요 없다.
+#
+# 소비자: `k8s/spark/spark-connect-server.yaml`의 `spark-grpc-tls` Certificate.
+#   새 TLS 엔드포인트를 낼 때도 `issuerRef: lakehouse-ca-issuer`만 참조하면 된다.
+#
+# 🔴 **이 CA는 비밀이 아니다** — 공개키 인증서라 호스트로 내보내 클라이언트가 신뢰하게 만드는 것이
+#   정상 사용법이다(개인키는 Secret `lakehouse-ca-tls`에 남고 밖으로 나가지 않는다).
+#   내보내기: docs/conventions/k8s.md §10.
+#
+# 전제: cert-manager(같은 차트의 서브차트가 먼저 설치 — Flink 웹훅·CNPG barman과 공용).
+#   CR 은 CRD·웹훅이 뜬 뒤여야 하므로 각 문서에 sync-wave "1" 을 단다(docs/argocd-gitops.md §5).
+---
+# 부트스트랩 발급자 — 아래 CA 인증서 자신을 서명하기 위해서만 쓴다.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+    name: selfsigned-bootstrap
+    annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    namespace: default
+spec:
+    selfSigned: {}
+---
+# 로컬 루트 CA. 클라이언트가 신뢰할 대상이 바로 이것이다.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+    name: lakehouse-ca
+    annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    namespace: default
+spec:
+    isCA: true
+    commonName: lakehouse-local-ca
+    secretName: lakehouse-ca-tls
+    duration: 8760h        # 1년. 로컬 개발 클러스터라 갱신 부담보다 안정성을 택한다.
+    renewBefore: 720h      # 만료 30일 전 자동 갱신(cert-manager가 수행)
+    privateKey:
+        algorithm: ECDSA
+        size: 256
+    issuerRef:
+        name: selfsigned-bootstrap
+        kind: Issuer
+        group: cert-manager.io
+---
+# 위 CA를 발급자로 승격 — 이후 리프 인증서는 전부 이 발급자를 참조한다.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+    name: lakehouse-ca-issuer
+    annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    namespace: default
+spec:
+    ca:
+        secretName: lakehouse-ca-tls

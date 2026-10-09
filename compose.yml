@@ -36,8 +36,7 @@ x-dagster-common: &dagster-common
     - PHYSIONET_USERNAME=${PHYSIONET_USERNAME:-}
     - PHYSIONET_PASSWORD=${PHYSIONET_PASSWORD:-}
     # 금융 시장 원천(주식예측). 같은 이유로 `:-` 폴백을 둔다.
-    # 🔴 정본은 in-cluster다 — k8s/dagster/** 의 Secret 배선을 함께 봐야
-    #    클러스터에서만 조용히 실패하는 상태를 피한다.
+    # (in-cluster Dagster는 철거돼 이 compose/호스트 경로가 유일한 실행처다.)
     - POLYGON_API_KEY=${POLYGON_API_KEY:-}
     - FRED_API_KEY=${FRED_API_KEY:-}
     # SEC EDGAR 폴백 시에만 쓰인다(연락처 포함 UA). 비밀 아님.
@@ -54,9 +53,8 @@ x-dagster-common: &dagster-common
 services:
   # UI/GraphQL 전용. workspace.yaml로 코드 로케이션을 명시 로드한다.
   #
-  # 🔴 정본은 **in-cluster**다(k8s/dagster/). 여기 정의는 상시 기동에서 빠지고
-  #   `--profile host-dagster`로만 뜬다 — trino·seaweedfs와 같은 "중단과 삭제의 분리"다.
-  #   자원은 즉시 회수하되 롤백 비용은 0으로 남긴다.
+  # in-cluster Dagster(k8s/dagster/)는 ArgoCD 전환으로 철거돼 호스트 경로가 유일한 실행처다.
+  #   상시 기동에서는 빠지고 `--profile host-dagster`로만 뜬다(opt-in).
   # ⚠️ 이걸 in-cluster와 **동시에 띄우지 마라.** 같은 서비스가 두 환경에 살아 있으면
   #   관측 확인(①타깃 ②up ③로그)을 전부 통과하면서 레거시가 정본 대신 답한다
   #   (docs/conventions/monitoring.md §3-④ — 이 저장소에서 이미 2회 발생).
@@ -96,12 +94,11 @@ services:
         reservations:
           cpus: "1.0"
           memory: 1536M
-  # 🔴 Dagster 메타 스토리지의 정본은 **CNPG의 `dagster` DB**로 옮겨갔다
-  #   (k8s/dagster/dagster-meta-db.yaml). 이 컨테이너를 상시 기동으로 두면 호스트 `dg dev`가
-  #   여기에, 클러스터가 CNPG에 써서 **run 이력이 두 벌로 갈린다** — 정의만 남기고 내린다.
-  #   호스트 개발 루프는 CNPG를 보게 한다:
-  #     kubectl port-forward svc/catalog-postgres-rw 15432:5432
-  #     POSTGRES_HOST=localhost POSTGRES_PORT=15432 POSTGRES_DB=dagster
+  # 🔴 Dagster 메타 DB — 구 `lakehouse` 클러스터에서는 CNPG `dagster` DB였고 그 선언
+  #   (k8s/dagster/dagster-meta-db.yaml)은 철거됐다(롤만 남음). 새 클러스터에는 메타 DB가 없고
+  #   위치는 PR2가 정한다. 그동안 `--profile host-dagster`는 이 컨테이너를 쓴다(앵커 POSTGRES_HOST=postgres).
+  #   호스트 `dg dev`는 .env의 POSTGRES_HOST/PORT를 따른다 — 예시 기본값(15432)은 구 클러스터 CNPG의
+  #   port-forward라, 이 컨테이너와 섞어 쓰면 **run 이력이 두 벌로 갈린다**. 단일 서술: docs/operations.md §1-2
   # profiles가 셋인 이유: 의존받는 서비스는 **의존하는 쪽의 profile을 전부 물려받는다**
   #   (dagster-* = host-dagster · trino = legacy-sql). legacy-meta는 이 컨테이너 단독 기동용.
   postgres:
@@ -150,7 +147,7 @@ services:
     # (docs/security.md — 최소 노출). 이 엔진 뒤에는 재배포가 제한된 원천 데이터가 있고
     # 인증 배선이 없어, 호스트 밖으로 낼 이유가 없다.
     ports:
-      # 호스트 8080은 kind ingress(k8s/kind-cluster.yaml extraPortMappings)가 점유한다.
+      # 호스트 8080은 kind ingress(terraform/cluster/kind의 호스트 포트 매핑)가 점유한다.
       # 컨테이너 내부 포트는 8080 그대로라 dbt profiles.yml(host: trino, port: 8080)은 영향 없다.
       - "127.0.0.1:8081:8080"
     environment:
