@@ -25,7 +25,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE: ghcr.io/melting-face/dagster-study-airflow
+  IMAGE: ghcr.io/melting-face/pipeline-study-airflow
 
 jobs:
   build:

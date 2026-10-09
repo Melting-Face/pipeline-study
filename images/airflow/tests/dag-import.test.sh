@@ -19,7 +19,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTEXT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-IMAGE="dagster-study-airflow:test"
+IMAGE="pipeline-study-airflow:test"
 
 echo "== 빌드: ${IMAGE} (linux/arm64) =="
 if ! podman build --platform linux/arm64 -t "${IMAGE}" "${CONTEXT_DIR}"; then

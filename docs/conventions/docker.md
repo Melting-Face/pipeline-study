@@ -201,14 +201,16 @@ Spark·Flink 러너 이미지는 이 경로가 아니라 로컬 레지스트리 
 
 - **트리거는 `airflow-vX.Y.Z` 태그 push**다(`.github/workflows/airflow-image.yml`).
   `v*`는 저장소 릴리스(`release.yml`)가 쓰므로 접두어로 공간을 나눈다.
-  이미지 태그는 접두어를 뗀 `vX.Y.Z`이고 이름은 `ghcr.io/melting-face/dagster-study-airflow`다.
+  이미지 태그는 접두어를 뗀 `vX.Y.Z`이고 이름은 `ghcr.io/melting-face/pipeline-study-airflow`다.
 - **태그는 불변이다** — 같은 태그가 레지스트리에 있으면 워크플로가 실패한다. 롤백은 이전 태그를 다시
-  가리키는 것이지 덮어쓰기가 아니다. 태그 커밋은 **`main`의 조상**이어야 한다(브랜치 작업물 발행 차단).
+  가리키는 것이지 덮어쓰기가 아니다. 잘못 발행한 태그는 git 태그를 지우고 다시 달아도 불변 검사에 막힌다 —
+  다음 패치 버전으로 전진한다. 태그 커밋은 **`main`의 조상**이어야 한다(브랜치 작업물 발행 차단).
 - **발행 전 로컬 검증**: `bash images/airflow/tests/dag-import.test.sh`(podman arm64 빌드 → DagBag 파싱,
   import 오류 0건 + DAG `hello` 존재). DB 없이 파싱만 하므로 클러스터가 필요 없다.
 - **첫 발행 뒤 패키지를 public으로 전환**한다 — GHCR 새 패키지의 기본 가시성은 private이라 kind 노드가
   인증 없이 pull하지 못한다. 확인: `podman logout ghcr.io` 후
-  `podman pull --platform linux/arm64 ghcr.io/melting-face/dagster-study-airflow:<태그>`가 성공한다.
+  `podman pull --platform linux/arm64 ghcr.io/melting-face/pipeline-study-airflow:<태그>`가 성공한다.
+  public 전환은 되돌릴 수 없는 작업으로 취급한다 — 전환 전에 레이어가 base 위 `dags/` 하나뿐인지 확인한다.
 - 이미지는 `linux/arm64` 단일 아키텍처다(현행 검증 환경이 arm64 호스트 위 kind).
 
 ## 참고
