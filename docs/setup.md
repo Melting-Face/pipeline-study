@@ -1,77 +1,45 @@
 # 환경 세팅 (setup)
 
-이 저장소를 **처음부터 굴러가는 상태까지** 만드는 절차의 **정본**이다.
-루트 [`README.md`](../README.md)에는 빠른 시작만 두고, 단계별 상세·전제·함정은 여기 있다.
+클론한 뒤 **위에서 아래로 실행**하면 로컬 환경이 뜨는 절차서다. 명령은 모두 **repo 루트**에서 시작한다.
+왜 이렇게 구성했는지는 다루지 않는다 — 배경은 각 절의 링크와 [`architectures/overview.md`](architectures/overview.md)를 본다.
 
-## 전체 그림
+## 지금 되는 범위
 
-이 환경은 **"compose up 하나"가 아니다.** 네 덩어리를 순서대로 올린다.
+GitOps 전환의 데이터 층(SeaweedFS·카탈로그 Postgres·Secret)은 PR2에서 온다.
+**지금은 오퍼레이터까지 뜨고, 적재·dbt는 돌지 않는다.** ⏸ 절은 PR2 뒤에 쓰는 절차다.
 
-```
-0~1. 로컬 도구 + 파이썬 환경          (호스트)
-2.   .env                              (호스트)
-3.   로컬 Kubernetes — 컴퓨트·스토리지  (kind on Podman)
-4.   러너 이미지                        (로컬 레지스트리)
-5.   Dagster                           (호스트 — 새 클러스터에는 배포하지 않음)
-```
-
-**Dagster는 새 클러스터에 배포하지 않는다**(호스트 실행, §5). 스토리지(SeaweedFS)·카탈로그(Postgres)·
-컴퓨트(Spark·Flink)는 같은 클러스터에 있다.
-
-**선언의 소유자가 셋으로 갈린다.** 클러스터는 **Terraform 스택 A**, ingress-nginx·ArgoCD는 **스택 B**,
-그 위의 오퍼레이터 이하는 **ArgoCD**(`gitops/charts/`)가 소유하고, 레지스트리 컨테이너·Secret은 **사람(셸)** 이 만든다.
-가르는 기준은 **destroy 가 무엇을 파괴하는가**다([`architectures/terraform.md`](architectures/terraform.md)).
+| 절 | 상태 |
+| --- | --- |
+| §0 도구 · §1 저장소 · §2 `.env` 복사 | ✅ |
+| §3 클러스터 → ArgoCD → 오퍼레이터 수렴 | ✅ |
+| §6 인프라 미접속 검증(`pre-commit`·`mypy`) | ✅ |
+| §6 `dg check defs` | ⚠️ 의존성 결함으로 실패 |
+| §2 비밀값 · §3-1 port-forward · §3-2 컴퓨트 · §4 Spark Connect · §5 Dagster · §6-1 원천 · §7 노트북 | ⏸ PR2 |
 
 ## 0. 사전 요구 도구
 
 ```shell
-brew install podman kind kubectl helm
-brew install terraform                     # §3의 플랫폼 스택 + pre-commit의 terraform_fmt 훅
-brew install hadolint                      # pre-commit의 hadolint 훅이 로컬 바이너리를 쓴다
+brew install podman kind kubectl helm terraform hadolint
 uv tool install pre-commit
 ```
 
-> ⚠️ **`terraform`은 선택이 아니다.** §3에서 플랫폼 스택을 올리는 데 쓰이고, 그와 별개로
-> `terraform_fmt` 훅이 **로컬 바이너리를 호출**하므로 없으면 **커밋이 막힌다**
-> (`.pre-commit-config.yaml`). 문서만 고치는 작업에서도 걸린다.
-
-`uv` 자체는 [Astral 설치 안내](https://docs.astral.sh/uv/getting-started/installation/)를 따른다.
-
-> 🔴 **이 환경에는 `docker` 바이너리가 없다.** 컨테이너 런타임은 **podman**이고 compose는
-> `podman compose`(외부 provider `docker-compose` 경유)로 돈다.
-> 다른 문서에 나오는 `docker compose ...`는 **전부 `podman compose ...`로 읽는다.**
-
-`k8s-*.sh`는 시작할 때 `require_cli`로 위 CLI를 확인하고, 없으면 같은 `brew install` 문구를 띄우고 멈춘다.
+- `uv`는 [Astral 설치 안내](https://docs.astral.sh/uv/getting-started/installation/)를 따른다.
+- 컨테이너 런타임은 podman이다. 다른 문서의 `docker compose ...`는 `podman compose ...`로 실행한다.
 
 ## 1. 저장소 준비
 
 ```shell
-git clone <repo> && cd dagster-study
+git clone https://github.com/Melting-Face/pipeline-study.git && cd pipeline-study
 
-# 파이썬 환경 — 실제 프로젝트는 dagster/dockerfile.d/src 에 있다
-cd dagster/dockerfile.d/src
-uv sync --group dev
-cd -
+(cd dagster/dockerfile.d/src && uv sync --group dev)
 
-# 커밋 게이트
-pre-commit install --install-hooks         # pre-commit + commit-msg 훅
-pre-commit run --all-files                 # repo 루트에서 — 아래 §8 CWD 함정
+(cd dagster/dockerfile.d/src \
+  && uv run dbt deps  --project-dir dbt_pipelines \
+  && uv run dbt parse --project-dir dbt_pipelines --profiles-dir dbt_pipelines)
+
+pre-commit install --install-hooks
+pre-commit run --all-files
 ```
-
-dbt 패키지는 미커밋이라 한 번 받아야 한다.
-
-```shell
-cd dagster/dockerfile.d/src
-uv run dbt deps  --project-dir dbt_pipelines
-uv run dbt parse --project-dir dbt_pipelines --profiles-dir dbt_pipelines
-```
-
-`dbt parse`가 만드는 `target/manifest.json`은 **`@dbt_assets` 로드에 필요**하다 — 빠뜨리면
-정의 로드 단계에서 dbt 자산이 수집되지 않는다.
-
-> **lock 파일은 커밋되지 않는다** — `uv sync`는 매번 의존성을 재해석한다.
-> 루트 `uv.lock`은 실질 락이 아닌 스텁이니 설치 근거로 읽지 마라. 실제 락은
-> `dagster/dockerfile.d/src/uv.lock`이고, 파이썬 요구는 그쪽 `pyproject.toml`의 `requires-python`이 정본이다.
 
 ## 2. 환경변수 (`.env`)
 
@@ -79,22 +47,21 @@ uv run dbt parse --project-dir dbt_pipelines --profiles-dir dbt_pipelines
 cp .env.example .env
 ```
 
-[`.env.example`](../.env.example)이 키·형식의 정본이고 각 키의 의도가 주석으로 붙어 있다.
-그룹은 아홉이다(아래 표의 행 수 — 세는 대상은 *키*가 아니라 *그룹*이다).
+키와 형식은 [`.env.example`](../.env.example)의 주석을 따른다.
 
 | 그룹 | 무엇을 가리키나 |
 | --- | --- |
-| `POSTGRES_*` | Dagster **메타 스토리지**(compose `postgres`) |
+| `POSTGRES_*` | Dagster 메타 스토리지 |
 | `DAGSTER_PORT` | webserver UI 포트 |
-| `AWS_*` · `ENDPOINT_URL` | S3(SeaweedFS) 공용 자격증명·엔드포인트 |
-| `ICEBERG_CATALOG_*` | Iceberg 카탈로그 — **pyiceberg(Dagster) 경로** |
-| `ICEBERG_JDBC_*` · `ICEBERG_PG_*` · `ICEBERG_S3_*` · `ICEBERG_WAREHOUSE` | 같은 카탈로그의 **JDBC(dbt-spark) 경로** |
-| `SPARK_REMOTE` · `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` | dbt-spark ↔ Spark Connect 접속 |
-| `AWS_*_CHECKSUM_*` | SeaweedFS 호환(§8 참조) |
-| `PHYSIONET_*` | 원천 획득 — MIMIC-IV·eICU 다운로드 계정(개인 DUA 크리덴셜) |
-| `POLYGON_API_KEY` · `FRED_API_KEY` | 원천 획득 — 시장 데이터 API 키(§6-2) |
+| `AWS_*` · `ENDPOINT_URL` | S3(SeaweedFS) 자격증명·엔드포인트 |
+| `ICEBERG_CATALOG_*` | Iceberg 카탈로그 — pyiceberg(Dagster) 경로 |
+| `ICEBERG_JDBC_*` · `ICEBERG_PG_*` · `ICEBERG_S3_*` · `ICEBERG_WAREHOUSE` | 같은 카탈로그 — JDBC(dbt-spark) 경로 |
+| `SPARK_REMOTE` · `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` | dbt-spark ↔ Spark Connect |
+| `AWS_*_CHECKSUM_*` | SeaweedFS 호환 — `when_required` 유지 |
+| `PHYSIONET_*` | MIMIC-IV·eICU 다운로드 계정(§6-1) |
+| `POLYGON_API_KEY` · `FRED_API_KEY` | 시장 데이터 API 키(§6-2) |
 
-비밀값은 **§3을 돌린 뒤** 클러스터 Secret에서 꺼내 채운다(그래서 `.env` 완성은 §3 이후다).
+⏸ **PR2 뒤** — §3 이후 클러스터 Secret에서 비밀값을 꺼내 채운다.
 
 ```shell
 kubectl get secret catalog-pg-app  -o jsonpath='{.data.password}'     | base64 -d   # ICEBERG_*_PASSWORD
@@ -103,119 +70,116 @@ kubectl get secret lakehouse-creds -o jsonpath='{.data.s3-secret-key}' | base64 
 kubectl get secret spark-grpc-tls  -o jsonpath='{.data.ca\.crt}'      | base64 -d > ~/.lakehouse-ca.crt
 ```
 
-환경변수를 **새로 추가**할 때의 전파 체인(`.env.example` → `.env` → `compose.yml` → `EnvVar`)은
-[`operations.md`](operations.md) §1이 정본이다.
+환경변수를 새로 추가하는 절차는 [`operations.md`](operations.md) §1.
 
 ## 3. 로컬 Kubernetes
 
-**kind on Podman**(rootful 머신 필수) + 로컬 레지스트리 `localhost:5001`.
-클러스터는 **Terraform 스택 A**(`terraform/cluster/kind/`), ingress-nginx·ArgoCD는 **스택 B**
-(`terraform/platform/`), 오퍼레이터 이하 전부는 **ArgoCD가 `gitops/charts/`에서 수렴**시킨다.
-셸 설정 단일 출처는 [`scripts/k8s-env.sh`](../scripts/k8s-env.sh)이고, 모든 값이 `${VAR:-기본값}`이라
-환경변수로 덮을 수 있다. 설계·근거는 [`argocd-gitops.md`](argocd-gitops.md).
+podman machine·레지스트리 → **스택 A**(kind 클러스터) → **스택 B**(ingress-nginx·ArgoCD) →
+ArgoCD가 `gitops/charts/`의 오퍼레이터를 수렴시킨다. 설계는 [`argocd-gitops.md`](argocd-gitops.md).
 
-### 빈 환경에서 처음 올릴 때
+### 올리기
 
-```shell
-scripts/k8s-up.sh                         # podman 머신 · 레지스트리
-terraform -chdir=terraform/cluster/kind apply
-terraform -chdir=terraform/platform apply
-source scripts/k8s-env.sh                 # KUBECONFIG export(가드는 require_cluster_context 호출 스크립트가 건다)
-scripts/k8s-secrets.sh                    # PR2 산출물 — 아직 존재하지 않는다
-```
-
-- **`apply` 두 번은 스택이 둘이어서**다(A: 클러스터, B: ArgoCD). 한 스택 안의 CRD 선행 문제는
-  appset을 두 번째 `helm_release`로 분리해 푼다([`architectures/argocd.md`](architectures/argocd.md)).
-- 오퍼레이터(cert-manager·CNPG·Spark·Flink)는 `terraform apply`가 아니라 **`git push`로** 올라오고
-  바꾼다. 수렴 확인은 ArgoCD UI 또는 `kubectl get applications -n argocd`.
-- 위 기본값(`lakehouse`, 8080/8443)은 **교체(PR2) 뒤의 기본 경로**다. 검증 중에는 스택 A에
-  `-var cluster_name=lakehouse-next -var http_host_port=8082 -var https_host_port=8445`를 넘기고,
-  스택 B에는 `-var kubeconfig_path=~/.kube/lakehouse-next.config -var kube_context=kind-lakehouse-next
-  -var http_host_port=8082 -var target_revision=<브랜치>`를 넘긴다
-  (B는 `https_host_port`가 없다. 상세 [`argocd-gitops.md`](argocd-gitops.md) §6).
-- **`k8s-poc-storage.sh`는 과도기 스크립트다** — Barman CRD를 설치하던 주체가 사라져 그 선행 검사에서
-  멈춘다(데이터 층이 차트로 이전되는 PR2에서 철거).
-
-### 각 단계가 무엇을 만드는가
-
-**`k8s-up.sh`** — 클러스터 바깥 바닥만. podman machine(rootful) → 레지스트리 컨테이너(이미지는
-**명명 볼륨**에 남아 `k8s-down.sh`로 사라지지 않는다). kind 클러스터는 스택 A가 만든다.
-
-**스택 A** — kind 클러스터 + 노드의 containerd가 `localhost:5001`을 쓰게 하는 설정 + 레지스트리
-네트워크 연결 + 전용 kubeconfig(`~/.kube/<cluster_name>.config`).
-
-**스택 B** — ingress-nginx · ArgoCD · ApplicationSet(`var.apps` 목록의 앱마다 Application 하나).
-
-**ArgoCD** — `gitops/charts/` 하위 전부(cert-manager + 로컬 CA · CNPG · Spark·Flink 오퍼레이터와 RBAC).
-앱 사이 순서는 재시도 수렴, 앱 안 순서는 sync-wave다.
-
-**`k8s-secrets.sh`·`k8s-poc-storage.sh`** — 데이터가 앉을 자리(Secret·SeaweedFS·버킷·CNPG Cluster).
-Git에는 Secret 이름만 두고 값은 수동으로 만든다.
-
-주요 다이얼 — 전부 환경변수로 덮는다.
-
-- `MACHINE_CPUS` · `MACHINE_MEMORY_MIB` · `MACHINE_DISK_GIB` — VM 자원.
-  예산 근거는 [`resource-sizing.md`](resource-sizing.md)
-- 오퍼레이터 쪽 값(차트 좌표·버전)은 셸이 아니라 `gitops/charts/<app>/Chart.yaml`·`values.yaml`이 정본이다
-- 앱 목록과 추적 리비전은 [`terraform/platform/variables.tf`](../terraform/platform/variables.tf)의
-  `apps`·`target_revision`이 정본이다
-
-
-정리는 이렇다. **podman machine은 기본 보존**된다.
+지금 클러스터는 **`lakehouse-next`(8082/8445)** 다. 아래 `-var`는 매번 그대로 넘긴다.
 
 ```shell
-./scripts/k8s-down.sh                      # kind 클러스터 + 레지스트리 삭제
-STOP_MACHINE=true  ./scripts/k8s-down.sh   # VM 중지(데이터 보존)
-REMOVE_MACHINE=true ./scripts/k8s-down.sh  # VM 삭제(데이터 소멸)
+scripts/k8s-up.sh
+
+terraform -chdir=terraform/cluster/kind init
+terraform -chdir=terraform/cluster/kind apply \
+  -var cluster_name=lakehouse-next -var http_host_port=8082 -var https_host_port=8445
+
+terraform -chdir=terraform/platform init
+terraform -chdir=terraform/platform apply \
+  -var kubeconfig_path=~/.kube/lakehouse-next.config -var kube_context=kind-lakehouse-next \
+  -var http_host_port=8082 -var target_revision=main
+
+export CLUSTER_NAME=lakehouse-next
+source scripts/k8s-env.sh                 # KUBECONFIG=~/.kube/lakehouse-next.config
 ```
+
+- `CLUSTER_NAME`을 빼고 `source`하면 `KUBECONFIG`가 없는 파일(`~/.kube/lakehouse.config`)을 가리킨다.
+- `kubectl`에 옵션을 붙이는 대신 `KUBECONFIG`를 export한다(zsh는 `$K` 형태의 명령 변수를 쪼개지 않는다).
+- 기능 브랜치를 클러스터에서 검증할 때만 `target_revision=<브랜치>`로 바꾸고, 그 전에 브랜치를 push한다.
+- PR2 뒤에는 `-var` 없이 기본값(`lakehouse`, 8080/8443)으로 올린다.
+- ⏸ `scripts/k8s-secrets.sh`(PR2)는 아직 없고 `scripts/k8s-poc-storage.sh`는 지금 돌지 않는다.
+
+### 수렴 확인
+
+```shell
+kubectl get applications -n argocd
+terraform -chdir=terraform/platform output -raw argocd_url
+terraform -chdir=terraform/platform output -raw argocd_initial_admin_password_command
+```
+
+- **통과 기준**: Application 수 = [`terraform/platform/variables.tf`](../terraform/platform/variables.tf)의
+  `apps` 원소 수, 전부 `Synced` · `Healthy`. apply 직후엔 몇 분 걸린다.
+- `Healthy`인데 `OutOfSync`가 남으면 `argocd app diff --core <앱>`으로 필드를 확인한다
+  ([`argocd-gitops.md`](argocd-gitops.md) §5).
+- 오퍼레이터 변경은 `terraform apply`가 아니라 `gitops/charts/` 커밋 → push로 반영된다.
+
+### 내리기
+
+```shell
+terraform -chdir=terraform/platform destroy \
+  -var kubeconfig_path=~/.kube/lakehouse-next.config -var kube_context=kind-lakehouse-next \
+  -var http_host_port=8082 -var target_revision=main
+terraform -chdir=terraform/cluster/kind destroy \
+  -var cluster_name=lakehouse-next -var http_host_port=8082 -var https_host_port=8445
+
+scripts/k8s-down.sh                        # 레지스트리 컨테이너 삭제(이미지 볼륨은 보존)
+STOP_MACHINE=true   scripts/k8s-down.sh    # + VM 중지
+REMOVE_MACHINE=true scripts/k8s-down.sh    # + VM 삭제(데이터 소멸)
+```
+
+- 클러스터는 **`destroy`로 먼저** 내린다.
+  `k8s-down.sh`도 같은 이름의 kind 클러스터를 지우지만 Terraform state가 남는다.
+- tfstate는 `apply`를 실행한 디렉터리의 `terraform/*/terraform.tfstate`에 있다.
+  그 디렉터리(worktree)를 지우기 전에 옮긴다.
+
+### 다이얼
+
+- VM 자원: `MACHINE_CPUS` · `MACHINE_MEMORY_MIB` · `MACHINE_DISK_GIB` 환경변수
+  (`k8s-up.sh`가 머신을 **새로 만들 때만** 반영). 근거는 [`resource-sizing.md`](resource-sizing.md).
+- 오퍼레이터 버전·값: `gitops/charts/<app>/Chart.yaml`·`values.yaml`.
+- 앱 목록·추적 리비전: `terraform/platform/variables.tf`의 `apps`·`target_revision`.
 
 ### 3-1. 접근 경로
 
-HTTP UI와 gRPC는 **Ingress**로 나가고(`*.localtest.me:8080` — `localtest.me`는 공개 DNS가 127.0.0.1로
-응답하므로 `/etc/hosts` 수정이 필요 없다), JDBC·S3만 `port-forward`를 쓴다.
-
-| 경로 | 주소 | 조건 |
+| 경로 | 주소(기본 포트 — 지금은 8082/8445) | 상태 |
 | --- | --- | --- |
-| **ArgoCD UI** | http://argocd.localtest.me:8080 | **상시**(GitOps 컨트롤러) |
-| Flink Web UI | http://flink.localtest.me:8080 | 세션 클러스터가 떠 있을 때 |
-| Spark Web UI | http://spark.localtest.me:8080 | Spark Connect가 `--replicas=1`일 때 |
-| Spark Connect (gRPC) | `sc://spark-grpc.localtest.me:8443/;use_ssl=true` | `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` 필요 |
+| ArgoCD UI | http://argocd.localtest.me:8080 | ✅ 상시 |
+| Flink Web UI | http://flink.localtest.me:8080 | ⏸ 세션 클러스터가 떠 있을 때 |
+| Spark Web UI | http://spark.localtest.me:8080 | ⏸ Spark Connect `--replicas=1`일 때 |
+| Spark Connect (gRPC) | `sc://spark-grpc.localtest.me:8443/;use_ssl=true` | ⏸ `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` 필요 |
+
+⏸ port-forward 경로:
 
 ```shell
-kubectl port-forward svc/catalog-postgres-rw 15432:5432   # Iceberg JDBC 카탈로그(CNPG 쓰기 서비스)
+kubectl port-forward svc/catalog-postgres-rw 15432:5432   # Iceberg JDBC 카탈로그
 kubectl port-forward svc/seaweedfs           18333:8333   # S3 API
-kubectl port-forward svc/spark-connect       15002:15002  # Spark Connect 폴백 경로
+kubectl port-forward svc/spark-connect       15002:15002  # Spark Connect 폴백
 ```
 
-> 🔴 **Flink는 REST와 UI가 같은 포트다** — UI를 열면 **잡 제출 API도 함께 나간다**.
-> "UI만 열었다"로 읽지 않는다.
+- Flink UI를 열면 잡 제출 REST API도 같은 포트로 열린다.
 
-### 3-2. 컴퓨트 기동·회수
+### 3-2. 컴퓨트 기동·회수 ⏸
 
-상주 컴퓨트는 **켜둔 채 잊으면 예산을 계속 갉아먹는다.** 쓰기 직전에 올리고 **끝난 자리에서 내린다.**
-Spark Connect의 `scale` 명령은 §4에서 러너 이미지를 push하고 매니페스트를 최초 적용한 뒤부터 쓸 수 있다.
+쓰기 직전에 올리고 끝나면 바로 내린다.
 
 ```shell
-# Spark Connect (dbt·노트북용) — §4의 최초 배포 완료 후, 평시 0에서 쓸 때만 1
-kubectl scale deploy/spark-connect --replicas=1
+kubectl scale deploy/spark-connect --replicas=1          # Spark Connect(§4 최초 적용 뒤)
 kubectl scale deploy/spark-connect --replicas=0
+kubectl get pods -l spark-role=executor                  # 내린 뒤 0개여야 한다
 
-# `--master k8s://`라 executor 파드가 driver와 함께 뜨고 함께 내려간다.
-# 🔴 내린 뒤 executor가 남았다면 회수가 안 된 것이다 — 아무 신호 없이 1 CPU를 계속 점유한다.
-kubectl get pods -l spark-role=executor
-
-# Flink 세션 클러스터 — 잡이 없어도 JobManager가 상주 점유한다
-kubectl apply  -f k8s/flink/flinkdeployment-session.yaml
+kubectl apply  -f k8s/flink/flinkdeployment-session.yaml # Flink 세션 클러스터
 kubectl delete -f k8s/flink/flinkdeployment-session.yaml
 ```
 
-Spark·Flink **동시 기동은 허용**되며, 지켜야 할 경계는 `spark.executor.instances` ≤ 1이다.
-근거·실측은 [`conventions/k8s.md`](conventions/k8s.md) §9-3.
+- Spark·Flink 동시 기동은 허용, `spark.executor.instances` ≤ 1을 지킨다([`conventions/k8s.md`](conventions/k8s.md) §9-3).
 
-## 4. 러너 이미지와 Spark Connect 리소스 (최초 1회 / 이미지·매니페스트 변경 시)
+## 4. 러너 이미지와 Spark Connect
 
-Spark·Flink 워크로드는 Iceberg·S3A 의존을 구운 **전용 이미지**로 돈다.
-로컬 레지스트리에 직접 push하면 클러스터가 같은 이름으로 받는다(`kind load` 불필요).
+이미지 build·push는 지금도 된다(최초 1회 / 이미지 변경 시).
 
 ```shell
 podman build -f k8s/spark/Dockerfile.spark-runner -t localhost:5001/spark-runner:0.5.0 k8s/spark
@@ -223,56 +187,35 @@ podman push --tls-verify=false localhost:5001/spark-runner:0.5.0
 
 podman build -f k8s/flink/Dockerfile.flink-runner -t localhost:5001/flink-runner:0.3.0 k8s/flink
 podman push --tls-verify=false localhost:5001/flink-runner:0.3.0
-
-# Dagster는 새 클러스터에 배포하지 않는다(§5) — 호스트 실행용 이미지는 compose가 빌드한다.
-
-# 최초 1회: Spark Connect Deployment·Service·Ingress·Certificate 생성
-# (이 파일은 온디맨드 컴퓨트라 Terraform 스택 밖이다 — 그래서 kubectl apply 가 맞다)
-kubectl apply -f k8s/spark/spark-connect-server.yaml
-kubectl scale deploy/spark-connect --replicas=0  # 평시 자원 회수
 ```
 
-`spark-connect-server.yaml`을 바꾼 뒤에도 같은 `kubectl apply`로 선언을 갱신한다. 최초 적용 직후
-`Deployment`가 존재해야 이후 §3-2와 §7의 `kubectl scale` 명령이 동작한다.
-
-> 🔴 **태그와 매니페스트는 한 벌로 올린다.** 태그만 올리고 `k8s/spark/*.yaml`·`k8s/flink/*.yaml`을
-> 그대로 두면 구 이미지가 계속 돈다. **현재 태그의 사실은 매니페스트의 `image:` 값**이다 —
-> 위 명령의 태그가 의심스러우면 문서가 아니라 매니페스트를 본다.
->
-> ```shell
-> grep -rn "image:" k8s/spark/*.yaml k8s/flink/*.yaml
-> ```
-
-## 5. Dagster (호스트 실행 — 새 클러스터에는 배포하지 않는다)
-
-**in-cluster Dagster는 철거됐다**(`k8s/dagster/`·`scripts/k8s-dagster.sh` 삭제 — Airflow 전환 예정이라
-실행 경로 없는 파일을 남기지 않는다. [`argocd-gitops.md`](argocd-gitops.md) D6). 이미지·코드
-(`dagster/dockerfile.d`)는 호스트 Dagster용으로 남는다. 새 클러스터의 SeaweedFS·카탈로그에 붙는지는
-스토리지 층이 ArgoCD로 옮겨오는 단계(PR2)에서 확인한다.
-
-### 호스트 `dg dev`
-
-**메타 DB는 새 클러스터에 없다** — 구 `lakehouse` 클러스터의 CNPG `dagster` DB 선언은 철거됐고
-(롤만 남음) 위치는 PR2가 정한다. 아래 port-forward는 **구 클러스터**를 향한다(현행 사실의 단일 서술은
-[operations.md](operations.md) §1-2).
+⏸ Spark Connect 리소스 생성(최초 1회 / 매니페스트 변경 시):
 
 ```shell
-kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 구 클러스터: 메타 DB(dagster) + 카탈로그(iceberg)
-kubectl port-forward svc/seaweedfs           18333:8333   # S3 (compute log·Iceberg)
-
-cd dagster/dockerfile.d/src
-export DAGSTER_HOME="$PWD"                 # dagster.yaml이 있는 디렉터리
-uv run dg dev                              # http://localhost:3000
+kubectl apply -f k8s/spark/spark-connect-server.yaml
+kubectl scale deploy/spark-connect --replicas=0
 ```
 
-⚠️ **메타 DB를 한 곳으로 고정한다.** `.env`의 `POSTGRES_PORT`가 15432면 port-forward한 CNPG를,
-5432면 compose `postgres`를 본다 — 둘 다 이름이 `dagster`라 **접속은 성공하고 run 이력만 두 벌로 갈린다.**
-같은 이유로 compose `--profile host-dagster`(compose `postgres` 사용)와 호스트 `dg dev`를 섞어 쓰지 않는다
-([conventions/monitoring.md](conventions/monitoring.md) §3-④).
+- 태그를 올릴 때는 `k8s/spark/*.yaml`·`k8s/flink/*.yaml`의 `image:`도 함께 바꾼다.
+  현재 태그 확인: `grep -rn "image:" k8s/spark/*.yaml k8s/flink/*.yaml`.
 
-`compose.yml`은 이제 **기본 `up`으로 아무것도 띄우지 않는다**(전부 `profiles` opt-in):
-`host-dagster`=webserver·daemon·postgres · `legacy-meta`=postgres만 ·
-`legacy-sql`=trino · `legacy-storage`=seaweedfs · `monitoring`=prometheus.
+## 5. Dagster (호스트 실행) ⏸
+
+Dagster는 클러스터에 배포하지 않고 호스트에서 돌린다. 메타 DB 위치는 PR2가 정한다
+([operations.md](operations.md) §1-2).
+
+```shell
+kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 별도 터미널
+kubectl port-forward svc/seaweedfs           18333:8333   # 별도 터미널
+
+(cd dagster/dockerfile.d/src && DAGSTER_HOME="$PWD" uv run dg dev)   # http://localhost:3000
+```
+
+- `.env`의 `POSTGRES_PORT`로 메타 DB를 하나만 고른다 — 15432=port-forward, 5432=compose `postgres`.
+  compose `--profile host-dagster`와 호스트 `dg dev`를 섞지 않는다.
+- compose는 기본 `up`으로 아무것도 띄우지 않는다. 필요한 profile만 켠다:
+  `host-dagster`(webserver·daemon·postgres) · `legacy-meta`(postgres) · `legacy-sql`(trino) ·
+  `legacy-storage`(seaweedfs) · `monitoring`(prometheus).
 
 ```shell
 podman compose --profile legacy-sql up -d trino    # Trino 값 대조가 필요할 때만
@@ -280,169 +223,106 @@ podman compose --profile legacy-sql up -d trino    # Trino 값 대조가 필요�
 
 ## 6. 검증
 
-기동 자체가 검증은 아니다. 아래는 **접속 없이 도는 것**과 **실인프라를 타는 것**으로 갈린다.
-
 ```shell
-# 인프라 미접속 — 언제든 돌린다
-pre-commit run --all-files                                                    # repo 루트
-uv run --project dagster/dockerfile.d/src --with mypy mypy dagster/dockerfile.d/src/src   # repo 루트
-cd dagster/dockerfile.d/src && uv run dg check defs                           # 정의 로드 + 자산 수집
+# 인프라 미접속 ✅
+pre-commit run --all-files
+uv run --project dagster/dockerfile.d/src --with types-PyYAML --with types-requests \
+  --with mypy mypy dagster/dockerfile.d/src/src
 
-# 실인프라 접속 — 수동 관문
-uv run scripts/spark_connect_smoke.py       # dbt-spark ↔ Spark Connect 어댑터
-uv run scripts/iceberg_changelog_probe.py   # Iceberg changelog 판독
+# 정의 로드 — ⚠️ 지금은 의존성 해석 결함(pyarrow ↔ numpy<2)으로 import 단계에서 실패한다
+(cd dagster/dockerfile.d/src && DAGSTER_HOME="$(mktemp -d)" uv run dg check defs)
 
-# 외부(physionet.org) 접속 — 원천 획득을 처음 켜기 직전
-uv run scripts/physionet_access_probe.py    # 인증 방식·무결성 정본 판정
+# 실인프라 ⏸
+uv run scripts/spark_connect_smoke.py       # 종료코드 0=통과 / 1=회귀 / 2=판정 불가(통과 아님)
+uv run scripts/iceberg_changelog_probe.py
 
-# 외부(시장 데이터 API) 접속 — 시세·뉴스·경제지표 자산을 처음 켜기 직전
-uv run scripts/stock_source_access_probe.py --source all   # 키 유효성·응답 계약 판정
+# 외부 접속 — 해당 원천을 처음 켜기 직전
+uv run scripts/physionet_access_probe.py
+uv run scripts/stock_source_access_probe.py --source all
 ```
 
-> 🔴 **`spark_connect_smoke.py`의 종료코드는 셋이다** — `0`=통과 / `1`=회귀 /
-> **`2`=사전조건 미충족(판정 불가)**. `2`를 통과로 읽지 않는다. 이 관문은
-> `dbt-spark`·`pyspark` 상한을 올리기 **직전에** 통과시킨다.
+관문별 실행 규약은 [`test/manual-gates.md`](test/manual-gates.md), 테스트 계층은 [`test.md`](test.md).
 
-테스트 계층·우선순위는 [`test.md`](test.md)가, **각 관문의 실행 규약과 무엇을 보증하지
-*않는지*는 [`test/manual-gates.md`](test/manual-gates.md)** 가 정본이다.
+## 6-1. 원천 데이터 가져오기 ⏸
 
-## 6-1. 원천 데이터 가져오기
+전제: `s3://warehouse` 버킷이 있다(스토리지 프로비저닝이 만든다). 존재는 `list_buckets`가 아니라
+`head_bucket`으로 확인한다.
 
-파이프라인이 읽을 `csv.gz`가 `s3://warehouse/raw/`에 있어야 한다. **정본은 Dagster 수집 자산**이다.
+1. `.env`에 `PHYSIONET_USERNAME`/`PHYSIONET_PASSWORD`를 채운다(PhysioNet credentialed 계정 필요).
+2. in-cluster로 쓰려면 Secret `physionet-creds`를 만든다(PR2 `k8s-secrets.sh`).
+3. `uv run scripts/physionet_access_probe.py` — 종료코드 `0`이어야 진행한다.
+4. Dagster UI에서 `raw_*` 자산을 머티리얼라이즈한다.
+   `raw_mimiciv_chartevents`·`raw_mimiciv_labevents`는 동시에 돌리지 않는다.
+5. 이어서 적재 자산(`chartevents` 등)을 돌린다.
 
-⚠️ **전제: `warehouse` 버킷이 이미 있어야 한다.** 수집 자산은 버킷을 만들지 않고 `NoSuchBucket`으로
-멈춘다 — 오타 난 버킷을 자동 생성하면 *"적재는 성공했는데 아무도 못 찾는"* 상태가 되기 때문이다.
-버킷은 스토리지 프로비저닝(§3, `k8s-poc-storage.sh`)이 만든다.
-⚠️ **`list_buckets`가 빈 목록이어도 「버킷 없음」이 아니다** — SeaweedFS는 권한에 따라 목록을
-비워 주면서 그 버킷에 대한 읽기·쓰기는 허용한다(실측). 존재 판정은 `head_bucket` 또는 실제 왕복으로 한다.
-
-1. `.env`에 `PHYSIONET_USERNAME`/`PHYSIONET_PASSWORD`를 채운다(PhysioNet credentialed access —
-   CITI 교육 이수 + DUA 서명이 선행 조건이다. 계정이 없으면 이 단계는 통과할 수 없다).
-2. in-cluster로 쓰려면 `scripts/k8s-poc-storage.sh`를 다시 돌려 Secret `physionet-creds`를 만든다
-   (값이 없으면 만들지 않고 넘어간다 — 수집 자산만 실패하고 나머지는 계속 돈다).
-3. `uv run scripts/physionet_access_probe.py`로 접근을 판정한다(§6, 종료코드 `0`이어야 진행).
-4. Dagster UI에서 `raw_*` 자산을 머티리얼라이즈한다. 작은 것부터 확인하고
-   **`raw_mimiciv_chartevents`·`raw_mimiciv_labevents`(각 ≈3.3GB)는 동시에 돌리지 않는다.**
-5. 이어서 적재 자산(`chartevents` 등)을 돌린다. `deps`가 걸려 있어 그래프에서 순서가 보인다.
-
-재실행해도 **이미 받았고 해시가 맞으면 내려받지 않는다**(사이드카 대조). 다시 받아야 하면
-자산 config `force: true`를 쓴다 — 운영 레버는 [`operations.md`](operations.md) §1-1-2.
-
-> 접근이 막혔을 때의 폴백은 로컬 파일 미러다(이미 받아둔 파일이 있을 때도 이쪽이 빠르다).
-> `uv run scripts/upload_raw_to_seaweedfs.py -n ./data/raw`로 먼저 목록을 확인한 뒤 `-n`을 뺀다.
-> 로컬 구조가 곧 S3 구조이므로 `./data/raw/mimiciv/icu/...` 형태로 둔다.
+- 다시 받아야 하면 자산 config `force: true`([`operations.md`](operations.md) §1-1-2).
+- 이미 받아둔 파일이 있으면 `./data/raw/mimiciv/icu/...` 구조로 두고
+  `uv run scripts/upload_raw_to_seaweedfs.py -n ./data/raw`로 확인한 뒤 `-n`을 빼고 올린다.
 
 ## 6-2. 시장 데이터 원천 (API 키 발급)
 
-주식예측 파이프라인(`defs/polygon_market`·`defs/fred_calendar`)은 두 곳에서 키를 받아야 돈다.
-둘 다 무료 플랜이 있고 카드 등록을 요구하지 않으며, 발급은 심사 없이 즉시다.
+| 사이트 | `.env` 키 |
+| --- | --- |
+| Polygon.io — Dashboard → API Keys | `POLYGON_API_KEY` |
+| FRED — `fredaccount.stlouisfed.org/apikeys` | `FRED_API_KEY` |
 
-| 사이트 | `.env` 키 | 무엇에 쓰나 |
-| --- | --- | --- |
-| Polygon.io — Dashboard → API Keys | `POLYGON_API_KEY` | 일별 시세·뉴스 |
-| FRED — `fredaccount.stlouisfed.org/apikeys` | `FRED_API_KEY` | 경제지표 관측치·릴리스 일정 |
+키를 채운 뒤 `uv run scripts/stock_source_access_probe.py --source all` — 종료코드 `0`이어야 자산을 켠다.
+발급 절차는 [`setup/market-data-keys.md`](setup/market-data-keys.md).
 
-값을 `.env`에 채운 뒤 `uv run scripts/stock_source_access_probe.py --source all`로 판정한다(§6).
-**종료코드 `0`이어야 자산을 켠다.** 키가 없어도 정의 로드는 성공하고 해당 자산 실행에서만
-실패하므로 다른 데이터셋은 계속 돈다.
-
-발급 절차·무료 플랜의 한계·재배포 제한·뉴스 축 폴백은
-[`setup/market-data-keys.md`](setup/market-data-keys.md)가 정본이다.
-
-## 7. 노트북 (옵션)
-
-Dagster와 **같은 venv**를 쓰므로 커널 하나로 Spark Connect·pyiceberg에 붙고
-`dagster_project.common.*`를 그대로 import할 수 있다.
+## 7. 노트북 (옵션) ⏸
 
 ```shell
-kubectl scale deploy/spark-connect --replicas=1      # 평시 0이라 먼저 올린다 (§3-2)
+kubectl scale deploy/spark-connect --replicas=1
 kubectl port-forward svc/spark-connect 15002:15002   # 별도 터미널
 
-cd dagster/dockerfile.d/src
-uv run --group notebook jupyter lab --port 8889 --notebook-dir ../../../notebooks
+(cd dagster/dockerfile.d/src \
+  && uv run --group notebook jupyter lab --port 8889 --notebook-dir ../../../notebooks)
 ```
 
-**8889를 쓰는 이유**: 8888은 compose SeaweedFS filer UI가 점유한다.
-작성 규칙은 [`notebooks/README.md`](../notebooks/README.md)와 [`conventions/analysis.md`](conventions/analysis.md).
+작성 규칙은 [`notebooks/README.md`](../notebooks/README.md).
 
 ---
 
-## 8. 함정 (전부 실측으로 확인된 것)
+## 8. 문제 해결
 
-### CWD가 결정적인 명령
+### 실행 위치
 
-도구마다 설정 탐색 방식이 달라 **어느 디렉터리에서 실행하느냐가 결과를 바꾼다.**
+| 명령 | 실행 위치 |
+| --- | --- |
+| `mypy` · `sqlfluff` · `pre-commit` | repo 루트 |
+| `dg` · `dbt` · `pytest` | `dagster/dockerfile.d/src` |
 
-| 명령 | 실행 위치 | 이유 |
+### 증상별 조치
+
+| 증상 | 조치 | 상세 |
 | --- | --- | --- |
-| `mypy` | **repo 루트** | mypy는 상위 디렉터리를 탐색하지 않는다 |
-| `sqlfluff` · `pre-commit` | **repo 루트** | `library_path`가 **CWD 기준 상대경로**다 |
-| `dg` · `dbt` · `pytest` | `dagster/dockerfile.d/src` | 프로젝트 루트 |
-
-### 정상인데 고장처럼 보이는 것
-
-- **15002 포트포워드 실패** — Spark Connect는 평시 `--replicas=0`이다. 고장이 아니라 **회수된 상태**다.
-  §3-2로 먼저 1로 올린다.
-- **15432 포트포워드가 접속 종료마다 죽는다** — Postgres 경로가 FIN이 아닌 **RST**로 끊고 kubectl이
-  이를 터널 전체의 치명 오류로 취급한다. 같은 조건에서 15002·18333은 생존한다.
-  🔴 **이것을 "호스트 메모리 압박"의 근거로 삼지 마라** — 그 지표는 무효다. 자동 재기동하되 시각을 남긴다.
-
-  ```shell
-  until kubectl port-forward svc/catalog-postgres-rw 15432:5432; do
-      echo "$(date '+%F %T') 15432 재기동" >> /tmp/pf-15432.log
-      sleep 1
-  done
-  ```
-
-### 조용히 틀리는 것
-
-- **`DAGSTER_HOME` 미지정** → 임시 sqlite 인스턴스가 쓰여 **런이 UI에 남지 않는다**. 실패하지 않고 조용하다.
-- **`AWS_REQUEST_CHECKSUM_CALCULATION=when_required` 누락** → 최신 AWS SDK가 본문을 aws-chunked로 감싸는데
-  SeaweedFS가 못 푼다. 업로드는 성공한 것처럼 보이고 **객체가 손상된다.**
-  적용 대상 전수와 SDK 버전 경계는 [conventions/k8s/checksum.md](conventions/k8s/checksum.md).
-- **`ICEBERG_S3_*` 엔드포인트와 키가 어긋남** → 카탈로그 **나열은 되고** `load_table`에서 `ACCESS_DENIED`.
-  부분 성공이라 원인을 오해하기 쉽다. 엔드포인트와 자격증명은 **한 쌍으로 바꾼다.**
-- **dbt 타깃에 `trino`라는 이름은 없다** — Trino는 `dev`/`prod`이고, 기본값은 `spark_connect`다
-  (`target: "{{ env_var('DBT_TARGET', 'spark_connect') }}"`).
-- **`ICEBERG_CATALOG_*`를 비워두면 `POSTGRES_*`로 폴백한다** — in-cluster에서 앞은 메타 DB(`dagster`),
-  뒤는 카탈로그(`iceberg`)로 **처음으로 갈린다**. 빠뜨리면 `dagster` 계정으로 `iceberg` DB에 붙어
-  **접속은 성공하고 테이블 접근에서 거부**된다. 위 `ICEBERG_S3_*` 함정과 같은 형태의 부분 성공이다.
-- **`.dockerignore` 패턴은 빌드 컨텍스트 루트 기준이다** — 코드는 `src/` 아래에 있으므로
-  접두어 없는 패턴은 **아무것도 매칭하지 않는다**. 에러가 없어 조용하다.
-  실제로 `src/.venv`가 통째로 이미지에 들어간 적이 있다. 고친 뒤에는 **이미지 크기로 확인**한다.
-- **SeaweedFS는 버킷(collection)마다 볼륨 슬롯을 쓴다** — `-volume.max`가 차면 **새 버킷에만**
-  `PutObject`가 `InternalError`로 실패한다. 기존 버킷은 멀쩡해서 자격증명·체크섬 문제로 오진하기 쉽다.
-  판정은 `weed shell`의 `volume.list` 첫 줄(`free:0`)과 서버 로그의
-  `No writable volumes and no free volumes left`다. **디스크 여유와는 다른 축**이다.
-
-### podman machine
-
-- **rootful이 아니면 `k8s-up.sh`가 멈춘다** — `podman machine set --rootful`로 바꾼다.
-- **머신이 이미 있으면 `MACHINE_CPUS`·`MACHINE_MEMORY_MIB`가 반영되지 않는다**(재사용 경로).
-  자원을 바꾸려면 머신을 다시 만들어야 한다.
-- **kind 노드의 공개 포트는 클러스터 생성 시점에만 정할 수 있다** — 스택 A(`terraform/cluster/kind`)의
-  `http_host_port`·`https_host_port`를 빠뜨리면 **재생성이 유일한 해법**이다.
+| `k8s-up.sh`가 rootful 오류로 멈춤 | `podman machine set --rootful` 후 재시작 | [`architectures/k8s.md`](architectures/k8s.md) |
+| `MACHINE_*`를 바꿔도 VM 자원이 그대로 | 머신을 중지하고 `podman machine set --cpus/--memory` | [`resource-sizing.md`](resource-sizing.md) |
+| 호스트 포트를 바꿔야 함 | 스택 A destroy → 새 `-var`로 apply(생성 시점에만 정해진다) | [`argocd-gitops.md`](argocd-gitops.md) §6 |
+| 15002 port-forward 실패 | Spark Connect를 `--replicas=1`로 올린다(평시 0) | §3-2 |
+| 15432 port-forward가 접속마다 끊김 | 재기동 루프로 감싼다 | [`resource-sizing.md`](resource-sizing.md) §호스트 압박 판정 지표 |
+| `dg dev` 런이 UI에 안 남음 | `DAGSTER_HOME`을 `dagster/dockerfile.d/src`로 지정 | [`operations.md`](operations.md) |
+| S3 업로드는 성공, 객체 손상 | `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` | [`conventions/k8s/checksum.md`](conventions/k8s/checksum.md) |
+| 카탈로그 나열은 되고 `load_table`이 `ACCESS_DENIED` | `ICEBERG_S3_*` 엔드포인트와 키를 한 쌍으로 맞춘다 | [`operations.md`](operations.md) |
+| `iceberg` DB 테이블 접근 거부 | `ICEBERG_CATALOG_*`를 채운다(비우면 `POSTGRES_*`로 폴백) | [`operations.md`](operations.md) |
+| 새 버킷에만 `PutObject` `InternalError` | SeaweedFS 볼륨 슬롯 부족 — `-volume.max` 상향 | [`resource-sizing.md`](resource-sizing.md) |
+| 이미지에 `.venv`가 들어감 | `.dockerignore` 패턴에 `src/` 접두어 | [`conventions/dagster.md`](conventions/dagster.md) |
 
 ### dbt 타깃별 전제
 
-**`spark_connect`** *(기본)* — Spark Connect `--replicas=1`에 더해 TLS Ingress나 15002 포트포워드가 필요하다.
-**`spark.remote` 외의 conf를 넣지 마라** — 리모트 세션에서 static conf가 조용히 무시된다.
-
-**`spark_session`** — 호스트 로컬 SparkSession으로 돈다. 15432·18333 포트포워드가 필요하고,
-다음 다섯이 **기본값 없이** 있어야 한다.
-`ICEBERG_JDBC_URI` · `ICEBERG_PG_USER` · `ICEBERG_PG_PASSWORD` · `ICEBERG_WAREHOUSE` · `ICEBERG_S3_ENDPOINT`
-
-**`dev` · `prod`** — Trino. `podman compose --profile legacy-sql up -d trino`가 선행이다.
-
-**`spark_thrift`** — 선언만 있고 배포되지 않는다. 쓰려면 `dbt-spark[PyHive]` 선설치가 필요하다.
+| 타깃 | 전제 |
+| --- | --- |
+| `spark_connect`(기본) | Spark Connect `--replicas=1` + TLS Ingress 또는 15002 port-forward. `spark.remote` 외 conf를 넣지 않는다 |
+| `spark_session` | 15432·18333 port-forward + `ICEBERG_JDBC_URI`·`ICEBERG_PG_USER`·`ICEBERG_PG_PASSWORD`·`ICEBERG_WAREHOUSE`·`ICEBERG_S3_ENDPOINT` |
+| `dev` · `prod` | Trino — `podman compose --profile legacy-sql up -d trino` |
+| `spark_thrift` | 배포 안 됨. `dbt-spark[PyHive]` 선설치 필요 |
 
 ---
 
 ## 참고
 
-- 절차의 전제가 되는 **아키텍처**: [`architectures/overview.md`](architectures/overview.md)
-- **환경변수 전파 체인·운영 정책**: [`operations.md`](operations.md)
-- **K8s 규약**(워크로드·probe·Ingress·러너 이미지): [`conventions/k8s.md`](conventions/k8s.md)
-- **Docker/Compose 규약**(앵커·profiles·healthcheck): [`conventions/docker.md`](conventions/docker.md)
-- **커밋 게이트·pre-commit**: [`conventions/general.md`](conventions/general.md)
-- **테스트 계층**: [`test.md`](test.md) / **수동 관문 실행 규약**: [`test/manual-gates.md`](test/manual-gates.md)
+- 아키텍처: [`architectures/overview.md`](architectures/overview.md)
+- 환경변수 전파·운영 정책: [`operations.md`](operations.md)
+- K8s 규약: [`conventions/k8s.md`](conventions/k8s.md) / Docker·Compose 규약: [`conventions/docker.md`](conventions/docker.md)
+- 커밋 게이트: [`conventions/general.md`](conventions/general.md)
+- 테스트: [`test.md`](test.md) / 수동 관문: [`test/manual-gates.md`](test/manual-gates.md)
