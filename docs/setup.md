@@ -80,6 +80,7 @@ ArgoCD가 `gitops/charts/`의 오퍼레이터를 수렴시킨다. 설계는 [`ar
 ### 올리기
 
 지금 클러스터는 **`lakehouse-next`(8082/8445)** 다. 아래 `-var`는 매번 그대로 넘긴다.
+Terraform 명령은 저장소 **루트**에서 실행한다(아래 §내리기 참고).
 
 ```shell
 scripts/k8s-up.sh
@@ -133,8 +134,10 @@ REMOVE_MACHINE=true scripts/k8s-down.sh    # + VM 삭제(데이터 소멸)
 
 - 클러스터는 **`destroy`로 먼저** 내린다.
   `k8s-down.sh`도 같은 이름의 kind 클러스터를 지우지만 Terraform state가 남는다.
-- tfstate는 `apply`를 실행한 디렉터리의 `terraform/*/terraform.tfstate`에 있다.
-  그 디렉터리(worktree)를 지우기 전에 옮긴다.
+- tfstate는 `apply`를 실행한 디렉터리의 `terraform/*/terraform.tfstate`에 생긴다.
+  그래서 Terraform은 **저장소 루트에서만** 실행한다([`conventions/terraform.md`](conventions/terraform.md) §4).
+- worktree에서 apply했다면 그 worktree를 지우기 전에 state를 루트로 옮기고,
+  **apply 때와 같은 `-var`로** `plan`해 `No changes.`를 확인한다. `-var`를 빼면 기본값과 비교돼 교체가 나온다.
 
 ### 다이얼
 

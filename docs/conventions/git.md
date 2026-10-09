@@ -135,6 +135,8 @@ PR 머지 직후 **층을 갈라서** 본다 — 한꺼번에 보면 ①만 켜�
   - **Bash 쓰기는 보지 않는다(선언된 공백).** 문자열 휴리스틱이 `2>/dev/null` 같은 리다이렉트
     조회까지 막는 오탐과 fix 연쇄를 낳아 철거했다. 테스트 셀
     `test_bash_write_in_main_tree_is_not_guarded`가 이 결정을 고정한다.
+  - **Terraform은 이 공백을 의도적으로 쓴다** — `terraform`은 루트에서만 실행해 state가 루트에
+    생기게 한다. worktree에 생긴 state는 그 worktree를 지울 때 함께 사라진다([terraform.md](terraform.md) §4).
   - **`ask`가 아니라 `deny`인 이유**: auto 모드 분류기가 **파일 도구의 `ask`를 경로 민감도와
     무관하게 흡수**한다.
   - **예외는 고정 1종뿐이다** — `.claude/settings.local.json`(worktree에서 루트로 향하는 링크).
