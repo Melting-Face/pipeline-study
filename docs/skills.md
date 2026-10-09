@@ -125,6 +125,8 @@
 | `documentation-writer` | 범용 문서 구조 | 매체·공개 판정은 [publishing.md](conventions/publishing.md)가 우선한다 |
 
 **워커별로 어떤 스킬을 쓰는지**는 각 워커 지시문 `.claude/agents/<worker>.md` §참고 스킬이 정본이다.
+채점의 「스택 일치」 축은 **저장소에 실재하는 스택**(Dagster·dbt·Spark·ArgoCD)으로 매긴다.
+**재채점 트리거는 저장소에 Airflow DAG 코드가 생길 때**다. 그때 Airflow 계열 스킬을 다시 채점한다.
 
 ## lock과 표 대조
 
