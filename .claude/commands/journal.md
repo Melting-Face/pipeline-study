@@ -1,7 +1,7 @@
 ---
 description: 현재 세션을 기록관 저널(Obsidian 볼트)에 기록·갱신한다
 argument-hint: [mission-slug] (생략 시 현재 작업에서 유추)
-allowed-tools: Read, Write, Edit, Glob, Bash(date:*), Bash(ls:*), Bash(mkdir:*), Bash(scripts/journal_guard.py:*)
+allowed-tools: Read, Write, Edit, Bash(date:*), Bash(ls:*), Bash(mkdir:*), Bash(scripts/journal_guard.py:*)
 ---
 
 현재 세션의 작업을 **기록관 저널**에 기록·갱신한다. 규약 정본은 @docs/conventions/agents.md 다.

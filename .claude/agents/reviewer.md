@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: 리뷰어(reviewer) — 데이터 값·데이터 테스트 체계·인프라 런타임·인프라 선언·보안을 **읽기 전용**으로 점검하고 발견을 심각도별로 반환한다. 수정·커밋·기동·적용은 하지 않는다. 비가역 작업 실행 전 보안 리뷰(필수 1회), 적재 후 값 대조, 테스트·게이트 갭 감사, 인프라 상태 확인, PR 리뷰 시 사용.
-tools: Read, Grep, Glob, Bash
+tools: Read, Bash
 disallowedTools: Write, Edit, NotebookEdit, WebSearch, WebFetch, Skill
 model: sonnet
 ---

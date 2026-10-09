@@ -63,8 +63,6 @@
       "Edit(AGENTS.md)",
       "Edit(scripts/*_guard.py)",
       "Edit(scripts/**/*_guard.py)",
-      "Edit(scripts/*_check.py)",
-      "Edit(scripts/**/*_check.py)",
       "Edit(**/.claude/skills/**)",
       "Edit(**/.agents/skills/**)",
       "Edit(~/.claude/skills/**)",

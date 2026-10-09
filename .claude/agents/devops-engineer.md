@@ -1,7 +1,7 @@
 ---
 name: devops-engineer
 description: 데브옵스 엔지니어(devops-engineer) — compose·Dockerfile·k8s manifest·Terraform HCL을 **구현·수정**하는 워커. 로컬 compose 기동·재시작으로 자기 변경을 검증한다. `kubectl apply`·`terraform apply`·볼륨 삭제·커밋은 하지 않는다(계획만 반환). 서비스 추가, 리소스 한도 조정, manifest·IaC 작성 시 사용.
-tools: Read, Write, Edit, Bash, Grep, Glob, Skill
+tools: Read, Write, Edit, Bash, Skill
 disallowedTools: NotebookEdit, WebSearch, WebFetch
 model: inherit
 ---

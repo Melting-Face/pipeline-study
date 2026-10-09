@@ -1,7 +1,7 @@
 ---
 name: data-engineer
 description: 데이터 엔지니어(data-engineer) — Dagster 에셋·dbt 모델·S3→Iceberg 적재 경로를 **구현·수정**하는 워커. 프로젝트 컨벤션(함수+데코레이터·명시적 에셋·2경로 적재)을 집행한다. 커밋·푸시·인프라 apply는 하지 않는다. 새 데이터셋/테이블 적재, dbt 모델 추가·리팩터, 적재 헬퍼 수정 시 사용.
-tools: Read, Write, Edit, Bash, Grep, Glob, Skill
+tools: Read, Write, Edit, Bash, Skill
 disallowedTools: NotebookEdit, WebSearch, WebFetch
 model: inherit
 skills:
