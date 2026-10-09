@@ -252,7 +252,7 @@ scripts/k8s-secrets.sh                    # ② 이후. 순서 강제 아님 —
 
 | PR | 범위 | 완료 조건 |
 | --- | --- | --- |
-| 설계 | 이 문서 + PR1 구현 계획(`docs/plans/argocd-gitops-pr1.md`) | 승인·머지됨 |
+| 설계 | 이 문서 + PR1 구현 계획(PR1 머지와 함께 삭제) | 승인·머지됨 |
 | PR1 | 스택 A·B, appset, ① 오퍼레이터 차트 4종, CI(helm 스텝·재귀 탐색), `k8s-env.sh` 가드, 철거 대상(§3), 문서 갱신 | 정적 게이트 + 관문 ①②③. 머지 시 계획 문서 삭제 |
 | PR2 | ② `seaweedfs`·`catalog-postgres` 차트, `k8s-secrets.sh`, `k8s-poc-storage.sh` 철거, 클러스터 교체 | 관문 ⓪①④ |
 | PR3 | ③ Airflow — Airflow 이행 미션과 합류 | 별도 설계 |
