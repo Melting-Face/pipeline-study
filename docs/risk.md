@@ -163,7 +163,7 @@
 > 감지 지연이 기록에서 사라진다.
 
 **이 공백을 메우는 방향은 하나뿐이다 — 검사를 실행 경로 *안에* 넣는 것.**
-현행 게이트 3층은 pre-commit·CI·정의 로드까지이고 **셋 다 파일과 선언만 읽는다**
+현행 게이트는 pre-commit·CI(린트·타입) 2층이고 **둘 다 파일과 선언만 읽는다**(정의 로드는 CI에서 뺐다)
 — [`test/manual-gates.md`](test/manual-gates.md)의 관문들이 상시 게이트가 아닌 이유와 같은 축이다.
 그래서 값을 보는 층은 **실행하는 쪽**에만 생길 수 있고, 그것이
 [`conventions/data-quality.md`](conventions/data-quality.md) §5 ⓒ가 선언한 미배선 축이다.
