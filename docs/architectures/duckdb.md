@@ -34,8 +34,9 @@ SQLite가 OLTP에서 차지하는 자리를 OLAP에서 차지하는 설계다.
 이 문서의 판단에 들어가지 않는다 — 저장소가 재현을 보증하는 범위 밖이다.
 
 `duckdb` 스킬의 강등 근거(보안 검토·채점)는 스킬 문서를 단순화하면서 본문에서 빠졌다.
-근거는 git 이력에 남아 있다. 재검토할 때는 삭제 전 경로 `docs/skills/scoring.md` §analyst와
-`docs/skills/sourcing.md` §C등급 5종 판정을 `git log --all -- <경로>`로 찾아 출발점으로 삼는다.
+근거는 git 이력에 남아 있다. 재검토할 때는 삭제 전 경로
+`docs/skills/scoring.md` §reviewer(★2 강등)·§analyst(죽은 참조 제거)와
+`docs/skills/sourcing.md` §C등급 5종 판정(D-1·D-2)을 `git log --all -- <경로>`로 찾아 출발점으로 삼는다.
 
 ### 왜 매력적인가
 

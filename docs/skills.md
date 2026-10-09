@@ -107,7 +107,7 @@
 | 스킬 | 스킬이 하라는 것 | 이 저장소에서는 |
 | --- | --- | --- |
 | obra/superpowers 전반 | 설계 문서 커밋, `docs/superpowers/` 산출 | 커밋은 **사용자 요청 시에만**([git.md](conventions/git.md)), 문서 위치는 저장소 정본을 따른다 |
-| obra/superpowers 전반 | `scripts/` 실행(브라우저 동반 서버 등) | **마크다운 절차만 참조하고 `scripts/`는 실행하지 않는다**([governance.md](skills/governance.md) §C등급 단서) |
+| obra/superpowers 전반 | `scripts/` 실행(브라우저 동반 서버 등) | **`scripts/`는 실행하지 않는다.** C등급에 실행 파일이 있으면 원칙상 도입 금지이고, 마크다운만 참조하는 예외(분리안)는 `brainstorming`뿐이다([governance.md](skills/governance.md) §C등급 단서) |
 | `git-commit` | `git add` 기반 스테이징 절차 | 정본은 [git.md](conventions/git.md) §2·§7과 [general.md](conventions/general.md) §커밋 메시지 |
 | `github-issues` | MCP 도구로 Issue 조작 | 절차는 [issue.md](conventions/issue.md)를 따른다 |
 | `documentation-writer` | 범용 문서 구조 | 매체·공개 판정은 [publishing.md](conventions/publishing.md)가 우선한다 |
