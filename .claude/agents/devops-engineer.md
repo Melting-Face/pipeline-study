@@ -69,11 +69,14 @@ model: inherit
 
 | 상황 | 스킬 | 하지 말 것 |
 | --- | --- | --- |
-| ArgoCD Application·sync 정책 개념 참조 | `argocd-expert` | 🔴 C등급 — 참고만. 아래 단서가 **호출의 조건** |
+| ArgoCD Application·sync 정책 개념 참조 | `argocd-expert` | 🔴 C등급 — **조회·개념 참조만**. 아래 단서가 호출의 조건 |
 
-- 🔴 **argocd-expert**: `argocd` 변경 명령(`app create`·`sync`·`delete`·`repo add`)과 `kubectl apply`를 실행하지 않는다
-  — `argocd`는 `permissions` 규칙이 없어 **이 단서가 유일한 방어선**이다. `--prune`·`--force`, 평문 비밀번호,
-  `:latest` 예시를 옮기지 않는다. 설치·앱 등록·prune 보호는 [`argocd-gitops.md`](../../docs/argocd-gitops.md)가 정본이다.
+- 🔴 **argocd-expert** — 허용 목록으로 읽는다. 목록 밖은 전부 실행하지 않는다.
+  - **실행**: `argocd`는 조회(`get`·`list`·`diff`·`history`)만, `kubectl`은 §역할 경계의 `get`/`describe`만 쓴다.
+    `argocd`는 `permissions` 규칙이 없어 **이 단서가 유일한 방어선**이다.
+  - **제안**: 스킬의 설계 권고(selfHeal·prune 일괄 적용, SSO·RBAC·Sync Windows)를 개선안으로 옮기지 않는다.
+    설치·앱 등록·prune 보호·기각 항목은 [`argocd-gitops.md`](../../docs/argocd-gitops.md)가 정본이다.
+  - **인용**: `--prune`·`--force`, 평문 비밀번호, `:latest` 예시를 옮기지 않는다.
 
 재채점 트리거는 [`docs/skills.md`](../../docs/skills.md)의 「워커별로 어떤 스킬을 쓰는지」 문단에 있다.
 
