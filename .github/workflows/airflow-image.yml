@@ -1,0 +1,87 @@
+name: airflow-image
+
+# 태그 push(airflow-vX.Y.Z) -> Airflow 커스텀 이미지 빌드 -> GHCR push.
+# 태그는 "빌드 이벤트"다. 이미지 태그는 접두어를 뗀 vX.Y.Z 이고 불변으로 취급한다 —
+# 롤백은 이전 태그를 다시 가리키는 것이지 같은 태그를 덮어쓰는 것이 아니다.
+#
+# 트리거를 v* 가 아니라 airflow-v* 로 두는 이유: release.yml 이 v* 를 저장소 릴리스로 쓴다.
+# airflow-v* 는 v 로 시작하지 않아 그 글롭에 걸리지 않으므로 두 워크플로가 섞이지 않는다.
+#
+# 패키지명이 airflow-dags 가 아닌 이유: 같은 이름은 argocd-study 저장소가 이미 소유하고 있어
+# 이 저장소의 GITHUB_TOKEN 에는 쓰기 권한이 없다.
+#
+# 권한: 기본 GITHUB_TOKEN 만 쓴다(PAT·저장소 Secret 추가 없음). 액션은 SHA 로 고정한다 —
+# packages: write 를 쥔 워크플로라 태그 이동형 공급망 위험을 받지 않는다.
+# 배포 values 갱신(bump)은 대상 차트가 생기는 PR 에서 추가한다.
+
+on:
+  push:
+    tags:
+      - 'airflow-v*.*.*'
+
+# 같은 이미지에 대한 빌드가 겹치지 않게 직렬화한다(진행 중인 실행은 취소하지 않는다).
+concurrency:
+  group: image-airflow
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/melting-face/dagster-study-airflow
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # 트리거 글롭은 airflow-v1.2.3-rc1 같은 비형식 태그도 통과시킨다 — 빌드·push 전에 막는다.
+      - name: 태그 형식 검사·버전 추출
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! [[ "$TAG" =~ ^airflow-(v[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+              echo "::error::태그 '$TAG' 가 airflow-vX.Y.Z 형식이 아니다"
+              exit 1
+          fi
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+
+      - name: 태그 ref 체크아웃
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # 태그 커밋이 main 의 조상이어야 한다 — main 에 없는 커밋(브랜치 작업물)이 발행되지 않게 한다.
+      - name: 태그가 main 의 조상인지 검사
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+              echo "::error::태그 커밋 $GITHUB_SHA 가 origin/main 의 조상이 아니다"
+              exit 1
+          fi
+
+      - name: GHCR 로그인
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 불변 검사 — 같은 태그가 이미 레지스트리에 있으면 덮어쓰지 않고 실패한다.
+      # 🔴 inspect 실패 사유를 구분하지 않는다(미존재든 일시 오류든 "없음"으로 읽어 빌드로 진행).
+      - name: 이미지 태그 불변 검사
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if docker buildx imagetools inspect "$IMAGE:$VERSION" >/dev/null 2>&1; then
+              echo "::error::$IMAGE:$VERSION 가 이미 존재한다 — 태그는 불변이다"
+              exit 1
+          fi
+
+      - name: 이미지 빌드·push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: images/airflow
+          platforms: linux/arm64
+          tags: ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
+          push: true

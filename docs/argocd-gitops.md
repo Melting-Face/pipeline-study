@@ -58,7 +58,7 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
   flink-operator/            ①  flink-kubernetes-operator 차트 + 웹훅·워크로드 RBAC + operator-values
   seaweedfs/                 ②  직접 작성(StatefulSet·Service + 버킷 생성 Job)
   catalog-postgres/          ②  CNPG Cluster CR
-  airflow/                   ③  argocd-study 차트 재사용(별도 PR)
+  airflow/                   ③  argocd-study 차트 재사용(PR3-B) — 이미지는 images/airflow/(PR3-A)
 ```
 
 | 주체 | 소유 |
@@ -66,7 +66,8 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
 | Terraform A | kind 클러스터 · 전용 kubeconfig 파일 |
 | Terraform B | ingress-nginx · ArgoCD · ApplicationSet과 그 앱 목록(`var.apps`) |
 | ArgoCD | `gitops/charts/` 하위 전부 |
-| 사람 | Secret · 로컬 레지스트리 컨테이너 · Spark Connect·Flink 세션 기동/회수 · 커스텀 이미지 빌드·push |
+| GitHub Actions | Airflow 커스텀 이미지 빌드·GHCR 발행(`airflow-vX.Y.Z` 태그 push가 트리거 — [conventions/docker.md §3](conventions/docker.md#3-이미지-발행-ghcr)) |
+| 사람 | Secret · 로컬 레지스트리 컨테이너 · Spark Connect·Flink 세션 기동/회수 · 러너 이미지 빌드·push · 발행 태그 push |
 
 - **업스트림 차트는 umbrella로 감싼다** — `Chart.yaml` dependency + `Chart.lock` 커밋, `charts/*.tgz`는 gitignore.
   repo-server가 dependency를 받는다. 버전은 정확 고정하고 [`scripts/k8s-env.sh`](../scripts/k8s-env.sh)의 현행 짝을 따른다
@@ -255,7 +256,8 @@ scripts/k8s-secrets.sh                    # ② 이후. 순서 강제 아님 —
 | 설계 | 이 문서 + PR1 구현 계획(PR1 머지와 함께 삭제) | 승인·머지됨 |
 | PR1 | 스택 A·B, appset, ① 오퍼레이터 차트 4종, CI(helm 스텝·재귀 탐색), `k8s-env.sh` 가드, 철거 대상(§3), 문서 갱신 | 정적 게이트 + 관문 ①②③. 머지 시 계획 문서 삭제 |
 | PR2 | ② `seaweedfs`·`catalog-postgres` 차트, `k8s-secrets.sh`, `k8s-poc-storage.sh` 철거, 클러스터 교체 | 관문 ⓪①④ |
-| PR3 | ③ Airflow — Airflow 이행 미션과 합류 | 별도 설계 |
+| PR3-A | Airflow 커스텀 이미지(`images/airflow/`) + GHCR 발행 워크플로 | 태그 발행 후 인증 없이 pull |
+| PR3-B | ③ Airflow 차트(CNPG 메타DB) + values 태그 갱신(bump) 브랜치 push — Airflow 이행 미션과 합류 | 별도 설계 |
 
 PR마다 함께 갱신할 단일 출처: [setup.md](setup.md) §3(부트스트랩), [architectures/terraform.md](architectures/terraform.md)(스택 분할),
 신규 `architectures/argocd.md`(채택 ✅·대안), [conventions/k8s.md](conventions/k8s.md) §7(packaging은 Helm — 비로소 실재와 일치),
