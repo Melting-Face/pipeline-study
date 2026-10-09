@@ -186,12 +186,12 @@ git push origin v0.1.0
 
 | 축 | 담당 | 근거 |
 | --- | --- | --- |
-| 구현 — 워크플로 파일 편집 | `devops-engineer` **단독** | `data-engineer`의 경로 `deny`에 `.github/`를 넣어 확정 |
-| 판정 — 실행 결과 | `devops-verifier` | `gh run` 결과가 어느 워커의 관측 범위에도 없었다 |
+| 구현 — 워크플로 파일 편집 | `devops-engineer` **단독** | 지시문 경계(규율) — 경로 hook은 두지 않는다 |
+| 판정 — 실행 결과 | `reviewer`(체크리스트 C·D) | `gh run` 결과가 어느 워커의 관측 범위에도 없었다 |
 
 **구현 소유자만 정하고 판정자를 안 정하면 "돌았다"를 "통과했다"로 읽는 자리가 생긴다**
-([`../philosophy.md`](../philosophy.md) 원칙 7). 경로 경계의 축과 그 한계는
-[`agents/permissions.md`](agents/permissions.md) §경로 경계.
+([`../philosophy.md`](../philosophy.md) 원칙 7). 워커 경계와 그 한계는
+[`agents.md`](agents.md#역할).
 
 ### 실행 발화는 파일 편집과 다른 축이다
 
@@ -201,8 +201,7 @@ git push origin v0.1.0
 
 ⚠️ **파일을 쓰는 축은 이것으로 닫히지 않는다.** 에이전트가 워크플로를 쓰고 실행은 나중에
 **다른 주체인 CI 러너**가 하므로, 에이전트의 `Bash` 문자열만 보는 매처는 원리상 그 경로를
-볼 수 없다. `.github/workflows/**`를 [`../../scripts/protected_paths_guard.py`](../../scripts/protected_paths_guard.py)의
-보호 경로에 넣지 않은 근거와 잔여 위험은 [`../skills/sourcing.md`](../skills/sourcing.md) G-1 행에 있다.
+볼 수 없다. 이 경로의 잔여 위험은 [`../skills/sourcing.md`](../skills/sourcing.md) G-1 행에 있다.
 
 ## 문서 작성 규약
 

@@ -49,16 +49,16 @@
   (볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md` — `computedHash` 재현 가능).
   **전역 제거 이후 락의 무게가 달라졌다** — `.agents`·`.claude/skills`가 gitignore라
   **클론에 실체가 따라오지 않으므로**, 재현성을 지는 것은 `skills-lock.json` **하나뿐**이다.
-- **배선 감사 주기**: 스킬 추가·제거 후, 워커 신설·개편 시 **[`/skill-audit`](../../.claude/commands/skill-audit.md)** 를 돌린다.
-  ⚠️ **기계 축은 매 커밋 돈다**(`scripts/skill_wiring_check.py` R1~R9). 이 조항이 부르는 것은
-  **기계가 못 보는 4축**(출처·라이선스 / 권한 충돌 / 미충족 갭 / 재채점)이다 — 둘을 같이 세지 마라.
+- **배선 감사 주기**: 스킬 추가·제거 후, 워커 신설·개편 시 **메인 세션이 수동 감사**한다
+  ([`../skills.md`](../skills.md) §③ 루브릭). ⚠️ 배선 정합을 매 커밋 대조하던 기계 검사는 철거됐다 —
+  이 감사가 지시문↔문서 정합과 **4축**(출처·라이선스 / 권한 충돌 / 미충족 갭 / 재채점)을 모두 진다.
 
 ## 출처 등급별 통제
 
 > **왜 바꿨나** — 이전 조항은 "신뢰 출처(`dagster-io/skills`)만 사용한다"였는데, 실측상
 > **거의 전부가 이 조항을 위반**하는 상태였다. 전원이 위반하는 규칙은 규칙이 아니다.
 > 개인 저장소 2종만 떼어내 금지하는 것도 **위험 감소 없이 형식만 맞추는 것**이라
-> `security` 판정에서 **등급별 통제로의 개정**이 상신됐다.
+> 보안 판정에서 **등급별 통제로의 개정**이 상신됐다.
 > 급소는 "출처가 개인이냐"가 아니라 **"고정되지 않아 조용히 바뀔 수 있느냐"** 다.
 
 > 🔴 **재개정 — 등급은 "출처"만 판정한다. lock 등재는 등급이 아니다.**
@@ -89,8 +89,8 @@ dbt Labs는 **dbt의 벤더**이므로 `running-dbt-commands` 같은 것은 A여
 | 등급 | 정의 | 통제 | 현재(29종) |
 | --- | --- | --- | --- |
 | **A · 벤더가 자기 제품을 다룸** | 스킬이 다루는 도구 = 출처의 제품 | 제한 없이 사용 | **15** (dbt 10 · terraform 3 · dagster 2) |
-| **B · 벤더 조직이나 자기 제품 아님** | 조직 계정이되 그 도구의 벤더는 아님 | 사용 가능. **lock 편입 검토**, 실행 파일 포함 시 `security` 검토 | **5** (`dignified-python`·`auditing-skills`·`sql-optimization`·`multi-stage-dockerfile`·`find-skills`) |
-| **C · 개인·커뮤니티** | 개인 GitHub 계정 | 도입 전 **`security` 본문 검토 필수** + 워커 지시문 **단서 문구 필수**. **실행 파일 포함 시 도입 금지** | **9** (볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md`) |
+| **B · 벤더 조직이나 자기 제품 아님** | 조직 계정이되 그 도구의 벤더는 아님 | 사용 가능. **lock 편입 검토**, 실행 파일 포함 시 보안 검토(`reviewer` E) | **5** (`dignified-python`·`auditing-skills`·`sql-optimization`·`multi-stage-dockerfile`·`find-skills`) |
+| **C · 개인·커뮤니티** | 개인 GitHub 계정 | 도입 전 **보안 본문 검토(`reviewer` E) 필수** + 워커 지시문 **단서 문구 필수**. **실행 파일 포함 시 도입 금지** | **9** (볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md`) |
 | **D · 출처 미상** | 어느 lock에도 출처가 없음 | 실행 파일 포함이면 **검토 전 사용 금지**, 문서 전용이면 **관찰** | ✅ **0** (전부 규명) |
 
 - ⚠️ **A↔B의 실무 차이는 작다**(둘 다 사용 가능). 그래서 이 정정의 값은 통제 변화가 아니라
@@ -104,7 +104,7 @@ dbt Labs는 **dbt의 벤더**이므로 `running-dbt-commands` 같은 것은 A여
 
 **등급 무관 공통 조항**
 
-- 🔴 **실행 파일을 포함한 스킬은 등급과 무관하게 `security` 검토 대상**이다 —
+- 🔴 **실행 파일을 포함한 스킬은 등급과 무관하게 보안 검토(`reviewer` E) 대상**이다 —
   마크다운은 제안이지만 스크립트는 **실행**이다. 현재 해당 **3종**(전수 스캔):
 
   | 스킬 | 등급 | 실행 파일 | 상태 |
@@ -120,7 +120,7 @@ dbt Labs는 **dbt의 벤더**이므로 `running-dbt-commands` 같은 것은 A여
   알고리즘이 `미확인`으로 확인돼 **실행 불가한 죽은 규칙**이었다. 대체 수단은 아직 없다(`미해결`).
 - **C·D 등급 스킬을 워커에 등재할 때는 §③ 표의 제약 칸에 단서를 명시**한다(무해화 문구가 없으면 등재하지 않는다).
 
-**`security` 검토를 마친 C등급 2종의 단서**(전수 스캔 결과
+**보안 검토를 마친 C등급 2종의 단서**(전수 스캔 결과
 인젝션·반출·비밀노출 유도 **0건**, 단 아래 패턴 존재)
 
 **이 표는 C등급 9종 중 2종만 덮는다** — 나머지 7종은 한때 D("출처 미상")로 분류돼
@@ -130,7 +130,7 @@ dbt Labs는 **dbt의 벤더**이므로 `running-dbt-commands` 같은 것은 A여
 | 스킬 | 위치 | 패턴 | 단서 |
 | --- | --- | --- | --- |
 | `kubernetes-specialist` | `references/troubleshooting.md:96` | 시크릿 평문 복호화(`base64 -d`)를 **표준 절차로 안내** | 🔴 **실행 금지** — 진단은 값이 아니라 **존재·키 이름까지만**. 값을 뜨면 트랜스크립트·저널에 박제된다 |
-| `kubernetes-specialist` | `references/multi-cluster.md:151` | `curl -Ls … \| bash` | 실행 금지 — 설치는 `security` 컨펌 + 사용자 승인 경로로만 |
+| `kubernetes-specialist` | `references/multi-cluster.md:151` | `curl -Ls … \| bash` | 실행 금지 — 설치는 `reviewer` 보안 체크리스트(E) + 사용자 승인 경로로만 |
 | `kubernetes-specialist` | `references/configuration.md:74,137,271` | 평문 비밀 예시(`db-password: "…"`) | philosophy #4 위반 패턴 — **예시를 그대로 옮기지 않는다** |
 | `kubernetes-specialist` | `references/helm-charts.md:453` | `image: curlimages/curl:latest` | [docker.md](../conventions/docker.md) 태그 고정 규약이 이긴다 |
 | ~~`spark-engineer`~~ | ~~—~~ | ~~위험 패턴 **0건**~~ | **철회** — 아래 §미스캔 범주 참조 |
@@ -149,7 +149,7 @@ dbt Labs는 **dbt의 벤더**이므로 `running-dbt-commands` 같은 것은 A여
 현재 이 스킬은 **어느 워커에도 미등재(★1)** 라 로드 경로가 닫혀 있고, 등재하려면
 [`caveats.md`](caveats.md) §C등급 단서와 동일한 **패턴 기반 문구 작성이 선행 조건**이다.
 
-## C등급 5종 판정 (`security` — 전 파일 정독 + 패턴 스윕 6종)
+## C등급 5종 판정 (보안 검토 — 전 파일 정독 + 패턴 스윕 6종)
 
 **전부 「조건부 승인」. 거부 0건.** 실행 파일·비마크다운 자산·실행 비트·프론트매터 `allowed-tools` **전부 0건**이라
 C등급 금지 요건(*"실행 파일 포함"*)이 **불성립**하고, 인젝션·반출·비밀 노출도 0건이다.
@@ -177,9 +177,8 @@ C등급 금지 요건(*"실행 파일 포함"*)이 **불성립**하고, 인젝�
 > *"배포·발신 스텝(레지스트리 push·위키 push·릴리스) 포함 시 계획만 반환"* 을 명문화한다.
 >
 > **함께 집행한 것**:
-> - `worker_path_guard.py` `BOUNDARIES`의 `data-engineer` `deny`에 **`.github/` 추가** — 그 전까지
->   `.github/**`가 **어느 워커 경계에도 없어** `data-engineer`·`devops-engineer`가 **이중 소유**였다.
->   ✅ 합성 11셀 + 라이브 실호출 1셀로 실발동 확인(접두어 트랩 `.github_fake/`·`.githubx` 통과 포함).
+> - 당시 워커 경로 가드에서 `data-engineer`의 **`.github/` 쓰기를 막아** 이중 소유를 해소했다.
+>   ⚠️ 그 경로 가드는 철거됐다 — 지금 `.github/workflows/**`의 단독 소유는 **지시문 규율**이다.
 > - `permissions.ask`에 **`gh workflow run`·`gh workflow enable`/`disable`·`gh run rerun`/`cancel`/`delete`/
 >   `download`/`watch`** 8건 추가 — 이 명령들은 **ask·deny·allow 어디에도 없었다**.
 >   급소는 `.github/workflows/wiki.yml`의 `workflow_dispatch:`다: **`gh workflow run wiki.yml` 한 줄이
@@ -188,7 +187,7 @@ C등급 금지 요건(*"실행 파일 포함"*)이 **불성립**하고, 인젝�
 >
 > ⚠️ **ⓑ의 한계를 함께 적는다.** 권고문은 *"어느 쪽이든 3셀 대조로 실발동을 확인한다"* 고 했으나,
 > **ⓑ는 지시문이라 기계 강제가 아니고 실발동 확인의 대상이 되지 않는다.** 확인할 수 있는 것은
-> 위에 집행한 두 가지(경로 경계·`Bash` ask)뿐이고, **"배포 스텝이면 계획만 반환"의 실효는 워커 자기 규율 100%** 다.
+> 위에 집행한 `Bash` ask뿐이고(경로 경계는 철거됐다), **"배포 스텝이면 계획만 반환"의 실효는 워커 자기 규율 100%** 다.
 > ⇒ **시차 공백 자체는 닫히지 않았다.** ⓑ가 줄이는 것은 *빈도*이지 *가능성*이 아니다.
 > 다시 열어야 할 트리거 — **「배포·발신 스텝」 5종**(정의는 `devops-engineer` 지시문과 **한 벌**이다):
 > 레지스트리 push · 위키 push · 릴리스 생성 · `kubectl apply` · `terraform apply`.
@@ -212,12 +211,12 @@ C등급 금지 요건(*"실행 파일 포함"*)이 **불성립**하고, 인젝�
 **`deny`**(§`ask`는 파일 도구 축에서 흡수된다) 또는 ⓑ 워커 지시문에 "배포·발신 스텝 포함 시 계획만 반환" 명문화.
 **어느 쪽이든 3셀 대조로 실발동을 확인**한다 — `escalate`·`Write(<경로>)`에서 두 번 겪은 형태다.
 
-**부수 발견 — `security`의 grep 패턴 자체가 권한 게이트에 2회 걸렸다.**
+**부수 발견 — 보안 검토의 grep 패턴 자체가 권한 게이트에 2회 걸렸다.**
 검색 문자열에 `helm install`·`kubectl apply` 리터럴이 들어가 `ask`/`deny` 매처에 물렸다(대괄호로 쪼개 우회).
 ⇒ **패턴이 선두 앵커가 아니라 부분 문자열로도 문다**는 실측이고, 부수적으로 **그 규칙들이 살아 있다는 증거**다.
 
-**단서 문구 전문**은 `security` 판정 원문에 있으며 §③ 각 워커 제약 칸에 반영한다([`caveats.md`](caveats.md)).
-워커별로 갈리는 부분이 있다 — 예: `devops-verifier`는 `docker-expert`의 검증 명령을
+**단서 문구 전문**은 보안 판정 원문에 있으며 §③ 각 워커 제약 칸에 반영한다([`caveats.md`](caveats.md)).
+워커별로 갈리는 부분이 있다 — 예: `reviewer`(런타임 진단)는 `docker-expert`의 검증 명령을
 **한 줄도 실행하지 않는다**(진단까지),
 `duckdb`는 **`analyst` 1종으로 유지하고 확대하지 않는 것이 승인 조건**이다.
 

@@ -165,22 +165,23 @@ repos:
         #    관측치 자체가 분할 임계값이 된다. "비식별 데이터로 만든 모델"을 자동으로
         #    비식별로 취급하지 않는다. `pkl`·`pickle`·`npy`·`npz`는 원래 있었고 scikit-learn의
         #    표준 직렬화 확장자만 정확히 빠져 있었다.
-        #    ⚠️ 이 훅과 `.gitignore`는 `notebooks|docs|wiki` 하위만 본다 — 저장소 루트의
-        #    `model.joblib`은 어느 층도 잡지 않는다(기존 `pkl`·`npy`와 같은 한계).
+        # 🔴 범위는 **저장소 전체**다. `analyst`가 추출 업무를 흡수해 반출 경계가 규율이 된 뒤로는
+        #    `out.csv` 같은 상대경로 산출물이 루트에 떨어질 수 있다. 이 확장자로 추적 중인 파일이
+        #    0건일 때 넓혔으므로 과차단은 없다(픽스처가 필요해지면 경로 예외를 사유와 함께 둔다).
         entry: >-
           🔴 원천 진료 데이터일 수 있는 데이터 파일이다. 저장소에 커밋하지 않는다 (DUA·재식별 금지).
-          반출은 저장소 밖 $DATA_EXTRACT_DIR(기본 ~/extracts)로만 하며 담당은 `data-extractor`다.
+          반출은 저장소 밖 $DATA_EXTRACT_DIR(기본 ~/extracts)로만 하며 담당은 `analyst`다.
           집계·요약만 남기려면 gold 모델이나 리포트 본문으로 옮겨라.
-          정본 docs/security.md · 예외가 필요하면 supervisor에 `security` 컨펌을 요청한다.
+          정본 docs/security.md · 예외가 필요하면 supervisor에 `reviewer` 보안 점검(E)을 요청한다.
         files: >-
-          ^(notebooks|docs|wiki)/.*\.(csv|tsv|psv|parquet|feather|arrow|orc|avro|xlsx|xls|jsonl|ndjson|pkl|pickle|joblib|npy|npz|dta|sas7bdat|db|sqlite|duckdb)$
+          \.(csv|tsv|psv|parquet|feather|arrow|orc|avro|xlsx|xls|jsonl|ndjson|pkl|pickle|joblib|npy|npz|dta|sas7bdat|db|sqlite|duckdb)$
 
   # 조사 게이트 런타임 상태 커밋 차단 (2026-08-23 신설).
   # 🔴 `no-health-data-files`와 **같은 형태·다른 대상**이다: `.gitignore`가 1층이고
   #    이 훅이 ⓐ `git add -f` ⓑ 이미 추적 중인 파일을 잡는 2층이다.
   # 🔴 막는 이유는 비밀정보가 아니라 **관측 로그의 성격**이다 — 무엇을 언제 조회했는지가
   #    영구 이력으로 남으면 질의문이 저장소에 박제된다. 감사에는 필요하지만
-  #    감사 주체는 `security`이고 그 시점은 G2 한 번이다(수명 = 세션).
+  #    감사 주체는 `reviewer`이고 그 시점은 점검 한 번이다(수명 = 세션).
   # ⚠️ 한계: 로컬 훅이라 `--no-verify`로 건너뛸 수 있다 — 다만 **거기서 끝이 아니다.**
   #    2026-08-23 서버측 CI(`.github/workflows/ci.yml` `lint` 잡)가 머지돼
   #    `pre-commit run --all-files`를 **저장소 전체**에 다시 돌린다. 🔴 모집단이 다르다 —
@@ -197,72 +198,11 @@ repos:
         language: fail
         entry: >-
           🔴 `.claude/.research/`는 조사 게이트의 런타임 상태다(승인 URL 목록·질의 로그).
-          세션 수명의 관측 기록이라 커밋하지 않는다 — 감사는 `security`가 G2에서 파일을 직접 읽는다.
+          세션 수명의 관측 기록이라 커밋하지 않는다 — 감사는 `reviewer`가 보안 체크리스트에서 직접 읽는다.
           승인 이력을 남겨야 하면 미션 저널($OBSIDIAN_VAULT)에 요약해 적어라.
           정본 docs/conventions/agents.md §researcher 조사 프로토콜.
         files: >-
           ^\.claude/\.research/
-
-  # 스킬-워커 배선 정합 검사 (2026-08-24 신설).
-  # 🔴 위 `doc-links`와 **같은 형태·다른 대상**이다. 검사 방향은 **워커 → 문서**:
-  #    각 `.claude/agents/*.md`의 §참고 스킬 표가 **집행 정본**이고 `docs/skills.md` §③은
-  #    파생 인덱스다(런타임에 §③은 워커 컨텍스트에 없다).
-  # 🔴 `scripts/skill_gate_guard.py`와 **다른 물건**이다 — 저쪽은 `Skill` 도구 호출을
-  #    가로채는 **런타임 차단**(fail-closed `deny`), 이쪽은 **커밋 전 정합**(exit 1)이다.
-  #    한쪽이 초록이라고 다른 쪽이 초록인 것이 아니다.
-  # 🔴 `pass_filenames: false` — 이 검사는 **두 집합의 대조**라 한쪽 파일만 받아서는
-  #    판정이 성립하지 않는다. `files:`는 **트리거일 뿐 스코프가 아니다**(스코프는
-  #    스크립트가 글롭한다) — 그래서 목록이 두 벌이 되지 않는다.
-  # ⚠️ `.claude/skills/`는 gitignore라 스테이징되지 않는다 ⇒ 디스크 설치분만 바뀌면
-  #    이 훅은 안 돈다. 실재성(R6)·디스크 드리프트(R8)는 커밋 축이 아니라
-  #    **감사 축**(`/skill-audit` 수동 실행)에서도 본다.
-  #    ⚠️ **이 사각의 축은 하나가 아니라 둘이다** — 처음에 「모집단에 gitignore 경로가
-  #    섞였는가」 하나로 단정했는데 **그렇게 적으면 추적 파일만 있는 훅을 안전하다고 읽는다.**
-  #      ⓐ 모집단에 **gitignore 경로**가 섞임 → 디스크만 바뀌면 트리거 안 됨 (R6·R8)
-  #      ⓑ 모집단에 **자기 검사기**가 빠짐 → 검사기만 바뀌면 **훅 전체가 Skipped** (아래 규칙)
-  #    ⓑ가 더 나쁘다 — ⓐ는 규칙 일부가 안 돌지만 ⓑ는 훅 전체가, 하필 **그 훅을 고치는
-  #    커밋에서** 안 돈다. R1~R5·R7·R9는 ⓐ에 안 걸리지만 ⓑ에는 걸려 있었다.
-  # 🔴 `files:`에 **검사기 자신을 넣는다** — 안 넣으면 스크립트만 고치는 커밋에서
-  #    `(no files to check)Skipped`가 되어 **게이트를 만든 커밋에서 그 게이트가 안 돈다.**
-  #    실제로 났다: R7·R8을 신설한 커밋이 검사기 파일 단독이라 이 훅이 건너뛰어졌다.
-  #    `.claude/commands/`도 같은 이유로 넣는다(R9의 루브릭 정본이 거기 산다).
-  #    🔴 **ⓑ는 이 훅만의 문제가 아니다 — 관측자 셋이 각각 3건을 찾았다**(`worker-wiring`·
-  #    `skill-wiring`·`doc-lint`). Rule of Three가 성립하므로 개별 수정이 아니라
-  #    **로컬 훅의 `files:`가 자기 `entry` 스크립트를 담는지 기계로 세는 검사**가 답이다.
-  #    ⚠️ `doc-links`는 사각이 없는데 사유가 다르다 — `files:` 없이 `always_run: true`라
-  #    **면제가 아니라 모집단이 전체**다. 「사각 없음」을 같은 이유로 세지 마라.
-  # 근거: docs/skills.md §③ · docs/doc-sync.md
-  - repo: local
-    hooks:
-      - id: skill-wiring
-        name: 워커 지시문 ↔ skills.md §③ 배선 정합
-        language: system
-        entry: python3 scripts/skill_wiring_check.py
-        pass_filenames: false
-        files: '^(\.claude/agents/.*\.md|\.claude/commands/.*\.md|docs/skills\.md|docs/skills/.*\.md|skills-lock\.json|scripts/skill_wiring_check\.py)$'
-        stages: [pre-commit]
-
-  # 워커 경로 경계의 **정의(`BOUNDARIES`) ↔ 배선(프론트매터 인자)** 정합 (Issue #35).
-  # 🔴 런타임 가드와 **시점도 관측 범위도 다르다.** `worker_path_guard.py`는 미정의 워커를
-  #    `deny`하지만 **워커가 쓰기를 시도해야** 발동한다 — 오타난 워커가 한동안 안 불리면
-  #    그 사이 경계가 없다. 그리고 배선 인자가 **다른 유효 워커명**이면 런타임은 아예
-  #    그 분기에 닿지 못한다(엉뚱한 경계가 조용히 적용된다) — 그 축은 여기만 잡는다.
-  # 🔴 `pass_filenames: false` — 위 훅과 같은 이유다. 두 집합의 대조라 한쪽 파일만
-  #    받아서는 판정이 성립하지 않는다. `files:`는 트리거일 뿐 스코프가 아니다.
-  # ⚠️ 모집단은 「워커 파일 전량」이 아니라 **「이 가드를 배선한 파일」** 이다 —
-  #    읽기 전용 워커는 배선이 없어 모집단 밖이다. 워커를 늘리거나 줄여도 안 깨진다.
-  # 근거: docs/conventions/agents/permissions.md §배선 정합 검사
-  - repo: local
-    hooks:
-      - id: worker-wiring
-        name: worker_path_guard 경계 정의 ↔ 프론트매터 배선 정합
-        language: system
-        entry: python3 scripts/worker_wiring_check.py
-        pass_filenames: false
-        # 🔴 `worker_boundaries.py`(경계표 단일 출처)를 담는다 — 표가 가드 밖으로
-        #    나갔으므로 그 파일만 고쳤을 때 이 검사가 안 돌면 배선 정합이 무검사다.
-        files: '^(\.claude/agents/.*\.md|scripts/worker_(path_guard|wiring_check|boundaries)\.py)$'
-        stages: [pre-commit]
 
   # 문서 가독성 규약 검사 (2026-08-24 신설 — 위반 0건이 된 뒤에 건다).
   # 🔴 **초록인 시점에만 건다.** 이 훅은 위 두 훅보다 늦게 등록됐다 — 신설 당시 위반이
@@ -322,85 +262,24 @@ repos:
   #    걸어놓고 skip되면 **지금과 같은 상태인데 초록으로 보인다**(더 나쁘다).
   # 🔴 `uv run`을 쓰지 않는다 — CI `lint` 잡에 **uv가 없다**(`setup-uv`는 `commit-msg`·`defs`
   #    잡에만 있다). 위 훅들과 같은 `language: system` + 호스트 `python3` 형태다.
-  # ⚠️ **보증 범위는 가드 3종까지다** — `journal_guard` · Claude/Codex `worker_path_guard` ·
-  #    `plan_mirror_guard` 일부. 나머지 5종(`analyst_path_guard`·`skill_gate_guard`·
-  #    `research_gate_guard`·`protected_paths_guard`·`commit_manifest_guard`)은
-  #    **테스트 0건**이다(Issue #55). 이 훅의 초록을
+  # ⚠️ **보증 범위**: `journal_guard`·`worktree_guard`·배선 대상 실재·Codex 중계 타임아웃.
+  #    `research_gate_guard`는 **테스트 0건**이다 — 이 훅의 초록을
   #    「가드 전부가 검증됐다」로 읽지 마라.
   # ⚠️ `files:`에 `.codex/hooks/**`를 넣는 것은 **Codex 짝을 고치면 테스트가 돌게** 하기
-  #    위해서다(Issue #53의 사전 조건) — 두 런타임의 같은 가드는 짝으로 유지된다.
+  #    위해서다 — 두 런타임의 같은 가드는 짝으로 유지된다.
   # 근거: docs/test.md §가드 단위 테스트
   - repo: local
     hooks:
       - id: guard-tests
-        name: 가드 단위 테스트 (journal · worker_path · plan_mirror)
+        name: 가드 단위 테스트 (journal · worktree · 배선 실재)
         language: system
         entry: python3 scripts/tests/run_guard_tests.py
         pass_filenames: false
-        # 🔴 러너와 테스트 파일 자신을 담는다 — 아래 `hook-files` 훅이 강제하는 규칙이다.
-        # 🔴 `worker_boundaries.py`는 접미어 규약(`*_guard.py`) 밖이라 **명시**한다 —
-        #    경계표 단일 출처인데 여기 없으면 표만 고쳤을 때 테스트가 안 돈다.
+        # 🔴 러너와 테스트 파일 자신을 담는다 — 검사기만 고치는 커밋에서 Skipped가 되지 않게.
+        # 배선 파일(settings·프론트매터·Codex hooks.json)을 담아 배선만 바꾼 커밋에서도
+        # `test_all_wired_hook_scripts_exist`가 돈다.
         files: >-
-          ^(scripts/tests/.*\.py|scripts/.*_guard\.py|scripts/worker_boundaries\.py|\.codex/hooks/.*\.py)$
-        stages: [pre-commit]
-
-  # 로컬 훅 `files:`의 자기 검사기 포함 검사 (Issue #56 — 위 세 훅이 각각 밟은 사각).
-  # 🔴 **Rule of Three가 성립해서 만든 검사기다.** `worker-wiring`(security 컨펌)·
-  #    `skill-wiring`(병렬 세션 — 커밋 `9dcb412`가 실물)·`doc-lint`(세션 관측) 셋을
-  #    **각각 다른 관측자**가 하나씩 찾았다. 한 사람이 전수했으면 세 번 만에 안 나왔다 —
-  #    **개별 수정으로는 네 번째를 못 막는다.**
-  # 🔴 **위반 0건인 지금 건다.** `doc-lint` 주석이 적어 둔 *"초록인 시점에만 건다"* 와 같은
-  #    이유다 — 네 번째 사례가 쌓인 뒤면 게이트 신설과 잔여 정리가 한 커밋에 묶인다.
-  # 🔴 `always_run: true`를 **면제로 두지 않는다.** `doc-links`는 사각이 없는데 **사유가
-  #    다르다**(모집단이 전체라서다). 검사기는 이것을 통과가 아니라 별도 상태
-  #    **`전체모집단`** 으로 세어 따로 찍는다 — 「사각 없음」을 한 숫자로 합치면
-  #    다음 사람이 *"면제받은 훅이 있다"* 로 읽는다(*"면제는 검증이 아니다"*).
-  # ⚠️ **이 검사기가 보는 축은 ⓑ 하나다** — 「모집단에 자기 검사기가 빠짐」(훅 *전체*가 안 돎).
-  #    ⓐ 「모집단에 gitignore 경로가 섞임」(규칙 *일부*가 안 돎, `skill-wiring`의 R6·R8)은
-  #    **다른 축**이고 감사 축(`/skill-audit`)이 본다. 한 세션이 ⓐ를 *"사각의 축은 이것
-  #    하나"* 로 일반화했다가 정정한 이력이 있다 — 섞지 마라.
-  # ⚠️ `.claude/settings.json`의 hook은 **`files:` 축 자체가 없다**(배선이 정의 로드 시점
-  #    스냅샷이라 다른 형태의 사각이다). 여기서 보지 않는다.
-  # 근거: docs/test.md §가드 단위 테스트 · scripts/hook_files_check.py 머리 주석
-  - repo: local
-    hooks:
-      - id: hook-files
-        # 값 안의 `files:`는 콜론+공백이라 인용하지 않으면 YAML 매핑으로 읽힌다
-        # (`mapping values are not allowed in this context` — 실측으로 걸렸다).
-        name: "로컬 훅 files: 자기 검사기 포함 검사"
-        language: system
-        entry: python3 scripts/hook_files_check.py
-        pass_filenames: false
-        # 🔴 **검사기 자신을 담는다** — 안 담으면 이 Issue가 고치려는 결함을 검사기가
-        #    그대로 갖는다(재귀). 이 훅은 자기가 강제하는 규칙의 첫 적용 대상이다.
-        # 🔴 축 2(런타임 hook 실행 비트)를 더하면서 **모집단도 함께 넓힌다** — 검사는
-        #    `.claude/settings.json`·`.claude/agents/**`를 보는데 트리거가 그 파일을
-        #    안 담으면 **새 hook을 배선하는 커밋에서 그 검사가 안 돈다**. 축만 늘리고
-        #    트리거를 그대로 두면 이 훅이 잡으려던 바로 그 사각을 스스로 만든다.
-        files: >-
-          ^(\.pre-commit-config\.yaml|scripts/hook_files_check\.py|\.claude/settings\.json|\.claude/agents/.*\.md|\.codex/hooks\.json)$
-        stages: [pre-commit]
-
-  # permissions 글롭 작성 규약 — Issue #33. 규칙 몇 개가 아니라 **파일 전체의 성질**이라
-  # 일부만 고치면 「고쳤다고 믿는」 상태가 된다. 규약을 정하고 전수 적용한 뒤 기계로 강제한다.
-  #
-  # ⚠️ **보는 축은 「작성 스타일」 하나다** — 그 규칙이 *옳은 명령을 겨냥하는지*는 보지 않는다.
-  #    `hook_files_check`가 *"언제 도는지만 본다"* 로 같은 선을 그은 것과 같은 계열이다.
-  # ⚠️ 모집단은 `Bash(...)` 규칙뿐이다. `Edit(...)`·`WebFetch(...)`는 **축이 다르고**
-  #    경로 축은 `protected_paths_guard.py`가 진다 — 빠뜨린 것이 아니라 범위 밖이다.
-  # ⚠️ `.claude/settings.local.json`은 gitignore라 검사하지 않는다(**선언된 공백**) —
-  #    커밋되지 않는 파일을 커밋 게이트가 요구할 수 없다. 그쪽 `allow`도 런타임에는 산다.
-  # 근거: docs/conventions/agents/permissions.md §명령 글롭
-  - repo: local
-    hooks:
-      - id: permission-glob
-        name: permissions 글롭 작성 규약 (deny·ask=전면 / allow=접두 앵커)
-        language: system
-        entry: python3 scripts/permission_glob_check.py
-        pass_filenames: false
-        # 🔴 **검사기 자신을 담는다** — 안 담으면 검사기만 고치는 커밋에서 이 훅이
-        #    통째로 Skipped다(Issue #56이 연 축). `hook-files`가 이것을 강제한다.
-        files: '^(\.claude/settings\.json|scripts/permission_glob_check\.py)$'
+          ^(scripts/tests/.*\.py|scripts/.*_guard\.py|\.codex/hooks/.*\.py|\.codex/hooks\.json|\.claude/settings\.json|\.claude/agents/.*\.md)$
         stages: [pre-commit]
 
   # Terraform 포매터 — conventions/terraform.md §3이 요구하던 게이트의 집행 수단

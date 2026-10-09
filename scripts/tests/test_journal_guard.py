@@ -1,8 +1,7 @@
-"""Claude Code·Codex 공용 저널 가드의 경로와 Stop 보정을 검증한다."""
+"""저널 가드의 SessionStart 알림(다음 번호·열린 미션·WIP 상한)을 검증한다."""
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -10,573 +9,104 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from scripts.plan_mirror_guard import compose
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 GUARD = PROJECT_ROOT / "scripts" / "journal_guard.py"
-CLAUDE_PATH_GUARD = PROJECT_ROOT / "scripts" / "worker_path_guard.py"
-CODEX_PATH_GUARD = PROJECT_ROOT / ".codex" / "hooks" / "worker_path_guard.py"
-CODEX_PRE_WRITE_GUARD = PROJECT_ROOT / ".codex" / "hooks" / "journal_pre_write.py"
-CODEX_HOOKS = PROJECT_ROOT / ".codex" / "hooks.json"
 KST = timezone(timedelta(hours=9))
 
 
 class JournalGuardTest(unittest.TestCase):
-    """임시 Git 저장소와 볼트로 실제 hook 입출력을 대조한다."""
+    """임시 볼트로 실제 hook 입출력을 대조한다."""
 
     def setUp(self) -> None:
-        """Codex 세션 기준점이 Git 상태에 섞이지 않는 테스트 환경을 만든다."""
+        """임시 볼트와 가드 실행 환경을 만든다."""
         self.temporary_directory = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary_directory.name)
-        self.repository = self.root / "repository"
-        self.vault = self.root / "vault"
-        (self.vault / "agents").mkdir(parents=True)
-        self.repository.mkdir()
-        (self.repository / ".gitignore").write_text(
-            ".codex/.claims\n", encoding="utf-8"
-        )
+        self.agents = Path(self.temporary_directory.name) / "agents"
+        self.agents.mkdir()
+        self.today = datetime.now(tz=KST)
 
-        # 🔴 `skipTest`가 아니라 **실패**다(Issue #54). 이 테스트를 게이트에 올린 뒤로는
-        #    skip이 곧 **「초록인데 안 돈 상태」** 이고, 그것은 게이트가 없는 지금과
-        #    같다 — 오히려 검증됐다고 믿게 만들어 더 나쁘다.
-        #    `git`은 클론 자체의 전제이고
-        #    GitHub 러너에도 항상 있으므로 면제를 둘 자리가 아니다
-        #    (*"면제는 검증이 아니다"* — 선언된 예외와 미검사는 다른 상태다).
-        git = shutil.which("git")
-        if git is None:
-            self.fail("git 실행 파일이 필요하다 — 이 테스트는 skip하지 않고 실패한다")
-        self.git = git
-
-        # 🔴 `GIT_*`를 걷어낸다 — **이 테스트를 게이트에 올리자마자 드러난 결함**이다.
-        #    git hook 안에서 돌면 부모 git이 `GIT_INDEX_FILE`·`GIT_DIR`을 자식에게
-        #    물려주고, 그러면 아래 임시 저장소의 git 명령이 **바깥 저장소의 인덱스**를
-        #    쓴다. 단일 변인 실험: `GIT_INDEX_FILE` 하나만 넣으면 13/13 통과가
-        #    13/13 에러로 뒤집힌다.
-        #    ⚠️ 손으로 돌 때는 이 변수가 없어 **영영 안 드러난다** — 「통과했다」가
-        #    아니라 「그 환경에서만 통과했다」였다(Issue #54가 잡으라던 것 자체다).
+        # 🔴 `GIT_*`를 걷어낸다 — git hook 안에서 돌면 부모 git의 인덱스 변수가
+        #    자식에게 상속된다(Issue #54에서 드러난 결함, 가드가 git을 안 써도 유지).
         self.environment = {
             key: value
             for key, value in os.environ.items()
             if not key.startswith("GIT_")
         }
-
-        self._run_git("init", "--quiet")
-        self._run_git("config", "user.name", "Journal Guard Test")
-        self._run_git("config", "user.email", "journal-guard@example.invalid")
-        self._run_git("add", ".gitignore")
-        self._run_git("commit", "--quiet", "-m", "test: 기준점")
-
-        self.session_id = "11111111-2222-3333-4444-555555555555"
-        # 위에서 만든 `GIT_*` 제거본에 얹는다 — `os.environ.copy()`로 다시 뜨면
-        # 가드 서브프로세스가 부모 인덱스를 보게 되어 같은 결함이 되살아난다.
         self.environment.update(
             {
-                "CLAUDE_PROJECT_DIR": str(self.repository),
-                "CODEX_SESSION_ID": self.session_id,
-                "JOURNAL_RUNTIME": "codex",
-                "OBSIDIAN_VAULT": str(self.vault),
+                "JOURNAL_RUNTIME": "claude-code",
+                "OBSIDIAN_VAULT": str(self.agents.parent),
             }
         )
 
     def tearDown(self) -> None:
-        """임시 저장소와 볼트를 제거한다."""
+        """임시 볼트를 제거한다."""
         self.temporary_directory.cleanup()
 
-    def _run_git(self, *arguments: str) -> None:
-        """테스트 저장소에서 Git 명령을 실행한다."""
-        subprocess.run(  # noqa: S603
-            [self.git, "-C", str(self.repository), *arguments],
-            env=self.environment,  # 🔴 `GIT_*` 제거본 — 상속하면 부모 인덱스를 쓴다
-            check=True,
-            capture_output=True,
-            text=True,
+    def _write_journal(self, days_ago: int, name: str, status: str) -> None:
+        """`days_ago`일 전 폴더에 지정 status의 저널을 만든다."""
+        day = (self.today - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+        day_dir = self.agents / day
+        day_dir.mkdir(exist_ok=True)
+        (day_dir / name).write_text(
+            f"---\nmission: x\nstatus: {status}\n---\n", encoding="utf-8"
         )
 
-    def _run_guard(
-        self, command: str, payload: dict[str, object]
-    ) -> subprocess.CompletedProcess[str]:
-        """저널 가드에 실제 hook JSON을 전달한다."""
+    def _run_guard(self, command: str) -> subprocess.CompletedProcess[str]:
+        """저널 가드에 빈 hook JSON을 전달한다."""
         return subprocess.run(  # noqa: S603
             [sys.executable, str(GUARD), command],
-            input=json.dumps(payload),
+            input=json.dumps({}),
             env=self.environment,
             check=False,
             capture_output=True,
             text=True,
         )
 
-    def _run_path_guard(
-        self, guard: Path, payload: dict[str, object]
-    ) -> subprocess.CompletedProcess[str]:
-        """archivist 경로 가드에 실제 hook JSON을 전달한다."""
-        hook_payload = {"tool_name": "apply_patch", **payload}
-        return subprocess.run(  # noqa: S603
-            [sys.executable, str(guard), "archivist"],
-            input=json.dumps(hook_payload),
-            env=self.environment,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+    def test_session_start_prints_next_number(self) -> None:
+        """오늘 01이 있으면 다음 번호 02를 알린다."""
+        self._write_journal(0, "01-first.md", "done")
+        result = self._run_guard("session-start")
+        assert result.returncode == 0, result.stderr
+        assert "**02**" in result.stdout
 
-    def _run_claude_path_guard(
-        self, worker: str, target: str, **payload: object
-    ) -> subprocess.CompletedProcess[str]:
-        """Claude 경로 가드를 임의의 배선 인자로 호출한다.
+    def test_wip_warning_when_open_exceeds_limit(self) -> None:
+        """열린 미션이 상한(3)을 넘으면 경고 행을 낸다."""
+        for index in range(1, 5):
+            self._write_journal(0, f"0{index}-m{index}.md", "in-progress")
+        result = self._run_guard("session-start")
+        assert "WIP 4/3" in result.stdout, result.stdout
 
-        `_run_path_guard`가 `archivist`를 박아 두고 있어 워커명 축을 못 흔든다.
-        """
-        arguments = [sys.executable, str(CLAUDE_PATH_GUARD)]
-        if worker:
-            arguments.append(worker)
-        hook_payload = {
-            "tool_name": "Edit",
-            "tool_input": {"file_path": str(self.repository / target)},
-            **payload,
-        }
-        return subprocess.run(  # noqa: S603
-            arguments,
-            input=json.dumps(hook_payload),
-            env=self.environment,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+    def test_open_mission_label_counts_folders_not_days(self) -> None:
+        """목록 범위 라벨은 세는 대상(날짜 폴더 수)을 그대로 적는다(계측 단위)."""
+        self._write_journal(0, "01-open.md", "in-progress")
+        result = self._run_guard("session-start")
+        assert "최근 날짜 폴더 7개" in result.stdout, result.stdout
+        assert "최근 7일" not in result.stdout, result.stdout
 
-    def _decision(self, result: subprocess.CompletedProcess[str]) -> dict[str, str]:
-        """가드 출력에서 결정과 사유를 뽑는다. 무출력이면 통과다."""
-        if not result.stdout.strip():
-            return {}
-        return json.loads(result.stdout)["hookSpecificOutput"]
+    def test_no_wip_warning_at_limit(self) -> None:
+        """열린 미션이 정확히 상한이면 경고하지 않는다."""
+        for index in range(1, 4):
+            self._write_journal(0, f"0{index}-m{index}.md", "blocked")
+        self._write_journal(0, "04-closed.md", "done")
+        result = self._run_guard("session-start")
+        assert result.returncode == 0, result.stderr
+        assert "WIP" not in result.stdout, result.stdout
 
-    def _run_inferred_codex_path_guard(
-        self, payload: dict[str, object]
-    ) -> subprocess.CompletedProcess[str]:
-        """실제 transcript의 agent_role로 Codex 워커 경계를 판정한다."""
-        return subprocess.run(  # noqa: S603
-            [sys.executable, str(CODEX_PATH_GUARD)],
-            input=json.dumps(payload),
-            env=self.environment,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+    def test_wip_counts_missions_beyond_recent_window(self) -> None:
+        """표시 창(최근 7일) 밖의 열린 미션도 WIP에 센다."""
+        self._write_journal(30, "01-old.md", "in-progress")
+        for index in range(1, 4):
+            self._write_journal(0, f"0{index}-m{index}.md", "planned")
+        result = self._run_guard("session-start")
+        assert "WIP 4/3" in result.stdout, result.stdout
 
-    def _run_codex_pre_write_guard(
-        self, target: Path
-    ) -> subprocess.CompletedProcess[str]:
-        """Codex apply_patch 어댑터에 신규 파일 경로를 전달한다."""
-        payload = {
-            "tool_name": "apply_patch",
-            "tool_input": {"command": f"*** Add File: {target}\n"},
-        }
-        return subprocess.run(  # noqa: S603
-            [sys.executable, str(CODEX_PRE_WRITE_GUARD)],
-            input=json.dumps(payload),
-            env=self.environment,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-
-    def test_pre_write_enforces_codex_date_path(self) -> None:
-        """Codex 신규 저널은 공용 agents 아래 날짜 경로만 허용한다."""
-        today = datetime.now(tz=KST).strftime("%Y-%m-%d")
-        valid = self.vault / "agents" / today / "01-valid.md"
-        namespaced = self.vault / "agents" / "codex" / today / "01-invalid.md"
-
-        valid_result = self._run_guard(
-            "pre-write", {"tool_input": {"file_path": str(valid)}}
-        )
-        namespaced_result = self._run_guard(
-            "pre-write", {"tool_input": {"file_path": str(namespaced)}}
-        )
-
-        assert valid_result.returncode == 0
-        assert valid_result.stdout == ""
-        denial = json.loads(namespaced_result.stdout)
-        assert denial["hookSpecificOutput"]["permissionDecision"] == "deny"
-        assert "agents/<YYYY-MM-DD>" in namespaced_result.stdout
-
-    def test_codex_numbering_continues_existing_date_folder(self) -> None:
-        """Codex는 기존 날짜 폴더의 마지막 번호 다음을 사용한다."""
-        today = datetime.now(tz=KST).strftime("%Y-%m-%d")
-        day_dir = self.vault / "agents" / today
-        day_dir.mkdir(parents=True)
-        (day_dir / "01-existing.md").write_text("# 기존 기록\n", encoding="utf-8")
-
-        valid = day_dir / "02-valid.md"
-        duplicate = day_dir / "01-duplicate.md"
-        valid_result = self._run_guard(
-            "pre-write", {"tool_input": {"file_path": str(valid)}}
-        )
-        duplicate_result = self._run_guard(
-            "pre-write", {"tool_input": {"file_path": str(duplicate)}}
-        )
-
-        assert valid_result.stdout == ""
-        denial = json.loads(duplicate_result.stdout)
-        assert denial["hookSpecificOutput"]["permissionDecision"] == "deny"
-        assert "02" in duplicate_result.stdout
-
-    def test_codex_apply_patch_adapter_is_wired_and_enforces_path(self) -> None:
-        """Codex apply_patch hook은 신규 저널의 날짜 경로를 실제 검사한다."""
-        today = datetime.now(tz=KST).strftime("%Y-%m-%d")
-        valid = self.vault / "agents" / today / "01-valid.md"
-        old_path = self.vault / "agents" / "codex" / today / "01-invalid.md"
-
-        valid_result = self._run_codex_pre_write_guard(valid)
-        old_path_result = self._run_codex_pre_write_guard(old_path)
-        hooks = json.loads(CODEX_HOOKS.read_text(encoding="utf-8"))
-        commands = [
-            hook["command"]
-            for group in hooks["hooks"]["PreToolUse"]
-            for hook in group["hooks"]
-        ]
-
-        assert valid_result.stdout == ""
-        assert (
-            json.loads(old_path_result.stdout)["hookSpecificOutput"][
-                "permissionDecision"
-            ]
-            == "deny"
-        )
-        assert any("journal_pre_write.py" in command for command in commands)
-
-    def test_codex_guards_keep_stable_indices_and_include_exec(self) -> None:
-        """기존 trust 인덱스를 유지한 채 exec 호출까지 검사한다."""
-        hooks = json.loads(CODEX_HOOKS.read_text(encoding="utf-8"))
-        matchers_by_command = {
-            hook["command"]: group["matcher"]
-            for group in hooks["hooks"]["PreToolUse"]
-            for hook in group["hooks"]
-        }
-
-        worker_matcher = next(
-            matcher
-            for command, matcher in matchers_by_command.items()
-            if "worker_path_guard.py" in command
-        )
-        journal_matcher = next(
-            matcher
-            for command, matcher in matchers_by_command.items()
-            if "journal_pre_write.py" in command
-        )
-        policy_matcher = next(
-            matcher
-            for command, matcher in matchers_by_command.items()
-            if "policy_guard.py" in command
-        )
-
-        expected_matcher = "^Bash$|^exec$|^apply_patch$"
-        assert worker_matcher == expected_matcher
-        assert journal_matcher == expected_matcher
-        assert policy_matcher == expected_matcher
-
-    def test_codex_exec_patch_uses_session_agent_role(self) -> None:
-        """exec 내부 patch는 session_meta의 agent_role 경계를 적용한다."""
-        transcript = self.root / "analyst.jsonl"
-        transcript.write_text(
-            json.dumps(
-                {
-                    "type": "session_meta",
-                    "payload": {
-                        "thread_source": "subagent",
-                        "agent_role": "analyst",
-                    },
-                }
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        base_payload = {
-            "tool_name": "exec",
-            "cwd": str(self.repository),
-            "transcript_path": str(transcript),
-        }
-        allowed = self._run_inferred_codex_path_guard(
-            {
-                **base_payload,
-                "tool_input": (
-                    'const patch = "*** Begin Patch\\n'
-                    "*** Add File: notebooks/probe.md\\n"
-                    '*** End Patch"; tools.apply_patch(patch);'
-                ),
-            }
-        )
-        denied = self._run_inferred_codex_path_guard(
-            {
-                **base_payload,
-                "tool_input": (
-                    'const patch = "*** Begin Patch\\n'
-                    "*** Add File: dagster/probe.md\\n"
-                    '*** End Patch"; tools.apply_patch(patch);'
-                ),
-            }
-        )
-        read_only_exec = self._run_inferred_codex_path_guard(
-            {
-                **base_payload,
-                "tool_input": 'tools.exec_command({cmd: "pwd"});',
-            }
-        )
-
-        assert allowed.stdout == ""
-        assert (
-            json.loads(denied.stdout)["hookSpecificOutput"]["permissionDecision"]
-            == "deny"
-        )
-        assert read_only_exec.stdout == ""
-
-    def test_claude_path_guard_fails_closed_for_undefined_worker(self) -> None:
-        """배선 인자가 `BOUNDARIES`에 없으면 차단한다(오타·삭제 누락).
-
-        대조군을 같은 테스트에 둔다 — 「전부 막힌다」와 「선별 차단」이 갈려야
-        이 단정이 의미를 갖는다.
-        """
-        allowed = self._decision(
-            self._run_claude_path_guard("tech-writer", "docs/setup.md")
-        )
-        assert allowed == {}, "대조군: 정상 배선의 허용 경로는 통과해야 한다"
-
-        for wired in ("devps-engineer", "tech_writer", "director", ""):
-            denied = self._decision(self._run_claude_path_guard(wired, "docs/setup.md"))
-            assert denied.get("permissionDecision") == "deny", wired
-            assert "경계가 정의되지 않은 워커" in denied["permissionDecisionReason"]
-
-    def test_claude_path_guard_routes_known_elsewhere_to_its_own_reason(self) -> None:
-        """정본이 다른 가드인 워커는 차단하되 **다른 사유**를 낸다.
-
-        같은 문구를 내면 다음 사람이 일반 처방(`BOUNDARIES`에 등재)을 따라
-        중복 정의를 되살린다 — 두 분기가 갈리는 것 자체가 검사 대상이다.
-        """
-        elsewhere = self._decision(
-            self._run_claude_path_guard("analyst", "notebooks/probe.ipynb")
-        )
-        undefined = self._decision(
-            self._run_claude_path_guard("devps-engineer", "notebooks/probe.ipynb")
-        )
-
-        assert elsewhere.get("permissionDecision") == "deny"
-        assert undefined.get("permissionDecision") == "deny"
-        assert "analyst_path_guard.py" in elsewhere["permissionDecisionReason"]
-        assert (
-            elsewhere["permissionDecisionReason"]
-            != undefined["permissionDecisionReason"]
-        )
-
-    def test_claude_path_guard_denies_argument_mismatched_with_agent_type(self) -> None:
-        """배선 인자와 하네스가 알려주는 실제 워커가 다르면 차단한다.
-
-        둘 다 유효한 이름이라 미정의 축에는 걸리지 않는다 — 이 축만 잡는다.
-        급소는 **인자가 더 느슨한 경계를 주는 방향**이라 그 셀을 넣는다.
-        """
-        loosened = self._decision(
-            self._run_claude_path_guard(
-                "tech-writer", "docs/probe.md", agent_type="archivist"
-            )
-        )
-        assert loosened.get("permissionDecision") == "deny"
-        assert "배선 인자와 실제 워커가 다르다" in loosened["permissionDecisionReason"]
-
-        matched = self._decision(
-            self._run_claude_path_guard(
-                "tech-writer", "docs/probe.md", agent_type="tech-writer"
-            )
-        )
-        assert matched == {}, "대조군: 인자와 실제가 같으면 평소대로 통과한다"
-
-        absent = self._decision(
-            self._run_claude_path_guard("tech-writer", "docs/probe.md")
-        )
-        assert absent == {}, "`agent_type` 부재는 통과다(명시된 fail-open sub-축)"
-
-    def test_codex_exec_patch_fails_closed_for_unknown_subagent_role(self) -> None:
-        """역할을 식별할 수 없는 서브에이전트 patch는 차단한다."""
-        transcript = self.root / "unknown.jsonl"
-        transcript.write_text(
-            json.dumps(
-                {"type": "session_meta", "payload": {"thread_source": "subagent"}}
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        result = self._run_inferred_codex_path_guard(
-            {
-                "tool_name": "exec",
-                "cwd": str(self.repository),
-                "transcript_path": str(transcript),
-                "tool_input": (
-                    'const patch = "*** Begin Patch\\n'
-                    "*** Add File: docs/probe.md\\n"
-                    '*** End Patch"; tools.apply_patch(patch);'
-                ),
-            }
-        )
-
-        assert (
-            json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"]
-            == "deny"
-        )
-
-    def test_codex_stop_blocks_once_until_journal_is_closed(self) -> None:
-        """변경 세션은 미기록 시 한 번만 이어지고 마감 저널이 있으면 통과한다."""
-        payload = {"cwd": str(self.repository), "session_id": self.session_id}
-        start = self._run_guard("session-start", payload)
-        unchanged = self._run_guard("stop", payload)
-
-        assert start.returncode == 0
-        assert "runtime/codex" in start.stdout
-        assert f"agents/{datetime.now(tz=KST).strftime('%Y-%m-%d')}" in start.stdout
-        assert "agents/codex" not in start.stdout
-        assert unchanged.stdout == ""
-
-        (self.repository / "changed.txt").write_text("변경\n", encoding="utf-8")
-        first_stop = self._run_guard("stop", payload)
-        second_stop = self._run_guard("stop", {**payload, "stop_hook_active": True})
-
-        first_output = json.loads(first_stop.stdout)
-        second_output = json.loads(second_stop.stdout)
-        assert first_output["decision"] == "block"
-        assert "systemMessage" in second_output
-        assert "decision" not in second_output
-
-        today = datetime.now(tz=KST).strftime("%Y-%m-%d")
-        journal = self.vault / "agents" / today / "01-closed.md"
-        journal.parent.mkdir(parents=True)
-        journal.write_text(
-            "---\n"
-            "status: done\n"
-            f"session_id: {self.session_id}\n"
-            f"updated: {today}T00:00+09:00\n"
-            "---\n",
-            encoding="utf-8",
-        )
-
-        closed = self._run_guard("stop", payload)
-        assert closed.stdout == ""
-
-    def test_codex_stop_detects_edits_to_already_dirty_file(self) -> None:
-        """세션 시작 전부터 수정된 파일의 추가 편집도 diff 해시로 감지한다."""
-        tracked = self.repository / "tracked.txt"
-        tracked.write_text("원본\n", encoding="utf-8")
-        self._run_git("add", "tracked.txt")
-        self._run_git("commit", "--quiet", "-m", "test: 추적 파일")
-        tracked.write_text("시작\n", encoding="utf-8")
-
-        payload = {"cwd": str(self.repository), "session_id": self.session_id}
-        self._run_guard("session-start", payload)
-        tracked.write_text("종료\n", encoding="utf-8")
-
-        stopped = self._run_guard("stop", payload)
-        assert json.loads(stopped.stdout)["decision"] == "block"
-
-    def test_plan_mirror_uses_unambiguous_journal_link(self) -> None:
-        """런타임별 동명 노트를 피하도록 계획서 백링크에 전체 경로를 쓴다."""
-        mirrored = compose("# 계획\n", "2026-08-26/01-runtime-separation")
-
-        expected = "[[agents/2026-08-26/01-runtime-separation]]"
-        assert expected in mirrored
-
-    def test_archivist_write_boundaries_follow_frontmatter_not_path(self) -> None:
-        """평탄화 후 경계 축은 **경로가 아니라 내용**이다.
-
-        두 런타임이 `agents/<날짜>/`를 공유하므로 경로로는 서로를 가릴 수 없다.
-        기존 파일은 frontmatter `agent:`로, 신규 파일은 **다음 번호인가**로 가른다.
-        """
-        day = self.vault / "agents" / "2026-08-26"
-        day.mkdir(parents=True)
-        # 같은 폴더에 두 런타임의 저널이 나란히 있다 — 이 상황이 이 테스트의 전제다.
-        codex_path = day / "01-a.md"
-        codex_path.write_text("---\nagent: codex\n---\n", encoding="utf-8")
-        claude_path = day / "02-a.md"
-        claude_path.write_text("---\nagent: claude-code\n---\n", encoding="utf-8")
-
-        old_codex_path = self.vault / "agents" / "codex" / "2026-08-26" / "01-a.md"
-        legacy_claude_path = self.vault / "agents" / "2026-08-25" / "01-claude.md"
-        legacy_claude_path.parent.mkdir(parents=True)
-        legacy_claude_path.write_text(
-            "---\nagent: claude-code\n---\n", encoding="utf-8"
-        )
-        # 신규는 **다음 번호**(03)만 열린다. 02는 이미 쓰였으므로 재사용이 막혀야 한다.
-        claude_next = day / "03-next.md"
-        claude_taken = day / "02-collide.md"
-
-        codex_allowed = self._run_path_guard(
-            CODEX_PATH_GUARD,
-            {
-                "cwd": str(self.repository),
-                "tool_input": {"command": f"*** Add File: {codex_path}\n"},
-            },
-        )
-        old_codex_denied = self._run_path_guard(
-            CODEX_PATH_GUARD,
-            {
-                "cwd": str(self.repository),
-                "tool_input": {"command": f"*** Add File: {old_codex_path}\n"},
-            },
-        )
-        codex_denied = self._run_path_guard(
-            CODEX_PATH_GUARD,
-            {
-                "cwd": str(self.repository),
-                "tool_input": {"command": f"*** Add File: {claude_path}\n"},
-            },
-        )
-        legacy_claude_denied = self._run_path_guard(
-            CODEX_PATH_GUARD,
-            {
-                "cwd": str(self.repository),
-                "tool_input": {"command": f"*** Update File: {legacy_claude_path}\n"},
-            },
-        )
-        claude_allowed = self._run_path_guard(
-            CLAUDE_PATH_GUARD,
-            {"tool_input": {"file_path": str(claude_path)}},
-        )
-        claude_new_allowed = self._run_path_guard(
-            CLAUDE_PATH_GUARD,
-            {"tool_input": {"file_path": str(claude_next)}},
-        )
-        claude_taken_asks = self._run_path_guard(
-            CLAUDE_PATH_GUARD,
-            {"tool_input": {"file_path": str(claude_taken)}},
-        )
-        claude_asks = self._run_path_guard(
-            CLAUDE_PATH_GUARD,
-            {"tool_input": {"file_path": str(codex_path)}},
-        )
-
-        assert codex_allowed.stdout == ""
-        assert (
-            json.loads(old_codex_denied.stdout)["hookSpecificOutput"][
-                "permissionDecision"
-            ]
-            == "deny"
-        )
-        assert (
-            json.loads(codex_denied.stdout)["hookSpecificOutput"]["permissionDecision"]
-            == "deny"
-        )
-        assert (
-            json.loads(legacy_claude_denied.stdout)["hookSpecificOutput"][
-                "permissionDecision"
-            ]
-            == "deny"
-        )
-        # 대조군 둘이 **먼저** 통과해야 아래 위반 셀의 `ask`가 근거가 된다.
-        assert claude_allowed.stdout == ""  # 자기 런타임의 기존 저널
-        assert claude_new_allowed.stdout == ""  # 다음 번호의 신규 저널
-        assert (  # 남의 런타임 저널 — 같은 폴더인데도 내용으로 갈린다
-            json.loads(claude_asks.stdout)["hookSpecificOutput"]["permissionDecision"]
-            == "ask"
-        )
-        assert (  # 이미 쓰인 번호 재사용 — 남의 기록을 밀어내지 못한다
-            json.loads(claude_taken_asks.stdout)["hookSpecificOutput"][
-                "permissionDecision"
-            ]
-            == "ask"
-        )
+    def test_removed_modes_are_noop(self) -> None:
+        """갱신 전 배선으로 떠 있는 세션을 깨지 않도록 옛 모드는 무출력 통과한다."""
+        for command in ("pre-write", "stop"):
+            with self.subTest(command=command):
+                result = self._run_guard(command)
+                assert result.returncode == 0, result.stderr
+                assert result.stdout == "", result.stdout
 
 
 if __name__ == "__main__":

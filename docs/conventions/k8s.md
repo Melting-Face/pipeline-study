@@ -226,7 +226,7 @@ resources:
   (실측). S3 키는 표준 env(`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`)로 넣어 **S3FileIO의 기본
   자격증명 체인**이 집어가게 하고 DDL에서 뺀다. Secret→env 주입은 `podTemplate`으로 한다(§4).
 
-  #### 예외: JDBC 카탈로그 DDL — **조건부 허용** (`security` C5)
+  #### 예외: JDBC 카탈로그 DDL — **조건부 허용** (보안 점검 C5)
 
   Iceberg **JDBC 카탈로그**의 `CREATE CATALOG`는 S3 키와 달리 **환경변수 체인이 없어** DDL에
   접속 정보를 넣는 것을 피할 수 없다. 아래 **5개 조건을 전부** 만족할 때만 허용한다.
@@ -257,7 +257,7 @@ resources:
      `$OBSIDIAN_VAULT/security/posture.md`가 소유한다.
 
   **관측 범위 교훈 — "관측 경로의 생존"과 "관측 범위의 충분성"은 다른 축이다.**
-  `security` 점검에서 지정한 범위(`/opt/flink/log`·`/tmp`)를 **벗어난** 셸 히스토리 파일
+  보안 점검에서 지정한 범위(`/opt/flink/log`·`/tmp`)를 **벗어난** 셸 히스토리 파일
   (`/opt/flink/.flink-sql-history`)에 평문 크리덴셜이 남아 있었다. 같은 점검의 생존 확인은
   세 경로 모두 멀쩡했다 — **경로가 살아 있다는 것이 범위가 충분하다는 뜻이 아니다.**
   (건수는 위 §5와 같은 이유로 저장소에 적지 않는다 — 전말은 `security/posture.md` 소관.)

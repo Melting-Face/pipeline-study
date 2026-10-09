@@ -94,10 +94,11 @@
 - DUA·개인정보·가명정보 데이터의 재식별을 시도하지 않는다.
 - `.ipynb` 출력과 체크포인트는 검증 직후 제거한다.
 - 추출물은 `$DATA_EXTRACT_DIR` 밖에 쓰지 않고, 저널은 `$OBSIDIAN_VAULT`에만 쓴다.
-- 중요 작업(저장소 수정·위임·결정·비가역)은 사용자 최종 보고 전에 `archivist`로
-  `$OBSIDIAN_VAULT/agents/<KST 날짜>/<NN>-<mission>.md`를 기록하고 저널 `summary`(한 줄)를
+- 미션 = PR 하나다. PR이 머지되면 메인 에이전트가
+  `$OBSIDIAN_VAULT/agents/<KST 날짜>/<NN>-<mission>.md`를 1회 기록하고 저널 `summary`(한 줄)를
   채운다 — 인덱스 `agents/_MOC.base`가 프론트매터에서 생성하므로 MOC을 수기로 갱신하지 않는다.
-  태그는 `runtime/codex`다.
+  태그는 `runtime/codex`다. 작업 중 발견한 결함은 Issue 한 줄로만 남기고(범위 동결),
+  열린 미션은 3건을 넘기지 않는다.
 - 외부 검색 질의에는 내부 데이터·테이블 값·비밀정보를 넣지 않는다.
 
 ## 테스트와 검증
@@ -134,18 +135,16 @@ Python 변경은 `ruff check`, SQL 변경은 `sqlfluff lint`, Terraform 변경�
 
 | 워커 | 책임 | 쓰기 정책 |
 | --- | --- | --- |
-| `analyst` | EDA·분석 리포트·gold 승격 제안 | `notebooks/**`, `docs/analyses/**` |
-| `data-engineer` | Dagster·dbt·적재 구현 | 인프라 선언 제외 workspace write |
-| `data-extractor` | 읽기 전용 조회 후 승인된 외부 추출 경로에 저장 | 저장소 쓰기 금지 |
-| `data-verifier` | 실제 값·grain·lineage 대조 | read-only |
-| `data-qa` | 테스트 체계·커버리지 감사 | read-only |
-| `devops-engineer` | Docker·Compose·Kubernetes·Terraform 구현 | 파이프라인·분석 영역 제외 |
-| `devops-verifier` | 실행 중 인프라와 선언 대조 | read-only |
-| `devops-qa` | 인프라 선언·게이트 체계 감사 | read-only |
-| `security` | 비밀·노출·거버넌스 검토 | read-only |
+| `analyst` | EDA·분석 리포트·gold 승격 제안·명세 기반 추출 | `notebooks/**`, `docs/analyses/**`, 추출 경로 |
+| `data-engineer` | Dagster·dbt·적재 구현 | workspace write |
+| `devops-engineer` | Docker·Compose·Kubernetes·Terraform 구현 | workspace write |
+| `reviewer` | 데이터 값·테스트 체계·인프라·보안 점검(체크리스트 A~E) | read-only |
 | `researcher` | 외부 1차 출처 조사 | read-only |
-| `tech-writer` | `docs/**`·`README.md` 문서화 | 제한된 workspace write |
-| `archivist` | 저장소 밖 미션 저널·MOC 정합성 | 저장소 쓰기 금지 |
+
+게이트는 2단이다. 가역 작업(코드·문서·모델)은 CI와 사용자의 PR 머지가 통제한다.
+비가역 작업(apply·삭제·파괴적 SQL·외부 발신·데이터 반출·스킬 설치·통제 배선 변경)은
+실행 전에 `reviewer` 보안 체크리스트 1회와 사용자 승인을 거친다.
+정본은 `docs/conventions/agents.md`다.
 
 ### 위임 규칙
 
@@ -176,12 +175,8 @@ Python 변경은 `ruff check`, SQL 변경은 `sqlfluff lint`, Terraform 변경�
   `kubectl apply/delete`, Helm 변경, 볼륨 삭제, `dbt --full-refresh`, 파괴적 SQL,
   Iceberg 유지보수, `.env`·state·크리덴셜 수정.
 - 금지된 HTTP mutation과 비밀·state 파일 쓰기는 Codex hook이 차단한다.
-- `.codex/rules/*.rules`는 샌드박스 밖 명령의 승인 정책이며, 파일 경계는 sandbox와
-  워커별 hook/instructions가 함께 담당한다.
-- 워커별 쓰기 경계표의 정본은 `scripts/worker_boundaries.py` **한 곳**이고
-  `.codex/hooks/worker_path_guard.py`는 그것을 읽는다. Codex 고유분은 그 파일의
-  `CODEX_ONLY`에 두고 **사유를 함께 적는다** — 값을 hook에 다시 적으면
-  두 런타임이 갈리고, 갈렸다는 신호가 나지 않는다(Issue #53).
+- `.codex/rules/*.rules`는 샌드박스 밖 명령의 승인 정책이며, 파일 경계는 sandbox
+  모드(`read-only`/`workspace-write`)와 워커 지침이 담당한다. 워커별 경로 hook은 없다.
 
 ## Codex 런타임 한계
 

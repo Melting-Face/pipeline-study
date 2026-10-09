@@ -41,18 +41,6 @@ REVIEW_COMMAND_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
-CANONICAL_PATHS = (
-    "AGENTS.md",
-    "CLAUDE.md",
-    ".codex/",
-    ".claude/agents/",
-    ".claude/settings.json",
-    ".agents/skills/",
-    ".claude/skills/",
-    "skills-lock.json",
-    "compose.yml",
-)
-
 
 def emit_deny(reason: str) -> None:
     """도구 호출을 확정적으로 차단한다."""
@@ -138,20 +126,6 @@ def main() -> None:
                 "비밀값과 state는 Codex가 직접 수정하지 않는다."
             )
             return
-        canonical = [
-            path
-            for path in paths
-            if any(
-                path == protected.rstrip("/") or path.startswith(protected)
-                for protected in CANONICAL_PATHS
-            )
-        ]
-        if canonical:
-            emit_context(
-                "실행 규칙 또는 통제 배선을 수정한다: "
-                f"{', '.join(sorted(set(canonical)))}. 무엇을 바꾸는지, 왜 지금인지, "
-                "어떤 부정 테스트로 실효를 확인할지 답한 뒤 최소 변경으로 진행하라."
-            )
 
 
 if __name__ == "__main__":

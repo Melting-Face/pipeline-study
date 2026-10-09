@@ -255,7 +255,7 @@ WIKI_LINK_RE = re.compile(r"\]\((?!https?://|mailto:|#)([^)\s#]+\.md)(?:#[^)\s]*
 #   우리가 고칠 수 없고, 코드 예시의 제네릭 `[T](x: T)`가 링크로 오인된다.
 #   🔴 **제외는 「검사 안 함」이지 「안전함」이 아니다** — 그 디렉터리에는
 #      lock 밖 스킬이 실재하고 출처·검토를 거치지 않은 것이 섞여 있다.
-#      그 축은 별도 통제(`skill_gate_guard.py`)가 본다.
+#      그 축은 이 검사의 범위 밖이다(스킬 공급망 규칙은 `docs/skills.md`).
 EXCLUDE_PARTS = ("dbt_packages", "target", ".venv", "node_modules")
 
 FENCE_RE = re.compile(r"^\s*(```|~~~)")

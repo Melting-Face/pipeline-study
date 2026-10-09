@@ -34,10 +34,10 @@ r"""조사 URL 일괄 승인 가드 — `researcher` 스코프 PreToolUse hook.
 
 🔴 `ask`를 쓰지 않는다:
     auto 모드 분류기가 `ask`를 흡수한다(CLAUDE.md §강제 수단 실측).
-    막을 것은 `deny`여야 막힌다 — `worker_path_guard.py`의 `OUTSIDE_STRICT`와 같은 논리.
+    막을 것은 `deny`여야 막힌다 — 다른 가드와 같은 논리.
 
-🔴 이 가드는 **fail-closed**다 (`worker_path_guard.py`와 반대 방향):
-    경로 가드는 다른 층이 받쳐주므로 fail-open이 맞지만, 여기는 **이 층이 유일**하다.
+🔴 이 가드는 **fail-closed**다:
+    다른 층이 받쳐주는 가드라면 fail-open도 맞을 수 있지만, 여기는 **이 층이 유일**하다.
     입력 파싱 실패·키 부재·매니페스트 파손은 전부 `deny`로 떨어진다.
     통과시키면 **파일 하나 깨뜨리는 것이 게이트를 여는 수단**이 된다.
     (`WebSearch`만은 예외로 통과시킨다 — 아래 §한계.)
@@ -83,9 +83,9 @@ from urllib.parse import urlsplit
 #    맞출 수 없는 이름이 되어 매니페스트가 **영원히 안 읽힌다**("막았다고 믿는 상태"의
 #    반대판: 늘 막혀 못 쓰는 상태). 한 파일에 모으고 `session_id`는 레코드 안에 남긴다.
 #
-# 🔴 **저장소 밖으로 빼지 않는다.** `data-extractor`의 `OUTSIDE_STRICT` 선례는 성격이
+# 🔴 **저장소 밖으로 빼지 않는다.** 데이터 반출 경로(`$DATA_EXTRACT_DIR`)와는 성격이
 #    반대다 — 저쪽은 원천 진료 데이터를 저장소에 **안 남기려고** 밖에 쓰지만, 이쪽은
-#    **감사 근거라 남아야 하고** `security`가 G2에서 읽는다. 내용도 PHI가 아니다.
+#    **감사 근거라 남아야 하고** `reviewer`가 점검 때 읽는다. 내용도 PHI가 아니다.
 RESEARCH_ROOT = Path(".claude/.research")
 # 승인 목록과 로그는 **파일을 가른다** — `permissions.deny`가 승인 목록만 정밀하게
 # 겨냥할 수 있어야 한다(로그는 hook 프로세스가 쓰므로 `permissions` 밖이다).

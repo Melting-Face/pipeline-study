@@ -39,19 +39,17 @@ OpenAI는 Claude Code의 지침·설정·스킬·hook·슬래시 명령·subagen
 
 ## 워커와 모델
 
-13개 역할은 양쪽 런타임에 같은 이름으로 존재한다. Claude의 `sonnet`은 Codex 모델명이
+5개 워커는 양쪽 런타임에 같은 이름으로 존재한다. Claude의 `sonnet`은 Codex 모델명이
 아니므로 작업 난이도와 비용에 따라 다음처럼 매핑한다.
 
 | Codex 설정 | 워커 | 이유 |
 | --- | --- | --- |
-| 부모 모델 상속 | `analyst`, `data-engineer`, `data-extractor`, `devops-engineer`, `security`, `tech-writer` | 구현·판정·모호한 작업의 정확성 우선 |
-| `gpt-5.6-terra`, `high` | `data-qa`, `data-verifier`, `devops-qa`, `devops-verifier`, `researcher` | 읽기·대조 중심이며 정확성과 비용 균형 |
-| `gpt-5.6-luna`, `medium` | `archivist` | 반복적 기록·인벤토리 작업의 효율 우선 |
+| 부모 모델 상속 | `analyst`, `data-engineer`, `devops-engineer` | 구현·모호한 작업의 정확성 우선 |
+| `gpt-5.6-terra`, `high` | `reviewer`, `researcher` | 읽기·대조 중심이며 정확성과 비용 균형 |
 
-판정·감사 워커는 `sandbox_mode = "read-only"`다. 구현 워커는
-`workspace-write`를 사용하고 프로젝트 `PreToolUse` hook이 `transcript_path`에서 활성 역할을
-식별해 `apply_patch` 경계를 적용한다. 서브에이전트는 각자 토큰을 사용하므로 독립된 읽기
-작업 또는 명확히 분리된 역할에만 사용한다.
+`reviewer`·`researcher`는 `sandbox_mode = "read-only"`다. 구현 워커는 `workspace-write`를
+사용하며 워커별 경로 hook은 없다(경계는 sandbox 모드와 지침 규율). 서브에이전트는 각자 토큰을
+사용하므로 독립된 읽기 작업 또는 명확히 분리된 역할에만 사용한다.
 [OpenAI Docs — Subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents)
 
 ## 권한 계층
@@ -62,8 +60,7 @@ Codex 권한은 다음 순서로 겹쳐 쓴다.
 2. 읽기 전용 워커의 `sandbox_mode = "read-only"`
 3. `.codex/rules/default.rules`의 샌드박스 밖 명령 승인 정책
 4. `.codex/hooks/policy_guard.py`의 확정 금지와 추가 문맥
-5. `.codex/hooks/worker_path_guard.py`의 워커별 patch 경계
-6. `AGENTS.md`와 워커 `developer_instructions`의 행위 규율
+5. `AGENTS.md`와 워커 `developer_instructions`의 행위 규율
 
 `.rules`는 명령 인자 prefix를 평가하며 `allow`, `prompt`, `forbidden` 중 가장 엄격한
 결정을 적용한다. shell 문자열을 완전하게 해석하는 방화벽이 아니므로 sandbox와 hook을
@@ -106,7 +103,7 @@ Codex는 저장소의 `.agents/skills/<name>/SKILL.md`를 자동 탐색한다. �
 있던 스킬은 `.agents/skills`에 별도 사본을 두며, 기존 Codex 스킬은 유지한다.
 
 - 같은 스킬을 양쪽에서 수정할 때는 두 사본의 diff와 `skills-lock.json` 해시를 확인한다.
-- 외부 스킬 설치·업데이트는 공급망 변경이므로 `security` 검토와 사용자 승인을 거친다.
+- 외부 스킬 설치·업데이트는 공급망 변경이므로 `reviewer` 보안 체크리스트와 사용자 승인을 거친다.
 - 상세 본문을 `AGENTS.md`에 복제하지 않고 trigger metadata만 상시 노출한다.
 
 Codex는 먼저 스킬 metadata를 보고 작업과 일치할 때 `SKILL.md` 전문을 읽는 progressive
@@ -143,8 +140,5 @@ disclosure 방식을 사용한다. [OpenAI Docs — Build skills](https://learn.
 4. `.codex/hooks/*.py`를 `ruff check`와 `py_compile`로 검사한다.
 5. `codex execpolicy check`로 각 `.rules`의 `prompt`·`forbidden` 대조군을 확인한다.
 6. `policy_guard.py`에 허용·거부 합성 payload를 각각 넣어 결과가 갈리는지 확인한다.
-7. `worker_path_guard.py`에 메인·서브에이전트 transcript와 허용·거부 patch를 조합해
-   역할 추론과 경계 판정이 실제로 갈리는지 확인한다.
-8. 새 Codex 세션에서 프로젝트 지침·13개 워커·16개 스킬이 발견되는지 확인한다.
-9. hook을 신뢰한 새 세션 또는 검토된 일회성 자동화 세션에서 쓰기 워커가 경계 밖 파일을
-   만들도록 시도하고, `PreToolUse` 거부와 파일 부재를 모두 확인한다.
+7. 새 Codex 세션에서 프로젝트 지침·5개 워커·스킬이 발견되는지 확인한다.
+8. `read-only` 워커가 파일을 만들도록 시도해 sandbox 거부와 파일 부재를 모두 확인한다.

@@ -33,7 +33,7 @@ def _parse_source_rows(logs: str) -> int | None:
     배치 SQL에는 INSERT 뒤 검증 SELECT가 없어 `poc.sample_flink`의 행 수는
     이 자산의 출력으로 확인할 수 없다. 라벨을 `source_rows`로 두는 이유다 —
     값은 맞고 라벨이 틀린 수치가 가장 위험하다(philosophy.md §계측 단위).
-    쓰기 검증은 `data-verifier`가 카탈로그를 직접 조회해 판정한다.
+    쓰기 검증은 `reviewer`가 카탈로그를 직접 조회해 판정한다.
     """
     lines = logs.splitlines()
     for index, line in enumerate(lines):
