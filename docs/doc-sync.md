@@ -33,10 +33,10 @@
 | **진행 상태·미해결**(비공개) | `$OBSIDIAN_VAULT/status/`(`backlog.md`·`observations.md`·`_index.md`) | **볼트에 먼저 쓰고 `docs/`에서 지운다** — 반대 순서는 손실이 비가역이다. |
 | 데이터셋 스키마·피처 | `docs/dataset_schema.md` | 해당 `models/<dataset>/source.yml` · `schema.yml` |
 | 분석 규칙(gold·노트북·리포트) | `docs/conventions/analysis.md` | `CLAUDE.md` 분석 섹션 · `docs/conventions/dbt.md`(gold 레이어) · `docs/test.md`(grain 테스트) · `notebooks/README.md` |
-| 외부 공개(블로그·공유 자료) | `docs/conventions/publishing.md` | `CLAUDE.md` 운영 섹션 · `docs/README.md` 목차 · `docs/posts/README.md` · `.claude/agents/tech-writer.md`(포맷 프로파일·경계) · `docs/security.md`(반출 통제) |
+| 외부 공개(블로그·공유 자료) | `docs/conventions/publishing.md` | `CLAUDE.md` 운영 섹션 · `docs/README.md` 목차 · `docs/posts/README.md` · `docs/security.md`(반출 통제) |
 | 위키 학습 노트 | `wiki/**` | `wiki/_Sidebar.md`·`wiki/Home.md` 목차(페이지 추가 시 **한 벌**) · `docs/conventions/publishing.md` §4-1 |
-| Claude Code 스킬 | `docs/skills.md`(허브) + `docs/skills/**` | `skills-lock.json` · `.claude/agents/*.md` 프론트매터 · `CLAUDE.md` · `docs/conventions/agents/permissions.md` |
-| 에이전트 오케스트레이션 | `docs/conventions/agents.md` + `agents/**` | `CLAUDE.md`(**절 신설·규칙 변경만** — 항상 적용이라 한 줄이 앞으로의 모든 요청에 곱해진다. 오탈자 교정은 면제) · `docs/README.md` · `.claude/agents/**` · 관련 가드 스크립트 (아래 §가드 배선 체인) |
+| Claude Code 스킬 | `docs/skills.md`(허브) + `docs/skills/**` | `skills-lock.json` · `.claude/agents/*.md` 프론트매터 · `CLAUDE.md` · `docs/conventions/agents.md` |
+| 에이전트 오케스트레이션 | `docs/conventions/agents.md` | `CLAUDE.md`(**절 신설·규칙 변경만** — 항상 적용이라 한 줄이 앞으로의 모든 요청에 곱해진다. 오탈자 교정은 면제) · `docs/README.md` · `.claude/agents/**` · 관련 가드 스크립트 (아래 §가드 배선 체인) |
 
 ⚠️ **「에이전트 오케스트레이션」 행의 `CLAUDE.md` 면제는 축 하나짜리다.** 동반 갱신은
 **절을 새로 만들거나 규칙 자체를 바꿀 때만** 걸고, 오탈자·표현 교정은 정본만 고치고 끝낸다.
@@ -48,7 +48,7 @@
 이 행의 판정을 다른 행의 근거로 옮겨 읽지 마라.
 
 ⚠️ **산문 §참조는 기계가 보지 않는다 — 이 축은 규율이다.** `doc_lint --links`는 마크다운
-링크와 앵커까지 보고, `skill_wiring_check`는 표 두 벌을 대조한다. 그러나
+링크와 앵커까지 본다. 그러나
 *"`docs/skills.md` §③"* 처럼 **산문에 적은 절 이름**은 어느 검사기도 대조하지 않는다.
 문서를 쪼개거나 절을 옮길 때는 **`grep -rn '§<이름>'`으로 전수 육안 확인**한다 —
 링크가 초록이어도 그 §가 다른 파일로 갔으면 참조는 죽어 있다.
@@ -85,24 +85,11 @@
 
 | 가드 | 배선처 |
 | --- | --- |
-| `journal_guard` · `protected_paths_guard` · `worktree_guard` · `plan_mirror_guard` | `.claude/settings.json` |
-| `analyst_path_guard` · `worker_path_guard` · `research_gate_guard` · `skill_gate_guard` | **각 워커 프론트매터** |
+| `journal_guard` · `worktree_guard` | `.claude/settings.json` |
+| `research_gate_guard` | **`researcher` 프론트매터** |
 
-- 🔴 **`BOUNDARIES`에 워커를 추가하면 그 워커 정의의 `hooks`도 함께 잇는다.**
-  정의만 있고 호출자가 없으면 **한 번도 실행되지 않는다.**
-- **반대 방향도 한 벌이다** — 워커를 없애면 `BOUNDARIES` 항목도 함께 지운다.
-  남겨도 아무 신호가 나지 않는다(부를 워커가 없어 조용히 죽은 설정이 된다).
-- ⚠️ **위 두 줄은 규율이었고 이제 기계가 함께 본다** — `scripts/worker_wiring_check.py`
-  (pre-commit `worker-wiring`)가 `BOUNDARIES` ↔ 프론트매터 인자를 4축으로 대조한다.
-  **위반시켜 확인하는 법**: `BOUNDARIES`에서 워커 1종을 지우면 「인자가 정의에 없다」,
-  가짜 키를 넣으면 「부르는 배선이 없다」, `KNOWN_ELSEWHERE`에 기존 워커를 넣으면
-  「두 곳에 정의됐다」, 배선 인자를 **다른 유효 워커명**으로 바꾸면 「인자 ≠ `name:`」이
-  뜬다 — **넷이 서로 다른 문구**여야 축이 갈린 것이다.
-  ⚠️ 모집단은 「워커 파일 전량」이 아니라 **「이 가드를 배선한 파일」** 이다(읽기 전용
-  워커는 배선이 없어 밖이다) — 그래서 워커를 늘리거나 줄여도 이 검사기는 안 깨진다.
-  ⚠️ **런타임 `deny`와 시점이 다르다.** 가드는 워커가 쓰기를 시도해야 발동하고,
-  「인자 ≠ `name:`」 축은 두 이름이 다 유효해 런타임 분기에 아예 닿지 못한다.
-  **한쪽이 초록이라고 다른 쪽이 초록인 것이 아니다.**
+- 🔴 **배선이 가리키는 스크립트가 실재하는지**는 `scripts/tests/test_guard_fail_direction.py`
+  (`test_all_wired_hook_scripts_exist`)가 커밋마다 본다. 가드를 지우면 배선도 함께 지운다.
 - **`.gitignore`도 체인에 있다** — 런타임 상태 디렉터리는 저장소에 커밋하지 않는다.
   ⚠️ **끝 슬래시를 붙이지 않는다** — worktree에서 그 경로가 심볼릭 링크(=파일)라
   슬래시를 붙이면 무시되지 않는다.
@@ -110,19 +97,14 @@
   로컬 훅이라 `--no-verify`로 우회되므로 **실수 방지이지 봉쇄가 아니다.**
 - **로컬 훅을 신설하면 `files:`에 자기 `entry` 스크립트를 넣는다.** 안 넣으면 그 스크립트만
   고치는 커밋에서 훅이 통째로 `Skipped`가 된다 — 하필 게이트를 바꾸는 커밋에서 게이트가 안 돈다.
-  ⚠️ **이 규율도 이제 기계가 함께 본다** — `scripts/hook_files_check.py`(pre-commit `hook-files`).
-  **위반시켜 확인하는 법**: 어떤 훅의 `files:`에서 자기 스크립트를 빼면 「자기 검사기를 담지
-  않는다」, `always_run: true`를 `files:`와 함께 두면 「모집단을 가를 수 없다」가 뜬다 —
-  **둘이 서로 다른 문구**여야 축이 갈린 것이다.
-  ⚠️ `always_run: true`인 훅은 **면제가 아니라 모집단이 전체**라 사각이 없다. 검사기는 이것을
-  통과와 합치지 않고 `전체모집단`으로 따로 센다 — 합치면 *"면제받은 훅이 있다"* 로 읽힌다.
+  이 축은 **규율**이다(기계 검사 없음). `always_run: true`인 훅은 면제가 아니라 모집단이 전체다.
 - **가드 단위 테스트도 체인에 있다** — `scripts/tests/**`를 늘리거나 줄이면
   [`test.md`](test.md) §7의 실행 명령·보증 범위(테스트 0건인 가드 목록)를 함께 갱신한다.
   훅 `guard-tests`의 `files:`가 `scripts/*_guard.py`·`.codex/hooks/**`도 잡으므로
   **가드를 고치면 그 테스트가 함께 돈다**(짝 가드를 고칠 때도 마찬가지다).
 
-배선을 바꿨으면 **새 세션에서 3셀 대조**로 실발동을 확인한다
-([`conventions/agents/enforcement.md`](conventions/agents/enforcement.md)).
+배선을 바꿨으면 **새 세션에서 일부러 위반시켜** 실발동을 확인한다
+([`conventions/agents.md`](conventions/agents.md#남은-강제-수단)).
 
 
 ## 실무 규칙
@@ -136,8 +118,8 @@
    안 적으면 "설정은 넣었는데 실효가 없는" 상태가 조용히 남는다 —
    이 저장소에는 이미 그런 계열이 셋 있었다(존재하지 않는 hook 결정값 · 매칭기가 무시하는
    경로 규칙 · 헤드리스 세션에서 판정 불가인 설정).
-6. **검증 절차 자체는 [`conventions/agents/enforcement.md`](conventions/agents/enforcement.md)가 갖는다** —
-   3셀 대조·대조군 우선·차단 문구 출처 구분. 여기서는 **체인에 적으라**는 것만 정한다.
+6. **검증 절차 자체는 [`conventions/agents.md`](conventions/agents.md#남은-강제-수단)가 갖는다** —
+   여기서는 **체인에 적으라**는 것만 정한다.
 7. 🔴 **`docs/`에 무엇을 남길지는 3축으로 판정한다.** 순서가 있다 — 앞의 둘이
    *남을지*를, 셋째가 *나가면 어디로 갈지*를 정한다.
 

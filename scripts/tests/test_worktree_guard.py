@@ -156,7 +156,7 @@ class WorktreeGuardTest(unittest.TestCase):
         감사기록 정본이다.
 
         ⚠️ 게다가 볼트 경로에 *"`worktree-new.sh`로 이주하라"* 는 **성립하지 않는
-        처방**을 띄웠다. `worker_path_guard.py`가 적어둔 교훈 그대로다 —
+        처방**을 띄웠다. 교훈은 하나다 —
         **강등된 게이트보다 틀린 방향으로 유도하는 게이트가 더 위험하다.**
         """
         assert self.decide_path(self.outside_repo / "agents/2026-01-01/01-x.md") is None

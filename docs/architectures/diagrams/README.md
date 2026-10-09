@@ -7,7 +7,7 @@
 |---|---|---|
 | [`lakehouse-pipeline.dataflow.json`](lakehouse-pipeline.dataflow.json) | `dataflow` | 원천 → S3 착지 → 적재 경로 → Iceberg bronze → dbt silver·Flink |
 | [`local-k8s.architecture.json`](local-k8s.architecture.json) | `architecture` | kind on Podman 런타임 배치 — 노출 경로와 Iceberg JDBC 카탈로그 공유 |
-| [`agent-orchestration.workflow.json`](agent-orchestration.workflow.json) | `workflow` (schema v2) | supervisor → 워커 → G1/G2 게이트 → 저널 |
+| [`agent-orchestration.workflow.json`](agent-orchestration.workflow.json) | `workflow` (schema v2) | supervisor → 워커 → 게이트 2단 → 저널 |
 
 세 장은 **서로 다른 축**이다(데이터 흐름 / 런타임 배치 / 통제 배선). 한 장에 합치지 않는다.
 
@@ -18,7 +18,7 @@ git 추적 대상이 아니므로** 새로 클론한 트리에는 없다.
 
 🔴 **archify는 현재 [`skills-lock.json`](../../../skills-lock.json)·[`docs/skills.md`](../../skills.md)에
 미등재다.** 출처가 개인 저장소이고 실행 파일(`bin/archify.mjs`)을 포함하므로 등재 루브릭과
-`security` 검토를 거쳐야 한다 — **등재 전에는 이 절차를 상시 경로로 쓰지 않는다.**
+`reviewer` 보안 점검(체크리스트 E)을 거쳐야 한다 — **등재 전에는 이 절차를 상시 경로로 쓰지 않는다.**
 아래 명령은 등재가 끝난 뒤의 재생성 절차를 기록해 둔 것이다.
 
 ```bash
@@ -47,8 +47,8 @@ node "$ARCHIFY" visual-check "$OUT"/lakehouse-pipeline.html --json
 
 ## 수치의 유효 조건 (시제)
 
-스펙에는 **저절로 낡는 수치**가 박혀 있다 — `dbt silver 22 모델` · `bronze 17 테이블` ·
-`PreToolUse 가드 9종` · `판정 워커 5종` · `gold 0건`.
+스펙에는 **저절로 낡는 수치·목록**이 박혀 있다 — `dbt silver 22 모델` · `bronze 17 테이블` ·
+D3의 워커·가드 노드 · `gold 0건`.
 
 이것은 [`CLAUDE.md`](../../../CLAUDE.md) 문서 3축의 **②시제에서 걸리는 값**이고, 그럼에도 **수용한다** —
 근거는 수치가 이 그림의 설득력 자체이기 때문이다(일반화하면 「어떤 레이어가 있다」는 하나 마나 한
@@ -59,8 +59,8 @@ node "$ARCHIFY" visual-check "$OUT"/lakehouse-pipeline.html --json
 |---|---|
 | `dagster/dockerfile.d/src/dbt_pipelines/models/**` 의 모델이 늘거나 줄 때 | D1 `dbt silver` 수치 |
 | Dagster 적재 자산이 늘거나 줄 때 | D1 `bronze` 수치 |
-| `.claude/agents/*.md` 가 늘거나 줄 때 | D3 `판정 워커` 수치 |
-| `scripts/*_guard.py` 또는 `.claude/settings.json` 의 `hooks` 배선이 바뀔 때 | D3 `PreToolUse 가드` 수치 |
+| `.claude/agents/*.md` 가 늘거나 줄 때 | D3 워커 노드 |
+| `scripts/*_guard.py` 또는 `.claude/settings.json` 의 `hooks` 배선이 바뀔 때 | D3 가드 노드 |
 | `gold` 태그가 처음 생길 때 | D1 「선언된 공백」 카드 |
 | 오퍼레이터·차트 버전이 바뀔 때 | D2 「이 그림이 그리지 않는 것」 카드 |
 | `k8s/catalog-postgres.yaml` 의 `spec.plugins` 주석이 풀릴 때 | D2 「이 그림이 그리지 않는 것」 카드 |
@@ -80,8 +80,8 @@ grep -l 'disallowedTools' .claude/agents/*.md    # 도구 제한이 걸린 워�
 ls scripts/*_guard.py | wc -l                    # 가드 파일 총수 — PreToolUse 배선 수가 아니다
 ```
 
-`판정 워커 5종`은 `*-verifier`·`*-qa`·`security`를 센 값이고, `PreToolUse 가드 9종`은
-**배선된 스크립트 종수**다(가드 파일은 10종 — `plan_mirror_guard`는 `PostToolUse`/`Stop` 전용이라 빠진다).
+가드 파일과 `PreToolUse` 배선은 다른 단위다 — `journal_guard`는 `SessionStart` 알림 전용이라
+`PreToolUse` 노드에 들어가지 않는다.
 
 ## 로케일
 

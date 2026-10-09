@@ -6,8 +6,8 @@ allowed-tools: Read, Write, Edit, Glob, Bash(date:*), Bash(ls:*), Bash(mkdir:*),
 
 현재 세션의 작업을 **기록관 저널**에 기록·갱신한다. 규약 정본은 @docs/conventions/agents.md 다.
 
-> 평시 기록 주체는 **`archivist`**(§기록 주체)다. 이 커맨드는 **누락 보정·수동 기록**용이며,
-> archivist를 태우기 애매한 소규모 보정이나 폴백 상황에서 쓴다.
+> 기록 주체는 **메인 세션**이고, 기록 시점은 **미션(=PR)이 머지될 때 1회**다. 이 커맨드가 그 절차다.
+> 머지 전에 세션이 끝나면 `status: in-progress`로 중간 기록을 남겨도 된다.
 > 시각은 **반드시 `date`로 실측**해 적는다 — 추정 시각은 기록 신뢰도를 통째로 무너뜨린다.
 
 ## 절차
@@ -17,7 +17,7 @@ allowed-tools: Read, Write, Edit, Glob, Bash(date:*), Bash(ls:*), Bash(mkdir:*),
 3. **미션 슬러그 결정** — 인자 `$1`이 있으면 그것을, 없으면 이번 세션의 주 작업에서 영문 kebab-case로 유추한다.
 4. **대상 파일** — `<볼트>/agents/<YYYY-MM-DD>/<NN>-<mission-slug>.md`
    - **`NN` 발급**: `scripts/journal_guard.py session-start`로 **다음 번호를 조회**한다(직접 `ls`로 세지 마라 —
-     병렬 세션과 경합해 중복이 난다). 신규 생성은 `PreToolUse` hook이 중복·건너뜀을 차단한다.
+     병렬 세션과 경합해 중복이 난다). 쓰기 직전에 그 날짜 폴더를 다시 확인한다 — 차단 hook은 없다.
    - **`NN` 판정 기준**은 **본문 상호작용 로그의 첫 이벤트 시각**(대개 사용자 요청 수령)이다.
      프론트매터 `started`는 파일 생성 시각이라 동시 착수 시 변별력이 없다.
    - **있으면**: 읽고 **누락분만 append**한다(기존 내용 보존, 중복 금지). `updated`·`status` 갱신.

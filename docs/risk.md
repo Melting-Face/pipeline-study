@@ -15,7 +15,7 @@
 | **이 문서** | 리스크를 어떻게 분류·등급하고 무엇으로 대응하나 |
 | [`security.md`](security.md) | 보안·거버넌스 **통제 방침** 자체와 규제 매핑 |
 | [`conventions/data-quality.md`](conventions/data-quality.md) | 데이터 품질의 차원과 실패 시 대응 |
-| [`conventions/agents/gates.md`](conventions/agents/gates.md) | 실행 **전에 누구의 승인**을 받나 |
+| [`conventions/agents.md`](conventions/agents.md#게이트-2단) | 실행 **전에 누구의 승인**을 받나 |
 | [`doc-sync.md`](doc-sync.md) | 그 문장이 저장소에 남는가 |
 | [`operations.md`](operations.md) | 복구 **수단** 자체 — 백업·클러스터 재생성 절차 |
 
@@ -93,13 +93,13 @@
 
 이 표가 §2의 셋째 축을 판정하는 근거다. 목록이 여러 문서에 나뉘어 있고 항목이 완전히
 같지 않으므로, **가역성 판정만은 여기 한 벌**로 둔다.
-승인 절차는 [`conventions/agents/gates.md`](conventions/agents/gates.md),
-권한 배선은 [`conventions/agents/permissions.md`](conventions/agents/permissions.md)가 갖는다.
+승인 절차는 [`conventions/agents.md`](conventions/agents.md#게이트-2단),
+권한 배선은 같은 문서 [§남은 강제 수단](conventions/agents.md#남은-강제-수단)이 갖는다.
 
 | 작업 | 되돌리는 비용 | 집행 주체 |
 | --- | --- | --- |
 | git 커밋 | 낮음 — 히스토리 재작성으로 회수 가능 | 사람 승인 |
-| git 푸시 | **불가** — 공개 저장소라 푸시가 곧 발행이다 | G2 이후 · 사람 |
+| git 푸시 | **불가** — 공개 저장소라 푸시가 곧 발행이다 | 사람 승인(`permissions.ask`) |
 | 외부 발신·발행 | **불가** — 캐시·색인이 남는다 | 사람 전담 · 워커 금지 |
 | `terraform apply` | 중간 — state와 실자원이 갈릴 수 있다 | 워커는 계획만 → 사람 |
 | `kubectl apply` | 중간 — 선언 롤백은 되나 데이터는 아니다 | 워커는 계획만 → 사람 |
@@ -107,7 +107,7 @@
 | `dbt --full-refresh` | 높음 — 스냅샷 히스토리가 끊긴다 | 워커는 계획만 → 사람 |
 | `DROP` · `TRUNCATE` | **불가** | 워커는 계획만 → 사람 |
 | `.env` · `tfstate` 수정 | 높음 — 접속 대상·상태가 함께 갈린다 | 사람 승인 |
-| 스킬 설치 · lock 편집 | **불가** — 실행 컨텍스트에 외부 코드가 들어온다 | 계획만 → `security` → 사람 |
+| 스킬 설치 · lock 편집 | **불가** — 실행 컨텍스트에 외부 코드가 들어온다 | 계획만 → `reviewer`(체크리스트 E) → 사람 |
 | 클러스터 재생성 | 높음 — [`operations.md`](operations.md) §4 | 워커는 계획만 → 사람 |
 
 - **「불가」는 기술이 아니라 도달 범위가 정한다.** 로컬에서 지울 수 있어도 이미 나간
@@ -144,9 +144,8 @@
 - 🔴 **게이트가 초록인 것과 게이트가 옳은 것은 다른 축이다.** 뒤엣것은 위반시켜야 보인다.
   프로브한 축만 「잡는다」고 쓰고, **못 잡는 것도 같은 자리에 적는다**.
 - 프로브하지 않은 축은 `미확인`으로 남긴다. `미확인`은 실패가 아니지만 **닫힘도 아니다**.
-- 검증 절차의 정본은
-  [`conventions/agents/enforcement.md`](conventions/agents/enforcement.md)다 —
-  3셀 대조·대조군 우선·차단 문구 출처 구분.
+- 강제 수단과 그 확인 방법의 정본은
+  [`conventions/agents.md`](conventions/agents.md#남은-강제-수단)다.
 
 ## 7. 위험이 현실화됐을 때 — 사후 대응
 
@@ -200,4 +199,4 @@
 
 - [ISO 31000 — Risk management](https://www.iso.org/iso-31000-risk-management.html)
 - ISMS-P 인증기준 1영역은 [`references.md`](references.md) §보안·규제에 등록돼 있다
-- 저장소 내: [`security.md`](security.md) · [`conventions/data-quality.md`](conventions/data-quality.md) · [`conventions/agents/gates.md`](conventions/agents/gates.md) · [`doc-sync.md`](doc-sync.md)
+- 저장소 내: [`security.md`](security.md) · [`conventions/data-quality.md`](conventions/data-quality.md) · [`conventions/agents.md`](conventions/agents.md#게이트-2단) · [`doc-sync.md`](doc-sync.md)

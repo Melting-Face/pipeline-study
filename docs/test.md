@@ -253,31 +253,24 @@ python3 scripts/tests/run_guard_tests.py
 같은 이유로 `setUp`의 `git` 미검출은 `skipTest`가 아니라 **실패**다(*"면제는 검증이 아니다"*).
 
 **계측 단위**: 위 `실행 N개`는 **테스트 메서드 수**이지 *검증되는 가드 수*가 아니다.
-현재 가드 3종을 13개 메서드가 나눠 본다. 러너는 이 수를 **고정값과 대조하지 않는다** —
-막고 싶은 것은 「13이 아님」이 아니라 **「0건」** 이다.
+메서드 수는 가드 수와 다른 단위다. 러너는 이 수를 **고정값과 대조하지 않는다** —
+막고 싶은 것은 특정 값과의 불일치가 아니라 **「0건」** 이다.
 
-**이 계층이 보증하지 않는 것 — 가드 9종 중 3종만 본다.**
+**이 계층이 보증하지 않는 것.**
 
-| 축 | 가드 |
+| 축 | 대상 |
 | --- | --- |
-| 테스트 있음(이 계층) | `journal_guard` · Claude/Codex `worker_path_guard` · `plan_mirror_guard`(일부) · `worktree_guard` |
-| **테스트 0건** | `analyst_path_guard` · `skill_gate_guard` · `research_gate_guard` · `protected_paths_guard` · `commit_manifest_guard` |
+| 테스트 있음(이 계층) | `journal_guard` · `worktree_guard` · 배선 대상 실재(`test_all_wired_hook_scripts_exist`) · Codex 릴레이 타임아웃 |
+| **테스트 0건** | `research_gate_guard` |
 
-이 훅의 초록을 **「가드 전부가 검증됐다」로 읽지 않는다**. 잔여 6종은 별도 항목이다(Issue #55).
+이 훅의 초록을 **「가드 전부가 검증됐다」로 읽지 않는다**.
 
 ### 게이트가 언제 도는가도 검사 대상이다
 
 로컬 훅의 `files:`에 그 훅이 실행하는 스크립트가 빠져 있으면, **그 스크립트만 고치는 커밋에서
 훅이 통째로 `Skipped`** 가 된다 — 하필 게이트를 바꾸는 커밋에서 게이트가 안 돈다.
-`scripts/hook_files_check.py`(훅 `hook-files`)가 `.pre-commit-config.yaml`을 파싱해 이것을 전수한다.
-사례가 셋이고 **관측자도 셋**이라(각각 하나씩 찾았다) 개별 수정이 아니라 검사기로 닫았다.
-
-`always_run: true`인 훅은 **면제가 아니라 모집단이 전체**라 사각이 없다 — 검사기는 이것을
-통과와 합치지 않고 **`전체모집단`** 으로 따로 센다. 「사각 없음」을 한 숫자로 적으면
-다음 사람이 *"면제받은 훅이 있다"* 로 읽는다.
-
-⚠️ 이 검사기가 보는 축은 **「모집단에 자기 검사기가 빠짐」 하나**다(훅 *전체*가 안 돎).
-「모집단에 gitignore 경로가 섞임」(규칙 *일부*가 안 돎)은 **다른 축**이고 감사 축(`/skill-audit`)이 본다.
+이 축은 **규율**이다(기계 검사 없음) — 로컬 훅을 추가·수정할 때 `files:`에 자기 `entry`
+스크립트가 걸리는지 본다. `always_run: true`인 훅은 **면제가 아니라 모집단이 전체**라 사각이 없다.
 `.claude/settings.json`의 hook은 `files:` 축 자체가 없어 여기서 보지 않는다.
 
 ## 위치·네이밍 규칙
@@ -311,9 +304,6 @@ ruff check . && sqlfluff lint dagster/dockerfile.d/src/dbt_pipelines/
 # 가드 단위 테스트 (§7) — 훅 `guard-tests`가 부르는 것과 같은 명령
 python3 scripts/tests/run_guard_tests.py
 
-# 로컬 훅의 files: 자기 검사기 포함 검사 (§7) — 훅 `hook-files`가 부르는 것과 같은 명령
-python3 scripts/hook_files_check.py
-
 # 타입 정합성 (훅에 없다 — 수동)
 uv run --project dagster/dockerfile.d/src --with mypy mypy dagster/dockerfile.d/src/src
 
@@ -333,14 +323,14 @@ uv run scripts/storage_conformance_probe.py    # §5-5 스토어 교체 판단 �
 
 ## 누가 쓰고, 누가 채점하나
 
-테스트는 **전담 워커(`tester`)를 두지 않는다** — 행위가 이미 3축에 분해돼 있다
-(정본 [`agents/workers.md`](conventions/agents/workers.md#전문-워커-3종-세트의-경계-중첩-금지)).
+테스트는 **전담 워커(`tester`)를 두지 않는다** — 행위가 구현과 점검으로 나뉜다
+(정본 [`conventions/agents.md`](conventions/agents.md#역할)).
 
 | 행위 | 워커 | 축 |
 | --- | --- | --- |
 | 테스트를 **쓴다** | `data-engineer` | 구현 |
-| 통과했는데 **값이 이상하다** | `data-verifier` | 실측 |
-| **커버리지·게이트**를 감사하고, 작성된 테스트를 **사후 채점**한다 | `data-qa` | 체계 |
+| 통과했는데 **값이 이상하다** | `reviewer` | 체크리스트 A(데이터 값) |
+| **커버리지·게이트**를 감사하고, 작성된 테스트를 **사후 채점**한다 | `reviewer` | 체크리스트 B(데이터 테스트) |
 
 🔴 **사후 채점은 생략하지 않는다** — 판정자가 쓰지 않으므로 구현자가 자기 코드의 테스트를 쓴다.
 작성자와 채점자를 가르는 유일한 지점이고, 채점의 핵심 물음은 **"이 테스트를 일부러 위반시키면

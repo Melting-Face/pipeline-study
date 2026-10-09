@@ -18,28 +18,28 @@
     "views": [
       {
         "id": "happy-path",
-        "label": "승인부터 보고까지",
-        "focus": ["intake", "g1", "assign", "judge", "g2", "report"],
-        "note": "요청 하나가 계획 컨펌·배정·판정·작업내용 컨펌을 지나 보고에 닿는 주 경로."
+        "label": "배정부터 저널까지",
+        "focus": ["intake", "assign", "judge", "ci", "report", "journal"],
+        "note": "요청 하나가 배정·점검·CI와 PR 머지를 지나 보고와 저널에 닿는 주 경로."
       },
       {
         "id": "gate-axis",
-        "label": "게이트 4종",
-        "focus": ["g1", "guards", "research", "g2", "delta"],
-        "note": "사람이 보는 컨펌 2종과 기계가 집행하는 가드 2종은 다른 축이다."
+        "label": "게이트 2단과 가드",
+        "focus": ["ci", "irreversible", "guards", "research"],
+        "note": "가역은 CI와 PR 머지, 비가역은 reviewer E와 사용자 승인. 가드는 기계가 집행하는 별도 축이다."
       },
       {
         "id": "exception-axis",
         "label": "예외 경로",
-        "focus": ["intake", "query", "assign", "delta", "reject"],
+        "focus": ["intake", "query", "assign", "irreversible", "reject"],
         "note": "3문항 미답·비가역 발생·반려는 주 레인에 섞지 않고 예외 레인으로 뺀다."
       }
     ]
   },
   "lanes": [
     { "id": "supervisor", "label": "supervisor (메인 세션)" },
-    { "id": "worker", "label": "worker (서브에이전트)" },
-    { "id": "gate", "label": "게이트 (security · 가드)" },
+    { "id": "worker", "label": "worker (서브에이전트 5종)" },
+    { "id": "gate", "label": "게이트 (CI · 가드)" },
     { "id": "exception", "label": "예외 경로", "variant": "exception" }
   ],
   "phases": [
@@ -48,12 +48,12 @@
     { "id": "ph-execute", "label": "Execute", "fromCol": 2, "toCol": 3 },
     { "id": "ph-report", "label": "Report", "fromCol": 4, "toCol": 5 }
   ],
-  "mainPath": ["intake", "g1", "assign", "judge", "g2", "report"],
+  "mainPath": ["intake", "assign", "judge", "ci", "report", "journal"],
   "semanticChecks": {
     "allowedRoots": ["intake"],
     "allowedTerminals": ["guards", "research", "journal", "query"],
     "requiredEdges": [
-      { "from": "judge", "to": "g2" }
+      { "from": "judge", "to": "ci" }
     ],
     "requiredPaths": [
       { "from": "intake", "to": "journal" }
@@ -66,16 +66,36 @@
       "col": 0,
       "type": "frontend",
       "label": "요청 접수·분해",
-      "sublabel": "3문항 · 매니페스트",
+      "sublabel": "3문항 · 미션 = PR 하나",
       "width": 132
     },
     {
       "id": "report",
       "lane": "supervisor",
-      "col": 5,
+      "col": 4,
       "type": "frontend",
       "label": "사용자 보고",
       "sublabel": "계획 대비 정합",
+      "width": 132
+    },
+    {
+      "id": "journal",
+      "lane": "supervisor",
+      "col": 5,
+      "type": "database",
+      "label": "미션 저널",
+      "sublabel": "메인 세션 → 볼트",
+      "tag": "PR 머지 시 1회",
+      "width": 132
+    },
+    {
+      "id": "researcher",
+      "lane": "worker",
+      "col": 1,
+      "type": "backend",
+      "label": "researcher",
+      "sublabel": "외부 1차 출처",
+      "tag": "읽기 전용",
       "width": 132
     },
     {
@@ -84,7 +104,7 @@
       "col": 2,
       "type": "backend",
       "label": "구현 워커",
-      "sublabel": "*-engineer",
+      "sublabel": "*-engineer · analyst",
       "tag": "비가역은 계획만",
       "width": 132
     },
@@ -93,29 +113,19 @@
       "lane": "worker",
       "col": 3,
       "type": "backend",
-      "label": "판정 워커 5종",
-      "sublabel": "verifier·qa·security",
+      "label": "reviewer",
+      "sublabel": "체크리스트 A~E",
       "tag": "읽기 전용",
       "width": 132
     },
     {
-      "id": "journal",
-      "lane": "worker",
-      "col": 5,
-      "type": "database",
-      "label": "미션 저널",
-      "sublabel": "archivist → 볼트",
-      "tag": "single writer",
-      "width": 132
-    },
-    {
-      "id": "g1",
+      "id": "research",
       "lane": "gate",
       "col": 1,
       "type": "security",
-      "label": "G1 계획 컨펌",
-      "sublabel": "security",
-      "tag": "미션당 1회",
+      "label": "조사 승인 게이트",
+      "sublabel": "approved.json",
+      "tag": "fail-closed",
       "width": 132
     },
     {
@@ -124,28 +134,18 @@
       "col": 2,
       "type": "security",
       "label": "PreToolUse 가드",
-      "sublabel": "9종 · deny / ask",
-      "tag": "경로 강제",
+      "sublabel": "worktree_guard",
+      "tag": "루트 쓰기·커밋 deny",
       "width": 132
     },
     {
-      "id": "research",
+      "id": "ci",
       "lane": "gate",
       "col": 3,
       "type": "security",
-      "label": "조사 승인 게이트",
-      "sublabel": "approved.json",
-      "tag": "fail-closed",
-      "width": 132
-    },
-    {
-      "id": "g2",
-      "lane": "gate",
-      "col": 4,
-      "type": "security",
-      "label": "G2 작업내용 컨펌",
-      "sublabel": "git status 재구성",
-      "tag": "매니페스트 대조",
+      "label": "CI + PR 머지",
+      "sublabel": "가역 작업 게이트",
+      "tag": "사용자가 머지",
       "width": 132
     },
     {
@@ -158,12 +158,13 @@
       "width": 132
     },
     {
-      "id": "delta",
+      "id": "irreversible",
       "lane": "exception",
       "col": 2,
       "type": "security",
-      "label": "Δ 계획 델타",
-      "sublabel": "실행 전 판정",
+      "label": "비가역 게이트",
+      "sublabel": "reviewer E + 사용자 승인",
+      "tag": "permissions.ask",
       "width": 132
     },
     {
@@ -171,42 +172,42 @@
       "lane": "exception",
       "col": 4,
       "type": "external",
-      "label": "반려 · 재요청",
-      "sublabel": "3회째 에스컬레이션",
+      "label": "반려 · 재작업",
+      "sublabel": "PR 리뷰 지적",
       "width": 132
     }
   ],
   "edges": [
-    { "id": "e-plan", "from": "intake", "to": "g1", "label": "계획 제출", "role": "main", "variant": "emphasis" },
-    { "id": "e-approve", "from": "g1", "to": "assign", "label": "승인", "role": "main", "variant": "emphasis" },
+    { "id": "e-assign", "from": "intake", "to": "assign", "label": "배정", "role": "main", "variant": "emphasis" },
     { "id": "e-output", "from": "assign", "to": "judge", "label": "산출물", "role": "main", "variant": "emphasis" },
-    { "id": "e-findings", "from": "judge", "to": "g2", "label": "발견 제출", "role": "main", "variant": "emphasis" },
-    { "id": "e-confirm", "from": "g2", "to": "report", "label": "컨펌", "role": "main", "variant": "emphasis" },
-    { "id": "e-tooluse", "from": "assign", "to": "guards", "label": "Write / Edit", "role": "branch" },
-    { "id": "e-webfetch", "from": "judge", "to": "research", "label": "WebFetch", "role": "branch" },
+    { "id": "e-pr", "from": "judge", "to": "ci", "label": "PR", "role": "main", "variant": "emphasis" },
+    { "id": "e-merge", "from": "ci", "to": "report", "label": "머지", "role": "main", "variant": "emphasis" },
+    { "id": "e-journal", "from": "report", "to": "journal", "label": "저널 1회", "role": "main", "variant": "emphasis" },
+    { "id": "e-research-req", "from": "intake", "to": "researcher", "label": "조사 요청", "role": "branch" },
+    { "id": "e-webfetch", "from": "researcher", "to": "research", "label": "WebFetch", "role": "branch" },
+    { "id": "e-tooluse", "from": "assign", "to": "guards", "label": "Write / Edit · commit", "role": "branch" },
     { "id": "e-unanswered", "from": "intake", "to": "query", "label": "3문항 미답", "role": "error" },
-    { "id": "e-irreversible", "from": "assign", "to": "delta", "label": "비가역 발생", "role": "error" },
-    { "id": "e-delta-ok", "from": "delta", "to": "assign", "label": "승인 후 실행", "role": "return" },
-    { "id": "e-reject", "from": "g2", "to": "reject", "label": "반려", "role": "error" },
-    { "id": "e-retry", "from": "reject", "to": "assign", "label": "재요청 2회", "role": "return" },
-    { "id": "e-journal", "from": "report", "to": "journal", "label": "기록 위임", "role": "async", "variant": "dashed" }
+    { "id": "e-irreversible", "from": "assign", "to": "irreversible", "label": "비가역 발생", "role": "error" },
+    { "id": "e-irrev-ok", "from": "irreversible", "to": "assign", "label": "승인 후 실행", "role": "return" },
+    { "id": "e-reject", "from": "ci", "to": "reject", "label": "반려", "role": "error" },
+    { "id": "e-retry", "from": "reject", "to": "assign", "label": "재작업", "role": "return" }
   ],
   "cards": [
     {
       "dot": "rose",
-      "title": "게이트",
+      "title": "게이트 2단",
       "items": [
-        "G1·G2는 한 벌로 올리고 Δ는 계획 밖 쓰기·비가역·외부 발신에서만 뜬다 — 비가역은 실행 전 판정",
-        "G2는 security가 변경 파일 집합을 git으로 직접 재구성한다 (커밋 9건 동안 G1 대조 0회, 늘어난 계획 밖 경로 3건이 전부 자기신고였다)"
+        "가역(코드·문서·모델)은 CI와 사용자의 PR 머지가 게이트다 — git과 PR이 되돌린다",
+        "비가역(apply·삭제·DROP·외부 발신·데이터 반출·통제 배선 변경)은 permissions.ask + 실행 전 reviewer 체크리스트 E 1회 + 사용자 승인"
       ]
     },
     {
       "dot": "amber",
       "title": "강제 수단의 한계",
       "items": [
-        "permissions는 세션 전역이라 워커별 경로 범위를 못 건다 — 에이전트 정의 내 hooks만이 수단",
         "파일 경로 경계는 ask가 아니라 deny여야 막힌다 (auto 모드가 파일 도구의 ask를 흡수)",
-        "이 계층은 하네스가 아니라 정책이 만든다 — 한 워커라도 tools 미지정이면 조용히 열린다"
+        "Bash 경유 쓰기는 가드에 걸리지 않는다 — 지시문 규율과 PR diff가 받친다",
+        "tools 미지정이면 Agent가 기본 지급돼 워커가 워커를 부를 수 있다 — 전원 명시한다"
       ]
     }
   ]

@@ -23,8 +23,8 @@
 ## 하위 문서
 
 이 문서는 **허브**다. 규칙·현행 요약·워커 매핑만 두고, 근거·실측·단서 원문은 아래로 내린다.
-🔴 **`docs/skills.md`라는 경로 자체가 통제 지점**이다 — `worker_path_guard.py`의 `except`가
-`docs/skills.md`와 `docs/skills/`를 **판정 근거 문서**로 잡아 `tech-writer`의 쓰기를 막는다.
+🔴 **`docs/skills.md`와 `docs/skills/`는 판정 근거 문서**다. 편집을 막는 경로 가드는 없고,
+PR diff와 사용자 머지가 받친다([게이트 2단](conventions/agents.md#게이트-2단)).
 
 | 문서 | 담는 것 |
 | --- | --- |
@@ -41,7 +41,7 @@
 **재측정 방법**은 후자가 갖는다. 아래 두 항목은 값이 아니라 **교훈**이라 남긴다.
 
 > **오경보 한 건을 그대로 남긴다** — 현황 표는 처음에 *"출처 미상 1건 — `documentation`의
-> 작성 주체 미상"* 이라고 적혔다. **거짓이었다.** `security` 점검이 `~/.zsh_history`에서 설치 이력을 찾아냈다:
+> 작성 주체 미상"* 이라고 적혔다. **거짓이었다.** 보안 점검이 `~/.zsh_history`에서 설치 이력을 찾아냈다:
 > `npx skills add https://github.com/anthropics/knowledge-work-plugins --skill documentation`
 > (**사용자 직접 설치**). 앞선 3회 실패 시도가 함께 남아 있는 **사람의 시행착오 패턴**이고,
 > 디렉터리·심볼릭 링크·npx 캐시 mtime 3건이 모두 같은 분에 수렴한다.
@@ -89,15 +89,15 @@
 | **adding-dbt-unit-test** | `dbt-labs/dbt-agent-skills` (**A**) | dbt 단위 테스트 YAML — upstream 입력을 모킹하고 기대 출력을 검증. [test.md](test.md) 계층 우선순위상 **스키마 테스트 다음**이다 |
 | **running-dbt-commands** | `dbt-labs/dbt-agent-skills` (**A**) | dbt CLI 실행·파라미터 구성. ⚠️ 이 저장소의 타깃은 `spark_connect`이고 카탈로그 설정은 **서버 측**에 있다 |
 | **documentation** | `anthropics/knowledge-work-plugins` (**B**, 잠정) | 기술 문서·README·런북 작성. **조직 계정이되 기술 글쓰기의 벤더는 아니다**([skills/sourcing.md](skills/sourcing.md) §등급은 스킬 단위). 문서 규약이 우선 |
-| **find-skills** | `vercel-labs/skills` (**B**) | 스킬 탐색·설치 안내. ⚠️ **안내까지만 쓴다** — 설치·`skills-lock.json` 편집은 **공급망·비가역**이라 계획만 내고 `security` 컨펌 → 사용자 승인을 거친다 |
+| **find-skills** | `vercel-labs/skills` (**B**) | 스킬 탐색·설치 안내. ⚠️ **안내까지만 쓴다** — 설치·`skills-lock.json` 편집은 **공급망·비가역**이라 계획만 내고 `reviewer` 보안 체크리스트(E) → 사용자 승인을 거친다 |
 | **sql-optimization** | `github/awesome-copilot` (B) | 범용 SQL 성능 튜닝(실행계획·인덱스·페이지네이션). ✅ **lock 등재로 출처가 규명**됐다 — 한때 D등급("출처 미상")이었다 |
 | **multi-stage-dockerfile** | `github/awesome-copilot` (B) | 멀티스테이지 Dockerfile 작성. 문서 1파일·실행 파일 없음 |
-| **github-issues** | `github/awesome-copilot` (B) | ❌ **미등재**(게이트 탈락) — 워커 배선은 [agents.md](conventions/agents.md) §미션 개시가 금지. 읽기는 MCP 의존(미채택)이라 죽은 참조, 쓰기는 [issue.md](conventions/issue.md) §5의 폼 우회 경로다 |
-| **git-commit** | `github/awesome-copilot` (B) | ❌ **미등재**(게이트 탈락) — 워커 9종 전원이 커밋을 「계획만 반환」·「권한 밖」으로 금지한다. 절차도 [git.md](conventions/git.md) §2·§7과 충돌. 문서 1파일·실행 파일 0. 상세 아래 ⓑ |
+| **github-issues** | `github/awesome-copilot` (B) | ❌ **미등재**(게이트 탈락) — 워커 배선은 [agents.md](conventions/agents.md) §미션 규칙이 금지. 읽기는 MCP 의존(미채택)이라 죽은 참조, 쓰기는 [issue.md](conventions/issue.md) §5의 폼 우회 경로다 |
+| **git-commit** | `github/awesome-copilot` (B) | ❌ **미등재**(게이트 탈락) — 워커 전원이 커밋을 「계획만 반환」·「권한 밖」으로 금지한다. 절차도 [git.md](conventions/git.md) §2·§7과 충돌. 문서 1파일·실행 파일 0. 상세 아래 ⓑ |
 | **terraform-style-guide** | `hashicorp/agent-skills` (**A**) | HCL 스타일·베스트프랙티스. `SKILL.md`+`SECURITY.md`, 실행 파일 0 |
 | **terraform-test** | `hashicorp/agent-skills` (**A**) | `.tftest.hcl` 작성·실행, `run` 블록·assertion·프로바이더 모킹. 4파일, 실행 파일 0 |
 | **terraform-stacks** | `hashicorp/agent-skills` (**A**) | Terraform Stacks(`.tfcomponent.hcl`·`.tfdeploy.hcl`). 7파일, 실행 파일 0 |
-| **kubernetes-specialist** | `jeffallan/claude-skills` (**C**) | K8s 워크로드·매니페스트. ✅ `security` 검토 완료 — **단서 필수**([skills/caveats.md](skills/caveats.md)) |
+| **kubernetes-specialist** | `jeffallan/claude-skills` (**C**) | K8s 워크로드·매니페스트. ✅ 보안 검토 완료 — **단서 필수**([skills/caveats.md](skills/caveats.md)) |
 | **spark-engineer** | `jeffallan/claude-skills` (**C**) | Spark 잡 작성·튜닝. ⚠️ **"위험 패턴 0건"은 철회**(재스캔 — 그 스윕이 Spark writer 계열을 아예 안 봤다). **미등재**(★1)이고 등재하려면 패턴 기반 단서가 **선행**이다 |
 | **spark-optimization** | `wshobson/agents` (**C**) | Spark 성능 최적화. ✅ **검토 완료·조건부 승인**(K-1 — [skills/sourcing.md](skills/sourcing.md)). ⚠️ 이 칸은 한때 "미검토"로 남아 **같은 문서 안에서 모순**이었다(구판 스냅샷 미갱신) |
 | **brainstorming** | `obra/superpowers` (**C**) | 🔁 **「분리안」 채택** — 마크다운 절차만 참조, `scripts/**` 실행 금지. **단서 필수** |
@@ -120,13 +120,13 @@ diff /tmp/lock.txt /tmp/doc.txt   # 빈 출력 = 정합
 **빈 출력을 그대로 믿지 마라** — 한 종을 일부러 빼서 `diff`가 그것을 잡는지 먼저 본다
 ([philosophy.md](philosophy.md) 원칙 7).
 
-> **이 표를 "검증된 스킬 목록"으로 읽지 않는다.** 등급은 **A~C가 섞여 있고**, `security` 본문
+> **이 표를 "검증된 스킬 목록"으로 읽지 않는다.** 등급은 **A~C가 섞여 있고**, 보안 본문
 > 검토를 실제로 통과한 것은 **C등급 중 일부**뿐이다(어느 것인지는 각 행의 ✅/⚠️가 말한다).
 > ⚠️ **여기에 등급별 계수를 적지 않는다** — 구판은 *"9건 중 5건이 C등급"* 이라 적고 있었는데
 > **표가 14행일 때도 그 문장은 9를 말하고 있었다.** 계수를 본문에 박으면 표가 자라도 문장은
 > 안 자란다. 등급 분포가 필요하면 **표에서 그 자리에 센다**(`grep -c` 대상은 위 §① 표뿐이다).
 > ✅ 해시는 **재계산·대조가 가능해졌다**(볼트 `$OBSIDIAN_VAULT/status/skills-inventory.md`의 해시 재계산 절).
-> 다만 이 표의 한계는 **그대로**다 — 무결성이 검증돼도 **출처 신뢰성과 `security` 검토는 별개 축**이고,
+> 다만 이 표의 한계는 **그대로**다 — 무결성이 검증돼도 **출처 신뢰성과 보안 검토는 별개 축**이고,
 > 이 표가 말하는 것은 여전히 **"받아온 뒤 바뀌지 않았다"** 까지다. **"안 바뀜"은 "안전함"이 아니다.**
 
 > ⚠️ **정정(해시 재계산) — 위 B-2의 무결성 주장은 반증됐다.**
@@ -164,7 +164,7 @@ diff /tmp/lock.txt /tmp/doc.txt   # 빈 출력 = 정합
 | Spark 배치·성능 튜닝 | `spark-engineer` · `spark-optimization` | 🔒 **(C등급)** — 둘 다 lock 등재. **전역/프로젝트 버전 상이** |
 | SQL 성능 최적화 | `sql-optimization` | 🔒 — 전역·프로젝트 중복이나 **내용 동일** |
 | Docker 이미지 빌드 | `multi-stage-dockerfile` | 🔒 — [conventions/docker.md](conventions/docker.md) 태그 고정 규약이 스킬 예시보다 우선 |
-| GitHub Issue 관리(등록·수정·라벨) | **스킬 없음**(`github-issues` 검토 후 미등재) | ✅ supervisor 1회 조회 + 사람 승인으로 푼다 → [conventions/issue.md](conventions/issue.md) · [conventions/agents.md](conventions/agents.md) §미션 개시 |
+| GitHub Issue 관리(등록·수정·라벨) | **스킬 없음**(`github-issues` 검토 후 미등재) | ✅ supervisor 1회 조회 + 사람 승인으로 푼다 → [conventions/issue.md](conventions/issue.md) · [conventions/agents.md](conventions/agents.md) §미션 규칙 |
 | git 커밋 작성(메시지·스테이징) | **스킬 없음**(`git-commit` 검토 후 미등재) | ✅ 정본은 [conventions/git.md](conventions/git.md) §2·§6·§7 + [conventions/general.md](conventions/general.md) §커밋 메시지. **supervisor도 호출하지 않는다** — 아래 ⓑ |
 | 설계·기획(구현 전 대화) | **스킬 없음** | ✅ 하네스로 푼다 — 아래 ⓐ |
 | 분석·애드혹 질의 | **없음** — SQL 엔진(Spark Connect)으로 간다 | ✅ 후보 2종은 **죽은 참조로 제거** — 아래 ⓒ |
@@ -179,8 +179,8 @@ diff /tmp/lock.txt /tmp/doc.txt   # 빈 출력 = 정합
 | Terraform/IaC | `terraform-style-guide` · `terraform-test` · `terraform-stacks` | 🔒 **A등급** — 정본이 *"전용 스킬 없음"* 이라 적어둔 **갭을 메웠다**. [conventions/terraform.md](conventions/terraform.md)가 여전히 우선 |
 
 ⓐ **설계·기획에 스킬을 쓰지 않는 이유** — `permissions.defaultMode: "plan"` + 설계 게이트
-(`protected_paths_guard.py` `file-pre`) + 3문항이 같은 자리를 이미 덮는다. 3문항의 정본은
-[`conventions/agents.md`](conventions/agents.md) §설계 게이트다(`director` 폐기로 거처가
+3문항이 같은 자리를 이미 덮는다. 3문항의 정본은
+[`conventions/agents.md`](conventions/agents.md#설계-게이트--분해-전-3문항)다(`director` 폐기로 거처가
 옮겨졌고, 질의 상대는 이제 **사용자**다). **스킬은 이 자리를 채울 수 없다** —
 스킬은 **모델이 고르는 안내문이지 실행을 멈추는 장치가 아니다**. `brainstorming`은 제거됐다.
 
@@ -193,10 +193,10 @@ type 표·Conventional Commits 포맷뿐인데 그건 [conventions/general.md](c
 단서를 붙여도 ★3 임계를 넘지 못한다. **위반이 「일부 문장」이 아니라 「존재 이유」일 때
 분리안은 성립하지 않는다.**
 
-**그리고 「9종 미등재」는 「아무도 못 쓴다」가 아니다.**
-[`skill_gate_guard.py`](../scripts/skill_gate_guard.py)는 **각 워커 프론트매터의 `hooks:`에만**
-배선돼 있고 `.claude/settings.json`의 `PreToolUse` 매처에는 **`Skill`이 없다**(실측).
-⇒ **최상위 세션(supervisor)의 `Skill` 호출은 가드 밖**이다. 미등재는 *배선* 판정이지
+**그리고 「미등재」는 「아무도 못 쓴다」가 아니다.**
+스킬을 스킬 단위로 막는 기계 가드는 없다 — 워커의 §참고 스킬 표도, 최상위 세션(supervisor)의
+`Skill` 호출도 규율로만 걸러진다([수용한 리스크](conventions/agents.md#수용한-리스크)).
+미등재는 *배선* 판정이지
 *도달 범위* 판정이 아니다 — supervisor는 이미 `Bash`로 커밋할 수 있으므로 권한 상승은
 아니지만, 이 스킬을 호출하면 [git.md](conventions/git.md) §2가 금지한 `git add -p`와
 §7이 요구하는 pathspec(`git commit -- <경로…>`, `git add`와 섞지 않는다)을 **정면으로
@@ -212,7 +212,7 @@ type 표·Conventional Commits 포맷뿐인데 그건 [conventions/general.md](c
 ([conventions/analysis.md](conventions/analysis.md) §6 도구 표가 같은 형태로 적혀 있다).
 
 **이 행이 「활성」으로 오래 남았던 이유를 함께 적는다** —
-[`skill_wiring_check.py`](../scripts/skill_wiring_check.py)는 **워커 → 문서** 방향만 본다.
+당시의 배선 정합 검사기는 **워커 → 문서** 방향만 봤고, 지금은 그 검사기도 철거됐다.
 워커 지시문에 없고 이 문서에만 있는 항목은 **잡히지 않는다**. §③은 **파생 인덱스**라 집행에는
 영향이 없었으나 **읽는 사람에게는 「쓸 수 있는 스킬」로 보였다.**
 ⇒ 이 방향의 드리프트는 기계가 아니라 **규율로만** 막힌다.
@@ -232,7 +232,7 @@ type 표·Conventional Commits 포맷뿐인데 그건 [conventions/general.md](c
 > **현재 상태**: 재설치돼 lock·디스크에 있다. **마크다운 절차만 참조하고 `scripts/**` 는 실행하지 않는다.**
 > 이 범위 밖은 원판정 「거부」가 그대로 살아 있다.
 
-**결정 경로**: `security`가 **거부를 유지한 채 「분리안」을 권고로 상신**했고(아래 **상신된 대안**), 사용자가
+**결정 경로**: 보안 검토가 **거부를 유지한 채 「분리안」을 권고로 상신**했고(아래 **상신된 대안**), 사용자가
 그래서 채택했다. **예외 신설이 아니라 조항의 적용 범위 해석**이다 — `scripts/**` 를 범위에서 빼면
 C등급 금지의 근거(*"스크립트는 실행이다"*)가 **제거**되고, 급소 발견 B-2·B-3·B-4가 전부 그 안에 있어
 함께 무력화된다. 남는 B-1(무조건 커밋 지시)은 §단서가 덮는다.
@@ -273,7 +273,7 @@ C등급 금지의 근거(*"스크립트는 실행이다"*)가 **제거**되고, 
 
 **상신된 대안 — 「분리안」** ✅ **채택됨**: *"마크다운 절차만 참조 / `scripts/**` 실행 금지"* 로
 범위를 자르면 C등급 금지의 **근거("스크립트는 실행이다") 자체가 제거**된다. 이는 조항의 **적용 범위 해석**이지
-예외 신설이 아니다. `security`는 **거부를 유지한 채 권고로만** 올렸고, 결정 권한은 사용자에게 있었다.
+예외 신설이 아니다. 보안 검토는 **거부를 유지한 채 권고로만** 올렸고, 결정 권한은 사용자에게 있었다.
 
 ✅ **강제 수단: `permissions.deny`의 `Bash(*brainstorming/scripts*)`**.
 파일은 디스크에 남기고 **실행 경로만** 끊었다. 그래서 **탐지와 차단이 각각 산다** —
@@ -298,19 +298,19 @@ C등급 금지의 근거(*"스크립트는 실행이다"*)가 **제거**되고, 
 | 스킬 본문 | 정본 | 판정 |
 | --- | --- | --- |
 | *"Commit the design document to git"* | 커밋은 **사용자 요청 시에만** ([git.md](conventions/git.md)) | **따르지 않는다** |
-| 산출 경로 `docs/superpowers/specs/…` | `docs/**`는 **`tech-writer` 소유**, 문서 배치는 정본이 정한다 | **따르지 않는다** |
+| 산출 경로 `docs/superpowers/specs/…` | `docs/**` 배치는 정본이 정한다(작성 주체는 메인 세션) | **따르지 않는다** |
 | 후속 `writing-plans`·`elements-of-style`·`frontend-design`·`mcp-builder` | **4종 전부 미설치** | **죽은 참조** — "invoke"가 불가능 |
 | `--host 0.0.0.0` · `BRAINSTORM_OPEN_CMD`→`child_process.exec` · 외부 이미지 `primeradiant.com` | 노출·외부 발신은 **사람 게이트** | ⚠️ 기본값(`127.0.0.1`) 밖으로 나가지 않는다 |
 | HARD-GATE(구현 전 사람 승인) | 원칙 7·사람 게이트 | ✅ **정합** — 이 부분은 정본과 같은 방향 |
 
-- **워커에 물리려면 프론트매터 `skills:` 프리로드뿐인데, 그것은 `security` 미검토분을
+- **워커에 물리려면 프론트매터 `skills:` 프리로드뿐인데, 그것은 보안 미검토분을
   상시 컨텍스트에 앉히는 것**이라 검토 전에는 하지 않는다(§③ 프리로드 조건).
   ⚠️ 구판은 여기에 *"워커에 `Skill` 도구가 없다"* 를 근거로 함께 들었으나 그 전제는 폐기됐다
-  (지금 9종에 열려 있다 — [`skills/wiring.md`](skills/wiring.md)). **결론은 살아남고 근거 하나가 빠졌다.**
+  (지금 `researcher` 외 워커에 열려 있다 — [`skills/wiring.md`](skills/wiring.md)). **결론은 살아남고 근거 하나가 빠졌다.**
 
 ## ③ 전문 워커별 참고 스킬 (`.claude/agents/`)
 
-각 전문 워커([conventions/agents.md](conventions/agents.md) §네이티브 구현)는 지시문에 **자기 작업에 해당하는 스킬만**
+각 전문 워커([conventions/agents.md](conventions/agents.md#역할))는 지시문에 **자기 작업에 해당하는 스킬만**
 추려 담고, **이 문서를 정본으로 링크**한다. 스킬 목록을 워커 파일마다 복제하면 스킬 추가·제거 때 여러 곳이 드리프트한다.
 
 **등재 기준은 게이트 2축 + 별점 3축이다** — 먼저 **게이트**(권한 정합·정본 무충돌)를
@@ -322,22 +322,20 @@ C등급 금지의 근거(*"스크립트는 실행이다"*)가 **제거**되고, 
 축1·축4 중 **하나만** 1이면 ★4로 등재선을 넘었다. 즉 **5축이 실질 2축으로 작동**했다.
 개정은 **출처 신뢰성을 별점에서 분리한 것과 같은 처리**다(거부권은 게이트로, 값을 더하는 것만 점수로).
 **축을 재가중하면 구 판정이 그대로 유효하지 않다** — 특히 **축4(호출 빈도)는 1/5에서 1/3으로 비중이 올랐다.**
-구 루브릭 판정을 재사용해 등재를 내리거나 올리지 마라. 재채점은 **`/skill-audit`** 소관이다.
+구 루브릭 판정을 재사용해 등재를 내리거나 올리지 마라. 재채점은 **메인 세션의 수동 감사(이 절의 루브릭)** 소관이다.
 **출처 신뢰성은 별점 축이 아니라 별개 게이트**다(별점에 섞으면 "★5인데 출처 불명"을 못 잡는다)
-— `security` 판정 대상.
-루브릭 전문과 채점 절차는 **[`/skill-audit` 커맨드](../.claude/commands/skill-audit.md)** 가 정본이며,
-이 표는 그 결과 중 **등재분만** 옮긴 것이다.
-⚠️ 채점 주체가 **계층 밖 읽기 전용 워커에서 supervisor 컨텍스트의 커맨드로 바뀌었다** —
-감사자와 구현자의 **도구 축 분리가 사라졌고**, 커맨드 §제약의 "감사만 한다"가 유일한 방어선이다.
-`skill_wiring_check.py`의 R9가 **루브릭이 워커 지시문으로 되돌아가는 것**만 기계로 막는다.
+— 보안 검토(`reviewer` 체크리스트 E) 대상.
+루브릭은 이 절(게이트 2축 + 채점 3축)이 정본이며, 이 표는 그 결과 중 **등재분만** 옮긴 것이다.
+⚠️ 채점·감사는 **메인 세션이 수동으로** 한다 — 감사자와 구현자의 **도구 축 분리가 없고**,
+배선 정합을 기계로 대조하는 검사기도 철거됐다. 방어선은 PR diff 리뷰다.
 
 **"등재"는 프리로드가 아니다 — 두 경로를 구분한다**(probe 실측).
 
 | 경로 | 수단 | 현황 |
 | --- | --- | --- |
 | **프리로드** | 프론트매터 `skills:` — 기동 시 **`SKILL.md` 본문이 컨텍스트에 주입**된다 | `data-engineer` × `dagster-expert` **1건뿐** |
-| **온디맨드** | `tools:`의 **`Skill`** — 워커가 필요할 때 호출해 로드한다 | **9종**(등재 스킬 ≥ 1) |
-| **미부여** | `tools:`에 `Skill` 없음 — 호출 자체가 막힌다 | **4종**(사유는 아래 두 갈래) |
+| **온디맨드** | `tools:`의 **`Skill`** — 워커가 필요할 때 호출해 로드한다 | `data-engineer`·`devops-engineer`(표 있음) · `analyst`·`reviewer`(표 없음) |
+| **미부여** | `tools:`에 `Skill` 없음 — 호출 자체가 막힌다 | `researcher`(사유는 아래) |
 
 🔴 **`skills:`는 화이트리스트가 아니다.** 공식 문서 원문 —
 *"이 필드는 어떤 skills를 미리 로드할지 제어하며, **subagent가 액세스할 수 있는 skills를 제어하지 않습니다**.
@@ -348,34 +346,24 @@ C등급 금지의 근거(*"스크립트는 실행이다"*)가 **제거**되고, 
 **도달 범위는 lock 등재분보다 넓다.** 워커가 실제로 보는 목록에는 `skills-lock.json` 밖의
 **하네스·플러그인 제공 스킬**이 함께 들어온다. 그중 **`update-config`는 `settings.json`의
 `permissions`·`hooks` 편집 절차**를 가르친다 — **통제 배선 자체를 겨냥한 문서**가 도달 범위 안에 있다.
-`loop`·`schedule`(반복 실행·크론)도 같은 축이다. 전부 **lock 밖·출처 미판정·`security` 미검토**다.
+`loop`·`schedule`(반복 실행·크론)도 같은 축이다. 전부 **lock 밖·출처 미판정·보안 미검토**다.
 
-⚠️ **목록은 워커마다 다르다.** 실측에서 `security`(`inherit`)와 `data-qa`(`sonnet`)의
+⚠️ **목록은 워커마다 다르다.** 실측에서 모델이 다른 두 워커(`inherit`·`sonnet`)의
 목록이 갈렸다(`claude-in-chrome`·`artifact-*` 유무). **"전 워커 동일"로 적지 않는다** — 세려면 그 워커에서 센다.
 수치를 이 문서에 박지 않는 이유도 같다: 하네스·플러그인 구성이 바뀌면 낡는다.
 **남는 것은 구조적 사실 하나 — "lock보다 넓다".**
 
-**그래서 스킬 단위 강제를 별도 가드가 진다** — [`scripts/skill_gate_guard.py`](../scripts/skill_gate_guard.py)
-(`PreToolUse` matcher `Skill`). **워커 지시문의 §참고 스킬 표를 직접 파싱**해 표 밖을 `deny`하고,
-파싱 실패·표 부재·빈 표는 **fail-closed**다. 표를 가드에 복사하지 않는 이유는 **두 곳이 드리프트**하기 때문이다.
-⇒ **지시문 표가 집행 정본이고 §③은 파생 인덱스**다([`doc-sync.md`](doc-sync.md) 실무 규칙 2 —
-어긋나면 코드/설정이 사실이다). **정합 검사는 워커 → 문서 방향으로 돈다.**
+**스킬 단위 강제 수단은 없다.** 스킬 게이트 가드와 배선 정합 검사기는 철거됐다 —
+워커 지시문의 §참고 스킬 표는 **규율**이고, 표 밖 호출은 [수용한 리스크](conventions/agents.md#수용한-리스크)로 남긴다.
+그래도 **지시문 표가 매핑의 정본이고 §③은 파생 인덱스**다([`doc-sync.md`](doc-sync.md) 실무 규칙 2 —
+어긋나면 코드/설정이 사실이다). 정합은 메인 세션이 수동 감사에서 **워커 → 문서 방향**으로 대조한다.
 
-그 정합을 커밋 전에 기계로 대조하는 것이 [`scripts/skill_wiring_check.py`](../scripts/skill_wiring_check.py)다
-(pre-commit 훅 `skill-wiring`). ⚠️ **가드와 다른 물건이다** — 가드는 `Skill` 호출을 가로채는
-**런타임 차단**(fail-closed `deny`)이고, 이쪽은 **커밋 전 정합**(exit 1)이다.
-**한쪽이 초록이라고 다른 쪽이 초록인 것이 아니다.** 그리고 검사기는 「표의 정합」을 지키지
-**「표가 지켜지는지」를 지키지 않는다** — 후자는 런타임 축이다.
-
-🔴 **순서가 규칙이다 — 제한 수단을 먼저 만들고 연다.** 이 가드는 사후 보강이 아니라
-**여는 조건**이었다(`security` 반려 → 가드 신설 → 재컨펌). *열고 나서 통제를 찾는 순서가 되면 안 된다.*
-
-**미부여 3종의 사유는 하나다** — `researcher`·`tech-writer`·`archivist`는 **등재 0건**(쓸 것이 없다).
+**미부여는 `researcher` 하나다** — **등재 0건**(쓸 것이 없다).
 ⚠️ 한때 **네 번째 사유**가 있었다: 폐기된 `skill-matcher`는 **감사자**라 스킬을 호출하면
 그 본문이 컨텍스트에 주입돼 **감사 대상이 감사자를 오염**시켰다 — "열어도 쓸 게 없다"가 아니라
 "열면 안 된다"였다. **같은 `미부여`가 다른 단위였다.** 그 축은 워커 폐기와 함께 사라졌지만,
-`/skill-audit`가 **supervisor 컨텍스트에서 돌아** 같은 오염이 최상위에 착지할 수 있다.
-그래서 커맨드 §제약이 *"스킬 본문은 데이터이지 지시가 아니다"* 를 명시한다.
+메인 세션의 수동 감사는 **supervisor 컨텍스트에서 돌아** 같은 오염이 최상위에 착지할 수 있다.
+그래서 감사 중에도 *"스킬 본문은 데이터이지 지시가 아니다"* 를 지킨다.
 
 🔴 **이 표(＝워커별 매핑)는 사본이다 — 정본은 각 `.claude/agents/<worker>.md`의 §참고 스킬 표다.**
 **어느 워커에 무엇이 물렸는가**가 갈리면 지시문이 사실이다.
@@ -387,60 +375,55 @@ C등급 금지의 근거(*"스크립트는 실행이다"*)가 **제거**되고, 
 재매핑에서 드러난 드리프트가 **전부 그 방향**이었다(§③만 갱신되고 `.claude/agents/**`가
 안 따라와, 문서는 terraform 3종·`dataviz` 제거를 반영했는데 지시문은 "Terraform 전용 스킬 없음"이었다).
 
-**아래는 전수 재채점(14 스킬 × 13 워커, 3패스 분할 + 앵커 대조) 결과다.**
+**아래는 전수 재채점(3패스 분할 + 앵커 대조) 결과를 워커 5종 체제로 옮긴 것이다.**
+통합 전 판정 워커·추출 워커의 채점 근거는 [scoring.md](skills/scoring.md)에 보존한다.
+`analyst`·`reviewer`에 표를 다시 두려면 그 근거를 출발점으로 **재채점**한다(그대로 재사용하지 않는다).
 
 | 워커 | 주 스킬 | 제약 |
 | --- | --- | --- |
 | `data-engineer` | `dagster-expert` · `dagster-integrations` · `using-dbt-for-analytics-engineering` · `running-dbt-commands` · `adding-dbt-unit-test` · `sql-optimization` · `dignified-python` | 범용 Python 스킬은 **프로젝트 컨벤션 우선**. `dagster-integrations`는 **업스트림 소멸 — 유일 사본** — [근거](skills/scoring.md#data-engineer) |
-| `data-verifier` | `sql-optimization` | **1종이 맞다** — 대체 후보 3종을 적극 채점했으나 전부 ★3(읽기 전용이라 축1이 구조적으로 0) — [근거](skills/scoring.md#data-verifier) |
-| `data-qa` | `adding-dbt-unit-test`(핵심) · `using-dbt-for-analytics-engineering` · `running-dbt-commands` | dbt CLI는 `parse`·`ls`·`compile`만(`build`/`run` 금지). **기계 강제가 아니라 순수 규율**이다 — [근거](skills/scoring.md#data-qa) |
 | `devops-engineer` | `multi-stage-dockerfile` · `kubernetes-specialist`**(C)** · `spark-optimization`**(C)** · `terraform-style-guide`(A) | **C등급 단서가 등재의 조건**([단서](skills/caveats.md)). `terraform-test`·`terraform-stacks`·`spark-engineer` 미등재 — [근거](skills/scoring.md#devops-engineer) |
-| `devops-verifier` | `kubernetes-specialist`**(C)** | **진단·해석까지만** — 수정·재기동 실행 금지. **컨테이너 런타임 진단은 미충족 갭**이고 재조사 트리거는 **「막힌 기록 3회」** — [근거](skills/scoring.md#devops-verifier) |
-| `devops-qa` | `multi-stage-dockerfile` · `kubernetes-specialist`**(C)** · `terraform-style-guide`(A) | 감사 기준은 **스킬이 아니라 정본**(아래 충돌 규칙). `helm-chart-scaffolding`은 강등 + **디스크에도 없음** — [근거](skills/scoring.md#devops-qa) |
-| `analyst` | `using-dbt-for-analytics-engineering`(초안만) · `sql-optimization` | **읽기 질의만** — gold 모델은 **제안만**이고 쓰기는 `analyst_path_guard.py`가 **기계 차단**한다 — [근거](skills/scoring.md#analyst) |
-| `researcher` | **없음** — 후보 조사 요청은 `skill-audit`가 낸다 | 등재 가능 **0건** — 이 워커는 CLI를 조작하지 않아 축1이 구조적으로 탈락한다 — [근거](skills/scoring.md#researcher) |
-| `tech-writer` | **없음** | 등재 가능 **0건** — 3차까지 채점했고 후보 4종 전부 ★1이다. 배정이 대부분 **기존 문서 갱신·정합 교정**인데 후보는 **신규 작성 템플릿**이라 축2·3이 0이다 — [근거](skills/scoring.md#tech-writer) |
-| `security` | `kubernetes-specialist`**(C)** · `multi-stage-dockerfile` · `terraform-style-guide`(A·**재채점 대상**) | **"전용 스킬 없음"은 맞지만 "참조할 스킬이 없다"는 아니다** — 설정 해석 목적의 **읽기 참조만** — [근거](skills/scoring.md#security) |
-| `archivist` | **없음(의도)** | 관측·기록만 하는 계층 밖 워커 — 도메인 스킬이 필요 없다 |
-| `data-extractor` | `sql-optimization`(B·**조건부**) | **이 표의 공백이었다**(13종인데 12행). 답은 0건이 아니라 **「1건 + 단서 4종」**이었고 축2는 배정 이력 0회라 **추정임을 라벨링**했다 — [근거](skills/scoring.md#data-extractor) |
+| `analyst` | **없음** — 지시문에 표가 없다(`Skill` 도구는 있다) | 통합 전 채점은 근거 문서에 보존. 읽기 질의·gold **제안만**은 **지시문 규율**이다 — [근거](skills/scoring.md#analyst) |
+| `reviewer` | **없음** — 지시문에 표가 없다(`Skill` 도구는 있다) | 통합 전 판정 워커들의 채점은 근거 문서에 보존. 감사 기준은 **스킬이 아니라 정본**이다 — [근거](skills/scoring.md#reviewer) |
+| `researcher` | **없음** — 후보 조사 요청은 메인 세션의 수동 감사가 낸다 | 등재 가능 **0건** — 이 워커는 CLI를 조작하지 않아 축1이 구조적으로 탈락한다 — [근거](skills/scoring.md#researcher) |
+| 메인 세션 | 해당 없음 — 워커 지시문이 없다 | 문서 작성·저널 기록을 맡는다. 구 문서 워커 채점(등재 0건)은 [근거](skills/scoring.md#메인-세션) |
 
-**루브릭 개정에 따른 재채점 대상 3건 — 조용히 내리지 않는다**
+**루브릭 개정에 따른 재채점 대상 — 조용히 내리지 않는다**
 
-아래 3건은 **구 5축에서 ★4(경계)로 등재**됐으나, 개정 루브릭(채점 3축·★3)에서는
+아래 셀은 **구 5축에서 ★4(경계)로 등재**됐으나, 개정 루브릭(채점 3축·★3)에서는
 **축2(호출 빈도)=0이라 임계 미달**이다.
 
 | 셀 | 축1·2·3(개정) | 축2=0의 근거 |
 | --- | --- | --- |
 | `data-engineer` × `adding-dbt-unit-test` | 1·**0**·1 = ★2 | dbt 모델 22개 중 `unit_tests:` 대상이 F1-F3 소수 |
 | `devops-engineer` × `terraform-style-guide` | 1·**0**·1 = ★2 | 유일 스택 `terraform/oci-k3s/`가 ⏸ 보류 |
-| `security` × `terraform-style-guide` | 1·**0**·1 = ★2 | 동일 |
 
 **그럼에도 등재를 유지한다.** 위 축4(구) 판정은 **비중이 1/5이던 루브릭 아래서** 내려진 것이고,
 개정으로 **1/3까지 올랐다**. 가중치만 바꾸고 판정을 재사용하면 재채점이 아니라 **재해석**이다.
-재채점은 **`/skill-audit`** 를 돌려 결과에 따라 등재/강등을 확정한다.
+재채점은 **메인 세션이 이 루브릭으로 수동 감사**해 결과에 따라 등재/강등을 확정한다.
 그때까지 **표기는 `재채점 대상`**이다.
 
-**재판정 — `security` 검토 완료 2건 / 대기 1건**
+**재판정 — 보안 검토 완료 2건 / 대기 1건**
 
 | # | 항목 | 판정 | 조치 |
 | --- | --- | --- | --- |
 | 1 | `devops-engineer` × `helm-chart-scaffolding` | ✅ **조건부 승인**(마크다운 한정) / ❌ `scripts/validate-chart.sh` **실행 거부** | **단서를 넣는 것이 등재의 조건**([skills/caveats.md](skills/caveats.md)). 즉시 제외는 불필요 — 급소가 스크립트 2줄에 응집돼 있고, 저장소에 차트가 **0건**이라 아직 발동 대상이 없다 |
 | 2 | ~~`director`~~ × `brainstorming` | 🔁 **분리안 채택** — 원판정 ❌ 거부 | **워커 등재는 여전히 없다**(아래 ⓑ) |
-| 3 | `data-engineer`·`analyst` × `sql-optimization` | — | 등재 자체는 유효(두 벌 **내용 동일**). ★ 재채점은 `/skill-audit` |
+| 3 | `data-engineer` × `sql-optimization` | — | 등재 자체는 유효(두 벌 **내용 동일**). ★ 재채점은 메인 세션 수동 감사 |
 
 ⓑ **`brainstorming` 워커 등재가 없는 이유** — 이 행의 대상 워커 `director`는 **폐기**됐다.
 즉 **재검토 대상이 사라진 것이지 승인된 것이 아니다.** 분리안 채택은 「범위를 잘랐다」는 뜻이고
-「워커에 물린다」는 뜻이 아니다 — 프리로드(`skills:`)는 여전히 **`security` 검토 완료 ∧ 상시성** 조건을
+「워커에 물린다」는 뜻이 아니다 — 프리로드(`skills:`)는 여전히 **보안 검토 완료 ∧ 상시성** 조건을
 못 넘고, `tools:`의 `Skill` 등재도 하지 않았다. 현재 유일한 경로는
 **사용자가 `/brainstorming`으로 직접 호출**하는 것이다. **범위 축소와 배선 확대를 같은 결정으로 읽지 마라.**
 
-- 위 3건은 **`/skill-audit` 채점(게이트 2축 + 채점 3축) 대상**이며 이 표는 결과를 옮기는 곳이다.
-  등급·검토 상태는 채점 축도 루브릭 게이트도 아닌 **별개 게이트**(`security`)라, ★3이어도 미검토면 등재하지 않는다.
+- 위 재채점 대상은 **메인 세션 수동 감사(게이트 2축 + 채점 3축) 대상**이며 이 표는 결과를 옮기는 곳이다.
+  등급·검토 상태는 채점 축도 루브릭 게이트도 아닌 **별개 게이트**(보안 검토)라, ★3이어도 미검토면 등재하지 않는다.
 - **외부 표준·공식 문서 URL은 [references.md](references.md)에 단일 관리**한다. 워커 지시문은 **URL을 복제하지 않고**
   references.md 항목명(또는 정본 문서 경로)을 가리킨다 — 링크가 바뀌면 한 곳만 고치면 된다.
 - **스킬의 범용 권고 ≠ 이 저장소의 결정.** 근거와 함께 다르게 정한 항목(예: `profiles` 채택, `.tf` 2-space,
   `chrislusf/seaweedfs` 태그 미고정, Dagster 호스트 유지)은 스킬 권고와 어긋나더라도 **정본이 이긴다**.
-  판정 워커(`*-qa`·`*-verifier`)가 이를 갭으로 올리지 않도록 각 지시문에 예외를 명시했다.
+  판정 워커(`reviewer`)는 이를 갭으로 올리지 않는다.
 
 ## 사용 규칙
 

@@ -32,8 +32,7 @@ r"""가드 단위 테스트를 돌리고 **「돌지 않은 것」을 통과로 
 
 보증하지 않는 것:
     이 러너는 `scripts/tests/` 아래 테스트가 **돌았는지**만 본다. 테스트가 없는 가드는
-    여기서도 보이지 않는다 — `analyst_path_guard` · `research_gate_guard` ·
-    `protected_paths_guard`는 **테스트 0건**이다.
+    여기서도 보이지 않는다 — `research_gate_guard`는 **테스트 0건**이다.
     가드별 축 전수 현황은 **볼트**가 갖는다(Issue #55 §행선지 — 공백 지도).
 """
 
@@ -55,7 +54,7 @@ TEST_PATTERN = "test_*.py"
 
 def main() -> int:
     """가드 테스트를 discover해 실행하고 0건·skip·실패를 각각 갈라 판정한다."""
-    # `from scripts.plan_mirror_guard import ...` 형태의 임포트가 살려면 repo 루트가
+    # `from scripts.<가드> import ...` 형태의 임포트가 살려면 repo 루트가
     # sys.path에 있어야 한다. 스크립트로 직접 실행하면 sys.path[0]은 이 파일의
     # 디렉터리(scripts/tests)라 루트가 들어오지 않는다.
     if str(PROJECT_ROOT) not in sys.path:
