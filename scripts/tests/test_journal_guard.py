@@ -84,21 +84,48 @@ class JournalGuardTest(unittest.TestCase):
         assert "최근 7일" not in result.stdout, result.stdout
 
     def test_no_wip_warning_at_limit(self) -> None:
-        """열린 미션이 정확히 상한이면 경고하지 않는다."""
+        """진행 중 미션이 정확히 상한이면 경고하지 않는다."""
         for index in range(1, 4):
-            self._write_journal(0, f"0{index}-m{index}.md", "blocked")
+            self._write_journal(0, f"0{index}-m{index}.md", "in-progress")
         self._write_journal(0, "04-closed.md", "done")
         result = self._run_guard("session-start")
         assert result.returncode == 0, result.stderr
         assert "WIP" not in result.stdout, result.stdout
 
     def test_wip_counts_missions_beyond_recent_window(self) -> None:
-        """표시 창(최근 7일) 밖의 열린 미션도 WIP에 센다."""
+        """표시 창(최근 7일) 밖의 진행 중 미션도 WIP에 센다."""
         self._write_journal(30, "01-old.md", "in-progress")
         for index in range(1, 4):
-            self._write_journal(0, f"0{index}-m{index}.md", "planned")
+            self._write_journal(0, f"0{index}-m{index}.md", "in-progress")
         result = self._run_guard("session-start")
         assert "WIP 4/3" in result.stdout, result.stdout
+
+    def test_blocked_listed_but_not_counted_in_wip(self) -> None:
+        """blocked는 열린 미션 목록에는 나오지만 WIP 수치에서는 빠진다."""
+        for index in range(1, 5):
+            self._write_journal(0, f"0{index}-m{index}.md", "blocked")
+        result = self._run_guard("session-start")
+        assert "(blocked)" in result.stdout, result.stdout
+        assert "WIP" not in result.stdout, result.stdout
+
+    def test_dropped_is_not_open(self) -> None:
+        """dropped는 닫힌 미션이라 목록에도 WIP에도 없다."""
+        self._write_journal(0, "01-gone.md", "dropped")
+        result = self._run_guard("session-start")
+        # 「오늘 기존 저널」 줄에는 status와 무관하게 이름이 나오므로 목록 줄만 본다.
+        assert "열린 미션" not in result.stdout, result.stdout
+        assert "오늘 기존 저널: 01-gone" in result.stdout, "대조군: 파일은 읽혔다"
+
+    def test_unknown_status_is_treated_as_closed(self) -> None:
+        """⚠️ 현재 동작 고정: 오타 status는 화이트리스트 밖이라 조용히 닫힘이 된다.
+
+        의도가 아니라 **알려진 공백**이다(Issue 후보). 이 셀은 그 공백을 「모르고
+        지나감」에서 「알고 남겨 둠」으로 옮긴다 — 고치면 이 기대값을 뒤집는다.
+        """
+        for index in range(1, 5):
+            self._write_journal(0, f"0{index}-m{index}.md", "in-progres")
+        result = self._run_guard("session-start")
+        assert "WIP" not in result.stdout, result.stdout
 
     def test_removed_modes_are_noop(self) -> None:
         """갱신 전 배선으로 떠 있는 세션을 깨지 않도록 옛 모드는 무출력 통과한다."""

@@ -8,6 +8,7 @@ allowed-tools: Read, Write, Edit, Glob, Bash(date:*), Bash(ls:*), Bash(mkdir:*),
 
 > 기록 주체는 **메인 세션**이고, 기록 시점은 **미션(=PR)이 머지될 때 1회**다. 이 커맨드가 그 절차다.
 > 머지 전에 세션이 끝나면 `status: in-progress`로 중간 기록을 남겨도 된다.
+> status 값: `planned | in-progress | done | blocked | dropped` — `dropped`는 대체·철거로 폐기한 미션이다.
 > 시각은 **반드시 `date`로 실측**해 적는다 — 추정 시각은 기록 신뢰도를 통째로 무너뜨린다.
 
 ## 절차

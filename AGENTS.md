@@ -98,7 +98,7 @@
   `$OBSIDIAN_VAULT/agents/<KST 날짜>/<NN>-<mission>.md`를 1회 기록하고 저널 `summary`(한 줄)를
   채운다 — 인덱스 `agents/_MOC.base`가 프론트매터에서 생성하므로 MOC을 수기로 갱신하지 않는다.
   태그는 `runtime/codex`다. 작업 중 발견한 결함은 Issue 한 줄로만 남기고(범위 동결),
-  열린 미션은 3건을 넘기지 않는다.
+  진행 중(`in-progress`) 미션은 3건을 넘기지 않는다(`blocked`는 세지 않는다).
 - 외부 검색 질의에는 내부 데이터·테이블 값·비밀정보를 넣지 않는다.
 
 ## 테스트와 검증
