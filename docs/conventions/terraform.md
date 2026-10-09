@@ -62,6 +62,11 @@ backend 블록이 없으면 state는 **실행 디렉터리**에 놓인다. 그�
 된다(`init -migrate-state`는 backend 종류가 바뀔 때만 필요하다). 옮긴 뒤 원본은 지우기 전에
 접미사를 붙여 무력화하면, 실수로 그 트리에서 apply해도 위와 같이 에러를 내고 멈춘다.
 
+**판정 `plan`은 apply 때와 같은 변수로 돌린다**(`-var`·tfvars). 빼면 state가 아니라 변수 기본값과
+비교돼, state가 멀쩡해도 교체(`-/+`)가 나온다 — 이전 실패로 오진하거나, 그대로 apply하면 라이브 클러스터를
+바꾼다. 실제로 `-var cluster_name=lakehouse-next` 없이 돌린 `plan`이 `kind_cluster` 교체를 냈고,
+같은 `-var`를 넘기자 `No changes.`였다.
+
 ## 5. 변수·기본값
 
 - 모든 입력은 `variable`로 선언하고 `description`·`type`을 명시한다.
