@@ -230,7 +230,9 @@ podman volume rm -f kind-registry-data        # REMOVE_MACHINE=true 에 해당 �
 podman machine rm -f <머신>                   #   〃 VM 안의 데이터가 모두 사라진다
 ```
 
-- `<머신>`은 `podman machine list`로 확인한다. ①에서 기존 머신을 재사용했다면 `dagster-k8s`가 아니다.
+- `<머신>`은 **지금 실행 중인 머신**이다(`podman machine list`). ①에서 기존 머신을 재사용했다면 `dagster-k8s`가 아니다.
+  스크립트도 같은 기준으로 대상을 고르고(`MANAGE_MACHINE=true`면 `MACHINE_NAME`),
+  실행 중인 대상이 없으면 **아무것도 지우지 않고** 실패한다.
 
 ### 다이얼
 
