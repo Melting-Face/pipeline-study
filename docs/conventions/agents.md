@@ -55,7 +55,8 @@
 
 1. **미션 = PR 하나**다. 머지되면 done이다. 저널은 메인 세션이 그때 한 번 쓴다.
 2. **범위를 동결한다.** 작업 중 발견한 결함은 Issue 한 줄로만 남긴다. 예외는 현재 PR을 깨뜨리는 결함뿐이다.
-3. **WIP 상한은 3**이다. SessionStart 알림이 초과를 경고한다.
+3. **WIP(`in-progress`) 상한은 3**이다. `blocked`는 외부 대기라 목록에만 나오고
+   WIP에서는 빠진다. SessionStart 알림이 초과를 경고한다.
 
 미션을 시작할 때는 열린 Issue를 먼저 읽는다. 열린 작업의 정본은 GitHub Issues다([`issue.md`](issue.md)).
 
@@ -97,7 +98,9 @@ gh issue list --label "area:<범위>" --state open
 - 위치: `$OBSIDIAN_VAULT`(기본 `~/obsidian`)의 `agents/<YYYY-MM-DD>/<NN>-<mission>.md`. 저장소에 커밋하지 않는다.
 - 쓰는 주체는 메인 세션이고, 쓰는 시점은 미션(PR)이 머지될 때다. 절차는 [`/journal`](../../.claude/commands/journal.md)이다.
 - `NN`은 SessionStart 알림이 알려 주는 다음 번호를 쓴다. 차단 hook은 없으므로 쓰기 직전에 날짜 폴더를 다시 확인한다.
-- 프론트매터 `status`는 `planned`·`in-progress`·`blocked`·`done` 중 하나다. 앞의 셋이 WIP로 집계된다.
+- 프론트매터 `status`는 `planned`·`in-progress`·`blocked`·`done`·`dropped` 중 하나다.
+  앞의 셋이 열린 미션 목록에 나오고 `in-progress`만 WIP로 센다.
+  `dropped`는 「완료」가 아닌 폐기(대체·철거)다.
 - 있었던 일만 적는다. 수치가 없으면 `미측정`으로 적고 추정치를 쓰지 않는다.
 
 ## 남은 강제 수단

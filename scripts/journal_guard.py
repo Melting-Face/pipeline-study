@@ -35,15 +35,19 @@ KST = timezone(timedelta(hours=9))
 JOURNAL_NAME_RE = re.compile(r"^(\d{2})-([a-z0-9][a-z0-9-]*)\.md$")
 DAY_DIR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
-# 미션이 아직 열려 있다고 보는 status 값
+# status enum: planned | in-progress | done | blocked | dropped
+# 목록에 싣는 값은 OPEN_STATUSES, WIP로 세는 값은 WIP_STATUSES다
+# (blocked는 외부 대기라 뺀다). done·dropped는 닫힌 미션이다.
+# ⚠️ 목록 밖 값(오타 포함)은 닫힘으로 읽힌다(알려진 공백).
 OPEN_STATUSES = ("planned", "in-progress", "blocked")
+WIP_STATUSES = ("in-progress",)
 
 # 열린 미션 **목록 표시** 범위 — 날짜가 아니라 **날짜 폴더 수**다(저널이 없는 날은
 # 폴더가 없어 7개가 7일보다 길 수 있다). WIP **집계**는 전체 폴더를 센다 —
 # 오래 방치된 미션일수록 상한에 잡혀야 하기 때문이다.
 RECENT_DAYS = 7
 
-# 동시에 열어 둘 수 있는 미션 수 상한 (미션 규칙 3)
+# 동시에 진행할 수 있는 미션(in-progress) 수 상한 (미션 규칙 3)
 WIP_LIMIT = 3
 
 # 런타임 출처는 경로가 아니라 frontmatter 태그(`runtime/<런타임>`)가 진다 —
@@ -123,14 +127,15 @@ def main() -> None:
         for d in sorted(root.glob("????-??-??"), reverse=True)
         if DAY_DIR_RE.match(d.name)
     ]
-    open_count = 0
+    wip_count = 0
     open_missions = []
     for index, day_dir in enumerate(day_dirs):
         for _, name in scan_numbers(day_dir):
             status = read_frontmatter(day_dir / name).get("status", "")
             if status not in OPEN_STATUSES:
                 continue
-            open_count += 1
+            if status in WIP_STATUSES:
+                wip_count += 1
             if index < RECENT_DAYS:
                 open_missions.append(f"{day_dir.name}/{name[:-3]} ({status})")
 
@@ -147,9 +152,9 @@ def main() -> None:
         print(
             f"- 열린 미션(최근 날짜 폴더 {RECENT_DAYS}개): {' / '.join(open_missions)}"
         )
-    if open_count > WIP_LIMIT:
+    if wip_count > WIP_LIMIT:
         print(
-            f"- ⚠️ WIP {open_count}/{WIP_LIMIT} — 새 미션을 열기 전에 "
+            f"- ⚠️ WIP {wip_count}/{WIP_LIMIT} — 새 미션을 열기 전에 "
             "열린 미션을 닫거나 정리한다"
         )
     sys.exit(0)
