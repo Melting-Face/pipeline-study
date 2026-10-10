@@ -10,7 +10,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-ENV_FILE="${REPO_ROOT}/.env"
+ENV_FILE="${STORAGE_ENV_FILE:-${REPO_ROOT}/.env}"   # 시험용 override
 S3_CONFIG="${REPO_ROOT}/seaweedfs/s3.json"
 CONTAINER="seaweedfs"
 KIND_NETWORK="${KIND_NETWORK:-kind}"   # 시험용 override
@@ -24,6 +24,12 @@ warn() { printf '\033[1;33m[storage]\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[1;31m[storage]\033[0m %s\n' "$*" >&2; exit 1; }
 
 command -v podman >/dev/null 2>&1 || die "필수 CLI 없음: podman"
+# 데이터·s3.json 은 compose 의 상대경로(./seaweedfs/)라 **체크아웃마다 다른 사본**이 된다. 컨테이너 이름은 하나라
+# linked worktree 에서 돌리면 그 worktree 의 사본으로 정본이 바뀌어 답한다 → 메인 체크아웃에서만 돌린다.
+if [ "$(git -C "${REPO_ROOT}" rev-parse --git-dir)" != "$(git -C "${REPO_ROOT}" rev-parse --git-common-dir)" ] \
+    && [ "${STORAGE_ALLOW_WORKTREE:-}" != "1" ]; then
+    die "linked worktree 에서는 돌리지 않는다(데이터 사본이 갈린다) — 메인 체크아웃에서 실행한다(시험만 STORAGE_ALLOW_WORKTREE=1)"
+fi
 [ -f "${ENV_FILE}" ] || die ".env 가 없다: ${ENV_FILE} (.env.example 을 복사해 채운다)"
 
 # 1) 키 — `.env`의 ICEBERG_S3_* 가 단일 출처(K8s Secret lakehouse-creds 와 한 벌).
@@ -40,19 +46,35 @@ env_value() {
 ACCESS_KEY="$(env_value ICEBERG_S3_ACCESS_KEY)"
 SECRET_KEY="$(env_value ICEBERG_S3_SECRET_KEY)"
 [ -n "${ACCESS_KEY}" ] && [ -n "${SECRET_KEY}" ] || die ".env 의 ICEBERG_S3_ACCESS_KEY/ICEBERG_S3_SECRET_KEY 가 비었다"
+# 인증을 켜면 키 출처가 둘이 될 수 있다 — compose 의 Dagster·Trino 와 호스트 compute log(boto 기본 체인)는
+# AWS_* 를 읽는다. 값이 있는데 다르면 그 소비자만 403 인 부분 성공이 되므로 여기서 막는다(값은 출력하지 않는다).
+for pair in "AWS_ACCESS_KEY_ID:${ACCESS_KEY}" "AWS_SECRET_ACCESS_KEY:${SECRET_KEY}"; do
+    other="$(env_value "${pair%%:*}")"
+    if [ -n "${other}" ] && [ "${other}" != "${pair#*:}" ]; then
+        die ".env 의 ${pair%%:*} 가 ICEBERG_S3_* 와 다르다 — 같은 값으로 맞춘다(compose·Trino·compute log 가 AWS_* 를 쓴다)"
+    fi
+done
 
 log "s3.json 생성: ${S3_CONFIG#"${REPO_ROOT}"/}"
 mkdir -p "$(dirname "${S3_CONFIG}")"
+before="$(shasum -a 256 "${S3_CONFIG}" 2>/dev/null | cut -d' ' -f1 || true)"
 (
     umask 077
     printf '{"identities":[{"name":"lakehouse","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}\n' \
         "${ACCESS_KEY}" "${SECRET_KEY}" > "${S3_CONFIG}"
 )
 
-# 2) 기동 — s3.json 을 바꿨으면 재생성해야 반영되므로 --force-recreate 는 쓰지 않고 compose 의 변경 감지에 맡긴다.
-#    s3.json 내용만 바뀐 경우는 감지되지 않으므로 키를 회전했으면 restart 한다.
+after="$(shasum -a 256 "${S3_CONFIG}" | cut -d' ' -f1)"
+
+# 2) 기동. compose 는 바인드 **파일 내용**의 변경을 감지하지 못한다 — 키를 회전해 s3.json 이 바뀌었으면
+#    직접 restart 한다(restart 는 kind 네트워크 연결을 유지한다). Secret lakehouse-creds 는 get||create 라
+#    따로 지우고 k8s-secrets.sh 를 다시 돌려야 바뀐다.
 log "compose seaweedfs 기동 (profile storage)"
 podman compose -f "${REPO_ROOT}/compose.yml" --profile storage up -d seaweedfs
+if [ -n "${before}" ] && [ "${before}" != "${after}" ]; then
+    log "s3.json 이 바뀌었다 — 새 키를 읽도록 restart (Secret lakehouse-creds 는 별도 회전)"
+    podman restart "${CONTAINER}" >/dev/null
+fi
 
 log "healthy 대기"
 healthy=""

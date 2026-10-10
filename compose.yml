@@ -212,11 +212,15 @@ services:
       - "127.0.0.1:9333:9333" # master UI
       - "127.0.0.1:8333:8333" # S3 API
       - "127.0.0.1:8888:8888" # filer UI
-      # Admin UI(23646)는 게시 자체를 하지 않는다 — vacuum·balance 등 데이터 파괴가 가능한
-      # 운영 평면인데 인증 배선이 없고, 운영은 `weed shell`(storage-up.sh)로 충분하다(YAGNI).
-      # 컨테이너 안에서는 그대로 뜬다(프로세스 인자 무변경). 필요해지면 그때 루프백으로 연다.
+      # Admin UI(23646)·WebDAV(7333)는 프로세스 자체를 끈다(아래 command) — vacuum·balance 등 데이터 파괴가
+      # 가능한 운영 평면인데 인증 배선이 없고, kind 네트워크에 붙으면 파드에서도 닿는다. 운영은 `weed shell`.
       # volume(8080)·grpc·metrics(9324)는 컨테이너 네트워크 내부 통신만 사용 → host 미게시 (Trino 8080 충돌 회피)
-    command: "mini -ip.bind=0.0.0.0 -dir=/data -metricsPort=9324 -s3.config=/etc/seaweedfs/s3.json"
+    # -ip.bind=0.0.0.0 은 서비스별로 못 나눈다(mini 에 per-service bind 플래그 없음) → kind 네트워크에서는
+    # S3 외 포트도 닿는다. 그래서 인증 없는 운영 평면 둘(Admin UI 23646 · WebDAV 7333)은 아예 끈다.
+    # 볼륨 슬롯: mini 는 `-volume.max` 플래그가 없고 「Volume max: 0 (auto-configured based on free disk
+    # space)」다(`weed mini -h`). 구 K8s 사본이 겪은 고정 상한(30) 소진 → PutObject「No writable volumes」는
+    # 이 기본값에서 같은 형태로는 안 난다 — 다시 보이면 체크섬이 아니라 디스크 여유부터 본다(k8s/checksum.md).
+    command: "mini -ip.bind=0.0.0.0 -dir=/data -metricsPort=9324 -s3.config=/etc/seaweedfs/s3.json -admin.ui=false -webdav=false"
     volumes:
       - ./seaweedfs/data:/data
       - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro

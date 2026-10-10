@@ -121,7 +121,8 @@ in-cluster Dagster 매니페스트는 철거돼(새 클러스터에 배포하지
     같은 카탈로그를 가리키지만 전자는 **pyiceberg(파이썬)**, 후자는 **dbt-spark(JVM/JDBC)** 경로다.
 - **Iceberg S3 접속 키**: `ICEBERG_S3_ENDPOINT`·`ICEBERG_S3_ACCESS_KEY`·`ICEBERG_S3_SECRET_KEY`
   (`common/constants.py`의 `S3_ENDPOINT`·`S3_ACCESS_KEY_ID`·`S3_SECRET_ACCESS_KEY`가 읽는다).
-  미지정 시 공용 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`로 **폴백**해 compose 단독 구성이 보존된다.
+  미지정 시 공용 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`로 **폴백**한다 — 단 SeaweedFS 인증이 켜져 있어
+  `AWS_*`도 **같은 값**이어야 한다(compose Dagster·Trino·compute log가 읽는다, 다르면 `storage-up.sh`가 멈춘다).
   위 카탈로그 키와 같은 이유로 **`compose.yml`에 넣지 않는다**(의도된 예외 — 값을 바꿔야 하는 쪽은
   호스트 실행뿐이다).
   - S3는 **클러스터 밖 compose SeaweedFS 하나**다(`./scripts/storage-up.sh`). 호스트는 `localhost:8333`으로
