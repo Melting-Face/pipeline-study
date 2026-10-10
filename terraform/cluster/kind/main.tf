@@ -134,6 +134,8 @@ resource "terraform_data" "registry_network" {
 # SeaweedFS(S3) — 클러스터 밖 컨테이너지만 수명은 이 스택이 소유한다(종전 compose + storage-up.sh 를 대체).
 # 데이터는 바인드 마운트(local.seaweedfs_data_dir)라 컨테이너가 교체·destroy 돼도 호스트에 남는다.
 # keep_locally — destroy 가 이미지까지 지우면 재 apply 가 매번 다시 받는다(compose 시절과 같은 캐시 유지).
+# 🔴 4.36 은 상향 고정이다 — seaweedfs/data 는 4.x 가 쓴 온디스크 상태(mini.options 등)라 낮은 버전으로
+#   인플레이스로 여는 것이 위험하다. 근거 docs/conventions/docker.md §1-3.
 resource "docker_image" "seaweedfs" {
   name         = "chrislusf/seaweedfs:4.36"
   keep_locally = true
@@ -146,7 +148,9 @@ resource "docker_container" "seaweedfs" {
   name  = "seaweedfs"
   image = docker_image.seaweedfs.image_id
 
-  # compose 와 같은 command. Admin UI·WebDAV 는 인증 배선 없는 운영 평면이라 프로세스 자체를 끈다.
+  # compose 와 같은 command. -s3.config 로 인증을 켠다(무인증 결정 번복 — docs/security.md §4-3).
+  # -ip.bind=0.0.0.0 은 서비스별로 못 나눠(mini 에 per-service bind 없음) kind 네트워크에서는 S3 외 포트도 닿는다.
+  # 그래서 인증 배선 없는 운영 평면 둘(Admin UI 23646 · WebDAV 7333)은 프로세스 자체를 끈다. 운영은 weed shell.
   command = split(" ", "mini -ip.bind=0.0.0.0 -dir=/data -metricsPort=9324 -s3.config=/etc/seaweedfs/s3.json -admin.ui=false -webdav=false")
 
   # 전부 루프백 게시 — LAN 도달을 막는다(docs/security.md 최소 노출). 9324(메트릭)는 신규 게시.
@@ -171,6 +175,8 @@ resource "docker_container" "seaweedfs" {
     external = 9324
   }
 
+  # 볼륨 슬롯: mini 는 -volume.max 가 없고 여유 디스크로 자동 설정된다(`weed mini -h`). PutObject 가
+  # 「No writable volumes」로 실패하면 체크섬이 아니라 디스크 여유부터 본다(docs/conventions/k8s/checksum.md).
   volumes {
     host_path      = local.seaweedfs_data_dir
     container_path = "/data"
