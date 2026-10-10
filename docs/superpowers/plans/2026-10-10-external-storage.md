@@ -53,7 +53,7 @@ Python(PEP 723, boto3)
 
 **Files:** 없음(임시 리소스는 같은 Task에서 회수).
 
-- [ ] **Step 1:** 현행 compose `seaweedfs`를 띄우고(`podman compose --profile legacy-storage up -d seaweedfs`)
+- [ ] **Step 1:** 현행 compose `seaweedfs`를 띄우고(`./scripts/storage-up.sh` — 별칭 연결 포함)
   `podman network connect --alias seaweedfs-ext kind seaweedfs`.
 - [ ] **Step 2:** 임시 Service `spike-s3`(`type: ExternalName`, `externalName: seaweedfs-ext`)를 `default`에 적용하고
   `kubectl run spike --rm -i --restart=Never --image=curlimages/curl:8.10.1 -- curl -s -o /dev/null -w '%{http_code}\n'

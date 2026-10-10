@@ -109,7 +109,7 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 | --- | --- | --- | --- | --- | --- |
 | **상주(baseline)** | kube-system(kind CP·CNI·coredns·local-path) ¹ | 실측 ¹ | 실측 ¹ | — | — |
 | | Spark Operator(Apache, **JVM**) | 250m | 512Mi | 500m | 1Gi |
-| | SeaweedFS(master+volume+filer+s3) | 300m | 768Mi | 1 | 1.5Gi |
+| | SeaweedFS — **클러스터 밖** compose(같은 VM, `deploy.resources` lim 1 CPU/1G) — 노드 `Σrequests`에 안 잡힌다 | — | — | — | — |
 | | **CloudNativePG 오퍼레이터**(컨트롤러) | 100m | 200Mi | 250m | 384Mi |
 | | Catalog Postgres(Iceberg JDBC, CNPG `Cluster` 1인스턴스) | 250m | 512Mi | 500m | 768Mi |
 | | **ingress-nginx 컨트롤러**(호스트 포트 → Ingress 진입점) ² | 100m | 90Mi | — | — |
@@ -472,7 +472,7 @@ daemon 필요 메모리
 
 대체로 I/O 바운드이며, 볼륨 인덱스가 메모리를 사용한다.
 
-- `-volume.max`(볼륨 수), 인덱스 방식(`-volume.index=leveldb`로 메모리 절감)
+- 볼륨 수는 `weed mini`가 디스크 여유로 자동 설정(`-volume.max` 없음), 인덱스는 `-volume.index=leveldb`로 절감
 
 ## 호스트 크기별 권장 프로파일 (출발점)
 
