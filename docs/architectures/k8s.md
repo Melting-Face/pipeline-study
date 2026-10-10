@@ -14,8 +14,9 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
   **Dagster를 포함해** 전 스택이 클러스터 안에 있다(구 판본은 호스트에 남겼다)
   (오케스트레이터↔컴퓨트 분리).
   전면 이행은 **PoC 성공을 전제**로 단계적으로 진행한다. 전체 로드맵은 [../redesign.md](../redesign.md).
-- **로컬 배포판**: **kind on Podman(rootful)** + 로컬 레지스트리. in-cluster Dagster는 ServiceAccount로,
-  호스트 실행분은 kubeconfig로 클러스터 API에 접근한다(인증 분기는 코드가 갖는다).
+- **로컬 배포판(dev 환경, 운영 아님)**: **kind on Podman(rootful)** + 로컬 레지스트리.
+  in-cluster Dagster는 ServiceAccount로, 호스트 실행분은 kubeconfig로 클러스터 API에 접근한다
+  (인증 분기는 코드가 갖는다).
 - **핵심 컴포넌트**: **Spark Operator**(배치)·**Flink Operator**(스트림)로
   `SparkApplication`·`FlinkDeployment`(CRD)를 실행하고,
   **CloudNativePG**(카탈로그 Postgres)로 `Cluster`(CRD) 관리,
