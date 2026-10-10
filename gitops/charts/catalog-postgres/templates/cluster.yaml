@@ -4,14 +4,17 @@
 # S3의 parquet은 남지만 "테이블"이 사라져 복구 = 재적재이므로, 상태 저장 규칙
 # (docs/conventions/k8s.md §1 StatefulSet+PVC)을 오퍼레이터로 충족한다.
 #
-# 오퍼레이터 설치: ArgoCD 앱 gitops/charts/cnpg-operator
-# 크리덴셜 시크릿 생성 + 이 CR 적용: scripts/k8s-poc-storage.sh
+# 오퍼레이터: ArgoCD 앱 gitops/charts/cnpg-operator / 이 CR: ArgoCD 앱 gitops/charts/catalog-postgres
+# 크리덴셜 시크릿(catalog-pg-app)은 ArgoCD 밖 — scripts/k8s-poc-storage.sh 가 만든다(Secret이 먼저 있어야 한다).
 # 서비스 이름은 CNPG가 만든다 → **catalog-postgres-rw**(쓰기)·`-ro`(읽기 전용)·`-r`(전체).
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
     name: catalog-postgres
     namespace: default
+    annotations:
+        # 데이터 층 앱 규약(docs/argocd-gitops.md §4) — 앱 삭제·prune 이 카탈로그를 지우지 않게 한다.
+        argocd.argoproj.io/sync-options: Prune=false,Delete=false
 spec:
     # PoC는 단일 인스턴스. HA(2+)는 상주 예산과 함께 판단한다(docs/resource-sizing.md §B).
     instances: 1
@@ -47,17 +50,9 @@ spec:
               comment: Iceberg JDBC 카탈로그 소유자 (bootstrap.initdb에서 생성 후 선언 관리로 인수)
               passwordSecret:
                   name: catalog-pg-app
-            # Dagster 메타 스토리지(run·event log·schedule) 소유자.
-            # 🔴 `iceberg` 롤을 재사용하지 않는다 — 크리덴셜 하나의 폭발반경을 두 배로 만들고,
-            # "같은 비밀번호를 두 시크릿에 두지 않는다"는 규율의 정반대가 된다.
-            # 이 롤이 소유하는 DB 선언은 철거된 k8s/dagster/dagster-meta-db.yaml에 있었다(PR2에서 재선언).
-            # bootstrap을 거치지 않고 처음부터 선언 관리라 회전 경로가 깨끗하다.
-            - name: dagster
-              ensure: present
-              login: true
-              comment: Dagster 메타 스토리지 소유자 (선언 관리 — bootstrap 경유 아님)
-              passwordSecret:
-                  name: dagster-meta-pg-app
+            # Dagster 메타 롤은 두지 않는다 — Dagster는 Airflow로 대체 예정이라 소비자가 없다.
+            # 오케스트레이터 메타 DB를 다시 둘 때는 `iceberg` 롤을 재사용하지 말고 롤·Secret을 따로 선언한다
+            # (크리덴셜 하나의 폭발반경을 두 배로 만들지 않는다).
     # 🚧 백업·PITR(Barman Cloud 플러그인)은 **아직 배선하지 않는다.**
     # 2026-08-19 실측: 플러그인·ObjectStore까지는 떴으나 **SeaweedFS로의 `PutObject`가
     # `InternalError`(max retries 4)로 실패**해 WAL 아카이빙이 무한 재시도에 빠졌다

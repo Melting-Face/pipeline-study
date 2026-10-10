@@ -25,11 +25,6 @@ S3_SECRET_KEY="${S3_SECRET_KEY:-poc-local-secret}"    # gitleaks:allow
 # PG_USER는 k8s/catalog-postgres.yaml의 `bootstrap.initdb.owner`와 **반드시 같아야 한다**(아래 0번 가드).
 PG_USER="${PG_USER:-iceberg}"
 PG_PASSWORD="${PG_PASSWORD:-iceberg-local}"           # gitleaks:allow
-# Dagster 메타 스토리지 계정 — 카탈로그와 **같은 CNPG 클러스터의 다른 DB·다른 롤**이다.
-# 롤 선언은 k8s/catalog-postgres.yaml의 managed.roles, DB 선언(Database CR)은 Dagster 배포와 함께 PR2에서 다시 정한다.
-# 🔴 카탈로그 비밀번호를 재사용하지 않는다(폭발반경·회전 경로 분리).
-DAGSTER_PG_USER="${DAGSTER_PG_USER:-dagster}"
-DAGSTER_PG_PASSWORD="${DAGSTER_PG_PASSWORD:-dagster-local}"   # gitleaks:allow
 
 S3_JSON="$(cat <<JSON
 {"identities":[{"name":"poc","credentials":[{"accessKey":"${S3_ACCESS_KEY}","secretKey":"${S3_SECRET_KEY}"}],"actions":["Admin","Read","Write","List","Tagging"]}]}
@@ -39,21 +34,10 @@ JSON
 # 0) 계정명 대조 — CNPG는 시크릿의 username과 CR의 `bootstrap.initdb.owner`가 **같아야 한다**(공식 문서).
 #    owner는 CR의 리터럴이라 PG_USER override와 자동으로 맞지 않는다 → 적용 전에 막는다.
 #    (2026-08-19 devops-qa·security 감사 공통 지적: 지금 일치하는 건 기본값이 같아서일 뿐이다)
-CR_OWNER="$(awk '/^ *owner:/ {print $2; exit}' "${REPO_ROOT}/k8s/catalog-postgres.yaml")"
+CR_OWNER="$(awk '/^ *owner:/ {print $2; exit}' "${REPO_ROOT}/gitops/charts/catalog-postgres/templates/cluster.yaml")"
 if [ "${CR_OWNER}" != "${PG_USER}" ]; then
     printf 'PG_USER(%s) != k8s/catalog-postgres.yaml의 owner(%s)\n' "${PG_USER}" "${CR_OWNER}" >&2
     printf 'CNPG bootstrap이 정의되지 않은 동작에 빠진다. 둘을 맞춘 뒤 다시 실행하라.\n' >&2
-    exit 1
-fi
-
-# 0-2) Dagster 메타 롤 대조 — managed.roles의 롤 이름이 DAGSTER_PG_USER와 같아야 한다.
-#      어긋나면 롤이 안 만들어져 "Secret은 생겼는데 접속에서 죽는" 부분 성공이 된다.
-#      (Database CR owner 대조는 CR 파일이 철거돼 빠졌다 — Dagster 배포를 다시 정할 때 복원한다.)
-CR_ROLES="$(awk '/^ *- name: / {print $3}' "${REPO_ROOT}/k8s/catalog-postgres.yaml")"
-if ! printf '%s\n' "${CR_ROLES}" | grep -qx "${DAGSTER_PG_USER}"; then
-    printf 'DAGSTER_PG_USER(%s)가 k8s/catalog-postgres.yaml의 managed.roles에 없다.\n' \
-        "${DAGSTER_PG_USER}" >&2
-    printf '현재 선언된 롤: %s\n' "$(printf '%s' "${CR_ROLES}" | tr '\n' ' ')" >&2
     exit 1
 fi
 
@@ -80,7 +64,7 @@ fi
 #    **아무 배선도 없는데 부트스트랩이 멈춘다**(2026-09-21 security 실측). 이 파일은 주석 밀도가
 #    높고 산문에서 `plugins`를 반복 언급해 개연성이 낮지 않다.
 CR_PLUGINS_ACTIVE="$(awk '/^[[:space:]]*#/ {next} /^[[:space:]]*plugins:/ {print}' \
-    "${REPO_ROOT}/k8s/catalog-postgres.yaml")"
+    "${REPO_ROOT}/gitops/charts/catalog-postgres/templates/cluster.yaml")"
 CR_PLUGINS_LINES="$(printf '%s' "${CR_PLUGINS_ACTIVE}" | grep -c . || true)"
 #    🔴 `|| true`는 grep의 **모든** 실패를 삼킨다. grep이 실행조차 못 하면 값이 비는데,
 #    `[ "" -gt 1 ]`은 rc=2를 내면서도 **`if` 조건은 `set -e` 면제**라 중단되지 않아
@@ -112,7 +96,7 @@ fi
 #    **WAL 아카이버 없이 백업 잡만 매일 도는** 상태가 된다 — 이 가드가 막으려던 바로 그 상태다.
 if [ "${CR_PLUGINS_LINES}" -eq 1 ]; then
     CR_BARMAN_OBJ="$(awk '/^[[:space:]]*#/ {next} /^[[:space:]]*barmanObjectName:/ {print $2; exit}' \
-        "${REPO_ROOT}/k8s/catalog-postgres.yaml")"
+        "${REPO_ROOT}/gitops/charts/catalog-postgres/templates/cluster.yaml")"
     OBJECTSTORE_NAME="$(awk '/^kind: ObjectStore/ {f=1} f && /^[[:space:]]*name:/ {print $2; exit}' \
         "${REPO_ROOT}/k8s/catalog-pg-backup.yaml")"
     if [ -z "${CR_BARMAN_OBJ}" ] || [ "${CR_BARMAN_OBJ}" != "${OBJECTSTORE_NAME}" ]; then
@@ -142,13 +126,6 @@ kubectl create secret generic catalog-pg-app -n default \
     --type=kubernetes.io/basic-auth \
     --from-literal=username="${PG_USER}" \
     --from-literal=password="${PG_PASSWORD}" \
-    --dry-run=client -o yaml | kubectl apply -f -
-
-log "Secret 생성/갱신: dagster-meta-pg-app (Dagster 메타 DB 계정)"
-kubectl create secret generic dagster-meta-pg-app -n default \
-    --type=kubernetes.io/basic-auth \
-    --from-literal=username="${DAGSTER_PG_USER}" \
-    --from-literal=password="${DAGSTER_PG_PASSWORD}" \
     --dry-run=client -o yaml | kubectl apply -f -
 
 # 1-2) PhysioNet credentialed 원천 접근 (수집 자산 — defs/<dataset>/raw_assets.py).
@@ -219,7 +196,7 @@ kubectl -n default delete svc/catalog-postgres --ignore-not-found
 #    부작용 전에 `exit 1`이 난다. 즉 위 「거짓 음성」은 **닫힌 갭**이고, 이 문단은 §4 패턴
 #    단독의 성질을 적은 것이다. 이 분기를 손볼 때 §0-3을 함께 보지 않으면 없는 구멍을 다시 막게 된다.
 CR_PLUGINS="$(awk '/^    plugins:[[:space:]]*$/ {print "yes"; exit}' \
-    "${REPO_ROOT}/k8s/catalog-postgres.yaml")"
+    "${REPO_ROOT}/gitops/charts/catalog-postgres/templates/cluster.yaml")"
 if [ "${CR_PLUGINS}" = "yes" ]; then
     log "백업 구성 적용 (ObjectStore + ScheduledBackup)"
     kubectl apply -f "${REPO_ROOT}/k8s/catalog-pg-backup.yaml"
@@ -232,7 +209,7 @@ fi
 
 # 5) 카탈로그 Postgres(CNPG Cluster) — 백업 목적지가 준비된 뒤에 띄운다.
 log "Catalog Postgres(CNPG) 배포"
-kubectl apply -f "${REPO_ROOT}/k8s/catalog-postgres.yaml"
+kubectl apply -f "${REPO_ROOT}/gitops/charts/catalog-postgres/templates/cluster.yaml"
 # CR은 rollout status 대상이 아니다 → Cluster의 Ready 조건을 기다린다(initdb 포함이라 넉넉히).
 kubectl -n default wait --for=condition=Ready \
     cluster.postgresql.cnpg.io/catalog-postgres --timeout=300s
