@@ -18,7 +18,7 @@
 | 클러스터·레지스트리·ingress-nginx | `k8s-up.sh` | `kind_cluster` import 불가가 셸 유지 근거였다 |
 | cert-manager·Barman 플러그인·네임스페이스 | `k8s-operators.sh` | 원격 매니페스트 `kubectl apply` |
 | 오퍼레이터 3종·플랫폼 매니페스트·Dagster | `terraform/lakehouse-platform/` | 빈 클러스터는 CRD 해석 때문에 **2단 apply** |
-| CNPG Cluster·Secret | `k8s-poc-storage.sh` | 데이터 보유 층 — SeaweedFS·버킷은 클러스터 밖(`storage-up.sh`) |
+| SeaweedFS·CNPG Cluster·Secret·버킷 | `k8s-poc-storage.sh` | 데이터 보유 층 |
 | Spark Connect·Flink 세션 | 수동 `kubectl` | 온디맨드 |
 
 [architectures/terraform.md](architectures/terraform.md)는 A(cluster)·B(data)를 **셸에 남긴다**고 결정했다 —

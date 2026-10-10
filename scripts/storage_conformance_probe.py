@@ -145,7 +145,7 @@ DEFAULT_PREFIX = "conformance-probe"
 # 🔴 1차 방어 — **allowlist**. 버킷명에도 마커를 강제한다.
 #   denylist 단독은 **인벤토리가 늘 때마다 이 상수를 갱신해야 하는데 그 트리거가
 #   없다**. 실제로 한 번 어긋났다: 실 버킷은 `warehouse`/`pg-backup`/
-#   `dagster-logs` 3개인데(정본 scripts/k8s-poc-storage.sh) 목록은 백업 버킷을
+#   `dagster-logs` 3개인데(정본 scripts/storage-up.sh) 목록은 백업 버킷을
 #   빠뜨리고 버킷이 아닌 `raw`(=s3://warehouse/raw 경로)를 넣고 있었다.
 #   마커 강제는 실 버킷 3종을 **구조적으로** 배제하므로 인벤토리를 따라다니지
 #   않는다 — 앞으로 버킷이 늘어도 이 파일은 그대로다.

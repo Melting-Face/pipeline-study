@@ -128,6 +128,8 @@ terraform -chdir=terraform/cluster/kind init
 terraform -chdir=terraform/cluster/kind apply \
   -var cluster_name=lakehouse-next -var http_host_port=8082 -var https_host_port=8445
 
+./scripts/k8s-secrets.sh                  # Secret(lakehouse-creds·catalog-pg-app) — ArgoCD 밖
+
 terraform -chdir=terraform/platform init
 terraform -chdir=terraform/platform apply \
   -var kubeconfig_path=~/.kube/lakehouse-next.config -var kube_context=kind-lakehouse-next \
@@ -141,7 +143,8 @@ export KUBECONFIG=~/.kube/lakehouse-next.config   # 스택 A가 쓴 클러스터
 - `kubectl`에 옵션을 붙이는 대신 `KUBECONFIG`를 export한다(zsh는 `$K` 형태의 명령 변수를 쪼개지 않는다).
 - 기능 브랜치를 클러스터에서 검증할 때만 `target_revision=<브랜치>`로 바꾸고, 그 전에 브랜치를 push한다.
 - PR2 뒤에는 `-var` 없이 기본값(`lakehouse`, 8080/8443)으로 올린다.
-- ⏸ `scripts/k8s-secrets.sh`(PR2)는 아직 없고 `scripts/k8s-poc-storage.sh`는 지금 돌지 않는다.
+- `scripts/k8s-secrets.sh`는 스택 A 다음에 돌린다(Secret — S3 키는 `.env`의 `ICEBERG_S3_*`). 카탈로그 Cluster는
+  ArgoCD 앱 `catalog-postgres`가 만들고 Secret이 늦으면 기다린다.
 
 #### `k8s-up.sh`가 하는 일 — 손으로 하기
 

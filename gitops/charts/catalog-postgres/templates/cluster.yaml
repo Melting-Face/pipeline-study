@@ -5,7 +5,7 @@
 # (docs/conventions/k8s.md §1 StatefulSet+PVC)을 오퍼레이터로 충족한다.
 #
 # 오퍼레이터: ArgoCD 앱 gitops/charts/cnpg-operator / 이 CR: ArgoCD 앱 gitops/charts/catalog-postgres
-# 크리덴셜 시크릿(catalog-pg-app)은 ArgoCD 밖 — scripts/k8s-poc-storage.sh 가 만든다(Secret이 먼저 있어야 한다).
+# 크리덴셜 시크릿(catalog-pg-app)은 ArgoCD 밖 — scripts/k8s-secrets.sh 가 만든다(Secret이 먼저 있어야 한다).
 # 서비스 이름은 CNPG가 만든다 → **catalog-postgres-rw**(쓰기)·`-ro`(읽기 전용)·`-r`(전체).
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
@@ -32,7 +32,7 @@ spec:
             # 오퍼레이터가 비밀번호를 만들면 사람이 `kubectl get secret`으로 꺼내 `.env`에 옮겨야 하고,
             # 그 동기화가 어긋나면 "나열은 되는데 접속에서 죽는" 부분 성공 드리프트가 재현된다
             # (CLAUDE.md 운영 §"접속 대상을 바꾸는 값은 한 벌로 묶어 바꾼다").
-            # 비밀정보 단일 출처는 scripts/k8s-poc-storage.sh(env override).
+            # 비밀정보 단일 출처는 scripts/k8s-secrets.sh(env override).
             secret:
                 name: catalog-pg-app
     # superuser 접근은 기본 비활성(CNPG). 카탈로그는 DB owner 권한만으로 충분하다

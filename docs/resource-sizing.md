@@ -457,7 +457,7 @@ daemon 필요 메모리
 | 대상 | 담는 것 | 위치 | 튜닝 지점 |
 | --- | --- | --- | --- |
 | 메타 Postgres | Dagster run·이벤트·스케줄 상태 | compose(호스트) | `compose.yml` / `postgresql.conf` |
-| 카탈로그 Postgres | Iceberg 테이블 메타(JDBC 카탈로그) | K8s(CNPG `Cluster`) | `k8s/catalog-postgres.yaml`의 `spec.postgresql.parameters` |
+| 카탈로그 Postgres | Iceberg 테이블 메타(JDBC 카탈로그) | K8s(CNPG `Cluster`) | `gitops/charts/catalog-postgres/templates/cluster.yaml`의 `spec.postgresql.parameters` |
 
 - `shared_buffers` ≈ RAM × **0.25**, `work_mem`(정렬/조인 버퍼, 연결당), `max_connections`
 - 동시 run·pyiceberg 연결이 늘면 `max_connections`를 상향한다.

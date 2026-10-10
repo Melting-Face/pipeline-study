@@ -85,8 +85,8 @@ aws --endpoint-url http://localhost:8333 \
 
 **메타 Postgres의 현행 사실(단일 서술)** — 구 `lakehouse` 클러스터에서는 CNPG `catalog-postgres`의
 `dagster` DB가 메타 DB였다. 그 선언(`Database` CR, `k8s/dagster/dagster-meta-db.yaml`)은 철거됐고
-`k8s/catalog-postgres.yaml`에는 `dagster` **롤만** 남는다. **새 클러스터에는 메타 DB가 없고** 위치는
-PR2가 정한다([argocd-gitops.md](argocd-gitops.md) D6). 그동안 compose 실행(`--profile host-dagster`)은
+롤·Secret도 철거됐다. **새 클러스터에는 메타 DB가 없다** — Dagster를 Airflow로 대체하기로 해 옮기지 않는다
+([argocd-gitops.md](argocd-gitops.md) D6). 그동안 compose 실행(`--profile host-dagster`)은
 compose `postgres`를 쓰고, 호스트 `dg dev`는 `.env`의 `POSTGRES_HOST`·`POSTGRES_PORT`가 가리키는 곳을 쓴다
 (예시 기본값 15432는 **구 클러스터** CNPG의 port-forward다 — 구 클러스터가 내려가면 함께 사라진다).
 실행 위치에 따라 같은 키의 값이 갈린다(in-cluster 열은 철거 전 기록).
@@ -293,7 +293,8 @@ kind 클러스터를 다시 만드는 절차다. **재생성은 PVC를 통째로
 치르지 않아도 될 재적재를 치르지 않으려면 이 표를 먼저 본다.
 
 **재생성이 확정되면 바꿀 것을 전부 모아서 한 번에 한다.** 창을 여러 번 열면 재적재도 여러 번이다.
-선반영 대상: `terraform/cluster/kind`(포트·마운트 변수) · `k8s/catalog-postgres.yaml`(`storage.size`) ·
+선반영 대상: `terraform/cluster/kind`(포트·마운트 변수) ·
+`gitops/charts/catalog-postgres/templates/cluster.yaml`(`storage.size`) ·
 `scripts/k8s-env.sh`(머신 자원 선언).
 
 ### 4-2. 무엇이 소멸하고 비용이 얼마인가
@@ -351,15 +352,15 @@ source scripts/k8s-env.sh      # KUBECONFIG + 컨텍스트 가드
 ```
 
 오퍼레이터(cert-manager·CNPG·Spark·Flink)는 ArgoCD가 `git`에서 수렴시키므로 따로 올리지 않는다.
-데이터 층(SeaweedFS·카탈로그 DB·Secret)은 PR2에서 ArgoCD로 옮겨 오며, 그 전까지의 과도기 스크립트
-`scripts/k8s-poc-storage.sh`는 Barman CRD 선행 검사에서 멈춘다([argocd-gitops.md](argocd-gitops.md) §8).
+카탈로그 DB는 ArgoCD 앱 `catalog-postgres`가, 그 Secret은 `scripts/k8s-secrets.sh`가, SeaweedFS(S3)는
+클러스터 밖 `scripts/storage-up.sh`가 맡는다 — 클러스터를 다시 만들어도 S3 객체는 남고 카탈로그만 비어 있다.
 
 ⚠️ **복구 순서는 SeaweedFS(S3 객체) → 카탈로그 PG(메타)** 다. 반대로 하면 **테이블은 보이는데
 읽기가 실패**한다 — 메타가 가리키는 객체가 아직 없기 때문이다. 이 저장소가 두 번 겪은
 **"부분 성공" 드리프트**와 같은 모양이라 오진하기 쉽다.
 
 ⚠️ CNPG `bootstrap.recovery`(PITR)는 **쓸 수 없다** — Barman Cloud 백업이 미구성 상태다
-(`k8s/catalog-postgres.yaml` 주석). 논리 복원(`psql < catalog.sql`)만 가능하다.
+(`gitops/charts/catalog-postgres/templates/cluster.yaml` 주석). 논리 복원(`psql < catalog.sql`)만 가능하다.
 
 ⚠️ **크리덴셜은 한 벌로 확인한다** — `catalog-pg-app` Secret ↔ DB 롤 ↔ `.env`의
 `ICEBERG_CATALOG_PASSWORD` ↔ 이미 뜬 워크로드의 env(§1-2).

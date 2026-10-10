@@ -1,5 +1,5 @@
 # 렌더 결과에 대한 기대 — scripts/gitops-charts-check.sh (c)
-# owner 는 Secret catalog-pg-app 의 username 과 같아야 한다(scripts/k8s-poc-storage.sh 의 owner 가드).
+# owner 는 Secret catalog-pg-app 의 username 과 같아야 한다(scripts/k8s-secrets.sh 의 owner 가드).
 # managed.roles 는 iceberg 하나 — Dagster 메타 롤은 Airflow 대체 예정이라 선언하지 않는다(index 1 = 부재).
 fields:
     - {ref: Cluster/catalog-postgres, path: [spec, bootstrap, initdb, owner], value: iceberg}

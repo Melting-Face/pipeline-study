@@ -4,9 +4,10 @@
 > 상위 규칙은 [k8s.md](../k8s.md), 자원 수치는 [../../resource-sizing.md](../../resource-sizing.md)에 있다.
 
 - **오퍼레이터**: [CloudNativePG](https://cloudnative-pg.io/)(CNCF). **ArgoCD 앱 `gitops/charts/cnpg-operator/`**
-  가 `ns=cnpg-system`에 설치한다(`CreateNamespace=true`). `Cluster` CR은 `k8s/catalog-postgres.yaml`이고
-  적용은 아직 `k8s-poc-storage.sh`(과도기 — PR2에서 `catalog-postgres` 차트로 이전). 오퍼레이터와
-  CR의 주체가 달라 **순서가 전제**다([`../../setup.md`](../../setup.md) §3).
+  가 `ns=cnpg-system`에 설치한다(`CreateNamespace=true`). `Cluster` CR은
+  `gitops/charts/catalog-postgres/templates/cluster.yaml`이고
+  적용은 **ArgoCD 앱 `catalog-postgres`**(`Prune=false,Delete=false`)이고, 그 CR이 읽는 Secret은
+  ArgoCD 밖 `scripts/k8s-secrets.sh`가 만든다(Secret이 늦으면 CNPG가 기다린다 — [`../../setup.md`](../../setup.md) §3).
 - **차트 버전 ≠ appVersion**(§9 Spark 오퍼레이터와 같은 함정): chart **0.29.0** = CNPG **1.30.0**.
   `helm search repo cnpg/cloudnative-pg --versions`로 대조하고
   `gitops/charts/cnpg-operator/Chart.yaml`의 dependency `version`에 핀한다.
@@ -17,22 +18,21 @@
   어긋나면 [operations.md](../../operations.md)의 "부분 성공" 드리프트가 재현된다(나열은 되고
   `load_table`에서 거부). → `bootstrap.initdb.secret`으로 **선언 시크릿**
   `catalog-pg-app`(type `kubernetes.io/basic-auth`, 키 `username`/`password` 고정)을 지정하고,
-  값의 단일 출처는 `scripts/k8s-poc-storage.sh`(env override)로 둔다.
+  값의 단일 출처는 `scripts/k8s-secrets.sh`(env override)로 둔다.
   PG 크리덴셜은 `lakehouse-creds`(S3 전용)와 **분리**한다 — 같은 비밀번호를 두 시크릿에 두지 않는다.
 - **`bootstrap.initdb.secret`은 "초기화 1회"다 — 스크립트 재실행으로 비밀번호가 회전되지 않는다.**
-  `PG_PASSWORD=새값 ./scripts/k8s-poc-storage.sh`를 돌리면 **k8s Secret만 바뀌고 DB 롤은 옛 값 그대로**다.
+  `PG_PASSWORD=새값 ./scripts/k8s-secrets.sh`를 돌리면 **k8s Secret만 바뀌고 DB 롤은 옛 값 그대로**다.
   그러면 Secret을 읽는 워크로드는 인증에 실패하고 `.env`를 읽는 호스트 경로는 성공해
   **위 "부분 성공" 드리프트가 축만 바꿔 재현된다**(보안·인프라 감사 공통 지적).
   CNPG가 시크릿 변경을 롤에 반영하는 것은 **`spec.managed.roles`로 선언한 롤뿐**이고
   `bootstrap.initdb`로 만든 계정은 대상이 아니다(CNPG `declarative_role_management` 문서).
   → **해결**: `spec.managed.roles`에 `iceberg`를 선언해 CNPG가 시크릿 변경을 롤에 재적용하게 했다.
   `bootstrap.initdb`로 만든 롤을 **선언 관리로 인수**하는 형태이며 `name`은 initdb의 `owner`와 같아야 한다.
-  `dagster` 롤도 같은 방식으로 추가했다(인수가 아니라 처음부터 선언) —
-  실측 `reconciled: ["iceberg","dagster"]`. 단 **이미 떠 있는 워크로드의 env는 여전히 수동**이라
-  Spark Connect·Flink·Dagster 파드는 **재기동까지 한 벌**이다.
+  구 클러스터에선 `dagster` 롤도 같은 방식이었다(실측 `reconciled: ["iceberg","dagster"]` — Airflow 대체 예정이라 철거).
+  단 **이미 떠 있는 워크로드의 env는 여전히 수동**이라 Spark Connect·Flink 파드는 **재기동까지 한 벌**이다.
 - **`bootstrap.initdb.owner`와 시크릿 `username`은 반드시 같아야 한다**(CNPG 문서 명시).
   CR의 `owner`는 리터럴이라 `PG_USER` env override와 자동으로 맞춰지지 않으므로,
-  `k8s-poc-storage.sh`가 **적용 전에 CR의 `owner`와 `PG_USER`를 대조해 불일치 시 중단**한다.
+  `k8s-secrets.sh`가 **Secret을 만들기 전에 CR의 `owner`와 `PG_USER`를 대조해 불일치 시 중단**한다.
 - **probe(§3)·RBAC(§5)·securityContext(§6)는 CR에 쓰지 않는다 — 오퍼레이터가 채운다.**
   `kubectl get pod catalog-postgres-1 -o yaml` 실측: `runAsNonRoot:true`·uid/gid `26`·
   `readOnlyRootFilesystem:true`·`capabilities.drop:[ALL]`·`seccompProfile:RuntimeDefault`,
@@ -55,7 +55,7 @@
   끈 이유는 SeaweedFS로의 `PutObject`가 `InternalError`로 실패해 WAL 아카이빙이
   `exit status 4` 재시도 루프에 빠졌기 때문이고(`ContinuousArchiving=False`),
   aws-chunked 체크섬 가설로 사이드카 env를 넣어도 증상이 같아 **원인은 미규명**이다
-  (경위는 CR 주석 `k8s/catalog-postgres.yaml`).
+  (경위는 CR 주석 `gitops/charts/catalog-postgres/templates/cluster.yaml`).
   실패한 채 배선을 남겨두면 **아카이빙 못 한 WAL이 PVC(5Gi)를 채워 DB가 선다** → 참조를 뺐다.
   ⚠️ 이 문서는 한동안 인과를 **정반대로** 적고 있었다("플러그인이 없으면 WAL이 쌓인다").
   같은 결과를 반대 조건에 귀속시키면 되살릴 때 **틀린 쪽을 만진다**.
@@ -63,12 +63,10 @@
     (플러그인 설치 주체는 철거돼 ArgoCD 쪽에 아직 없다 — 재활성 시 `catalog-postgres` 차트에 함께 넣는다).
     재활성을 **CR 주석 해제 1단계**로 남기기 위해서다(설치는 상주 비용이 아니라 능력이다).
     단 해제한 줄은 **`    plugins:`(4칸 들여쓰기 + 행말 즉시 종료)** 여야 한다(아래 형태 검사).
-  - **적용은 배선과 한 벌** — `k8s-poc-storage.sh`는 CR에 `plugins` 배선이 있을 때만
-    `ObjectStore`·`ScheduledBackup`을 적용한다(판정은 클러스터가 아니라 **선언 파일**을 읽는다).
-    배선 없이 `ScheduledBackup`만 돌면 **아무도 안 읽는 실패**가 매일 쌓인다.
-  - 🔴 **형태가 어긋난 활성 배선을 「배선 없음」과 같이 처리하지 않는다** — 그러면 `isWALArchiver`는
-    살아 있는데 `ObjectStore`만 없어 **끈 이유가 그대로 재현**된다. 그래서 `k8s-poc-storage.sh`
-    **§0-3**이 형태를 먼저 보고 `    plugins:`가 아니면 **`exit 1`**(Secret·SeaweedFS 기동보다 앞).
+  - **적용은 배선과 한 벌** — 지금은 `ObjectStore`·`ScheduledBackup`(`k8s/catalog-pg-backup.yaml`)을 적용하는
+    경로가 **없다**(배선 유무로 apply를 가르던 구 `k8s-poc-storage.sh` §0-3·§4 가드는 카탈로그 차트 이관과 함께 철거).
+    되살릴 때는 CR의 `plugins` 배선과 두 오브젝트를 **같은 차트에 함께** 넣어 한쪽만 적용될 수 없게 한다 —
+    배선 없이 `ScheduledBackup`만 돌면 아무도 안 읽는 실패가, 배선만 살면 끈 이유(WAL이 PVC를 채운다)가 재현된다.
   - ⚠️ **가드는 신규 적용만 가른다 — 잔존 오브젝트는 회수하지 않는다.** 로그는 "건너뜀"인데 옛
     `ScheduledBackup`이 계속 도는 **로그↔실체 괴리**가 남는다. 더 나쁜 축은 **라이브 `Cluster`에
     `spec.plugins`가 남은 경우**다 — `ObjectStore` 없이 아카이빙만 시도돼 **끈 이유(WAL이 PVC를
@@ -95,8 +93,7 @@
   PHI 경로는 아니다 — [security.md](../../security.md) 4-4).
 - **PVC 사후 확장이 안 된다** — kind 기본 SC(`rancher.io/local-path`)는 `ALLOWVOLUMEEXPANSION=false`다
   (실측). 용량은 처음에 넉넉히 잡고, 늘리려면 클러스터 재생성이다.
-- **메타 Postgres(Dagster) — 구 `lakehouse` 클러스터 기록**. 별도 Cluster를 세우지 않고
-  같은 `catalog-postgres`에 **`Database` CR로 `dagster` DB만** 더했었다(CRD `databases.postgresql.cnpg.io`).
-  ⚠️ 그 선언은 철거됐고 새 클러스터에는 메타 DB가 없다 — 위치는 PR2가 정한다([operations.md](../../operations.md) §1-2).
-  롤은 `managed.roles`의 **`dagster`** 로 카탈로그(`iceberg`)와 분리하고 시크릿도 따로 둔다(이 롤 선언은 남아 있다).
-  Dagster가 다시 호스트 실행이 돼 구 근거 "Dagster가 호스트라 순환 의존"이 되살아났다 — PR2 결정의 입력이다.
+- **메타 Postgres(Dagster) — 두지 않는다.** 구 클러스터에선 같은 `catalog-postgres`에 `Database` CR로
+  `dagster` DB와 전용 롤을 더했었으나, Dagster를 Airflow로 대체하기로 해 DB·롤·Secret(`dagster-meta-pg-app`)을
+  모두 철거했다. 오케스트레이터 메타 DB를 다시 둘 때(Airflow)는 같은 형태 — `Database` CR + 카탈로그와
+  **분리된** 롤·Secret — 로 선언한다.

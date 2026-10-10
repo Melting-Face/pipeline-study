@@ -388,7 +388,8 @@ Terraform(스택 A·B)과 ArgoCD가 **선언을 나눠 소유**한다.
 2. **클러스터·선행 조건** — `scripts/k8s-up.sh`(podman 머신·레지스트리) →
    `terraform -chdir=terraform/cluster/kind apply`
 3. **플랫폼 스택** — `terraform -chdir=terraform/platform apply`(ingress-nginx·ArgoCD) → 오퍼레이터는 ArgoCD가 수렴
-4. **스토리지·카탈로그** — `scripts/k8s-poc-storage.sh`(과도기 — PR2에서 ArgoCD 차트로 이전)
+4. **스토리지·카탈로그** — S3는 `scripts/storage-up.sh`(클러스터 밖), 카탈로그는 ArgoCD `catalog-postgres` 차트 +
+   `scripts/k8s-secrets.sh`(Secret)
 5. **Dagster** — 새 클러스터에는 배포하지 않는다(호스트 `host-dagster` profile)
 
 > 단계 순서와 이유의 정본은 `../setup.md` §3, 설계는 [../argocd-gitops.md](../argocd-gitops.md).
