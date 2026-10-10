@@ -34,10 +34,11 @@ Python(PEP 723, boto3)
 
 1. **compose 재기동으로 kind 네트워크 연결 해제** — 파드에서 `seaweedfs` 해석 실패. 기대: `storage-up.sh` 재실행이
    재연결(Task 1 Step 4).
-2. **키 불일치** — 나열은 되는데 `load_table`이 `ACCESS_DENIED`. 기대: 전환 실증이 `load_table`까지 간다(Task 6 Step 6).
-3. **레거시 Service가 정본 대신 답함** — 기대: 전환 후 `kubectl get endpointslices -l
-   kubernetes.io/service-name=seaweedfs` 0건(Task 6 Step 4).
-4. **부분 복사·aws-chunked 손상** — 기대: sync가 객체 수·바이트·사이드카 해시 불일치에 exit 1(Task 4 Step 3 음성 대조).
+2. **키 불일치** — 나열은 되는데 `load_table`이 `ACCESS_DENIED`. 기대: 실증이 `load_table`까지 간다(Task 6 Step 5).
+3. **레거시 Service가 정본 대신 답함** — 기대: 클러스터 생성 후
+   `kubectl get endpointslices -l kubernetes.io/service-name=seaweedfs` 0건(Task 6 Step 3).
+4. **원천 손상(백업에서 승격된 데이터)** — 기대: `raw/` 사이드카 대조가 불일치 시 실패하고, 음성 대조로
+   그 검사가 실제로 잡는지 본다(Task 1 Step 6).
 5. **kind 없이 compose만 기동** — 기대: `storage-up.sh`가 경고 후 성공(독립성), TF는 컨테이너 부재 시 경고·skip(Task 1
    Step 4, Task 2 Step 3).
 
@@ -46,6 +47,9 @@ Python(PEP 723, boto3)
 ## PR-A — 외부 스토리지 (`feat(storage)`)
 
 ### Task 0: Spike — 파드에서 kind 네트워크 별칭 해석 (게이트, 코드 비보존)
+
+> **개정:** 클러스터가 없어 코드(Task 1~3·5·7·8)를 먼저 하고, 이 spike는 Task 6 클러스터 생성 직후
+> Service 적용 **전에** 실행한다. 실패하면 Task 2·3을 B안으로 고친다(대가: 그 두 Task의 재작업).
 
 **Files:** 없음(임시 리소스는 같은 Task에서 회수).
 
@@ -95,7 +99,10 @@ Python(PEP 723, boto3)
     .NetworkSettings.Networks.kind.Aliases}}' seaweedfs`에 `seaweedfs-ext` 포함.
 - [ ] **Step 5 (인증 음성 대조):** `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8333/warehouse` → `403`,
   같은 요청을 `.env` 키로 서명(`aws s3 ls s3://warehouse --endpoint-url http://127.0.0.1:8333` 또는 boto3 한 줄) → 성공.
-- [ ] **Step 6:** `shellcheck scripts/storage-up.sh` 통과 후 커밋 `feat(storage): compose SeaweedFS를 인증 켠 정본으로
+- [ ] **Step 6 (Review Focus 4):** 원천 무결성 — `raw/` 아래 `<key>.sha256` 사이드카를 가진 객체 전부를 스트리밍
+  해시해 사이드카 첫 토큰과 대조(일회성 boto3 스니펫, 커밋 안 함). 라벨: "대조한 객체 수 / 불일치 수".
+  음성 대조: 사이드카 하나를 임시 키로 복사해 내용을 바꾼 뒤 같은 검사를 돌려 불일치 1을 확인하고 임시 키 삭제.
+- [ ] **Step 7:** `shellcheck scripts/storage-up.sh` 통과 후 커밋 `feat(storage): compose SeaweedFS를 인증 켠 정본으로
       승격한다`.
 
 ### Task 2: Terraform `seaweedfs_network`
@@ -137,24 +144,9 @@ var.apps 원소 `{ name = "storage-external", path = "gitops/charts/storage-exte
 - [ ] **Step 4:** `var.apps` 원소 추가 → `terraform -chdir=terraform/platform test` 통과.
 - [ ] **Step 5:** 커밋 `feat(gitops): 외부 SeaweedFS용 ExternalName 차트를 추가한다`.
 
-### Task 4: `scripts/s3_sync.py` — K8s → compose 전량 복사
+### Task 4: (개정으로 삭제)
 
-**Files:** Create `scripts/s3_sync.py`
-
-**Interfaces:** `uv run scripts/s3_sync.py --src-endpoint URL --dst-endpoint URL [--bucket NAME ...] [--dry-run]`.
-src 키 = `SRC_S3_ACCESS_KEY`/`SRC_S3_SECRET_KEY`(미설정 시 `ICEBERG_S3_*`), dst 키 = `ICEBERG_S3_*`. 버킷 기본 3개.
-출력: 버킷별 `src_count src_bytes dst_count dst_bytes` 한 줄 + 사이드카 대조 `checked N mismatched M`. 불일치 시 exit 1.
-
-- [ ] **Step 1:** 작성. 키 보존 복사, dst에 같은 키·같은 크기가 있으면 건너뜀(재실행 멱등).
-  `<key>.sha256` 사이드카가 있는 객체는 dst에서 스트리밍 해시를 떠 사이드카 첫 토큰과 대조.
-  각 줄 라벨에 "무엇을 세는가"(객체 수/바이트)를 명시.
-- [ ] **Step 2:** `--dry-run`으로 K8s(port-forward `18333`) → compose(`8333`) 실행. Expected: 복사 예정 수 출력, dst
-      무변경.
-- [ ] **Step 3 (Review Focus 4, 음성 대조):** 임시 버킷 `sync-probe`에 객체 2개+사이드카 1개를 src에 만들고 sync →
-  exit 0. dst의 한 객체를 다른 바이트로 덮어쓰고 sync를 **검증만** 재실행(복사 건너뜀이 크기로만 판정하므로
-  같은 크기로 덮어 해시만 다르게) → exit 1 + `mismatched 1`. 임시 버킷 양쪽 삭제.
-- [ ] **Step 4:** `uv run ruff check scripts/s3_sync.py && uv run ruff format --check scripts/s3_sync.py`, 커밋
-  `feat(scripts): S3 버킷 전량 동기화·대조 스크립트를 추가한다`.
+K8s 원천이 이미 소멸해 sync 대상이 없다(spec 개정 E4). 번호는 ledger 연속성을 위해 남긴다.
 
 ### Task 5: 구 경로 철거 + 문서 한 벌
 
@@ -183,27 +175,7 @@ src 키 = `SRC_S3_ACCESS_KEY`/`SRC_S3_SECRET_KEY`(미설정 시 `ICEBERG_S3_*`),
       CHANGE:` 엔드포인트·기동 절차 변경).
 - [ ] **Step 6:** PR-A 생성(push는 사용자 요청 시). PR 본문에 Task 0 결과와 Task 6이 머지 **후** 집행임을 적는다.
 
-### Task 6: 🔴 전환 집행 (PR-A 머지 후, reviewer + 사용자 승인)
-
-ApplicationSet은 `main`을 추적하므로 Service는 머지 후에만 생긴다. 이 Task는 커밋을 만들지 않는다.
-
-- [ ] **Step 1:** `./scripts/storage-up.sh` → healthy·버킷 3개·별칭 연결 확인. 키 동일성: `.env` 키와
-  `kubectl get secret lakehouse-creds -o jsonpath='{.data.s3-access-key}' | base64 -d`의 **sha256만** 비교(값 비노출).
-- [ ] **Step 2:** 기준선: Spark Connect로 대상 테이블들 `count(*)` 기록(엔진 병기, 저장소 밖 저널에).
-- [ ] **Step 3:** 쓰기 동결(Spark 잡·Flink 잡 없음 확인) → `s3_sync.py` 실행 → exit 0.
-- [ ] **Step 4 (Review Focus 3):** `kubectl scale statefulset/seaweedfs --replicas=0`(PVC 보존) → `kubectl delete svc
-      seaweedfs`
-  → `terraform -chdir=terraform/platform apply`(var.apps에 storage-external) → ArgoCD sync 확인.
-  Expected: `kubectl get svc seaweedfs -o jsonpath='{.spec.type}'` = `ExternalName`, endpointslice 0건, `kubectl get
-  pvc data-seaweedfs-0` 존재.
-- [ ] **Step 5:** Spark Connect·Flink JM 재기동(`kubectl rollout restart`).
-- [ ] **Step 6 (Review Focus 2):** Step 2와 같은 `count(*)` → 값 일치. 새 테이블 생성→INSERT→SELECT. 호스트에서
-      pyiceberg `load_table`(엔드포인트 `localhost:8333`).
-  `uv run scripts/storage_conformance_probe.py`, `uv run scripts/spark_connect_smoke.py` 통과.
-- [ ] **Step 7:** 롤백 절차(실패 시): ArgoCD App 삭제(Delete=false라 Service 남음 → 수동 삭제) → `kubectl apply` 구
-      매니페스트(git 이력) → replicas=1.
-
----
+### Task 6: (PR-B 뒤 최종 집행으로 이동)
 
 ## PR-B — 카탈로그 차트화 (`feat(k8s)`)
 
@@ -217,9 +189,9 @@ ApplicationSet은 `main`을 추적하므로 Service는 머지 후에만 생긴�
   `scripts/gitops-charts-check.sh`(case)
 
 **Interfaces:** Produces Cluster `default/catalog-postgres` — 스펙은 `k8s/catalog-postgres.yaml`과 동일하되
-`managed.roles`의
-`dagster`를 `ensure: absent`로 바꾼다(목록에서 지우기만 하면 CNPG가 롤을 지우지 않는다 — 실행 전 CNPG 문서
-"Declarative role management"로 동작 확인). 어노테이션 `argocd.argoproj.io/sync-options: Prune=false,Delete=false`.
+`managed.roles`에서
+`dagster` 원소를 지운다(클러스터를 새로 만들므로 롤이 생긴 적이 없다 — `ensure: absent` 불필요). 어노테이션
+`argocd.argoproj.io/sync-options: Prune=false,Delete=false`.
 
 - [ ] **Step 1:** `tests/expect.yaml` 먼저 → check FAIL.
 - [ ] **Step 2:** CR을 템플릿으로 이관(Barman `plugins` 주석 블록 포함 그대로). `helm template`이 Helm 문법(`{{`)과
@@ -227,7 +199,7 @@ ApplicationSet은 `main`을 추적하므로 Service는 머지 후에만 생긴�
 - [ ] **Step 3:** `scripts/gitops-charts-check.sh gitops/charts/catalog-postgres` 통과, `terraform
       -chdir=terraform/platform test` 통과.
 - [ ] **Step 4:** 동등성: `helm template catalog-postgres gitops/charts/catalog-postgres -n default` 결과와 삭제 전
-  `k8s/catalog-postgres.yaml`을 `yq -P 'sort_keys(..)'`로 정규화해 diff. Expected: `dagster` 롤 `ensure`와 어노테이션만
+  `k8s/catalog-postgres.yaml`을 `yq -P 'sort_keys(..)'`로 정규화해 diff. Expected: `dagster` 롤 원소 삭제와 어노테이션만
   차이.
 - [ ] **Step 5:** 커밋 `feat(gitops): catalog-postgres CNPG 클러스터를 차트로 옮긴다`.
 
@@ -249,15 +221,27 @@ ApplicationSet은 `main`을 추적하므로 Service는 머지 후에만 생긴�
 - [ ] **Step 5:** Barman 백업 재활성화 Issue 1줄 등록 제안(대상이 compose SeaweedFS로 바뀜) — 등록은 사용자 승인 후.
       PR-B 생성.
 
-### Task 9: 🔴 채택 집행 (PR-B 머지 후, reviewer + 사용자 승인)
+### Task 9: (Task 6에 흡수)
 
-- [ ] **Step 1:** `terraform -chdir=terraform/platform apply` → `argocd app diff catalog-postgres`. Expected: 롤
-      `ensure`·어노테이션·추적 라벨 외 차이 없음.
-  다른 차이가 있으면 sync하지 않고 정지.
-- [ ] **Step 2:** sync → `kubectl get cluster catalog-postgres` Ready, 파드 재생성 없음(`kubectl get pod -l
-      cnpg.io/cluster=catalog-postgres` AGE 유지).
-- [ ] **Step 3:** `kubectl exec catalog-postgres-1 -- psql -U postgres -Atc "select count(*) from pg_roles where
-      rolname='dagster'"` → `0`;
-  Spark에서 Task 6 Step 2 테이블 `count(*)` 재확인(카탈로그 무손상).
-- [ ] **Step 4:** `kubectl delete secret dagster-meta-pg-app`.
-- [ ] **Step 5 (별도 승인, 롤백 기간 뒤):** K8s SeaweedFS StatefulSet·PVC 삭제는 이 계획 밖 — Issue로 남긴다.
+---
+
+## 집행
+
+### Task 6: 🔴 클러스터 생성·실증 (PR-A·PR-B 머지 후, reviewer + 사용자 승인)
+
+ApplicationSet은 `main`을 추적하므로 두 차트는 머지 후에만 생긴다. 이 Task는 커밋을 만들지 않는다.
+
+- [ ] **Step 1:** `./scripts/storage-up.sh` → healthy·버킷 3개(클러스터 없으면 경고만).
+- [ ] **Step 2:** `scripts/k8s-up.sh` → `terraform -chdir=terraform/cluster/kind apply` → `./scripts/k8s-secrets.sh`
+  → `terraform -chdir=terraform/platform apply`. 키 동일성: `.env` 키와 `lakehouse-creds`의 **sha256만** 비교(값
+  비노출).
+- [ ] **Step 3 (Review Focus 3):** `kubectl get svc seaweedfs -o jsonpath='{.spec.type}'` = `ExternalName`,
+  endpointslice 0건, `kubectl get cluster catalog-postgres` Ready,
+  `psql -Atc "select count(*) from pg_roles where rolname='dagster'"` = `0`.
+- [ ] **Step 4 (Task 0 재확인):** 실제 Service로 `curl http://seaweedfs:8333/` 응답(인증 403 = 도달) — spike의 양성
+  경로가
+  실 구성에서도 성립하는지.
+- [ ] **Step 5 (Review Focus 2):** 원천 → warehouse 재적재, Spark 새 테이블 쓰기→읽기, 호스트 pyiceberg `load_table`
+  (`localhost:8333`). `uv run scripts/storage_conformance_probe.py`, `uv run scripts/spark_connect_smoke.py` 통과.
+- [ ] **Step 6:** 검증용 상주 컴퓨트(Spark Connect 등)는 그 자리에서 내린다. compose 고아 `warehouse/` 정리 Issue 1줄
+  제안.

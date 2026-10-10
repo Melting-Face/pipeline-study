@@ -1,6 +1,10 @@
 # 외부 스토리지(SeaweedFS on Docker) + CNPG 카탈로그 차트화 — 설계
 
 > 구현 계획은 이 설계를 입력으로 별도 작성한다. 관련 설계: [`argocd-gitops.md`](../../argocd-gitops.md).
+>
+> **개정** — 구현 착수 시 kind 클러스터가 이미 destroy돼 있었다(state 리소스 0). K8s SeaweedFS PVC와
+> CNPG 카탈로그가 함께 사라졌으므로 sync(E4)·PVC 보존(E6)·전환 순서를 고쳤다. 남은 데이터는 compose
+> `./seaweedfs/data`뿐이다.
 
 
 ## Context
@@ -21,9 +25,9 @@
 | E1 | SeaweedFS 정본 = compose(profile `storage`, 이미지 `4.36`) | 실무 모사, 수명주기 독립 |
 | E2 | 파드 연결 = **kind 네트워크 후결합 + `Service seaweedfs` (`ExternalName`)** | registry 선례(`terraform/cluster/kind/main.tf:106-119`) 재사용, `k8s/` 매니페스트의 `http://seaweedfs:8333` 참조 무변경 |
 | E3 | S3 인증 켬(`s3.json`, gitignore) — `.env` `ICEBERG_S3_*`·K8s Secret `lakehouse-creds`와 **한 벌** | 실무 모사, 키 불일치 `ACCESS_DENIED` 함정 |
-| E4 | 데이터 = K8s→compose **S3 sync 전량**(키 보존) → CNPG 카탈로그 경로 유효 유지 | 카탈로그 재생성 불필요 |
+| E4 | 데이터 = compose `./seaweedfs/data`가 그대로 정본, 카탈로그는 빈 상태 → warehouse 테이블 **재적재** | K8s 쪽 원천 소멸, 이관할 것이 없다 |
 | E5 | `catalog-postgres` → `gitops/charts/catalog-postgres`(ArgoCD), `dagster` 롤 제거 | PR2 계획 흡수, YAGNI |
-| E6 | K8s SeaweedFS PVC는 이번 PR에서 **보존**(롤백), 삭제는 별도 승인 게이트 | 비가역 분리 |
+| E6 | 카탈로그가 모르는 compose `warehouse/` 고아 객체는 이번 범위에서 **두고**, 정리는 Issue로 | 삭제는 비가역, 재적재 후 판정 |
 
 ## 아키텍처
 
@@ -47,8 +51,7 @@ podman machine
   `terraform/platform/variables.tf` `var.apps` 등록.
 - `terraform/cluster/kind/main.tf`: `terraform_data.seaweedfs_network`(registry_network와 같은 모양, 멱등).
 - `scripts/storage-up.sh`(신규): compose 기동·`s3.json` 생성·버킷 생성·kind 네트워크 멱등 재연결.
-- `scripts/`: 버킷 초기화(`warehouse`·`pg-backup`·`dagster-logs`),
-  K8s→compose sync(PEP 723, 절차형 `main()`, `when_required`).
+- 버킷 초기화(`warehouse`·`pg-backup`·`dagster-logs`)는 `storage-up.sh` 안에서 멱등으로.
 - `k8s/seaweedfs.yaml` 제거, `k8s-poc-storage.sh`에서 SeaweedFS apply·버킷 생성 제거.
 - `.env.example`: `ICEBERG_S3_ENDPOINT=http://localhost:8333`, 미사용 `ENDPOINT_URL` 정리.
 
@@ -62,26 +65,23 @@ podman machine
 
 0. **Spike 게이트**: 임시 파드에서 `seaweedfs` 해석·`:8333` 응답 확인 + **음성 대조**(미연결 이름은 실패).
    실패 시 정지 → B안(호스트 게이트웨이) 재분류.
-1. compose `seaweedfs` 기동(인증·healthcheck) + 버킷 생성. 이중 존재 구간 시작.
-2. 🔴 쓰기 동결 → **S3 sync**(port-forward 18333 → 8333).
-   판정: 버킷별 객체 수·총 바이트 일치, `raw/` `.sha256` 사이드카 대조.
-3. 🔴 전환: K8s StatefulSet `replicas=0`(PVC 보존) → 같은 이름 ExternalName Service 적용(ArgoCD)
-   → Spark Connect·Flink 재기동.
-   확인: `kubectl get endpoints seaweedfs` 0건(레거시가 대신 답하지 않음).
-4. 실증: Spark 기존 테이블 `count(*)` 전환 전 값 대조(엔진 병기)
-   + 새 테이블 쓰기→읽기(`write_verified: True`) + `load_table`까지.
-5. 🔴 PR-B: catalog-postgres 차트를 ArgoCD로 채택(기존 CR과 동일 스펙 — diff 0 확인 후), `dagster` 롤 제거.
-6. 🔴 (롤백 기간 뒤 별도) K8s SeaweedFS PVC 삭제.
+1. compose `seaweedfs` 기동(인증·healthcheck) + 버킷 생성 — 클러스터 없이 단독으로 선다.
+   판정: `raw/` `.sha256` 사이드카 대조로 원천 무결성 확인.
+2. 🔴 클러스터 생성(`k8s-up.sh` → `terraform apply` cluster/kind·platform). ArgoCD가 `storage-external`·
+   `catalog-postgres`를 처음부터 만든다(채택이 아니라 신규 생성).
+   확인: `kubectl get endpointslices -l kubernetes.io/service-name=seaweedfs` 0건(레거시 Service 부재).
+3. 실증: 원천 → warehouse 재적재, Spark 쓰기→읽기(`write_verified: True`) + 호스트 `load_table`까지(엔진 병기).
+   `dagster` 롤 부재 확인.
 
 ## 리스크
 
 | 위험 | 관측 경로 | 대응 |
 |---|---|---|
-| 레거시가 정본 대신 답함(이중 존재) | `kubectl get endpoints seaweedfs` | `replicas=0` 먼저, Service 교체는 그 뒤 |
+| 레거시가 정본 대신 답함(이중 존재) | endpointslice 0건 | `k8s/seaweedfs.yaml` 철거로 생성 경로 자체를 없앤다 |
 | 키 불일치 → 나열 OK·`load_table` `ACCESS_DENIED` | 실증을 `load_table`까지 | `s3.json`·`lakehouse-creds`·`.env` 한 벌 갱신 |
 | compose 재기동으로 kind 네트워크 연결 해제 | `storage-up.sh` 재실행 | 멱등 재연결, 문서 명시 |
-| aws-chunked 손상 | 사이드카 해시 대조 | sync에도 `when_required` |
-| ArgoCD 채택 시 CNPG Cluster 재생성 | `argocd app diff` | diff 0 확인 후 sync, `Prune=false` |
+| aws-chunked 손상 | 사이드카 해시 대조 | 재적재 클라이언트 `when_required` 유지 |
+| ArgoCD가 데이터 층 앱을 지움 | Application 삭제 시 리소스 잔존 확인 | `Prune=false,Delete=false` |
 
 ## 문서(한 벌, 일자·실측 수치 없음)
 
@@ -94,6 +94,6 @@ podman machine
 - `podman compose --profile storage|legacy-sql|monitoring config --services`
 - 0단계 spike(양성+음성 대조)
 - `uv run scripts/storage_conformance_probe.py`(새 엔드포인트), `uv run scripts/spark_connect_smoke.py`
-- 4단계 실증(count 대조·쓰기→읽기·`load_table`)
-- `terraform plan`(cluster/kind: seaweedfs_network만 추가), `argocd app diff catalog-postgres` = 0
+- 3단계 실증(재적재·쓰기→읽기·`load_table`)
+- `scripts/gitops-charts-check.sh`(두 차트), `terraform test`(platform), `terraform validate`(cluster/kind)
 - pre-commit(sqlfluff·ruff·doc lint) 통과
