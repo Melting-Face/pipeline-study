@@ -281,5 +281,9 @@ Task 6·7이 실패하면 머지 커밋을 revert하는 PR로 되돌린다(데�
 - [ ] **Step 2: 보존 판정** — Task 6 Step 1과 같은 명령의 파일 수·해시 목록이 **일치**(불일치면 즉시 중단·보고, 재생성
   금지).
 - [ ] **Step 3: 재기동** — 스택 A·B apply → 같은 객체가 보이고 Application 전부 `Synced`·`Healthy`.
+  재 apply 때 `podman inspect`로 `seaweedfs-ext` 별칭이 다시 붙었는지 본다(Review Focus 3 — 클러스터 교체가
+  `replace_triggered_by`로 컨테이너 교체를 부르는지). mock 테스트로는 못 잡는다.
+- [ ] **Step 3-1: 키 회전 1회** — `TF_VAR_s3_secret_key`만 바꾼 `plan`이 `docker_container.seaweedfs`를 교체로
+  내는지 확인(Review Focus 4, `upload` ForceNew는 미확인). apply하지 않고 원래 값으로 되돌린다.
 - [ ] **Step 4: 회수** — 검증용 상주 컴퓨트를 쓰지 않았는지 확인, 필요 시 VM 정지(사용자 결정).
 - [ ] **Step 5: PR** — draft 해제는 사용자 요청 시. 범위 밖 Issue 1줄: `kind-registry` Terraform 이관.

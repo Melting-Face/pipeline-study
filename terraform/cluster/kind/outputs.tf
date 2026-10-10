@@ -25,3 +25,9 @@ output "storage_class" {
   description = "이 substrate 가 기본 제공하는 StorageClass 이름. kind 는 local-path-provisioner 로 \"standard\" 를 기본 제공한다."
   value       = "standard"
 }
+
+# substrate 계약(위 4개) 밖의 값 — platform 스택은 받지 않는다. 호스트 쪽 소비자(.env·노트북) 안내용.
+output "s3_endpoint" {
+  description = "호스트에서 SeaweedFS S3 에 붙는 엔드포인트(127.0.0.1 게시). 파드는 Service seaweedfs(별칭 seaweedfs-ext)로 닿는다."
+  value       = "http://localhost:8333"
+}

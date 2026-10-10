@@ -131,25 +131,154 @@ resource "terraform_data" "registry_network" {
   }
 }
 
-# 외부 오브젝트 스토리지(compose seaweedfs)를 kind 네트워크에 별칭 seaweedfs-ext 로 연결한다 — 파드의
-# Service seaweedfs(ExternalName, gitops/charts/storage-external)가 이 별칭을 가리킨다.
-# 컨테이너 수명은 compose 몫이라 없으면 경고만 하고 넘어간다(스토리지는 클러스터와 독립).
-# 컨테이너 재생성으로 풀린 연결·별칭 누락은 scripts/storage-up.sh 가 고친다(이 리소스는 클러스터 생성 시점만).
-resource "terraform_data" "seaweedfs_network" {
+# SeaweedFS(S3) — 클러스터 밖 컨테이너지만 수명은 이 스택이 소유한다(종전 compose + storage-up.sh 를 대체).
+# 데이터는 바인드 마운트(local.seaweedfs_data_dir)라 컨테이너가 교체·destroy 돼도 호스트에 남는다.
+# keep_locally — destroy 가 이미지까지 지우면 재 apply 가 매번 다시 받는다(compose 시절과 같은 캐시 유지).
+resource "docker_image" "seaweedfs" {
+  name         = "chrislusf/seaweedfs:4.36"
+  keep_locally = true
+}
+
+resource "docker_container" "seaweedfs" {
+  # 클러스터가 먼저 있어야 kind 네트워크에 붙을 수 있다.
   depends_on = [kind_cluster.this]
 
-  triggers_replace = kind_cluster.this.id
+  name  = "seaweedfs"
+  image = docker_image.seaweedfs.image_id
+
+  # compose 와 같은 command. Admin UI·WebDAV 는 인증 배선 없는 운영 평면이라 프로세스 자체를 끈다.
+  command = split(" ", "mini -ip.bind=0.0.0.0 -dir=/data -metricsPort=9324 -s3.config=/etc/seaweedfs/s3.json -admin.ui=false -webdav=false")
+
+  # 전부 루프백 게시 — LAN 도달을 막는다(docs/security.md 최소 노출). 9324(메트릭)는 신규 게시.
+  ports {
+    ip       = "127.0.0.1"
+    internal = 9333
+    external = 9333
+  }
+  ports {
+    ip       = "127.0.0.1"
+    internal = 8333
+    external = 8333
+  }
+  ports {
+    ip       = "127.0.0.1"
+    internal = 8888
+    external = 8888
+  }
+  ports {
+    ip       = "127.0.0.1"
+    internal = 9324
+    external = 9324
+  }
+
+  volumes {
+    host_path      = local.seaweedfs_data_dir
+    container_path = "/data"
+    # spike S6: 명시하지 않으면 podman 이 되돌려주는 false 와 null 이 달라 매 apply 마다 교체된다.
+    read_only = false
+  }
+
+  # s3.json 은 파일이 아니라 변수에서 만든다 — 키를 회전하면 내용이 바뀌어 컨테이너가 교체되며 반영된다.
+  upload {
+    file = "/etc/seaweedfs/s3.json"
+    content = jsonencode({
+      identities = [{
+        name        = "lakehouse"
+        credentials = [{ accessKey = var.s3_access_key, secretKey = var.s3_secret_key }]
+        actions     = ["Admin", "Read", "Write", "List", "Tagging"]
+      }]
+    })
+  }
+
+  # 인증이 켜져 있어 무서명 요청은 403 — 응답이 오면 살아 있다(curl 은 --fail 없이 HTTP 오류에 0).
+  healthcheck {
+    test         = ["CMD-SHELL", "curl -s -o /dev/null http://127.0.0.1:8333/"]
+    interval     = "10s"
+    timeout      = "5s"
+    retries      = 6
+    start_period = "20s"
+  }
+
+  # healthy 가 될 때까지 apply 가 기다린다(spike S3) — 뒤의 버킷 생성이 기동 경합을 덜 탄다.
+  wait         = true
+  wait_timeout = 120
+
+  # 파드의 Service seaweedfs(ExternalName)가 이 별칭을 가리킨다 — 종전 terraform_data.seaweedfs_network 대체.
+  networks_advanced {
+    name    = "kind"
+    aliases = ["seaweedfs-ext"]
+  }
+
+  log_driver = "json-file"
+  log_opts = {
+    max-size = "10m"
+    max-file = "20"
+  }
+
+  memory = 1024
+  # spike S6: podman 기본값이 2 × memory 라 명시하지 않으면 드리프트로 교체된다(종전 compose 와 같은 실효값).
+  memory_swap = 2048
+  # spike S7: cpus 는 NanoCpus 로 반영되고 드리프트가 없다(compose limits.cpus 1.0 과 동일).
+  cpus = "1.0"
+
+  lifecycle {
+    # spike S6 — 셋 다 podman 이 되읽는 값이 선언과 달라 매 apply 마다 교체가 났다.
+    # log_opts: podman 이 LogConfig.Config 를 null 로 돌려준다(max-file 은 podman json-file 에서 원래 미적용).
+    # pid_mode·ulimit: podman 기본값(private·RLIMIT_NOFILE/NPROC)을 되읽는다.
+    ignore_changes = [log_opts, pid_mode, ulimit]
+
+    # 클러스터를 재생성하면 kind 네트워크가 다시 만들어져 별칭(seaweedfs-ext) 연결이 풀린다.
+    # depends_on 은 순서일 뿐 교체 트리거가 아니라, 종전 seaweedfs_network 의 triggers_replace 를 여기로 옮긴다.
+    # 데이터는 바인드라 교체돼도 그대로다.
+    replace_triggered_by = [kind_cluster.this]
+
+    precondition {
+      # 기본 데이터 경로가 체크아웃에 묶여 있어 linked worktree 에서 apply 하면 빈 seaweedfs/data 로
+      # 새 레이크가 조용히 뜬다. Terraform 은 저장소 루트 체크아웃에서만 apply 한다.
+      condition     = data.external.checkout.result.linked == "false"
+      error_message = "linked worktree 에서 apply 하고 있다 — seaweedfs 데이터 기본 경로가 이 체크아웃의 빈 seaweedfs/data 를 가리킨다. 저장소 메인(루트) 체크아웃에서 apply 한다."
+    }
+  }
+}
+
+# 버킷 3개를 만든다 — 생성만 하고 destroy 동작은 두지 않는다(데이터는 바인드 디렉터리에 남는다).
+# 컨테이너가 교체되면(id 변경) 다시 돈다. s3.bucket.create 는 이미 있거나 filer 가 덜 떴을 때 실패할 수 있어
+# 종료코드가 아니라 s3.bucket.list 에 이름이 있는지로 판정한다(종전 storage-up.sh 와 같은 판정 축).
+resource "terraform_data" "seaweedfs_buckets" {
+  triggers_replace = docker_container.seaweedfs.id
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-ec"]
-    command     = <<-EOT
-      if ! podman container exists seaweedfs; then
-        echo "경고: seaweedfs 컨테이너가 없다 - ./scripts/storage-up.sh 가 기동과 연결을 함께 한다" >&2
-        exit 0
-      fi
-      if [ "$(podman inspect -f '{{json .NetworkSettings.Networks.kind}}' seaweedfs 2>/dev/null || echo null)" = "null" ]; then
-        podman network connect --alias seaweedfs-ext kind seaweedfs
-      fi
+    environment = {
+      RUNTIME   = data.external.runtime.result.detected
+      CONTAINER = docker_container.seaweedfs.name
+      BUCKETS   = "warehouse pg-backup dagster-logs"
+    }
+    # 🔴 판정은 정확 일치다 — storage-up.sh 의 grep -w 는 pg-backup-old 에도 걸린다(#178).
+    # ⚠️ 가정(미확인): s3.bucket.list 는 버킷마다 한 줄, 첫 토큰이 이름(<이름>\tsize:… 형태)이다.
+    #   형식이 다르면 토큰이 안 맞아 12회 뒤 exit 1 — 성공으로 새지 않고 실패 쪽으로 깨진다.
+    #   파이프 입력이라 줄 앞에 weed shell 프롬프트(`> `)가 붙을 수 있어 그것만 벗긴다
+    #   (종전 grep -w 는 접두가 있어도 통과했으므로 그 동작을 잃지 않는다).
+    command = <<-EOT
+      weed_shell() {
+        "$RUNTIME" exec "$CONTAINER" sh -c "echo '$1' | weed shell -master localhost:9333 -filer localhost:8888" 2>&1
+      }
+      for bucket in $BUCKETS; do
+        ready=""
+        for _ in $(seq 1 12); do
+          weed_shell "s3.bucket.create -name $bucket" >/dev/null || true
+          if weed_shell "s3.bucket.list" | sed -E 's/^(> *)+//' | awk '{print $1}' | grep -qxF -- "$bucket"; then
+            ready="yes"
+            break
+          fi
+          sleep 5
+        done
+        if [ -z "$ready" ]; then
+          echo "버킷 $bucket 이 s3.bucket.list 에 안 나온다(60초) — filer 기동·목록 형식을 확인한다" >&2
+          exit 1
+        fi
+        echo "버킷 준비: $bucket"
+      done
     EOT
   }
 }
