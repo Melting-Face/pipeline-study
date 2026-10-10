@@ -7,9 +7,18 @@ data "external" "runtime" {
   program = [abspath("${path.module}/scripts/detect-runtime.sh")]
 }
 
+# 이 체크아웃이 linked worktree 인지 판정한다. seaweedfs 데이터 기본 경로가 체크아웃에 묶이므로
+# worktree 에서 apply 하면 빈 seaweedfs/data 로 새 레이크가 조용히 뜬다 — 그 차단(precondition)의 입력이다.
+data "external" "checkout" {
+  program = [abspath("${path.module}/scripts/detect-checkout.sh")]
+}
+
 locals {
   # 전용 kubeconfig 한 경로 — kind_cluster 와 output 이 이 local 하나를 함께 쓴다.
   kubeconfig_path = abspath(pathexpand(coalesce(var.kubeconfig_path, "~/.kube/${var.cluster_name}.config")))
+
+  # SeaweedFS 데이터 경로 — 기본은 저장소 루트의 seaweedfs/data(compose 바인드 마운트와 같은 자리).
+  seaweedfs_data_dir = coalesce(var.seaweedfs_data_dir, abspath("${path.module}/../../../seaweedfs/data"))
 }
 
 resource "kind_cluster" "this" {
