@@ -1,0 +1,5 @@
+apiVersion: v2
+name: storage-external
+description: 클러스터 밖 오브젝트 스토리지(compose SeaweedFS)를 가리키는 ExternalName Service
+type: application
+version: 0.1.0

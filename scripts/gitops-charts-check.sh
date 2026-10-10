@@ -14,6 +14,7 @@
 #       min_crds: N — 렌더된 CRD 가 N개 이상(crds.enabled 회귀로 (b)의 대상이 사라지는 것을 잡는다)
 #       service_accounts: [name...] — 그 이름의 ServiceAccount 가 렌더에 있다(릴리스 이름 변경으로
 #       SA 이름이 바뀌어 RBAC 가 조용히 빗나가는 것을 잡는다)
+#       fields: [{ref: Kind/name, path: [키...], value: V}] — 그 리소스의 필드 값이 V 다
 #   빈 렌더(문서 0개)는 실패다.
 # 앱명·네임스페이스는 terraform/platform 의 var.apps 와 같은 값을 쓴다(아래 case).
 # 마지막 줄은 `검사한 차트: N개` 이며, 0개면 실패한다.
@@ -47,6 +48,7 @@ for dir in "${charts[@]}"; do
         cnpg-operator) ns="cnpg-system" ;;
         spark-operator) ns="spark-operator" ;;
         flink-operator) ns="flink-operator" ;;
+        storage-external) ns="default" ;;
         *)
             echo "FAIL [${app}] 네임스페이스 매핑이 없다 — 이 스크립트의 case 와 var.apps 에 등록"
             failed=1
@@ -139,6 +141,18 @@ if expect_path:
     for sa in expect.get("service_accounts") or []:
         if sa not in sa_names:
             errors.append(f"(c) ServiceAccount {sa!r}: 렌더 결과에 없다(있는 것: {sorted(sa_names)})")
+    # fields: [{ref: "Kind/name", path: [키...], value: 기대값}] — 렌더 결과의 특정 필드 값(ExternalName 대상 등)
+    for f in expect.get("fields") or []:
+        kind, _, name = f["ref"].partition("/")
+        hits = [d for d in docs if d["kind"] == kind and (d.get("metadata") or {}).get("name") == name]
+        if not hits:
+            errors.append(f"(c) {f['ref']}: 렌더 결과에 없다")
+            continue
+        got = hits[0]
+        for key in f["path"]:
+            got = got.get(key) if isinstance(got, dict) else None
+        if got != f["value"]:
+            errors.append(f"(c) {f['ref']} {'.'.join(f['path'])}: 기대 {f['value']!r}, 실제 {got!r}")
     for kind, wave in (expect.get("kinds_with_wave") or {}).items():
         targets = [d for d in docs if d["kind"] == kind]
         if not targets:

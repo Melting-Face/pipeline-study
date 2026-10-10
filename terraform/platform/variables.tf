@@ -129,6 +129,8 @@ variable "apps" {
     { name = "cnpg-operator", path = "gitops/charts/cnpg-operator", namespace = "cnpg-system" },
     { name = "spark-operator", path = "gitops/charts/spark-operator", namespace = "spark-operator" },
     { name = "flink-operator", path = "gitops/charts/flink-operator", namespace = "flink-operator" },
+    # 클러스터 밖 SeaweedFS(compose)를 가리키는 ExternalName — 데이터 층이라 Prune=false,Delete=false.
+    { name = "storage-external", path = "gitops/charts/storage-external", namespace = "default" },
   ]
 
   validation {

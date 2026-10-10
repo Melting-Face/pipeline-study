@@ -18,16 +18,16 @@ run "defaults_are_the_spec_values" {
   }
 }
 
-run "default_apps_are_the_four_operators" {
+run "default_apps_are_operators_and_storage_external" {
   command = plan
 
   assert {
-    condition     = length(var.apps) == 4
-    error_message = "기본 apps 는 4개여야 한다"
+    condition     = length(var.apps) == 5
+    error_message = "기본 apps 는 5개여야 한다(오퍼레이터 4 + storage-external)"
   }
 
   assert {
-    condition     = [for a in var.apps : a.name] == ["cert-manager", "cnpg-operator", "spark-operator", "flink-operator"]
+    condition     = [for a in var.apps : a.name] == ["cert-manager", "cnpg-operator", "spark-operator", "flink-operator", "storage-external"]
     error_message = "기본 apps 이름·순서가 docs/argocd-gitops.md 와 다르다"
   }
 }
