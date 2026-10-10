@@ -12,25 +12,48 @@ source "${SCRIPT_DIR}/k8s-env.sh"
 require_cli podman
 
 # 1) podman machine — macOS podman은 동시 1개 VM만 활성.
-#    이미 실행 중인 머신이 있으면 재사용(비파괴적). 전용 머신을 강제하려면 MANAGE_MACHINE=true.
+#    기본 경로는 기존 머신을 재사용한다(비파괴적). 전용 머신을 강제하려면 MANAGE_MACHINE=true.
+#    🔴 상태는 **셋**이다 — 실행중 / 중지 / 부재. 실행중만 재사용 대상으로 보면
+#    `STOP_MACHINE=true k8s-down.sh`가 남긴 중지 머신을 「없음」으로 읽고 새 머신을 만든다(#182).
 RUNNING_MACHINE=""
+STOPPED_MACHINES=()
 for m in $(podman machine list -q 2>/dev/null); do
     if [ "$(podman machine inspect "${m}" --format '{{.State}}' 2>/dev/null)" = "running" ]; then
         RUNNING_MACHINE="${m}"
         break
     fi
+    STOPPED_MACHINES+=("${m}")
 done
 
-if [ -n "${RUNNING_MACHINE}" ] && [ "${MANAGE_MACHINE:-false}" != "true" ]; then
-    ROOTFUL="$(podman machine inspect "${RUNNING_MACHINE}" --format '{{.Rootful}}' 2>/dev/null)"
-    log "실행 중 podman machine 재사용: ${RUNNING_MACHINE} (rootful=${ROOTFUL})"
+REUSE_MACHINE=""
+if [ "${MANAGE_MACHINE:-false}" != "true" ]; then
+    if [ -n "${RUNNING_MACHINE}" ]; then
+        REUSE_MACHINE="${RUNNING_MACHINE}"
+    elif [ "${#STOPPED_MACHINES[@]}" -gt 1 ]; then
+        # 어느 것을 켤지 스크립트가 고르지 않는다 — 잘못 고르면 다른 VM의 데이터로 클러스터가 선다.
+        printf '실행 중 머신이 없고 중지된 머신이 여럿이다: %s\n' "${STOPPED_MACHINES[*]}" >&2
+        printf '쓸 머신을 먼저 시작하세요: podman machine start <이름>\n' >&2
+        exit 1
+    elif [ "${#STOPPED_MACHINES[@]}" -eq 1 ]; then
+        REUSE_MACHINE="${STOPPED_MACHINES[0]}"
+    fi
+fi
+
+if [ -n "${REUSE_MACHINE}" ]; then
+    # rootful 판정은 시작 **전에** 한다 — rootless를 켠 뒤 실패하면 쓰지도 않을 VM만 떠 있다.
+    ROOTFUL="$(podman machine inspect "${REUSE_MACHINE}" --format '{{.Rootful}}' 2>/dev/null)"
+    log "기존 podman machine 재사용: ${REUSE_MACHINE} (rootful=${ROOTFUL})"
     if [ "${ROOTFUL}" != "true" ]; then
         printf 'kind(Podman provider)는 rootful 머신이 필요하나 재사용 머신이 rootless입니다.\n' >&2
         printf 'podman machine set --rootful 후 재시작하거나, MANAGE_MACHINE=true로 전용 머신(%s)을 쓰세요.\n' "${MACHINE_NAME}" >&2
         exit 1
     fi
+    if [ "${REUSE_MACHINE}" != "${RUNNING_MACHINE}" ]; then
+        log "podman machine 시작: ${REUSE_MACHINE}"
+        podman machine start "${REUSE_MACHINE}"
+    fi
 else
-    # 전용 머신 경로 (실행 중 머신이 없거나 MANAGE_MACHINE=true) — Apple Silicon은 생성 시 자원 확정
+    # 전용 머신 경로 (머신이 하나도 없거나 MANAGE_MACHINE=true) — Apple Silicon은 생성 시 자원 확정
     if ! podman machine inspect "${MACHINE_NAME}" >/dev/null 2>&1; then
         log "podman machine 생성: ${MACHINE_NAME} (cpus=${MACHINE_CPUS}, mem=${MACHINE_MEMORY_MIB}MiB, disk=${MACHINE_DISK_GIB}GiB, rootful)"
         podman machine init "${MACHINE_NAME}" \

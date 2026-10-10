@@ -37,7 +37,9 @@ PR2 뒤에는 `-var` 없이 기본값(`lakehouse`, 8080/8443)으로 올린다.
 ### 1단계 — ① VM · ② 레지스트리 (podman)
 
 ```shell
-# ① VM — 실행 중인 podman machine이 없을 때만 만든다. kind의 podman provider는 rootful이 필요하다
+# ① VM — 기존 머신이 있으면 그것을 켠다(이름은 podman machine list로 확인)
+podman machine start <기존 머신>
+# 머신이 하나도 없을 때만 만든다. kind의 podman provider는 rootful이 필요하다
 podman machine init dagster-k8s --rootful --cpus 8 --memory 26702 --disk-size 93
 podman machine start dagster-k8s
 
@@ -52,8 +54,10 @@ podman run -d --restart=always \
   숫자는 [`scripts/k8s-env.sh`](../../scripts/k8s-env.sh)의 기본값이다.
 - **확인**: `podman machine list`에서 `Currently running` · `podman ps --filter name=kind-registry`에서 `Up`.
 - **단축**: `scripts/k8s-up.sh`. 스크립트는 분기 두 개를 더한다.
-  - VM: 이미 실행 중인 머신이 있으면 새로 만들지 않고 그 머신을 쓴다. 그 머신이 rootless면 멈춘다.
-    전용 머신 `dagster-k8s`를 강제하려면 `MANAGE_MACHINE=true`.
+  - VM: 기존 머신이 있으면 새로 만들지 않고 그 머신을 쓴다. 실행 중이면 그대로, 중지된 머신이 하나뿐이면
+    켜서 쓰고, 중지된 머신이 여럿이면 고르지 않고 멈춘다(먼저 `podman machine start <이름>`).
+    재사용할 머신이 rootless면 켜기 전에 멈춘다. 머신이 하나도 없을 때만 `dagster-k8s`를 만든다.
+    전용 머신을 강제하려면 `MANAGE_MACHINE=true`. 분기 테스트는 `bash scripts/tests/k8s-up-machine.sh`.
   - 레지스트리: 상태가 셋이다 — 실행 중이면 그대로, 중지면 `podman start kind-registry`, 없을 때만 `podman run`.
 
 ### 2단계 — ②' 외부 S3 (podman compose)
