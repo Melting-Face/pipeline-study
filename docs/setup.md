@@ -18,6 +18,9 @@ GitOps 전환의 데이터 층(SeaweedFS·카탈로그 Postgres·Secret)은 PR2�
 
 ## 검증 환경
 
+이 환경은 **dev(개발·검증) 전용**이다. 운영(prod) 환경이 아니며 운영 배포 대상은 아직 없다
+([OCI k3s](architectures/oci.md)는 보류). 단일 노드·로컬 VM이라 가용성·백업·외부 노출을 운영 기준으로 갖추지 않는다.
+
 이 절차는 아래 환경에서만 검증했다. 다른 OS(Linux·Windows)와 Intel Mac은 **미검증**이다.
 값을 바꿀 때는 이 표가 아니라 **출처 열의 파일**을 고친다.
 
