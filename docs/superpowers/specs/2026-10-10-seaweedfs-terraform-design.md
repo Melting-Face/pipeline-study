@@ -112,6 +112,11 @@ spike는 다른 이름·포트(`seaweedfs-spike`)로 띄우고 끝나면 destroy
 
 ### 2. 실기동
 
+> **실행 위치와 시점**: tfstate는 루트 체크아웃에만 있고, worktree apply는 T1의 precondition이 막는다. 그래서
+> 2·3은 **PR 머지 뒤 루트에서** 한다(정적 검증 1과 CI가 머지 조건). compose `down`은 루트 `git pull` **전에**
+> 한다 — pull 뒤 compose.yml엔 `seaweedfs`가 없다. 실패하면 머지 커밋을 revert하는 PR로 되돌린다
+> (데이터는 바인드라 무손실).
+
 - 전환 절차 2의 `plan` 수치가 기대(추가 3 · 제거 1 · 변경 0)와 일치
 - `apply` 뒤: 기존 객체 존재(`head_bucket` + 객체 목록), `scripts/storage_conformance_probe.py`,
   파드에서 `seaweedfs:8333` 도달, `trino`·`prometheus` 기동 시 S3·메트릭 도달
