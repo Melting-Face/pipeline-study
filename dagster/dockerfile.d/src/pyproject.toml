@@ -87,7 +87,7 @@ dev = [
 # 전부 여기 이미 있어 커널 하나로 레이크하우스에 붙고, `dagster_project.common.*` 적재 헬퍼를
 # 노트북에서 그대로 import해 **에셋과 같은 코드로** 검증할 수 있다.
 #   uv run --group notebook jupyter lab --port 8889
-# (8888은 compose SeaweedFS filer UI가 게시하므로 피한다.)
+# (8888은 스택 A SeaweedFS filer UI가 게시하므로 피한다.)
 notebook = [
   "jupyterlab>=4.2,<5",
   # jupyterlab 전이 의존이나 커널을 직접 등록하므로 명시 선언

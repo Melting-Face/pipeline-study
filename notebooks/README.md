@@ -25,7 +25,7 @@ uv run --group notebook --group ml jupyter lab --port 8889 --notebook-dir ../../
 
 | 항목 | 값 | 이유 |
 |---|---|---|
-| 포트 | **8889** | 기본 8888은 compose SeaweedFS filer UI가 게시 |
+| 포트 | **8889** | 기본 8888은 스택 A SeaweedFS filer UI가 게시 |
 | venv | **Dagster와 공유** (`dagster/dockerfile.d/src/.venv`) | `pyspark[connect]`·`pyiceberg`·`pandas`·`pyarrow`가 이미 있고, `dagster_project.common.*`를 그대로 import해 **에셋과 같은 코드로** 검증할 수 있다 |
 | 의존성 | `[dependency-groups] notebook` | 런타임(`[project].dependencies`)과 분리 — 이미지·daemon에는 들어가지 않는다 |
 | 모델링 의존성 | `[dependency-groups] ml` | `notebook`과도 **분리**한다 — 접속·관측만 하는 00·01에 scikit-learn이 필요 없고, ML 의존성 문제가 **접속 검증 관문**(`docs/test.md` §6의 nbconvert)까지 죽이지 않게 한다 |
@@ -53,7 +53,7 @@ compose의 `trino`는 `--profile legacy-sql` 로만 뜬다(방언 값 대조용)
 
 `.env`로 대상을 K8s 카탈로그로 돌릴 때 **`ICEBERG_S3_ACCESS_KEY`/`ICEBERG_S3_SECRET_KEY`도 함께**
 채워야 한다. 엔드포인트(`ICEBERG_S3_ENDPOINT`)만 K8s로 바꾸고 키는 공용 `AWS_ACCESS_KEY_ID`
-(compose SeaweedFS용)를 두면 **두 SeaweedFS의 키가 달라** 이렇게 죽는다(실측):
+(compose Dagster용)를 두면 **두 SeaweedFS의 키가 달라** 이렇게 죽는다(실측):
 
 | 단계 | 결과 |
 |---|---|
