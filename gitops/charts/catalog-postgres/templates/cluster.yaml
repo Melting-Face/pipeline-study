@@ -47,6 +47,10 @@ spec:
             - name: iceberg
               ensure: present
               login: true
+              # CNPG 웹훅 기본값(connectionLimit=-1·inherit=true)을 명시한다 — 생략하면 라이브에만 값이 생겨
+              # ArgoCD 앱이 OutOfSync로 남고 selfHeal이 주기적으로 재동기화한다(관측, 원인은 가설).
+              connectionLimit: -1
+              inherit: true
               comment: Iceberg JDBC 카탈로그 소유자 (bootstrap.initdb에서 생성 후 선언 관리로 인수)
               passwordSecret:
                   name: catalog-pg-app

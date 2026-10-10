@@ -5,4 +5,7 @@ fields:
     - {ref: Cluster/catalog-postgres, path: [spec, bootstrap, initdb, owner], value: iceberg}
     - {ref: Cluster/catalog-postgres, path: [spec, managed, roles, 0, name], value: iceberg}
     - {ref: Cluster/catalog-postgres, path: [spec, managed, roles, 1], value: null}
+    # CNPG 웹훅이 채우는 기본값을 명시한다 — 빠지면 ArgoCD가 OutOfSync로 남아 selfHeal이 5분마다 재동기화한다(가설)
+    - {ref: Cluster/catalog-postgres, path: [spec, managed, roles, 0, connectionLimit], value: -1}
+    - {ref: Cluster/catalog-postgres, path: [spec, managed, roles, 0, inherit], value: true}
     - {ref: Cluster/catalog-postgres, path: [metadata, annotations, argocd.argoproj.io/sync-options], value: "Prune=false,Delete=false"}
