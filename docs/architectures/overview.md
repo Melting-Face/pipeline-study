@@ -31,13 +31,14 @@
 | `dagster-daemon`     | `dagster/dockerfile.d/`    | — (core)                                     | 스케줄·센서·런큐 처리 + run 실행(`DefaultRunLauncher` 서브프로세스)   |
 | `postgres`           | `postgres:15`              | — (core)                                     | ① Dagster 메타데이터 저장소 ② Iceberg **JDBC 카탈로그** 저장소        |
 | `trino`              | `trinodb/trino:468`        | `legacy-sql`                                 | 분산 SQL 쿼리 엔진. dbt가 접속하는 대상 — **재설계로 제거 대상**      |
-| `seaweedfs`          | `chrislusf/seaweedfs`      | `legacy-storage`·`legacy-sql`·`monitoring`   | S3 호환 오브젝트 스토리지. Iceberg 데이터 파일(`s3://warehouse`) 저장 |
+| `seaweedfs`          | `chrislusf/seaweedfs`      | `storage`·`legacy-sql`·`monitoring`          | S3 호환 오브젝트 스토리지 **정본**(클러스터 밖). `s3://warehouse` 저장 |
 | `prometheus`         | `prom/prometheus:v2.21.0`  | `monitoring`                                 | 메트릭 수집                                                           |
 
 > 🔴 **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받는다** — `seaweedfs`에 profile이 3개인
 > 이유다(`trino`=legacy-sql·`prometheus`=monitoring이 의존). 바꾼 뒤에는
 > `docker compose --profile <p> config --services`로 profile별 구성을 확인한다.
-> 스토리지 정본은 **K8s SeaweedFS**로 이전됐고 compose 쪽은 대피로로 남긴 것이다.
+> 오브젝트 스토리지 **정본은 이 compose `seaweedfs`**다(클러스터 밖, `./scripts/storage-up.sh`). 파드는
+> `Service seaweedfs`(ExternalName)로 닿는다 — [storage.md](storage.md).
 
 ## 데이터 흐름
 
@@ -155,7 +156,7 @@ flowchart TB
 
 > ⚠️ **이 구성도는 `compose.yml`에 정의된 전체**이고, 기본 `up`으로 뜨는 것은 **뼈대 3개**
 > (`dagster-webserver`·`dagster-daemon`·`postgres`)뿐이다. `trino`(`legacy-sql`)·
-> `seaweedfs`(`legacy-storage`·`legacy-sql`·`monitoring`)·`prometheus`(`monitoring`)는 **profile opt-in**이라
+> `seaweedfs`(`storage`·`legacy-sql`·`monitoring`)·`prometheus`(`monitoring`)는 **profile opt-in**이라
 > 해당 profile을 켜야 위 포트가 열린다.
 >
 > `dagster-webserver`·`dagster-daemon`·`trino`는 `postgres` 헬스체크 통과 후 기동된다.
@@ -387,7 +388,8 @@ Terraform(스택 A·B)과 ArgoCD가 **선언을 나눠 소유**한다.
 2. **클러스터·선행 조건** — `scripts/k8s-up.sh`(podman 머신·레지스트리) →
    `terraform -chdir=terraform/cluster/kind apply`
 3. **플랫폼 스택** — `terraform -chdir=terraform/platform apply`(ingress-nginx·ArgoCD) → 오퍼레이터는 ArgoCD가 수렴
-4. **스토리지·카탈로그** — `scripts/k8s-poc-storage.sh`(과도기 — PR2에서 ArgoCD 차트로 이전)
+4. **스토리지·카탈로그** — S3는 `scripts/storage-up.sh`(클러스터 밖), 카탈로그는 ArgoCD `catalog-postgres` 차트 +
+   `scripts/k8s-secrets.sh`(Secret)
 5. **Dagster** — 새 클러스터에는 배포하지 않는다(호스트 `host-dagster` profile)
 
 > 단계 순서와 이유의 정본은 `../setup.md` §3, 설계는 [../argocd-gitops.md](../argocd-gitops.md).
@@ -408,9 +410,9 @@ dbt 모델 추가는 스캐폴딩이 필요 없다 — `models/<dataset>/`에 `.
 | ---- | ------------------------------- | ------------------------------------------ |
 | 3000 | Dagster UI (호스트 `dg dev` 전용) | `host-dagster` — **정본은 Ingress 8080**   |
 | 8081 | Trino (컨테이너 8080 → 호스트 8081) | `legacy-sql`                           |
-| 8333 | SeaweedFS S3 API                | `legacy-storage`·`legacy-sql`·`monitoring` |
-| 8888 | SeaweedFS filer UI              | `legacy-storage`·`legacy-sql`·`monitoring` |
-| 9333 | SeaweedFS master UI             | `legacy-storage`·`legacy-sql`·`monitoring` |
+| 8333 | SeaweedFS S3 API                | `storage`·`legacy-sql`·`monitoring`        |
+| 8888 | SeaweedFS filer UI              | `storage`·`legacy-sql`·`monitoring`        |
+| 9333 | SeaweedFS master UI             | `storage`·`legacy-sql`·`monitoring`        |
 | 9000 | Prometheus (컨테이너 9090 매핑) | `monitoring`                               |
 
 > 🔴 **호스트 8080은 kind ingress-nginx가 점유**한다(스택 A `terraform/cluster/kind`의 호스트 포트 매핑).

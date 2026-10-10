@@ -85,8 +85,8 @@ aws --endpoint-url http://localhost:8333 \
 
 **메타 Postgres의 현행 사실(단일 서술)** — 구 `lakehouse` 클러스터에서는 CNPG `catalog-postgres`의
 `dagster` DB가 메타 DB였다. 그 선언(`Database` CR, `k8s/dagster/dagster-meta-db.yaml`)은 철거됐고
-`k8s/catalog-postgres.yaml`에는 `dagster` **롤만** 남는다. **새 클러스터에는 메타 DB가 없고** 위치는
-PR2가 정한다([argocd-gitops.md](argocd-gitops.md) D6). 그동안 compose 실행(`--profile host-dagster`)은
+롤·Secret도 철거됐다. **새 클러스터에는 메타 DB가 없다** — Dagster를 Airflow로 대체하기로 해 옮기지 않는다
+([argocd-gitops.md](argocd-gitops.md) D6). 그동안 compose 실행(`--profile host-dagster`)은
 compose `postgres`를 쓰고, 호스트 `dg dev`는 `.env`의 `POSTGRES_HOST`·`POSTGRES_PORT`가 가리키는 곳을 쓴다
 (예시 기본값 15432는 **구 클러스터** CNPG의 port-forward다 — 구 클러스터가 내려가면 함께 사라진다).
 실행 위치에 따라 같은 키의 값이 갈린다(in-cluster 열은 철거 전 기록).
@@ -96,7 +96,7 @@ compose `postgres`를 쓰고, 호스트 `dg dev`는 `.env`의 `POSTGRES_HOST`·`
 | `POSTGRES_HOST` | `postgres` — `compose.yml`이 리터럴 고정 | `localhost`(port-forward) | `catalog-postgres-rw` |
 | `POSTGRES_PORT` | `5432` | **`15432`** — port-forward 포트 | `5432` |
 | `POSTGRES_DB` | `dagster`(compose DB) | `dagster`(CNPG DB) | `dagster`(CNPG DB) |
-| `ICEBERG_S3_ENDPOINT` | `http://seaweedfs:8333` | `http://localhost:18333` | `http://seaweedfs:8333` |
+| `ICEBERG_S3_ENDPOINT` | `http://seaweedfs:8333` | `http://localhost:8333`(직결) | `http://seaweedfs:8333`(ExternalName) |
 | `SPARK_REMOTE` | (미설정) | TLS Ingress 또는 port-forward | `sc://spark-connect:15002` |
 
 ⚠️ **호스트 경로의 `POSTGRES_PORT`가 급소다.** 5432면 compose DB를, 15432면 CNPG DB를 본다 —
@@ -121,13 +121,17 @@ in-cluster Dagster 매니페스트는 철거돼(새 클러스터에 배포하지
     같은 카탈로그를 가리키지만 전자는 **pyiceberg(파이썬)**, 후자는 **dbt-spark(JVM/JDBC)** 경로다.
 - **Iceberg S3 접속 키**: `ICEBERG_S3_ENDPOINT`·`ICEBERG_S3_ACCESS_KEY`·`ICEBERG_S3_SECRET_KEY`
   (`common/constants.py`의 `S3_ENDPOINT`·`S3_ACCESS_KEY_ID`·`S3_SECRET_ACCESS_KEY`가 읽는다).
-  미지정 시 공용 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`로 **폴백**해 compose 단독 구성이 보존된다.
+  미지정 시 공용 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`로 **폴백**한다 — 단 SeaweedFS 인증이 켜져 있어
+  `AWS_*`도 **같은 값**이어야 한다(compose Dagster·Trino·compute log가 읽는다, 다르면 `storage-up.sh`가 멈춘다).
   위 카탈로그 키와 같은 이유로 **`compose.yml`에 넣지 않는다**(의도된 예외 — 값을 바꿔야 하는 쪽은
-  호스트 실행 + K8s 조합뿐이다).
-  - **엔드포인트와 자격증명은 한 쌍으로 바꾼다.** 엔드포인트만 K8s(`localhost:18333`)로 돌리고
-    키를 공용 `AWS_*`로 두면 **부분 성공**이 난다 — 카탈로그 나열(`list_tables`)은 Postgres만 보므로
-    성공하고, `load_table`이 `metadata.json`을 S3에서 읽는 순간 `ACCESS_DENIED during HeadObject`로 죽는다
-    (실측). 값 자체가 다르다(k8s Secret `lakehouse-creds`). **접속 대상을 바꾸는 값은 한 벌로 묶어 바꾼다.**
+  호스트 실행뿐이다).
+  - S3는 **클러스터 밖 compose SeaweedFS 하나**다(`./scripts/storage-up.sh`). 호스트는 `localhost:8333`으로
+    직결하고 파드는 `Service seaweedfs`(ExternalName → kind 네트워크 별칭 `seaweedfs-ext`)로 같은 곳에 닿는다.
+  - **엔드포인트와 자격증명은 한 쌍으로 바꾼다.** `ICEBERG_S3_*` 키가 단일 출처다 — `storage-up.sh`가 이 값으로
+    `seaweedfs/s3.json`을 만들고, k8s Secret `lakehouse-creds`도 같은 값이어야 한다. 키를 공용 `AWS_*`로 두면
+    **부분 성공**이 난다 — 카탈로그 나열(`list_tables`)은 Postgres만 보므로 성공하고, `load_table`이
+    `metadata.json`을 S3에서 읽는 순간 `ACCESS_DENIED during HeadObject`로 죽는다.
+    **접속 대상을 바꾸는 값은 한 벌로 묶어 바꾼다.**
 - **`AWS_REQUEST_CHECKSUM_CALCULATION`/`AWS_RESPONSE_CHECKSUM_VALIDATION`**: SeaweedFS 호환 필수 키.
   값이 없으면 최신 SDK 기본값이 객체를 손상시킨다([conventions/k8s/checksum.md](conventions/k8s/checksum.md)).
   코드 기본값이 있지만 컨테이너·외부 도구를 위해 `.env`·compose 앵커에도 명시한다.
@@ -290,7 +294,8 @@ kind 클러스터를 다시 만드는 절차다. **재생성은 PVC를 통째로
 치르지 않아도 될 재적재를 치르지 않으려면 이 표를 먼저 본다.
 
 **재생성이 확정되면 바꿀 것을 전부 모아서 한 번에 한다.** 창을 여러 번 열면 재적재도 여러 번이다.
-선반영 대상: `terraform/cluster/kind`(포트·마운트 변수) · `k8s/catalog-postgres.yaml`(`storage.size`) ·
+선반영 대상: `terraform/cluster/kind`(포트·마운트 변수) ·
+`gitops/charts/catalog-postgres/templates/cluster.yaml`(`storage.size`) ·
 `scripts/k8s-env.sh`(머신 자원 선언).
 
 ### 4-2. 무엇이 소멸하고 비용이 얼마인가
@@ -324,7 +329,7 @@ kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 별도 터미널
 # 1) 기준선: 테이블 목록과 행 수를 파일로 남긴다
 # 2) 카탈로그 논리 백업
 kubectl exec catalog-postgres-1 -c postgres -- pg_dump -U iceberg iceberg > <저장소 밖 경로>/catalog.sql
-# 3) SeaweedFS: S3 API로 객체 동기(port-forward 18333) 또는 PVC 통째 tar
+# 3) SeaweedFS(클러스터 밖): compose를 멈추고 ./seaweedfs/data 를 통째 복사하거나 S3 API(localhost:8333)로 동기
 ```
 
 ⚠️ **기준선에는 "이 값이 무엇을 세는가"를 함께 적는다** — *테이블 수*인지 *파일 수*인지,
@@ -348,15 +353,15 @@ source scripts/k8s-env.sh      # KUBECONFIG + 컨텍스트 가드
 ```
 
 오퍼레이터(cert-manager·CNPG·Spark·Flink)는 ArgoCD가 `git`에서 수렴시키므로 따로 올리지 않는다.
-데이터 층(SeaweedFS·카탈로그 DB·Secret)은 PR2에서 ArgoCD로 옮겨 오며, 그 전까지의 과도기 스크립트
-`scripts/k8s-poc-storage.sh`는 Barman CRD 선행 검사에서 멈춘다([argocd-gitops.md](argocd-gitops.md) §8).
+카탈로그 DB는 ArgoCD 앱 `catalog-postgres`가, 그 Secret은 `scripts/k8s-secrets.sh`가, SeaweedFS(S3)는
+클러스터 밖 `scripts/storage-up.sh`가 맡는다 — 클러스터를 다시 만들어도 S3 객체는 남고 카탈로그만 비어 있다.
 
 ⚠️ **복구 순서는 SeaweedFS(S3 객체) → 카탈로그 PG(메타)** 다. 반대로 하면 **테이블은 보이는데
 읽기가 실패**한다 — 메타가 가리키는 객체가 아직 없기 때문이다. 이 저장소가 두 번 겪은
 **"부분 성공" 드리프트**와 같은 모양이라 오진하기 쉽다.
 
 ⚠️ CNPG `bootstrap.recovery`(PITR)는 **쓸 수 없다** — Barman Cloud 백업이 미구성 상태다
-(`k8s/catalog-postgres.yaml` 주석). 논리 복원(`psql < catalog.sql`)만 가능하다.
+(`gitops/charts/catalog-postgres/templates/cluster.yaml` 주석). 논리 복원(`psql < catalog.sql`)만 가능하다.
 
 ⚠️ **크리덴셜은 한 벌로 확인한다** — `catalog-pg-app` Secret ↔ DB 롤 ↔ `.env`의
 `ICEBERG_CATALOG_PASSWORD` ↔ 이미 뜬 워크로드의 env(§1-2).

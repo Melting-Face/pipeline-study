@@ -1,0 +1,15 @@
+# 파드는 종전과 같은 http://seaweedfs:8333 으로 클러스터 밖 SeaweedFS 에 닿는다(매니페스트 무변경).
+# ExternalName 은 엔드포인트를 갖지 않는다 — endpointslice 가 생기면 다른 무언가가 같은 이름으로 답하고 있다.
+apiVersion: v1
+kind: Service
+metadata:
+  name: seaweedfs
+  annotations:
+    # 데이터 층 앱 규약(docs/argocd-gitops.md §4) — 앱 삭제·prune 이 데이터 경로를 끊지 않게 한다.
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  type: ExternalName
+  externalName: {{ .Values.externalName }}
+  ports:
+    - name: s3
+      port: 8333

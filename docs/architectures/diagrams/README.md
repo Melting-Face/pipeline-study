@@ -63,7 +63,7 @@ D3의 워커·가드 노드 · `gold 0건`.
 | `scripts/*_guard.py` 또는 `.claude/settings.json` 의 `hooks` 배선이 바뀔 때 | D3 가드 노드 |
 | `gold` 태그가 처음 생길 때 | D1 「선언된 공백」 카드 |
 | 오퍼레이터·차트 버전이 바뀔 때 | D2 「이 그림이 그리지 않는 것」 카드 |
-| `k8s/catalog-postgres.yaml` 의 `spec.plugins` 주석이 풀릴 때 | D2 「이 그림이 그리지 않는 것」 카드 |
+| `gitops/charts/catalog-postgres/templates/cluster.yaml` 의 `spec.plugins` 주석이 풀릴 때 | D2 「이 그림이 그리지 않는 것」 카드 |
 | `k8s/spark/spark-thrift-server.yaml` 이 배포될 때 | D2 「이 그림이 그리지 않는 것」 카드 |
 
 ⚠️ 아래 두 행은 **미해소 항목의 해소 트리거**다. 같은 실태가 [`docs/security.md`](../../security.md)·

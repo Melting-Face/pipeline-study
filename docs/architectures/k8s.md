@@ -40,7 +40,7 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
 
   | compose | Kubernetes |
   | --- | --- |
-  | service | `Deployment`(+`Service`) / `StatefulSet`(seaweedfs) / **오퍼레이터 CR**(카탈로그 postgres = CNPG `Cluster`) |
+  | service | `Deployment`(+`Service`) / **오퍼레이터 CR**(카탈로그 postgres = CNPG `Cluster`) / `ExternalName`(클러스터 밖 seaweedfs) |
   | `deploy.resources` | `resources.requests`·`resources.limits` |
   | healthcheck | `livenessProbe`·`readinessProbe`·`startupProbe` |
   | `depends_on` | initContainers / readiness gating |
@@ -54,7 +54,7 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
 ## 운영 메모 (이행)
 
 - 패키징은 **Helm 차트**(값 분리·환경별 오버라이드). 이미지 태그 고정(`latest` 금지).
-- 상태 저장(SeaweedFS)은 `StatefulSet`+PVC.
+- 오브젝트 스토리지(SeaweedFS)는 **클러스터 밖 compose**이고 `ExternalName` Service로 닿는다.
 - **카탈로그 Postgres는 CloudNativePG(CNPG) 오퍼레이터**가 관리한다(`postgresql.cnpg.io/v1` `Cluster`).
   직접 `StatefulSet`을 쓰지 않는 이유: PVC·failover·백업(PITR)·파라미터 튜닝이 **CR 한 장**에 들어오고,
   Spark·Flink 오퍼레이터와 **같은 선언형 패러다임**으로 통일된다. 서비스는 오퍼레이터가 만드는

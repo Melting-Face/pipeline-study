@@ -39,17 +39,19 @@ path-style·카탈로그 정합 규칙은 [../conventions/k8s.md](../conventions
 
 ## 이 프로젝트에서의 위치 — ✅ 채택 (SeaweedFS)
 
-현행은 **SeaweedFS**이고 K8s에 `StatefulSet` + PVC로 선다. 스토리지 **정본은 K8s 쪽**이고,
-compose 정의는 남아 있되 `legacy-storage` profile로 **상시 기동만 끊겨** 있다.
+현행은 **SeaweedFS**이고 **클러스터 밖 compose**(profile `storage`)에 선다 — 실무에서 오브젝트
+스토리지가 클러스터 밖 관리형 서비스이고 클러스터는 엔드포인트와 자격증명으로만 닿는 형태를 모사한다.
+기동·키 배선·버킷·네트워크 연결은 `./scripts/storage-up.sh`가 맡는다.
 
-**「중단」과 「삭제」는 다른 축이다** — 자원은 즉시 회수하되 정의를 남겨 롤백 비용을 0으로
-둔다. 이 처리를 `trino`와 공유하지만 **사유는 다르다**: `trino`는 제거 대상의 유예이고,
-`seaweedfs`는 **같은 기술의 정본이 다른 환경으로 옮겨간 것**이다.
-compose 쪽을 보고 「미채택으로 내려갔다」로 읽지 않는다.
+파드는 종전과 같은 `http://seaweedfs:8333`을 쓴다 — 그 이름을 `Service seaweedfs`(ExternalName,
+`gitops/charts/storage-external`)가 받아 kind 네트워크 별칭 `seaweedfs-ext`로 넘긴다. 별칭을 Service와
+같은 이름으로 두지 않는 것은 클러스터 DNS 검색 경로에서 CNAME이 자기 자신을 가리킬 수 있어서다.
 
-**오퍼레이터는 미채택 🔎다.** SeaweedFS 오퍼레이터는 master/volume/filer 분리로 상주가
-순증하는데 이미 PVC라 막을 유실 급소가 없다 — 판정과 수치는
-[../redesign.md](../redesign.md)와 [../resource-sizing.md](../resource-sizing.md)가 갖는다.
+**정본이 K8s → compose로 되돌아왔다.** 종전 결정은 「한 플랫폼 표준화」로 K8s StatefulSet을 정본으로
+두었으나, 수명주기를 클러스터와 묶으면 클러스터를 다시 만들 때 레이크도 함께 사라진다(실제로 그렇게 소멸했다).
+이력은 [../redesign.md](../redesign.md), 설계는 `docs/superpowers/specs/`의 외부 스토리지 설계가 갖는다.
+
+**오퍼레이터는 미채택 🔎다.** 클러스터 밖이라 대상이 아니다.
 
 ### 상태 마커 근거 — ✅는 슬롯을 말하고 교체 판정을 말하지 않는다
 

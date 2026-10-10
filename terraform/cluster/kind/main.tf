@@ -121,3 +121,26 @@ resource "terraform_data" "registry_network" {
     EOT
   }
 }
+
+# 외부 오브젝트 스토리지(compose seaweedfs)를 kind 네트워크에 별칭 seaweedfs-ext 로 연결한다 — 파드의
+# Service seaweedfs(ExternalName, gitops/charts/storage-external)가 이 별칭을 가리킨다.
+# 컨테이너 수명은 compose 몫이라 없으면 경고만 하고 넘어간다(스토리지는 클러스터와 독립).
+# 컨테이너 재생성으로 풀린 연결·별칭 누락은 scripts/storage-up.sh 가 고친다(이 리소스는 클러스터 생성 시점만).
+resource "terraform_data" "seaweedfs_network" {
+  depends_on = [kind_cluster.this]
+
+  triggers_replace = kind_cluster.this.id
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-ec"]
+    command     = <<-EOT
+      if ! podman container exists seaweedfs; then
+        echo "경고: seaweedfs 컨테이너가 없다 - ./scripts/storage-up.sh 가 기동과 연결을 함께 한다" >&2
+        exit 0
+      fi
+      if [ "$(podman inspect -f '{{json .NetworkSettings.Networks.kind}}' seaweedfs 2>/dev/null || echo null)" = "null" ]; then
+        podman network connect --alias seaweedfs-ext kind seaweedfs
+      fi
+    EOT
+  }
+}

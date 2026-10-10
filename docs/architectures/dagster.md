@@ -21,14 +21,15 @@ Spark·Flink·SeaweedFS·CNPG와 **같은 층**에 놓여, 컨트롤 플레인�
 
 ### 무엇이 바뀌었나 — 우회 경로의 소멸
 
-호스트 Dagster 시절에는 클러스터에 닿기 위해 **port-forward 2개**(Spark Connect 15002 ·
-SeaweedFS 18333)와 **TLS Ingress + 로컬 CA 신뢰 주입**(`GRPC_DEFAULT_SSL_ROOTS_FILE_PATH`)이 필요했다.
+호스트 Dagster 시절에는 클러스터에 닿기 위해 **port-forward**(Spark Connect 15002 · 카탈로그 PG 15432 —
+S3는 이제 클러스터 밖 compose라 `localhost:8333` 직결)와 **TLS Ingress + 로컬 CA 신뢰
+주입**(`GRPC_DEFAULT_SSL_ROOTS_FILE_PATH`)이 필요했다.
 in-cluster에서는 이 전부가 **서비스 DNS 직결**로 대체된다.
 
 | 축 | 호스트 Dagster | in-cluster |
 | --- | --- | --- |
 | Spark Connect | `sc://spark-grpc.localtest.me:8443/;use_ssl=true` + CA 파일 | `sc://spark-connect:15002` (평문) |
-| S3 | `http://localhost:18333` (port-forward) | `http://seaweedfs:8333` |
+| S3 | `http://localhost:8333` (compose 직결) | `http://seaweedfs:8333` (ExternalName → 클러스터 밖) |
 | 카탈로그 PG | `localhost:15432` (port-forward) | `catalog-postgres-rw:5432` |
 | 메타 PG | compose `postgres` | 같은 CNPG의 `dagster` DB |
 

@@ -30,7 +30,7 @@ Terraform은 **선언형 인프라 프로비저닝** 도구다. 리소스의 목
 그것은 다시 유도했기 때문이지 결론이 안 바뀌어서가 아니다.
 
 분할 축은 여전히 **destroy가 무엇을 파괴하는가(폭발반경)** 이다. 다만 데이터 층은 셸이 아니라
-ArgoCD가 소유하는 쪽으로 옮겨 가며(PR2), 그 전까지 `scripts/k8s-poc-storage.sh`가 과도기로 남는다.
+ArgoCD가 소유한다(`catalog-postgres` 차트). 셸에 남는 것은 Secret(`scripts/k8s-secrets.sh`)뿐이고, S3는 클러스터 밖이다.
 Terraform은 **ArgoCD까지** 설치하고 그 위는 `git push`로 수렴한다(`argocd-study`와 같은 경계 — 선택 근거는
 [argocd.md](argocd.md)).
 

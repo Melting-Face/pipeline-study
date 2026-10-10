@@ -30,7 +30,7 @@
 │  Spark Operator (Helm) → SparkApplication → driver/executor       │  [BATCH]
 │  Flink Operator (Helm) → FlinkDeployment → JobManager/TaskManager │  [BATCH·STREAM]
 │  Iceberg bronze 테이블 ← 스트림 소스(changelog 읽기)              │  [STREAM]
-│  SeaweedFS  (StatefulSet+PVC) ← S3(path-style)·IB 웨어하우스·체크포인트│
+│  Service seaweedfs (ExternalName) → 클러스터 밖 SeaweedFS(compose)     │
 │  CloudNativePG (Helm) → Cluster(CRD) → Postgres(+PVC)             │
 │      ← Iceberg JDBC 카탈로그(iceberg DB) · Dagster 메타(dagster DB) │
 │  로컬 레지스트리 (kind local-registry)                             │
@@ -116,9 +116,9 @@ lineage(스트림): **Iceberg bronze(changelog 스트리밍 읽기) → Flink(�
 | Dagster↔컴퓨트 트리거 | **자체 리소스**(← `PipesK8sClient`, 개정) | Spark=CRD 제출·폴링 / Flink=CRD 기동 + `exec` 스트림. 아래 주 참조 |
 | 오브젝트 스토어 | **SeaweedFS 유지** + `path-style` 강제 | Spark·Flink S3A 모두 `fs.s3a.path.style.access=true` 필수 |
 | 스트림 소스 | **Iceberg bronze 테이블**(changelog 스트리밍 읽기) | 신규 상주 인프라 0 — 브로커·소스DB·Debezium이 불요하다. Redpanda는 미도입 유지 |
-| 데이터 서비스 위치 | SeaweedFS·카탈로그 Postgres **K8s로 이전** | 단일 패러다임(K8s) 통일 |
+| 데이터 서비스 위치 | 카탈로그 Postgres는 **K8s(CNPG)**, SeaweedFS는 **클러스터 밖 compose로 되돌림** | 처음엔 단일 패러다임(K8s)으로 통일했으나, 스토리지 수명이 클러스터에 묶여 재생성 때 레이크가 함께 사라졌다. 실무처럼 오브젝트 스토리지를 외부 서비스로 두고 `ExternalName`으로 닿는다 |
 | 카탈로그 Postgres 관리 | **CloudNativePG 오퍼레이터**(← Deployment+emptyDir) | PVC·failover·PITR·튜닝이 CR 한 장. Spark·Flink 오퍼레이터와 **같은 선언형 패러다임**. 이전 구성은 재기동만으로 카탈로그가 소멸했다 |
-| SeaweedFS 관리 | **StatefulSet 유지**(오퍼레이터 미채택 🔎) | 오퍼레이터는 master/volume/filer 분리로 **+500m/+1Gi** 상주 순증인데, 이미 PVC라 막을 유실 급소가 없다. Phase 2 이후 재검토 |
+| SeaweedFS 관리 | **compose 단일 컨테이너**(`./scripts/storage-up.sh`, 오퍼레이터 미채택 🔎) | 클러스터 밖이라 오퍼레이터 대상이 아니다 |
 | Dagster 실행 위치 | **in-cluster**(개정 — 구 판정은 "호스트 유지") | 우회 경로(port-forward 2개 + TLS Ingress + CA 주입)가 서비스 DNS 직결로 대체된다. 호스트 headroom 회수는 예산 설계의 전제였다. run launcher는 `DefaultRunLauncher` 유지 |
 
 > **※ 트리거 행 개정 — `PipesK8sClient`를 쓰지 않는다.**

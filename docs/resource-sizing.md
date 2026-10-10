@@ -109,7 +109,7 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 | --- | --- | --- | --- | --- | --- |
 | **상주(baseline)** | kube-system(kind CP·CNI·coredns·local-path) ¹ | 실측 ¹ | 실측 ¹ | — | — |
 | | Spark Operator(Apache, **JVM**) | 250m | 512Mi | 500m | 1Gi |
-| | SeaweedFS(master+volume+filer+s3) | 300m | 768Mi | 1 | 1.5Gi |
+| | SeaweedFS — **클러스터 밖** compose(같은 VM, `deploy.resources` lim 1 CPU/1G) — 노드 `Σrequests`에 안 잡힌다 | — | — | — | — |
 | | **CloudNativePG 오퍼레이터**(컨트롤러) | 100m | 200Mi | 250m | 384Mi |
 | | Catalog Postgres(Iceberg JDBC, CNPG `Cluster` 1인스턴스) | 250m | 512Mi | 500m | 768Mi |
 | | **ingress-nginx 컨트롤러**(호스트 포트 → Ingress 진입점) ² | 100m | 90Mi | — | — |
@@ -288,12 +288,12 @@ free를 일정하게 유지하므로, **"free 델타"는 *쓴 양*이 아니라 
 | --- | --- | --- |
 | **swap `used` > 0** | ✅ **유효 · 최강** | 압축으로 못 버텨 디스크로 밀린 상태 |
 | **`swapouts` 누적값** | ✅ **유효** | `used`는 회수되면 0으로 돌아가 **지나간 압박을 못 본다** |
-| port-forward **15002 · 18333** 사망 | ✅ 유효 | 압박 신호로 읽는다 |
+| port-forward **15002** 사망 | ✅ 유효 | 압박 신호로 읽는다 |
 | port-forward **15432** 사망 | ❌ **무효 — 지표로 쓰지 마라** | 아래 |
 
 **15432(`catalog-postgres-rw`)는 호스트 압박과 무관하게 죽는다** —
 **클라이언트 접속이 끝날 때마다 결정론적으로** 끊긴다. swap이 0인 상태에서도 죽고,
-같은 kubectl·같은 클러스터인데 **15002·18333은 생존**한다.
+같은 kubectl·같은 클러스터인데 **15002는 생존**한다(S3는 이제 클러스터 밖이라 port-forward가 없다).
 원인은 Postgres 경로가 FIN이 아닌 **RST**로 끊고 kubectl이 그것을 **터널 전체의 치명 오류**로
 취급하는 것이다.
 
@@ -457,7 +457,7 @@ daemon 필요 메모리
 | 대상 | 담는 것 | 위치 | 튜닝 지점 |
 | --- | --- | --- | --- |
 | 메타 Postgres | Dagster run·이벤트·스케줄 상태 | compose(호스트) | `compose.yml` / `postgresql.conf` |
-| 카탈로그 Postgres | Iceberg 테이블 메타(JDBC 카탈로그) | K8s(CNPG `Cluster`) | `k8s/catalog-postgres.yaml`의 `spec.postgresql.parameters` |
+| 카탈로그 Postgres | Iceberg 테이블 메타(JDBC 카탈로그) | K8s(CNPG `Cluster`) | `gitops/charts/catalog-postgres/templates/cluster.yaml`의 `spec.postgresql.parameters` |
 
 - `shared_buffers` ≈ RAM × **0.25**, `work_mem`(정렬/조인 버퍼, 연결당), `max_connections`
 - 동시 run·pyiceberg 연결이 늘면 `max_connections`를 상향한다.
@@ -472,7 +472,7 @@ daemon 필요 메모리
 
 대체로 I/O 바운드이며, 볼륨 인덱스가 메모리를 사용한다.
 
-- `-volume.max`(볼륨 수), 인덱스 방식(`-volume.index=leveldb`로 메모리 절감)
+- 볼륨 수는 `weed mini`가 디스크 여유로 자동 설정(`-volume.max` 없음), 인덱스는 `-volume.index=leveldb`로 절감
 
 ## 호스트 크기별 권장 프로파일 (출발점)
 

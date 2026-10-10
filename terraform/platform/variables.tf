@@ -129,6 +129,10 @@ variable "apps" {
     { name = "cnpg-operator", path = "gitops/charts/cnpg-operator", namespace = "cnpg-system" },
     { name = "spark-operator", path = "gitops/charts/spark-operator", namespace = "spark-operator" },
     { name = "flink-operator", path = "gitops/charts/flink-operator", namespace = "flink-operator" },
+    # 클러스터 밖 SeaweedFS(compose)를 가리키는 ExternalName — 데이터 층이라 Prune=false,Delete=false.
+    { name = "storage-external", path = "gitops/charts/storage-external", namespace = "default" },
+    # Iceberg JDBC 카탈로그(CNPG Cluster CR) — 데이터 층이라 Prune=false,Delete=false. Secret 은 k8s-secrets.sh.
+    { name = "catalog-postgres", path = "gitops/charts/catalog-postgres", namespace = "default" },
   ]
 
   validation {
