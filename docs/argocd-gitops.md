@@ -259,7 +259,8 @@ scripts/k8s-secrets.sh                    # ② 이후. 순서 강제 아님 —
 | PR3-A | Airflow 커스텀 이미지(`images/airflow/`) + GHCR 발행 워크플로 | 태그 발행 후 인증 없이 pull |
 | PR3-B | ③ Airflow 차트(CNPG 메타DB) + values 태그 갱신(bump) 브랜치 push — Airflow 이행 미션과 합류 | 별도 설계 |
 
-PR마다 함께 갱신할 단일 출처: [setup.md](setup.md) §3(부트스트랩), [architectures/terraform.md](architectures/terraform.md)(스택 분할),
+PR마다 함께 갱신할 단일 출처: [setup.md](setup.md) §3·[setup/local-k8s.md](setup/local-k8s.md)(부트스트랩),
+[architectures/terraform.md](architectures/terraform.md)(스택 분할),
 신규 `architectures/argocd.md`(채택 ✅·대안), [conventions/k8s.md](conventions/k8s.md) §7(packaging은 Helm — 비로소 실재와 일치),
 [resource-sizing.md](resource-sizing.md), `CLAUDE.md` 인프라 요약 · `AGENTS.md`.
 

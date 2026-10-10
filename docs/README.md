@@ -87,6 +87,7 @@
 | 문서 | 내용 |
 | --- | --- |
 | [환경 세팅](setup.md) | 절차 정본 — 사전 요구·기동·검증·회수·함정 |
+| ↳ [로컬 Kubernetes 손으로 올리기](setup/local-k8s.md) | 층별 podman·terraform·kubectl 명령, 생기는 것·확인·단축, 내리기 |
 | ↳ [시장 데이터 키 발급](setup/market-data-keys.md) | 외부 API 키 절차·무료 플랜 한계·**재배포 금지**·뉴스 축 폴백 |
 | [환경변수·운영 정책](operations.md) | `.env`→compose→`EnvVar` 전파 체인, 보존 정책, 토큰 비용 계측, 클러스터 재생성 |
 | [리소스 산정](resource-sizing.md) | 호스트 자원에 따른 서비스 옵션 조정 |
