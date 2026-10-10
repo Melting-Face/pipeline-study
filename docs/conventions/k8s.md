@@ -2,7 +2,7 @@
 
 > **상태**: 🚧 **채택·이행중**. 재설계로 **컴퓨트·데이터 서비스를 K8s로 이전**했고,
 > 클러스터 선언은 **ArgoCD GitOps**로 옮겨 가는 중이다(Dagster는 새 클러스터에 배포하지 않는다)
-> 전체 로드맵은 [../redesign.md](../redesign.md), PoC 게이트는 그 Phase 0.
+> 전체 로드맵은 [../redesign.md](../redesign.md), PoC 게이트는 그 Phase 0. 대상 클러스터는 **dev 환경**(운영 아님)이다.
 > 아래 §1~8은 [docker.md](docker.md)의 원칙(이미지 고정·자원 한도·비밀 참조·non-root)을 K8s 리소스로 옮긴 공통 규칙,
 > §9~12는 **본 재설계 고유 규칙**(Spark Operator·노출·로컬 클러스터·CNPG 카탈로그 PG)이다.
 > **연관**: 아키텍처 [../architectures/k8s.md](../architectures/k8s.md)·[../architectures/spark.md](../architectures/spark.md),

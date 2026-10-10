@@ -28,6 +28,9 @@
 
 ## 빠른 시작
 
+> **환경 등급**: 이 저장소의 클러스터(kind on Podman, macOS)와 compose 스택은 **dev(개발·검증) 환경**이다.
+> 운영(prod) 환경이 아니며, 운영 배포 대상은 아직 없다([OCI k3s](docs/architectures/oci.md)는 보류).
+
 처음 설치한다면 [환경 세팅](docs/setup.md)을 위에서 아래로 따른다. 도구 설치부터 클러스터 기동·수렴 확인·
 회수까지의 명령이 모두 거기 있다(클러스터 기동 명령은 [§3](docs/setup.md#3-로컬-kubernetes)).
 
