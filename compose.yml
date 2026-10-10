@@ -183,11 +183,10 @@ services:
           memory: 2G
   # SeaweedFS standalone: master/volume/filer/s3를 단일 컨테이너로 통합
   #
-  # 오브젝트 스토리지 정본은 **K8s SeaweedFS**로 이전됐다(redesign Phase 1 · `k8s/seaweedfs.yaml`).
-  # 원천 csv.gz도 2026-08-19에 전량 K8s로 이관·CRC 검증을 마쳤다 → 상시 기동할 이유가 없다.
-  # trino와 같은 취지로 **정의는 남기고 상시 기동만 끊는다**("중단"과 "삭제"의 분리).
-  #   docker compose --profile legacy-storage up -d seaweedfs
-  # 로컬 데이터 `./seaweedfs/data`(309MB, 이관 전 원본)는 바인드 마운트라 그대로 남아 있다.
+  # **오브젝트 스토리지 정본**이다 — 클러스터 밖 외부 스토리지(실무 구성 모사, docs/superpowers/specs).
+  # 수명주기는 kind와 독립이고, 파드는 kind 네트워크 별칭 `seaweedfs-ext` + `Service seaweedfs`
+  # (ExternalName, gitops/charts/storage-external)로 닿는다. 기동·키 배선·버킷·네트워크 연결은
+  #   ./scripts/storage-up.sh            # 직접 `podman compose up`하면 s3.json·kind 연결이 빠진다
   #
   # profile 3개인 이유: `trino`(legacy-sql)와 `prometheus`(monitoring)가 **이 서비스에 의존**한다
   # (prometheus는 `seaweedfs:9324` 메트릭을 수집). 의존 서비스의 profile을 함께 걸지 않으면
@@ -195,14 +194,11 @@ services:
   seaweedfs:
     <<: *docker-logging
     container_name: seaweedfs
-    profiles: ["legacy-storage", "legacy-sql", "monitoring"]
-    # 🔴 **인증(`-s3.config`)을 배선하지 않는다 — 빠뜨린 것이 아니라 결정이다.**
-    #   이 경로는 서비스가 아니라 **이관 전 원본 백업**이고 정본은 K8s(거기엔 Secret 마운트로
-    #   배선돼 있다). 배선하면 두 벌을 맞춰 유지해야 하는데, 그 「두 벌」이 만드는 드리프트가
-    #   이 저장소의 반복 실패 형태다. 도달 경로는 아래 루프백 바인딩으로 좁혔다.
-    #   ⇒ 재검토 트리거(조건): ①이것을 다시 서비스로 쓸 때 ②포트를 루프백 밖으로 낼 때
-    #   ③이 볼륨이 원본 백업 이상의 역할을 가질 때. 근거·실태는 docs/security.md §4-3.
-    # 🔴 **상향 고정**이다 — K8s 정본(`k8s/seaweedfs.yaml` = 3.80)에 맞추지 **않는다**.
+    profiles: ["storage", "legacy-sql", "monitoring"]
+    # 🔴 **인증(`-s3.config`)을 켠다.** 종전의 무인증 결정은 재검토 트리거 ①「다시 서비스로
+    #   쓸 때」가 발동해 뒤집혔다(근거 docs/security.md §4-3). `seaweedfs/s3.json`(gitignore)은
+    #   storage-up.sh가 `.env`의 `ICEBERG_S3_*`로 만든다 — K8s Secret `lakehouse-creds`와 **한 벌**.
+    # 🔴 **상향 고정**이다 — 구 K8s 사본(3.80)에 맞추지 **않았다**.
     #   `./seaweedfs/data`는 4.x가 쓴 온디스크 상태(`.mini_kek_passphrase`·`mini.options`
     #   등 4.x 산물 실재)이고 **이관 전 원본 백업**이라, 낮은 버전으로 인플레이스로 여는
     #   것이 위험하다. 값 `4.36`은 로컬 이미지가 보고하는 버전이고(라벨
@@ -217,12 +213,20 @@ services:
       - "127.0.0.1:8333:8333" # S3 API
       - "127.0.0.1:8888:8888" # filer UI
       # Admin UI(23646)는 게시 자체를 하지 않는다 — vacuum·balance 등 데이터 파괴가 가능한
-      # 운영 평면인데 인증 배선이 없고, 정본이 K8s로 넘어가 호스트에서 쓸 일이 없다(YAGNI).
+      # 운영 평면인데 인증 배선이 없고, 운영은 `weed shell`(storage-up.sh)로 충분하다(YAGNI).
       # 컨테이너 안에서는 그대로 뜬다(프로세스 인자 무변경). 필요해지면 그때 루프백으로 연다.
       # volume(8080)·grpc·metrics(9324)는 컨테이너 네트워크 내부 통신만 사용 → host 미게시 (Trino 8080 충돌 회피)
-    command: "mini -ip.bind=0.0.0.0 -dir=/data -metricsPort=9324"
+    command: "mini -ip.bind=0.0.0.0 -dir=/data -metricsPort=9324 -s3.config=/etc/seaweedfs/s3.json"
     volumes:
       - ./seaweedfs/data:/data
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+    # 인증이 켜져 있어 무서명 요청은 403이다 — 응답이 오면 살아 있다(curl은 --fail 없이 HTTP 오류에 0).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://127.0.0.1:8333/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
     # 오브젝트 스토리지: IO 위주, CPU 낮고 메모리 모자란 편 아님
     deploy:
       resources:
