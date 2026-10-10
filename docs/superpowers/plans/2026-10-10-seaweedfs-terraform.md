@@ -92,10 +92,32 @@ spike 결과가 Task 1·2의 값(프로바이더 버전·CPU 속성·실패 시 
 - [ ] **게이트**: S1 실패 → 중단하고 사용자에게 접근 B 전환을 묻는다. S2~S6 실패 → spec의 「실패 시」 열로 Task 2를 고친
   뒤 진행.
 
+#### Task 0 결과 (판정표)
+
+| # | 판정 | 결과 | 관측 |
+| --- | --- | --- | --- |
+| S1 | 프로바이더 ↔ podman 소켓 | ✅ | `kreuzwerker/docker` **3.9.0**, `docker_image`+`docker_container` 생성 |
+| S2 | `upload`된 `s3.json` | ✅ | 무서명 `403` · 맞는 키 `create_bucket`+`head_bucket` 성공 · 틀린 키 `SignatureDoesNotMatch` |
+| S3 | `wait`가 healthy 대기 | ✅ | apply 종료 직후 `healthy` |
+| S4 | 네트워크 별칭 | ✅ | `Aliases`에 지정 별칭 |
+| S5 | 다른 컨테이너 → `host.containers.internal:<게시 포트>` | ✅ | `403`(기본 podman 네트워크에서 판정 — compose 프로젝트 네트워크는 Task 6에서 실측) |
+| S6 | 재 `apply` | ⚠️→✅ | 첫 판정 **교체 발생**. 아래 보정 후 새로 만든 컨테이너에서 `plan -detailed-exitcode` = 0 |
+| S7 | CPU 상한 속성 | ✅ | `cpus = "1.0"` → `NanoCpus=1e9`, 드리프트 없음 |
+
+S6 드리프트 원인과 보정(Task 2에 그대로 반영):
+
+- `log_opts` — podman이 `max-size`만 적용하고 `LogConfig.Config`를 `null`로 돌려줘 매번 교체. `max-file`은 podman
+  `json-file`에서 적용되지 않는다(compose도 같은 엔진이라 종전과 동일). → `ignore_changes`.
+- `pid_mode`(`private`)·`ulimit`(`RLIMIT_NOFILE`/`NPROC`) — podman 기본값을 되읽음. → `ignore_changes`.
+- `volumes.read_only` — `false`를 명시하지 않으면 `null`↔`false` 차이로 교체. → `read_only = false` 명시.
+- `memory_swap` — podman 기본값 `2 × memory`(2048). → `memory_swap = 2048` 명시(종전 compose와 같은 실효값).
+
+덤 관측: destroy → 재 apply 뒤 바인드 디렉터리의 버킷이 그대로 보였다(T2 미리보기, 본 실측은 Task 7).
+
 ### Task 1: 프로바이더·변수·worktree 가드 (스택 A)
 
 **Files:**
-- Modify: `terraform/cluster/kind/versions.tf` — `docker = { source = "kreuzwerker/docker", version = "<Task 0 값>" }`
+- Modify: `terraform/cluster/kind/versions.tf` — `docker = { source = "kreuzwerker/docker", version = "3.9.0" }`
 - Modify: `terraform/cluster/kind/variables.tf` — 변수 4개
 - Create: `terraform/cluster/kind/provider.tf` — `provider "docker" { host = var.container_host }`
 - Create: `terraform/cluster/kind/scripts/detect-checkout.sh` — `{"linked":"true"|"false"}` 출력
@@ -153,12 +175,19 @@ spike 결과가 Task 1·2의 값(프로바이더 버전·CPU 속성·실패 시 
 - [ ] **Step 2: 실패 확인** — `terraform … test` → 리소스 없음으로 FAIL.
 - [ ] **Step 3: 구현** — `docker_container`: `image = docker_image.seaweedfs.image_id`,
   `depends_on = [kind_cluster.this]`,
-  `wait = true`·`wait_timeout = 120`, healthcheck·로그·메모리 1024는 Global Constraints 값, CPU 상한은 Task 0 S7 속성,
+  `wait = true`·`wait_timeout = 120`, healthcheck·로그·메모리 1024는 Global Constraints 값, CPU 상한 `cpus = "1.0"`(S7),
+  S6 보정 — `memory_swap = 2048`·`volumes.read_only = false` 명시,
+  `lifecycle.ignore_changes = [log_opts, pid_mode, ulimit]`(Task 0 결과 참고),
   `lifecycle.precondition { condition = data.external.checkout.result.linked == "false" }`(오류 메시지에 「메인
   체크아웃에서 apply」).
   `upload.content`는 `jsonencode`로 `s3.json` 구조를 만든다. 버킷은 `local-exec`(`/bin/bash -ec`)로 버킷마다
-  최대 12회 `s3.bucket.create` → `s3.bucket.list`에 이름이 나올 때까지 5초 간격 재시도(storage-up.sh 3단계와 같은 판정),
-  끝내 없으면 `exit 1`. destroy 프로비저너는 두지 않는다. `docker_image`는 `keep_locally = true`.
+  최대 12회 `s3.bucket.create` → `s3.bucket.list`에 이름이 나올 때까지 5초 간격 재시도, 끝내 없으면 `exit 1`.
+  판정은 **정확 일치**다 — storage-up.sh의 `grep -w`는 `pg-backup-old`에도 걸려(#178) 이식하지 않는다.
+  목록 줄에서 버킷 이름 토큰만 뽑아(`awk '{print $1}'`) `grep -qxF -- "${bucket}"`로 비교하고, reviewer는
+  `pg-backup-old`만 있는 목록이 `pg-backup`을 통과시키지 않는지 합성 입력으로 확인한다.
+  ⚠️ `s3.bucket.list`의 줄 형식(`<이름>\tsize:…` 가정)은 **미확인**이다(spike 재캡처 직전 VM이 내려감). 가정이
+  틀리면 토큰이 안 맞아 12회 뒤 `exit 1` — **실패 쪽으로 깨지므로** Task 6 apply에서 드러난다.
+  destroy 프로비저너는 두지 않는다. `docker_image`는 `keep_locally = true`.
 - [ ] **Step 4: 통과 확인** — 전체 `terraform test` PASS(`reject_linked_worktree` 포함), `terraform validate`,
   `fmt -check`.
 - [ ] **Step 5: Commit** — `feat(terraform)!: SeaweedFS 컨테이너를 스택 A가 소유한다`
