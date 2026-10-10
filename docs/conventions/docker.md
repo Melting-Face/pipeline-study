@@ -68,19 +68,10 @@ FROM trinodb/trino:${TRINO_VERSION}
 
 - Trino처럼 주 단위 릴리즈를 하는 이미지는 **LTS 버전**을 우선한다(비-LTS는 다음 릴리즈 후 패치 중단).
   현재 Trino LTS는 `477` 계열. 이 레포는 `trino:468`을 쓰므로, 업그레이드 시 LTS로 올리는 것을 권장한다.
-- **예외**: compose의 `chrislusf/seaweedfs`(`compose.yml:189`)는 **K8s 정본과 다른 값으로
-  고정한다**(`4.36` — K8s는 `k8s/seaweedfs.yaml:21` = `3.80`). 예외는 *"고정 여부"* 가 아니라
-  *"어느 값으로"* 에 걸린다.
-  🔴 근거는 *"태그 정책이 없어 고정 불가"* 가 **아니다**(교정됨 — 이전 문구는 사실이
-  아니었다). 업스트림은 버전을 발급하며(로컬 이미지의 `org.opencontainers.image.version` 라벨),
-  값을 K8s에 맞추지 **않는** 이유는 셋이다.
-  - 이 서비스는 `legacy-storage` 계열이라 **기본 `up`에 없다**(§1-6). 스토리지 정본은 K8s로 넘어갔다.
-  - `./seaweedfs/data`는 **이관 전 원본 백업**이다(§1-6의 `seaweedfs` 문단). 그 디스크는 **4.x가
-    쓴 상태**이고(`.mini_kek_passphrase`·`.mini_sse_kek`·`mini.options`·`admin/` = 4.x 산물),
-    **더 낮은 버전이 인플레이스로 여는 것**이 위험하다.
-  - 🔴 그래서 **K8s 값(`3.80`)으로 표기를 통일하면 다운그레이드가 된다.**
-    **버전 표기의 통일은 원본 백업의 무결성보다 우선하지 않는다.**
-  - ⇒ K8s(`3.80`)와 compose(`4.36`)의 **버전 분기는 의도된 것**이다.
+- **SeaweedFS(`chrislusf/seaweedfs:4.36`)는 낮추지 않는다.** `./seaweedfs/data`는 **4.x가 쓴 온디스크
+  상태**이고(`.mini_kek_passphrase`·`.mini_sse_kek`·`mini.options`·`admin/` = 4.x 산물) 이것이 오브젝트
+  스토리지 **정본**이라, 더 낮은 버전이 인플레이스로 여는 것이 위험하다. 종전에는 K8s 사본(`3.80`)과의
+  버전 분기를 예외로 설명했으나 K8s 사본이 철거돼 분기 자체가 없다.
 - 🔴 **다만 「낮추지 않는다」를 「고정하지 않는다」로 지키지 않는다** — 무태그는 재현성만이 아니라
   **공급망 축**이다. 같은 이름이 다음 `pull`에서 **다른 바이너리**를 가리키고 그 변경이 **조용하며**,
   디스크 포맷을 또 올릴 수 있다(예외가 막으려던 바로 그 위험이 통제 없이 들어온다).
@@ -147,7 +138,7 @@ services:
 
 - **뼈대(core)**: `dagster-webserver`·`dagster-daemon`·`postgres` — profile 없음.
 - **옵션**: `prometheus`(`monitoring`) · `trino`(`legacy-sql`) ·
-  `seaweedfs`(`legacy-storage`+`legacy-sql`+`monitoring`).
+  `seaweedfs`(`storage`+`legacy-sql`+`monitoring`) — 오브젝트 스토리지 정본, 기동은 `./scripts/storage-up.sh`.
 
 ```bash
 docker compose up -d                        # 뼈대만
@@ -160,16 +151,16 @@ COMPOSE_PROFILES=monitoring docker compose up -d   # 프로필 고정
 > ([../architectures/trino.md](../architectures/trino.md)). 상시 기동만 끊어 자원(3 CPU / 6G)을
 > 회수하고 대조할 때만 올린다 — **"중단"과 "삭제"를 분리**하면 자원은 즉시 회수되면서
 > 롤백 비용이 0으로 유지된다.
-> **`seaweedfs`도 같은 처리를 했다** — 오브젝트 스토리지 정본이 K8s로 이전됐고
-> ([../redesign.md](../redesign.md) Phase 1) 원천 csv.gz까지 전량 이관·CRC 검증을 마쳐 상시 기동
-> 이유가 사라졌다. 로컬 데이터 `./seaweedfs/data`는 바인드 마운트라 남아 사실상 원본 백업이다.
+> `seaweedfs`는 이 처리에서 **되돌아왔다** — 정본을 K8s로 옮겨 중단했었으나 클러스터 밖 외부 스토리지로
+> 다시 정본이 됐다(profile `storage`, [../architectures/storage.md](../architectures/storage.md)).
+> profile을 단 이유는 「제거 예정」이 아니라 **뼈대가 비어 전부 opt-in**이라는 규칙 때문이다.
 
 > `profiles`를 붙인 서비스를 **의존**(`depends_on`)하는 뼈대 서비스가 없어야 한다(있으면 기본 기동이 깨진다).
 > 옵션↔옵션 의존은 같은 프로필을 공유하거나 함께 활성화한다. 대안인 다중 파일 `-f` override는
 > YAML 앵커가 파일 스코프라 기능 파일에서 공용 앵커를 못 써 이 레포에선 profiles를 택했다.
 >
 > 🔴 **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받아야 한다.** `seaweedfs`에
-> `legacy-storage` 하나만 붙이면 `--profile legacy-sql`(trino)·`--profile monitoring`(prometheus,
+> `storage` 하나만 붙이면 `--profile legacy-sql`(trino)·`--profile monitoring`(prometheus,
 > `seaweedfs:9324` 스크랩)이 **의존 비활성으로 깨진다**. 그래서 profile이 3개다.
 > 바꾼 뒤에는 **profile별로 `docker compose --profile <p> config --services`를 돌려 확인**한다
 > — 이 검증은 기동 없이 수초면 끝난다.

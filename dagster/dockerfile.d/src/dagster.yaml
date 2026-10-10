@@ -74,8 +74,8 @@ event_log_storage:
 # 단일 프로세스인 `dg dev`가 가려주고 있었다.
 #
 # 한 파일이 두 실행 위치를 지탱한다 — 엔드포인트는 env라 in-cluster는 `seaweedfs:8333`,
-# 호스트는 port-forward(`localhost:18333`)를 본다.
-# ⚠️ 그래서 호스트 `dg dev`도 S3 port-forward가 없으면 compute log를 못 쓴다
+# 호스트는 클러스터 밖 compose SeaweedFS(`localhost:8333`)를 직접 본다.
+# ⚠️ 그래서 호스트 `dg dev`도 compose SeaweedFS가 떠 있어야 compute log를 쓴다
 # (`ICEBERG_S3_ENDPOINT`가 이미 같은 전제를 지고 있어 새 전제는 아니다).
 compute_logs:
   module: dagster_aws.s3.compute_log_manager

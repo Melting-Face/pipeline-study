@@ -198,19 +198,18 @@
 
 - **환경변수는 참조로 주입**(`dg.EnvVar`/`os.environ`), 하드코딩 금지. 추가 시
   `.env`→`compose.yml`(공용 앵커 `x-dagster-common`)→코드 **전파 체인**을 확인한다.
-  **접속 대상을 바꾸는 값은 한 벌로 묶어 바꾼다** — 엔드포인트만 K8s로 돌리고 자격증명은
-  공용 `AWS_*`를 두면 compose↔K8s SeaweedFS의 키가 달라 **나열은 되고 `load_table`에서
-  `ACCESS_DENIED`** 로 죽는다(부분 성공이라 오진하기 쉽다). 그래서 S3 키도 엔드포인트와 같은
-  접두어(`ICEBERG_S3_ACCESS_KEY`/`_SECRET_KEY`)로 두고, 미설정 시 `AWS_*`로 폴백한다.
+  **접속 대상을 바꾸는 값은 한 벌로 묶어 바꾼다** — 키가 어긋나면 **나열은 되고 `load_table`에서
+  `ACCESS_DENIED`** 로 죽는다(부분 성공). S3 키는 `ICEBERG_S3_ACCESS_KEY`/`_SECRET_KEY`가 단일 출처
+  (`storage-up.sh`의 `s3.json`·Secret `lakehouse-creds`와 한 벌), 미설정 시 `AWS_*`로 폴백한다.
   Iceberg snapshot·로그 보존 정책 포함 [`docs/operations.md`](docs/operations.md).
 - **Docker/Compose 규칙**: 로깅·env YAML 앵커, 이미지 `latest` 금지, healthcheck + `depends_on`,
   전 서비스 `deploy.resources` 명시. **옵션 기능은 `profiles`로 분리**(뼈대는 profile
   없이 항상 실행, `--profile <name>`으로 opt-in) — `monitoring`(prometheus)·`legacy-sql`(trino)·
-  `legacy-storage`(seaweedfs)·`host-dagster`·`legacy-meta`. **뼈대(core)는 이제 비었다** — 전부 opt-in이다.
+  `storage`(seaweedfs)·`host-dagster`·`legacy-meta`. **뼈대(core)는 이제 비었다** — 전부 opt-in이다.
   **`profiles`는 "제거 예정"의 중간 단계로도 쓴다** — `trino`는 재설계 제거 대상이나 22모델 방언
   교정이 끝날 때까지 **값 대조의 정본**이라 정의는 남기고 **상시 기동만 끊는다**("중단"과 "삭제"의 분리:
-  자원은 즉시 회수, 롤백 비용 0). `seaweedfs`도 스토리지 정본이 K8s로 이전돼 같은 처리를 했다.
-  **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받는다** — `seaweedfs`에 `legacy-storage`만
+  자원은 즉시 회수, 롤백 비용 0).
+  **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받는다** — `seaweedfs`에 `storage`만
   붙이면 `trino`(legacy-sql)·`prometheus`(monitoring)가 의존 비활성으로 깨져 profile이 3개다.
   바꾼 뒤 **`docker compose --profile <p> config --services`로 profile별 확인**한다(기동 없이 수초).
   상세 [`docs/conventions/docker.md`](docs/conventions/docker.md).
@@ -246,7 +245,8 @@
   **비밀번호 회전은 Secret·DB 롤·`.env`·워크로드 재기동을 한 벌로** 한다 — 한쪽만 바꾸면
   **성공한 것처럼 보이는데 안 바뀐 상태**가 된다(§12에 해소 내역).
   **메타 Postgres는 새 클러스터에 없다**(구 CNPG `dagster` DB 선언 철거·롤만 남음, PR2가 정함).
-  **SeaweedFS는 오퍼레이터 미채택**(상주 +500m/+1Gi인데 이미 PVC라 급소가 아니다).
+  **SeaweedFS(S3)는 클러스터 밖 compose 정본**(`storage-up.sh`)이고 파드는 `Service seaweedfs`(ExternalName →
+  kind 네트워크 별칭 `seaweedfs-ext`)로 닿는다 — 클러스터를 다시 만들어도 레이크가 산다.
   엔진 버전은 **최신이 아니라 Iceberg가 지원하는 짝**으로 고정한다(예: `iceberg-flink-runtime`이 2.1까지라 Flink는 2.1).
   Spark Connect는 **`--master k8s://`(client mode)** 로 돌아 **executor 파드 1개가 함께 상주**하므로
   미사용 시 `--replicas=0`으로 내리고 **executor가 함께 사라지는지 확인**한다

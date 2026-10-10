@@ -96,7 +96,7 @@ compose `postgres`를 쓰고, 호스트 `dg dev`는 `.env`의 `POSTGRES_HOST`·`
 | `POSTGRES_HOST` | `postgres` — `compose.yml`이 리터럴 고정 | `localhost`(port-forward) | `catalog-postgres-rw` |
 | `POSTGRES_PORT` | `5432` | **`15432`** — port-forward 포트 | `5432` |
 | `POSTGRES_DB` | `dagster`(compose DB) | `dagster`(CNPG DB) | `dagster`(CNPG DB) |
-| `ICEBERG_S3_ENDPOINT` | `http://seaweedfs:8333` | `http://localhost:18333` | `http://seaweedfs:8333` |
+| `ICEBERG_S3_ENDPOINT` | `http://seaweedfs:8333` | `http://localhost:8333`(직결) | `http://seaweedfs:8333`(ExternalName) |
 | `SPARK_REMOTE` | (미설정) | TLS Ingress 또는 port-forward | `sc://spark-connect:15002` |
 
 ⚠️ **호스트 경로의 `POSTGRES_PORT`가 급소다.** 5432면 compose DB를, 15432면 CNPG DB를 본다 —
@@ -123,11 +123,14 @@ in-cluster Dagster 매니페스트는 철거돼(새 클러스터에 배포하지
   (`common/constants.py`의 `S3_ENDPOINT`·`S3_ACCESS_KEY_ID`·`S3_SECRET_ACCESS_KEY`가 읽는다).
   미지정 시 공용 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`로 **폴백**해 compose 단독 구성이 보존된다.
   위 카탈로그 키와 같은 이유로 **`compose.yml`에 넣지 않는다**(의도된 예외 — 값을 바꿔야 하는 쪽은
-  호스트 실행 + K8s 조합뿐이다).
-  - **엔드포인트와 자격증명은 한 쌍으로 바꾼다.** 엔드포인트만 K8s(`localhost:18333`)로 돌리고
-    키를 공용 `AWS_*`로 두면 **부분 성공**이 난다 — 카탈로그 나열(`list_tables`)은 Postgres만 보므로
-    성공하고, `load_table`이 `metadata.json`을 S3에서 읽는 순간 `ACCESS_DENIED during HeadObject`로 죽는다
-    (실측). 값 자체가 다르다(k8s Secret `lakehouse-creds`). **접속 대상을 바꾸는 값은 한 벌로 묶어 바꾼다.**
+  호스트 실행뿐이다).
+  - S3는 **클러스터 밖 compose SeaweedFS 하나**다(`./scripts/storage-up.sh`). 호스트는 `localhost:8333`으로
+    직결하고 파드는 `Service seaweedfs`(ExternalName → kind 네트워크 별칭 `seaweedfs-ext`)로 같은 곳에 닿는다.
+  - **엔드포인트와 자격증명은 한 쌍으로 바꾼다.** `ICEBERG_S3_*` 키가 단일 출처다 — `storage-up.sh`가 이 값으로
+    `seaweedfs/s3.json`을 만들고, k8s Secret `lakehouse-creds`도 같은 값이어야 한다. 키를 공용 `AWS_*`로 두면
+    **부분 성공**이 난다 — 카탈로그 나열(`list_tables`)은 Postgres만 보므로 성공하고, `load_table`이
+    `metadata.json`을 S3에서 읽는 순간 `ACCESS_DENIED during HeadObject`로 죽는다.
+    **접속 대상을 바꾸는 값은 한 벌로 묶어 바꾼다.**
 - **`AWS_REQUEST_CHECKSUM_CALCULATION`/`AWS_RESPONSE_CHECKSUM_VALIDATION`**: SeaweedFS 호환 필수 키.
   값이 없으면 최신 SDK 기본값이 객체를 손상시킨다([conventions/k8s/checksum.md](conventions/k8s/checksum.md)).
   코드 기본값이 있지만 컨테이너·외부 도구를 위해 `.env`·compose 앵커에도 명시한다.
@@ -324,7 +327,7 @@ kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 별도 터미널
 # 1) 기준선: 테이블 목록과 행 수를 파일로 남긴다
 # 2) 카탈로그 논리 백업
 kubectl exec catalog-postgres-1 -c postgres -- pg_dump -U iceberg iceberg > <저장소 밖 경로>/catalog.sql
-# 3) SeaweedFS: S3 API로 객체 동기(port-forward 18333) 또는 PVC 통째 tar
+# 3) SeaweedFS(클러스터 밖): compose를 멈추고 ./seaweedfs/data 를 통째 복사하거나 S3 API(localhost:8333)로 동기
 ```
 
 ⚠️ **기준선에는 "이 값이 무엇을 세는가"를 함께 적는다** — *테이블 수*인지 *파일 수*인지,

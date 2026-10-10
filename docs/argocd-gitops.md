@@ -18,7 +18,7 @@
 | 클러스터·레지스트리·ingress-nginx | `k8s-up.sh` | `kind_cluster` import 불가가 셸 유지 근거였다 |
 | cert-manager·Barman 플러그인·네임스페이스 | `k8s-operators.sh` | 원격 매니페스트 `kubectl apply` |
 | 오퍼레이터 3종·플랫폼 매니페스트·Dagster | `terraform/lakehouse-platform/` | 빈 클러스터는 CRD 해석 때문에 **2단 apply** |
-| SeaweedFS·CNPG Cluster·Secret·버킷 | `k8s-poc-storage.sh` | 데이터 보유 층 |
+| CNPG Cluster·Secret | `k8s-poc-storage.sh` | 데이터 보유 층 — SeaweedFS·버킷은 클러스터 밖(`storage-up.sh`) |
 | Spark Connect·Flink 세션 | 수동 `kubectl` | 온디맨드 |
 
 [architectures/terraform.md](architectures/terraform.md)는 A(cluster)·B(data)를 **셸에 남긴다**고 결정했다 —
@@ -56,7 +56,7 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
   cnpg-operator/             ①  cloudnative-pg 차트
   spark-operator/            ①  spark-kubernetes-operator 차트 + 워크로드 정리 RBAC
   flink-operator/            ①  flink-kubernetes-operator 차트 + 웹훅·워크로드 RBAC + operator-values
-  seaweedfs/                 ②  직접 작성(StatefulSet·Service + 버킷 생성 Job)
+  storage-external/          ②  직접 작성(ExternalName Service — 클러스터 밖 SeaweedFS)
   catalog-postgres/          ②  CNPG Cluster CR
   airflow/                   ③  argocd-study 차트 재사용(PR3-B) — 이미지는 images/airflow/(PR3-A)
 ```
@@ -124,7 +124,7 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
   §7 관문 ③ 관측: `spark-operator` 원소를 빼자 Application만 사라지고 Deployment·CRD·RBAC는 **남았다**.
   단 Application에 `resources-finalizer`가 원래 없어(템플릿이 달지 않는다) 비연쇄 삭제가 기본이므로,
   **이 잔존이 겹 1 덕인지는 가르지 못했다**. 그래서 데이터 층 앱은 여전히 `var.apps`에서 **빼지 않는다**.
-- SeaweedFS의 PVC는 StatefulSet `volumeClaimTemplates`가 만들며 기본 보존(Retain)이다 — ArgoCD 추적 대상이 아니다.
+- SeaweedFS는 클러스터 밖(compose)이라 데이터가 ArgoCD·클러스터 수명과 무관하다. `storage-external`은 Service 1개뿐이다.
 
 ## 5. sync 정책 — 앱 사이는 재시도, 앱 안은 wave
 
@@ -255,7 +255,7 @@ scripts/k8s-secrets.sh                    # ② 이후. 순서 강제 아님 —
 | --- | --- | --- |
 | 설계 | 이 문서 + PR1 구현 계획(PR1 머지와 함께 삭제) | 승인·머지됨 |
 | PR1 | 스택 A·B, appset, ① 오퍼레이터 차트 4종, CI(helm 스텝·재귀 탐색), `k8s-env.sh` 가드, 철거 대상(§3), 문서 갱신 | 정적 게이트 + 관문 ①②③. 머지 시 계획 문서 삭제 |
-| PR2 | ② `seaweedfs`·`catalog-postgres` 차트, `k8s-secrets.sh`, `k8s-poc-storage.sh` 철거, 클러스터 교체 | 관문 ⓪①④ |
+| PR2 | ② `storage-external`·`catalog-postgres` 차트, `k8s-secrets.sh`, `k8s-poc-storage.sh` 철거, 클러스터 교체 | 관문 ⓪①④ |
 | PR3-A | Airflow 커스텀 이미지(`images/airflow/`) + GHCR 발행 워크플로 | 태그 발행 후 인증 없이 pull |
 | PR3-B | ③ Airflow 차트(CNPG 메타DB) + values 태그 갱신(bump) 브랜치 push — Airflow 이행 미션과 합류 | 별도 설계 |
 

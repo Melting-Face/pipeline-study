@@ -92,7 +92,7 @@
 SeaweedFS의 `InternalError`를 체크섬 탓으로 돌렸다가 틀린 기록이 저장소에 남아 있다.
 `k8s/catalog-postgres.yaml`의 Barman WAL 아카이빙 실패에 체크섬 가설로 사이드카 env를
 넣었으나 **증상이 그대로**였고, 진짜 원인은 **볼륨 슬롯 상한**이었다
-(`k8s/seaweedfs.yaml` — `-volume.max`를 올려 해소).
+(당시 K8s 매니페스트에서 `-volume.max`를 올려 해소).
 
 | 관측 | 갈래 |
 | --- | --- |

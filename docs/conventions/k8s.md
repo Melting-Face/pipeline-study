@@ -12,8 +12,8 @@
 
 - **오퍼레이터/컨트롤러**(Spark Operator·Flink Operator): `Deployment`.
 - **컴퓨트 잡**(Spark driver/executor·Flink JM/TM): 오퍼레이터가 CRD(`SparkApplication`·`FlinkDeployment`)로 생성.
-- **상태 저장**(seaweedfs): `StatefulSet` + `PersistentVolumeClaim`(PVC)로 데이터 유실 방지.
-  단 **카탈로그 postgres는 오퍼레이터(CNPG)** 가 관리한다(§12) — 파드·PVC·서비스를 오퍼레이터가 만든다.
+- **상태 저장**: 오브젝트 스토리지(SeaweedFS)는 **클러스터 밖**(compose)이라 클러스터와 수명이 갈린다.
+  클러스터 안의 **카탈로그 postgres는 오퍼레이터(CNPG)** 가 관리한다(§12) — 파드·PVC·서비스를 오퍼레이터가 만든다.
   **`emptyDir`를 상태 저장에 쓰지 않는다** — CNPG 이전 전까지 카탈로그 PG가 `emptyDir`였고,
   파드 재기동만으로 Iceberg 테이블 메타가 전부 소멸하는 상태였다(S3 parquet은 남아 "부분 생존"으로 보인다).
 - 노출은 `Service`(기본 ClusterIP), 외부 진입은 필요 시 `Ingress`. (**Dagster도 클러스터 안**이다, §8)
@@ -405,9 +405,9 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
   jar(`hadoop-aws`·`aws-java-sdk-bundle`)는 러너 이미지에 이미 있어 **설정만** 추가하면 된다.
   S3A는 AWS SDK **v1**이라 SeaweedFS의 aws-chunked 문제(SDK v2 flexible checksum)와는 무관하다.
   참조: `k8s/spark/spark-connect-server.yaml`.
-- **서비스 접근**: **HTTP 계열(웹 UI·REST)은 Ingress**(고정 URL), **그 밖의 데이터 접속(JDBC·S3)은
-  `port-forward`** 를 기본으로 한다. **gRPC는 TLS Ingress로 낸다**(아래 §gRPC).
-  Dagster 리소스(SeaweedFS·카탈로그 DB 엔드포인트)는 이 노출 주소를 `EnvVar`로 주입한다(하드코딩 금지, §4).
+- **서비스 접근**: **HTTP 계열(웹 UI·REST)은 Ingress**, **JDBC는 `port-forward`**, **gRPC는 TLS Ingress**(§gRPC).
+  **S3는 클러스터 밖**이라 호스트는 `localhost:8333` 직결, 파드는 `Service seaweedfs`(ExternalName → kind 별칭
+  `seaweedfs-ext`)로 나간다 — 연결은 스택 A `seaweedfs_network`, 컨테이너 재생성 뒤엔 `storage-up.sh`(§4 EnvVar 주입).
   **Flink는 REST와 UI가 같은 포트(8081)** 라 UI를 Ingress로 낸 순간 **REST도 함께 나간다** —
   `port-forward`가 필요 없고(실측: `curl http://flink.localtest.me:8080/overview` → JSON),
   동시에 **인증 없이 잡 제출·취소가 가능한 면**이 열린다는 뜻이다. kind가 `127.0.0.1`로만 바인딩해

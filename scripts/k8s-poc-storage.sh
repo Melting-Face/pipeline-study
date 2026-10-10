@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PoC 스토리지 배포: Secret(크리덴셜) → SeaweedFS(S3) + Catalog Postgres(CNPG) → warehouse 버킷
+# PoC 스토리지 배포: Secret(크리덴셜) → Catalog Postgres(CNPG). S3는 클러스터 밖(scripts/storage-up.sh)
 # 사용: ./scripts/k8s-poc-storage.sh
 # 전제: CRD 두 개가 먼저 있어야 한다.
 #         clusters.postgresql.cnpg.io  ← CNPG 오퍼레이터 = ArgoCD(gitops/charts/cnpg-operator)
@@ -197,49 +197,9 @@ log "구 catalog-postgres Deployment/Service 정리(있으면)"
 kubectl -n default delete deploy/catalog-postgres --ignore-not-found
 kubectl -n default delete svc/catalog-postgres --ignore-not-found
 
-log "SeaweedFS 배포"
-kubectl apply -f "${REPO_ROOT}/k8s/seaweedfs.yaml"
-kubectl -n default rollout status statefulset/seaweedfs --timeout=180s
-
-# 3) S3 버킷 생성(멱등) — weed shell은 filer 자동발견 실패가 있어 -filer 명시
-#    파드가 Ready여도 filer의 gRPC(포트+10000)는 아직 안 열려 있을 수 있다
-#    (2026-08-19 실측: `dial tcp [::1]:18888 connect: connection refused`) → 재시도한다.
-#    버킷은 3개다: `warehouse`(Iceberg) / `pg-backup`(카탈로그 PG 백업) /
-#    `dagster-logs`(run step 로그 — S3ComputeLogManager).
-#    백업을 안 켜도 빈 버킷 하나는 비용이 없으므로 항상 만든다(분기 없는 단순함).
-#    🔴 분리하는 이유: 같은 버킷에 두면 Iceberg `remove_orphan_files`의 나열 대상과 섞인다.
-#    compute log는 특히 그렇다 — 카탈로그가 모르는 파일이라 orphan으로 지워질 수 있다.
-#    🔴 **재시도 소진은 에러다.** 종전에는 12회가 모두 실패해도 루프가 그냥 끝나 §4·§5로
-#    진행했다 — `warehouse` 버킷 없이 Iceberg가 올라가는데 스크립트는 성공으로 보였다(fail-open).
-#    재시도는 「filer gRPC가 아직 안 열렸다」를 흡수하려는 것이지 **실패를 삼키려는 것이 아니다.**
-#    ⚠️ **이 게이트가 닫는 것은 「프로세스가 실패한다」 축까지다.** 판정 근거는 파이프 끝단
-#    `weed shell`의 종료코드인데, REPL이라 **명령이 실패해도 메시지만 찍고 0으로 끝날 수 있다**.
-#    그러면 버킷이 없는데도 `break`로 빠져 「준비 완료」가 찍힌다 — 그 축은 **`미확인`이다**
-#    (종료코드 의미론이 저장소에 기록된 바 없고 클러스터 미기동. 2026-09-21 security 지적).
-#    닫으려면 종료코드가 아니라 **상태**를 봐야 한다(`s3.bucket.list` 대조). 그건 클러스터에서
-#    출력 형식을 확인한 뒤 할 일이라 여기 넣지 않았다 — **검증 못 한 파서를 차단 게이트로
-#    승격시키는 것**이 바로 이 지적의 요지이기 때문이다.
-for bucket in warehouse pg-backup dagster-logs; do
-    log "${bucket} 버킷 생성"
-    bucket_ready=""
-    for attempt in $(seq 1 12); do
-        if kubectl -n default exec statefulset/seaweedfs -- \
-            sh -c "echo 's3.bucket.create -name ${bucket}' | weed shell -master localhost:9333 -filer localhost:8888" \
-            >/dev/null 2>&1; then
-            log "${bucket} 버킷 준비 완료 (시도 ${attempt})"
-            bucket_ready="yes"
-            break
-        fi
-        sleep 5
-    done
-    if [ -z "${bucket_ready}" ]; then
-        printf '버킷 생성 실패: %s (12회 재시도 60초 소진)\n' "${bucket}" >&2
-        printf 'SeaweedFS filer가 안 떴거나 weed shell이 실패한다. 아래로 원인을 본다:\n' >&2
-        printf '  kubectl -n default get pod -l app=seaweedfs\n' >&2
-        printf '  kubectl -n default logs statefulset/seaweedfs --tail=50\n' >&2
-        exit 1
-    fi
-done
+# 3) S3(SeaweedFS)는 클러스터 밖이다 — compose 정본을 `./scripts/storage-up.sh`가 띄우고 버킷 3개
+#    (warehouse·pg-backup·dagster-logs)도 거기서 만든다. 파드는 Service seaweedfs(ExternalName,
+#    gitops/charts/storage-external)로 닿으므로 여기서는 배포하지 않는다. 키는 위 lakehouse-creds 와 한 벌.
 
 # 4) 백업 구성 — ObjectStore + ScheduledBackup.
 #    🔴 **Cluster CR의 `spec.plugins` 배선과 한 벌이다.** 배선이 없으면 적용하지 않는다 —
