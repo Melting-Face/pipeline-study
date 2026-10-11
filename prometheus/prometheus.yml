@@ -8,4 +8,4 @@ scrape_configs:
     static_configs:
       - targets:
           - "prometheus:9090"
-          - "seaweedfs:9324"
+          - "host.containers.internal:9324"

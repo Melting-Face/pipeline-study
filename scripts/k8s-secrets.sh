@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 클러스터 Secret 생성(없을 때만) — ArgoCD 밖에 두는 유일한 층(비밀값은 Git에 두지 않는다)
 # 사용: ./scripts/k8s-secrets.sh        (클러스터 생성 후, terraform/platform apply 전후 어느 때든 멱등)
-#   lakehouse-creds  : S3 접속 키 — Spark·Flink 파드가 읽는다. 값은 `.env`의 ICEBERG_S3_* (storage-up.sh와 한 벌)
+#   lakehouse-creds  : S3 접속 키 — Spark·Flink 파드가 읽는다. 값은 `.env`의 ICEBERG_S3_* (스택 A의 TF_VAR_s3_*와 한 벌)
 #   catalog-pg-app   : 카탈로그 Postgres 계정 — CNPG `bootstrap.initdb.secret`·`managed.roles`가 읽는다
 #   physionet-creds  : 원천 다운로드 계정(값이 있을 때만)
 # 카탈로그 Cluster CR 자체는 ArgoCD 앱 gitops/charts/catalog-postgres 가 만든다. Secret이 늦으면 CNPG가 기다린다.
@@ -25,7 +25,7 @@ env_value() {
     printf '%s' "${raw%\"}"
 }
 
-# S3 키 — 단일 출처는 `.env`의 ICEBERG_S3_*(compose SeaweedFS의 s3.json도 이 값으로 만든다).
+# S3 키 — 단일 출처는 `.env`의 ICEBERG_S3_*(스택 A가 TF_VAR_s3_*로 같은 값을 받는다).
 # 기본값을 두지 않는다: 아무 값이나 넣으면 Secret은 생기고 파드는 뜨는데 `load_table`에서
 # ACCESS_DENIED로 죽는 부분 성공이 된다. 환경변수로 넘기면 그 값이 이긴다.
 S3_ACCESS_KEY="${S3_ACCESS_KEY:-$(env_value ICEBERG_S3_ACCESS_KEY)}"
@@ -87,4 +87,4 @@ else
     log "Secret 건너뜀: physionet-creds (PHYSIONET_USERNAME/PASSWORD 미설정)"
 fi
 
-log "완료. 카탈로그 Cluster는 ArgoCD(catalog-postgres)가, S3는 클러스터 밖 storage-up.sh가 맡는다"
+log "완료. 카탈로그 Cluster는 ArgoCD(catalog-postgres)가, S3는 클러스터 밖 스택 A(terraform/cluster/kind)가 맡는다"

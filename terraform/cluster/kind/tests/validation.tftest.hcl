@@ -11,6 +11,26 @@ override_data {
   }
 }
 
+# docker 프로바이더는 podman 소켓에 붙으므로 테스트에서는 접속하지 않도록 목으로 바꾼다.
+mock_provider "docker" {}
+
+# worktree 판정도 호스트 체크아웃에 의존하지 않게 "루트 체크아웃"으로 고정한다.
+override_data {
+  target = data.external.checkout
+  values = {
+    result = {
+      linked = "false"
+    }
+  }
+}
+
+# 필수 변수(기본값 없음)의 테스트용 값 — 실제 키가 아니다.
+variables {
+  container_host = "unix:///tmp/podman.sock"
+  s3_access_key  = "test-access"
+  s3_secret_key  = "test-secret"
+}
+
 run "reject_forbidden_http_port" {
   command = plan
 
@@ -77,4 +97,36 @@ run "no_extra_mounts" {
     condition     = length(kind_cluster.this.kind_config[0].node[0].extra_mounts) == 0
     error_message = "extra_mounts 가 다시 생겼다 — hosts.toml 은 registry_certs(local-exec)로 쓴다"
   }
+}
+
+# 빈 키로 SeaweedFS 가 뜨면 인증 없는 S3 가 된다 — plan 단계(변수 validation)에서 멈춰야 한다.
+run "reject_empty_access_key" {
+  command = plan
+
+  variables {
+    s3_access_key = ""
+  }
+
+  expect_failures = [var.s3_access_key]
+}
+
+run "reject_empty_secret_key" {
+  command = plan
+
+  variables {
+    s3_secret_key = ""
+  }
+
+  expect_failures = [var.s3_secret_key]
+}
+
+# docker 프로바이더는 podman 소켓(unix://)으로만 붙는다 — 원격 데몬(tcp://)으로 새는 것을 막는다.
+run "reject_non_unix_host" {
+  command = plan
+
+  variables {
+    container_host = "tcp://x"
+  }
+
+  expect_failures = [var.container_host]
 }

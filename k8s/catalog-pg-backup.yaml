@@ -1,7 +1,7 @@
 # 카탈로그 Postgres 백업 — Barman Cloud 플러그인(CNPG-I) + SeaweedFS(S3)
 #
 # 전제: Barman Cloud 플러그인 + cert-manager (플러그인 설치 주체는 철거됨 — 재활성 시 차트에 추가)
-#       `scripts/storage-up.sh`가 `pg-backup` 버킷을 만든다(클러스터 밖 SeaweedFS).
+#       스택 A의 `terraform_data.seaweedfs_buckets`가 `pg-backup` 버킷을 만든다(클러스터 밖 SeaweedFS, `terraform apply`).
 # 참조: Cluster(gitops/charts/catalog-postgres/templates/cluster.yaml)의 `spec.plugins[].parameters.barmanObjectName`
 #       ⚠️ **그 참조는 현재 꺼져 있다** — `spec.plugins` 블록이 주석 처리돼 있어
 #       이 파일이 적용돼도 WAL 아카이빙·백업은 돌지 않는다(원인 미규명 — 해당 파일 §plugins).

@@ -29,7 +29,7 @@
 
 전제:
     - 리포 루트 .env에 AWS_ACCESS_KEY_ID/SECRET/DEFAULT_REGION 존재
-    - SeaweedFS S3 엔드포인트 접근 가능(compose 또는 port-forward)
+    - SeaweedFS S3 엔드포인트 접근 가능(스택 A 컨테이너, localhost:8333)
 
 실행(의존성은 위 PEP 723 블록에 선언 — uv가 자동 provisioning):
     uv run scripts/upload_raw_to_seaweedfs.py -n ./data/raw      # 미리보기(먼저 할 것)

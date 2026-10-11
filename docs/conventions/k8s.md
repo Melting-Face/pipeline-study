@@ -407,7 +407,7 @@ Dagster 쪽 다이얼은 자원이 아니라 `max_concurrent_runs`이며 daemon 
   참조: `k8s/spark/spark-connect-server.yaml`.
 - **서비스 접근**: **HTTP 계열(웹 UI·REST)은 Ingress**, **JDBC는 `port-forward`**, **gRPC는 TLS Ingress**(§gRPC).
   **S3는 클러스터 밖**이라 호스트는 `localhost:8333` 직결, 파드는 `Service seaweedfs`(ExternalName → kind 별칭
-  `seaweedfs-ext`)로 나간다 — 연결은 스택 A `seaweedfs_network`, 컨테이너 재생성 뒤엔 `storage-up.sh`(§4 EnvVar 주입).
+  `seaweedfs-ext`)로 나간다 — 컨테이너·별칭은 스택 A `docker_container.seaweedfs` 소유(클러스터 재생성 때 함께 교체).
   **Flink는 REST와 UI가 같은 포트(8081)** 라 UI를 Ingress로 낸 순간 **REST도 함께 나간다** —
   `port-forward`가 필요 없고(실측: `curl http://flink.localtest.me:8080/overview` → JSON),
   동시에 **인증 없이 잡 제출·취소가 가능한 면**이 열린다는 뜻이다. kind가 `127.0.0.1`로만 바인딩해

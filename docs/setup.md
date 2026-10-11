@@ -107,13 +107,13 @@ kubectl get secret spark-grpc-tls  -o jsonpath='{.data.ca\.crt}'      | base64 -
 | 층 | 만드는 주체 | 단축 |
 | --- | --- | --- |
 | ① VM · ② 레지스트리 | `podman machine` · `podman run` | `scripts/k8s-up.sh` |
-| ②' 외부 S3(SeaweedFS) | `podman compose --profile storage` | `scripts/storage-up.sh` |
-| ③ 클러스터 | Terraform 스택 A `terraform/cluster/kind` | — |
+| ③ 클러스터 · S3(SeaweedFS) | Terraform 스택 A `terraform/cluster/kind` | — |
 | Secret | `kubectl create secret` | `scripts/k8s-secrets.sh` |
 | ④ 플랫폼 | Terraform 스택 B `terraform/platform` | — |
 | ⑤ 앱 | ArgoCD(`gitops/charts/`) | — |
 
-- Terraform이 관리하는 것은 ③과 ④뿐이다. ②'는 클러스터와 수명이 독립이라 ③을 다시 만들어도 데이터가 남는다.
+- Terraform이 관리하는 것은 ③과 ④뿐이다. S3 컨테이너는 ③에 속하지만 데이터 `seaweedfs/data`는 호스트 바인드라
+  ③을 destroy하거나 다시 만들어도 남는다. 스택 A는 메인(루트) 체크아웃에서만 apply한다.
 
 ### 올리기 (단축 경로)
 
@@ -121,9 +121,9 @@ kubectl get secret spark-grpc-tls  -o jsonpath='{.data.ca\.crt}'      | base64 -
 
 ```shell
 scripts/k8s-up.sh
-scripts/storage-up.sh                     # 클러스터보다 먼저(스택 A가 kind 네트워크에 붙인다)
 
-terraform -chdir=terraform/cluster/kind init
+# 스택 A 변수 3개(S3 키 2개 · podman 소켓) — 값을 화면에 찍지 않는 준비 명령은 setup/local-k8s.md 2단계
+terraform -chdir=terraform/cluster/kind init                # 클러스터 + SeaweedFS 컨테이너 + 버킷
 terraform -chdir=terraform/cluster/kind apply \
   -var cluster_name=lakehouse-next -var http_host_port=8082 -var https_host_port=8445
 export KUBECONFIG=~/.kube/lakehouse-next.config
@@ -209,7 +209,7 @@ Dagster는 클러스터에 배포하지 않고 호스트에서 돌린다. 메타
 ([operations.md](operations.md) §1-2).
 
 ```shell
-kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 별도 터미널 (S3는 storage-up.sh로 직결)
+kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 별도 터미널 (S3는 스택 A 컨테이너에 직결)
 
 (cd dagster/dockerfile.d/src && DAGSTER_HOME="$PWD" uv run dg dev)   # http://localhost:3000
 ```
@@ -218,7 +218,9 @@ kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 별도 터미널 (S3
   compose `--profile host-dagster`와 호스트 `dg dev`를 섞지 않는다.
 - compose는 기본 `up`으로 아무것도 띄우지 않는다. 필요한 profile만 켠다:
   `host-dagster`(webserver·daemon·postgres) · `legacy-meta`(postgres) · `legacy-sql`(trino) ·
-  `storage`(seaweedfs — `scripts/storage-up.sh`로 띄운다) · `monitoring`(prometheus).
+  `monitoring`(prometheus). S3(SeaweedFS)는 compose가 아니라 스택 A가 띄우므로 **스택 A를 먼저 apply**한다 —
+  compose 컨테이너는 `host.containers.internal:<게시 포트>`로 닿는다(podman 전제, Docker Desktop은
+  `host.docker.internal`).
 
 ```shell
 podman compose --profile legacy-sql up -d trino    # Trino 값 대조가 필요할 때만
@@ -316,7 +318,7 @@ kubectl port-forward svc/spark-connect 15002:15002   # 별도 터미널
 | 타깃 | 전제 |
 | --- | --- |
 | `spark_connect`(기본) | Spark Connect `--replicas=1` + TLS Ingress 또는 15002 port-forward. `spark.remote` 외 conf를 넣지 않는다 |
-| `spark_session` | 15432 port-forward + `storage-up.sh` + `ICEBERG_JDBC_URI`·`ICEBERG_PG_USER`·`ICEBERG_PG_PASSWORD`·`ICEBERG_WAREHOUSE`·`ICEBERG_S3_ENDPOINT` |
+| `spark_session` | 15432 port-forward + 스택 A(S3) + `ICEBERG_JDBC_URI`·`ICEBERG_PG_USER`·`ICEBERG_PG_PASSWORD`·`ICEBERG_WAREHOUSE`·`ICEBERG_S3_ENDPOINT` |
 | `dev` · `prod` | Trino — `podman compose --profile legacy-sql up -d trino` |
 | `spark_thrift` | 배포 안 됨. `dbt-spark[PyHive]` 선설치 필요 |
 

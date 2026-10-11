@@ -39,9 +39,10 @@ path-style·카탈로그 정합 규칙은 [../conventions/k8s.md](../conventions
 
 ## 이 프로젝트에서의 위치 — ✅ 채택 (SeaweedFS)
 
-현행은 **SeaweedFS**이고 **클러스터 밖 compose**(profile `storage`)에 선다 — 실무에서 오브젝트
-스토리지가 클러스터 밖 관리형 서비스이고 클러스터는 엔드포인트와 자격증명으로만 닿는 형태를 모사한다.
-기동·키 배선·버킷·네트워크 연결은 `./scripts/storage-up.sh`가 맡는다.
+현행은 **SeaweedFS**이고 **클러스터 밖 컨테이너**로 선다 — 실무에서 오브젝트 스토리지가 클러스터 밖
+관리형 서비스이고 클러스터는 엔드포인트와 자격증명으로만 닿는 형태를 모사한다. 컨테이너·키 배선·버킷·
+네트워크 연결은 Terraform 스택 A(`terraform/cluster/kind`)의 `docker_container.seaweedfs`와
+`terraform_data.seaweedfs_buckets`가 맡고, 데이터는 호스트 바인드 마운트 `seaweedfs/data`에 있다.
 
 파드는 종전과 같은 `http://seaweedfs:8333`을 쓴다 — 그 이름을 `Service seaweedfs`(ExternalName,
 `gitops/charts/storage-external`)가 받아 kind 네트워크 별칭 `seaweedfs-ext`로 넘긴다. 별칭을 Service와
@@ -50,6 +51,18 @@ path-style·카탈로그 정합 규칙은 [../conventions/k8s.md](../conventions
 **정본이 K8s → compose로 되돌아왔다.** 종전 결정은 「한 플랫폼 표준화」로 K8s StatefulSet을 정본으로
 두었으나, 수명주기를 클러스터와 묶으면 클러스터를 다시 만들 때 레이크도 함께 사라진다(실제로 그렇게 소멸했다).
 이력은 [../redesign.md](../redesign.md), 설계는 `docs/superpowers/specs/`의 외부 스토리지 설계가 갖는다.
+
+**그다음 소유자가 compose → Terraform 스택 A로 바뀌었다(결정 E1 번복).** 외부 스토리지 설계의 E1은
+「정본 = compose, 수명주기는 클러스터와 독립」이었다. 번복 이유는 **테스트 환경의 로컬 인프라 층을 IaC로
+일원화**하는 것이다 — 컨테이너 설정이 `plan`에 드러나고, 「S3 먼저 → 클러스터 → kind 네트워크 연결」 같은
+순서 규칙을 사람(기동 스크립트) 대신 의존 그래프가 지킨다.
+
+- **지키는 것**: 수명 독립의 실익이던 **데이터 보존**. 데이터는 바인드 마운트라 컨테이너가 교체되거나
+  스택 A를 destroy해도 남고, Terraform은 그 디렉터리를 만들지도 지우지도 않는다. 버킷도 생성만 한다.
+- **잃는 것**: **컨테이너**가 클러스터와 함께 재생성된다(클러스터를 다시 만들면 새 kind 네트워크에 별칭을
+  붙이려고 교체된다). 그동안 S3가 잠시 내려간다 — 테스트 환경이라 수용했다.
+- S3가 클러스터 밖에 서는 것(파드는 `ExternalName`으로 닿는다)은 그대로다. 설계는
+  `docs/superpowers/specs/`의 SeaweedFS Terraform 이관 설계가 갖는다.
 
 **오퍼레이터는 미채택 🔎다.** 클러스터 밖이라 대상이 아니다.
 

@@ -45,7 +45,8 @@ S3_ENDPOINT = os.environ.get("ICEBERG_S3_ENDPOINT", "http://seaweedfs:8333")
 #
 # 🔴 **엔드포인트와 자격증명은 한 쌍으로 움직인다.**
 # 엔드포인트만 `ICEBERG_S3_ENDPOINT`로 바꾸고 키는 공용 `AWS_*`를 쓰면, 키가 SeaweedFS의
-# `s3.json`(storage-up.sh가 `ICEBERG_S3_*`로 생성)과 어긋나 **카탈로그 나열은 되는데
+# `s3.json`(스택 A `docker_container.seaweedfs`가 `TF_VAR_s3_*`=`ICEBERG_S3_*`로
+# 생성)과 어긋나 **카탈로그 나열은 되는데
 # `load_table`에서 `ACCESS_DENIED`** 로 죽는다(2026-08-19 실측).
 # 부분 성공이라 원인을 오해하기 쉬워 전용 키를 둔다(엔드포인트와 같은 접두어).
 # 미설정이면 공용 `AWS_*`로 폴백해 compose 단독 구성의 기존 동작을 보존한다.

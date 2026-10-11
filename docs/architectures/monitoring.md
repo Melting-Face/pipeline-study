@@ -14,12 +14,14 @@
 ## 이 프로젝트에서의 위치 — 🔎 미채택 (선언 잔존 · 규칙 0건)
 
 **상태 마커 근거**: `compose.yml`에 Prometheus **정의가 있다**. 그래서 ✅(채택)로 읽히기 쉽다.
-`--profile monitoring`으로 띄우면 `seaweedfs`가 함께 떠(의존 profile 상속) `-metricsPort=9324`로 응답한다.
+`--profile monitoring`으로 띄우면 `host.containers.internal:9324`로 스택 A의 `seaweedfs`(`-metricsPort=9324`)를
+긁는다 — 그 컨테이너는 compose가 띄우지 않으므로 스택 A가 먼저 apply돼 있어야 응답이 온다.
 **수집기가 죽어 있는 상태가 아니다.**
 
 **수집 대상과 정본은 다시 일치한다.** 한동안 오브젝트 스토리지 정본이 K8s StatefulSet이었고 그쪽엔
 메트릭 포트가 없어, 수집기가 **살아 있는 채로 정본이 아닌 compose 사본을 보던** 시기가 있었다(아래 §운영 메모).
-정본이 클러스터 밖 compose `seaweedfs`로 돌아와 그 갈림은 해소됐다 — 다만 **해소된 것은 대상 정합 하나**다.
+정본이 클러스터 밖 컨테이너 `seaweedfs`(지금은 Terraform 스택 A 소유)로 돌아와 그 갈림은 해소됐다 — 수집기는
+`host.containers.internal:9324`로 그 컨테이너를 본다. 다만 **해소된 것은 대상 정합 하나**다.
 알림 규칙(`rule_files`)은 0건이고 상시 기동도 아니어서, 켜도 **아무것도 알리지 않는다**.
 그래서 표기는 **🔎 미채택 + "선언은 남아 있고 규칙이 없다"** 다
 ([../conventions/monitoring.md](../conventions/monitoring.md) §2 — 수집기가 만들어내는 거짓 신호).
@@ -92,7 +94,7 @@ Robusta의 기존 Prometheus 연동 모드 파드 차분 · `grafana/loki`와 `g
 
 ## 운영 메모
 
-- 🔴 **수집 대상과 정본이 갈렸던 기록**(정본이 compose로 돌아와 지금은 해소). SeaweedFS 메트릭
+- 🔴 **수집 대상과 정본이 갈렸던 기록**(정본이 클러스터 밖 컨테이너로 돌아와 지금은 해소). SeaweedFS 메트릭
   (`-metricsPort=9324`)은 compose 정의에만 있었고, 정본이 K8s StatefulSet이던 동안 그쪽엔 인자도 포트도
   없었다. 수집기는 응답을 받았지만 그 응답은 레거시 쪽에서 왔다.
   **이것은 이 저장소에서 두 번, 방향만 바꿔 실현된 실패 양식이다.**

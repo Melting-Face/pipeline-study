@@ -43,6 +43,10 @@
   `.gitignore`로 강제하고, 예시는 `terraform.tfvars.example`만 커밋한다.
 - 인증·비밀값은 **변수/환경변수로 주입**한다(하드코딩 금지, [operations.md](../operations.md) 전파 원칙).
 - 장기적으로 **원격 backend**(예: OCI Object Storage) + state 암호화를 검토한다([security.md](../security.md)).
+- **state의 평문 키는 수용한다**(스택 A의 S3 키 `s3_access_key`·`s3_secret_key`) — `sensitive`는 `plan`/출력만
+  가리고 state에는 평문이다(컨테이너에 주입하는 `upload` 내용 포함).
+  - **수용 근거**: 로컬 테스트 환경 · state는 로컬 백엔드이고 `**/*.tfstate*`가 gitignore · 키는 로컬 SeaweedFS 전용.
+  - **재검토 조건**: state를 원격 백엔드로 옮길 때 · 같은 키를 로컬 밖에서 쓰게 될 때 · state를 공유하게 될 때.
 
 ### 🔴 state는 **정규 워크트리에서만** 다룬다 (로컬 backend의 함정)
 
@@ -54,9 +58,11 @@ backend 블록이 없으면 state는 **실행 디렉터리**에 놓인다. 그�
 ⇒ `terraform init`·`plan`·`apply`는 **정규 워크트리(저장소 루트)에서만** 실행한다. 병렬 세션용
 워크트리에서는 Terraform을 돌리지 않는다.
 
-**`.gitignore`가 막아 주지 않는다** — 오히려 gitignore 때문에 생기는 문제다. 기계적 방어가 없으니
-규율로 남으며, 대신 사고를 조기에 드러내는 성질이 있다: 다른 트리에서 apply하면 빈 state로
-시작해 **"already exists"로 에러를 내고 멈춘다**(조용히 갈리지 않는다).
+**`.gitignore`가 막아 주지 않는다** — 오히려 gitignore 때문에 생기는 문제다. 기계적 방어는 스택 A 하나다 —
+linked worktree에서 apply하면 `docker_container.seaweedfs`의 precondition이 멈춘다(데이터 기본 경로
+`seaweedfs/data`가 체크아웃에 묶여 빈 레이크가 조용히 뜨기 때문이다). 나머지는 규율로 남으며,
+대신 사고를 조기에 드러내는 성질이 있다: 다른 트리에서 apply하면 빈 state로 시작해
+**"already exists"로 에러를 내고 멈춘다**(조용히 갈리지 않는다).
 
 옮겨야 한다면 backend가 같은 local이라 **파일을 옮기고 `plan`으로 `No changes.`를 확인**하면
 된다(`init -migrate-state`는 backend 종류가 바뀔 때만 필요하다). 옮긴 뒤 원본은 지우기 전에

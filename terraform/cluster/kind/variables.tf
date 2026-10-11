@@ -76,3 +76,48 @@ variable "kubeconfig_path" {
   type        = string
   default     = null
 }
+
+variable "container_host" {
+  description = <<-EOT
+    docker 프로바이더가 붙을 컨테이너 엔진 소켓(unix://...). podman machine 의 소켓 경로는
+    `podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}'` 로 얻는다.
+    기본값을 두지 않는다 — 소켓 경로는 머신마다 달라 추측값이 다른 엔진에 붙는 것을 막는다.
+  EOT
+  type        = string
+
+  validation {
+    condition     = startswith(var.container_host, "unix://")
+    error_message = "container_host 는 unix:// 로 시작하는 로컬 소켓이어야 한다 — 원격 데몬(tcp:// 등)은 쓰지 않는다."
+  }
+}
+
+variable "s3_access_key" {
+  description = "SeaweedFS S3 접근 키(s3.json 의 lakehouse identity). .env 의 ICEBERG_S3_ACCESS_KEY 와 한 벌이다."
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = length(var.s3_access_key) > 0
+    error_message = "s3_access_key 가 비었다 — 빈 키로 SeaweedFS 를 띄우지 않는다(TF_VAR_s3_access_key 로 주입)."
+  }
+}
+
+variable "s3_secret_key" {
+  description = "SeaweedFS S3 비밀 키(s3.json 의 lakehouse identity). .env 의 ICEBERG_S3_SECRET_KEY 와 한 벌이다."
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = length(var.s3_secret_key) > 0
+    error_message = "s3_secret_key 가 비었다 — 빈 키로 SeaweedFS 를 띄우지 않는다(TF_VAR_s3_secret_key 로 주입)."
+  }
+}
+
+variable "seaweedfs_data_dir" {
+  description = <<-EOT
+    SeaweedFS 데이터 바인드 마운트의 호스트 경로. null 이면 저장소 루트의 seaweedfs/data 로 채운다
+    (main.tf 의 local.seaweedfs_data_dir). destroy 뒤에도 데이터가 남는 것은 이 경로가 컨테이너 밖에 있어서다.
+  EOT
+  type        = string
+  default     = null
+}
