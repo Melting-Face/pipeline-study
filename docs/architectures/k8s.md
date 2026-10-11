@@ -14,8 +14,9 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
   Dagster는 **클러스터에 배포하지 않는다**(호스트 실행, **Airflow로 대체 예정**)
   — 오케스트레이터↔컴퓨트 분리.
   전면 이행은 **PoC 성공을 전제**로 단계적으로 진행한다. 전체 로드맵은 [../redesign.md](../redesign.md).
-- **로컬 배포판**: **kind on Podman(rootful)** + 로컬 레지스트리. 호스트 Dagster는 kubeconfig로
-  클러스터 API에 접근한다(코드에 in-cluster ServiceAccount 분기가 남아 있으나 현행 경로가 아니다).
+- **로컬 배포판(dev 환경, 운영 아님)**: **kind on Podman(rootful)** + 로컬 레지스트리.
+  호스트 Dagster는 kubeconfig로 클러스터 API에 접근한다
+  (코드에 in-cluster ServiceAccount 분기가 남아 있으나 현행 경로가 아니다).
 - **핵심 컴포넌트**: **Spark Operator**(배치)·**Flink Operator**(스트림)로
   `SparkApplication`·`FlinkDeployment`(CRD)를 실행하고,
   **CloudNativePG**(카탈로그 Postgres)로 `Cluster`(CRD) 관리,
