@@ -228,7 +228,7 @@
   `.ipynb_checkpoints/` 무시로 이중 방어한다. 상세 [`notebooks/README.md`](notebooks/README.md).
 ### 인프라 · IaC
 
-- **로컬 K8s(현행 검증 환경)**: **kind on Podman**(rootful 머신 필수) 클러스터 `lakehouse` +
+- **로컬 K8s(dev 환경 — 운영 아님)**: **kind on Podman**(rootful 머신 필수) 클러스터 `lakehouse` +
   로컬 레지스트리 `localhost:5001`. 기동은 `k8s-up.sh` → **`terraform apply`**(`cluster/kind`) → **`terraform apply`**
   (`platform`: ArgoCD가 `gitops/charts/`를 수렴, 설계 `docs/argocd-gitops.md`). **Dagster는 미배포**(호스트)다.
   규칙 [`docs/conventions/k8s.md`](docs/conventions/k8s.md), 예산·배분 [`docs/resource-sizing.md`](docs/resource-sizing.md).
