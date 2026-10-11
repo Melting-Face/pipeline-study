@@ -9,32 +9,34 @@ Dagster는 **자산(asset) 중심 오케스트레이터**다. "어떤 태스크�
 
 - 이 저장소 고정 버전: **dagster 1.12.12 / dagster-* 0.28.12**
 
-## 이 프로젝트에서의 위치 — ✅ 채택 (in-cluster)
+## 이 프로젝트에서의 위치 — 호스트 실행 (in-cluster 판본은 철거된 이력)
 
-> ⚠️ **ArgoCD 전환으로 새 클러스터에는 배포하지 않는다**([../argocd-gitops.md](../argocd-gitops.md) D6 —
-> Airflow 전환 예정, `k8s/dagster/` 삭제). 아래는 **배치 결정과 대안 비교의 기록**이며, 현행 실행 경로는
-> 호스트 Dagster(`host-dagster` profile)다.
+> ⚠️ **현행은 호스트 Dagster**(`host-dagster` profile)이고 **Airflow로 대체 예정**이다.
+> in-cluster 판본은 ArgoCD 전환으로 철거됐다([../argocd-gitops.md](../argocd-gitops.md) D6 — `k8s/dagster/` 삭제).
+> 이 절 아래는 **in-cluster 배치 결정과 대안 비교의 이력**이다 — 현행 서술로 읽지 않는다.
 
-**오케스트레이터도 클러스터 워크로드다**. webserver·daemon을 kind 클러스터
-`lakehouse`의 Deployment 2개로 두고 UI는 `http://dagster.localtest.me:8080` Ingress로 낸다.
-Spark·Flink·SeaweedFS·CNPG와 **같은 층**에 놓여, 컨트롤 플레인만 다른 실행 환경에 있던 상태가 끝났다.
+**in-cluster 판본에서는 오케스트레이터도 클러스터 워크로드였다**. webserver·daemon을 구 kind 클러스터
+`lakehouse`의 Deployment 2개로 두고 UI는 `http://dagster.localtest.me:8080` Ingress로 냈다.
+Spark·Flink·SeaweedFS·CNPG와 **같은 층**에 놓여 컨트롤 플레인만 다른 실행 환경에 있던 상태가
+끝났었으나, 철거로 **다시 호스트로 돌아왔다**.
 
-### 무엇이 바뀌었나 — 우회 경로의 소멸
+### 무엇이 바뀌었었나 — 우회 경로의 소멸(이력)
 
-호스트 Dagster 시절에는 클러스터에 닿기 위해 **port-forward**(Spark Connect 15002 · 카탈로그 PG 15432 —
-S3는 이제 클러스터 밖 compose라 `localhost:8333` 직결)와 **TLS Ingress + 로컬 CA 신뢰
-주입**(`GRPC_DEFAULT_SSL_ROOTS_FILE_PATH`)이 필요했다.
-in-cluster에서는 이 전부가 **서비스 DNS 직결**로 대체된다.
+호스트 Dagster는 클러스터에 닿기 위해 **port-forward**(Spark Connect 15002 · 카탈로그 PG 15432 —
+S3는 클러스터 밖 compose라 `localhost:8333` 직결)와 **TLS Ingress + 로컬 CA 신뢰
+주입**(`GRPC_DEFAULT_SSL_ROOTS_FILE_PATH`)이 필요하다.
+in-cluster 판본에서는 이 전부가 **서비스 DNS 직결**로 대체됐었다. 현행 실행 경로는 아래 표의 **왼쪽 열**이고,
+값(포트·호스트)의 정본은 [../operations.md](../operations.md) §1-2다 — 표는 철거 당시의 대비 기록이다.
 
-| 축 | 호스트 Dagster | in-cluster |
+| 축 | 호스트 Dagster | in-cluster (철거) |
 | --- | --- | --- |
 | Spark Connect | `sc://spark-grpc.localtest.me:8443/;use_ssl=true` + CA 파일 | `sc://spark-connect:15002` (평문) |
 | S3 | `http://localhost:8333` (스택 A 컨테이너 직결) | `http://seaweedfs:8333` (ExternalName → 클러스터 밖) |
 | 카탈로그 PG | `localhost:15432` (port-forward) | `catalog-postgres-rw:5432` |
 | 메타 PG | compose `postgres` | 같은 CNPG의 `dagster` DB |
 
-평문 gRPC가 된 것은 **보안이 낮아진 게 아니라 구간이 사라진 것**이다 — TLS는 호스트↔클러스터
-구간의 통제였고 in-cluster에는 그 구간 자체가 없다.
+in-cluster에서 평문 gRPC가 된 것은 **보안이 낮아진 게 아니라 구간이 사라진 것**이었다 — TLS는 호스트↔클러스터
+구간의 통제이고 in-cluster에는 그 구간 자체가 없었다. 호스트로 돌아온 현행은 그 구간이 다시 있으므로 TLS가 전제다.
 
 ### 대안 비교
 
@@ -57,7 +59,8 @@ Dagster에는 오퍼레이터라는 층이 아예 없어 **워크로드 축 하�
 
 ### 원격 컴퓨트 트리거 — 경로가 셋이고 이유가 다 다르다
 
-`DefaultRunLauncher`라 **run 실행 자체에는 k8s API가 필요 없다**(run = daemon 파드의 서브프로세스).
+`DefaultRunLauncher`라 **run 실행 자체에는 k8s API가 필요 없다**
+(run = daemon의 서브프로세스 — in-cluster 판본에선 daemon 파드).
 API 권한이 필요한 것은 **원격 컴퓨트를 부르는 자산들**뿐이고, 그 호출 방식이 셋으로 갈린다.
 
 | 경로 | 수단 | 왜 이 형태인가 |
@@ -74,16 +77,20 @@ Job/파드 형태로 만들지 않는다"*)와 정면 충돌한다. [redesign.md
 ⚠️ **Flink 경로만 세션 클러스터의 수명까지 진다** — 자산의 `finally`가 `teardown()`을 부른다.
 Spark 배치는 잡 1회가 곧 CR 1개라 그 축이 없다. **같은 "제출·폴링"으로 뭉쳐 읽지 않는다.**
 
-권한은 Role **`dagster-compute-submit`** 하나에 모인다(철거된 `k8s/dagster/dagster-rbac.yaml` — git 이력).
+in-cluster 판본에서 권한은 Role **`dagster-compute-submit`** 하나에 모였다
+(철거된 `k8s/dagster/dagster-rbac.yaml` — git 이력).
 🔴 그중 **`pods/exec`가 가장 넓다** — Flink 파드 안에서 임의 명령을 실행할 수 있다는 뜻이고,
-편의가 아니라 위 §C5 조건 2의 **대가**다. 범위는 `default` 네임스페이스 Role에 갇혀 있다(ClusterRole 아님).
+편의가 아니라 위 §C5 조건 2의 **대가**다. 범위는 `default` 네임스페이스 Role에 갇혀 있었다(ClusterRole 아님).
 
 ## 운영 메모
+
+> in-cluster 판본 운영 중 얻은 기록이다. 실행 위치에 묶인 서술은 「in-cluster 판본」으로 표기했다.
 
 ### run 고아 — `run_monitoring`을 켤 수 없다
 
 `DefaultRunLauncher`는 `supports_check_run_worker_health`가 `False`라 `run_monitoring`을 켜면
-`NotImplementedError`다. 결과로 **daemon 파드가 재시작하면 진행 중이던 run이 `STARTED`로 고아가 된다.**
+`NotImplementedError`다. 결과로 **daemon이 재시작하면(in-cluster 판본에선 daemon 파드)
+진행 중이던 run이 `STARTED`로 고아가 된다.**
 부재가 *결정*이며, 이것이 `K8sRunLauncher` 후속 과제의 첫 근거다.
 
 ### 성공한 run이 관측 실패를 가린다
@@ -107,7 +114,7 @@ numpy 1.26.x에는 cp313 휠이 없어 소스 빌드로 떨어지고 `-slim`에 
 
 ### 두 DB, 두 계정
 
-`POSTGRES_*`(메타)와 `ICEBERG_CATALOG_*`(카탈로그)는 in-cluster에서 처음으로 갈린다.
+`POSTGRES_*`(메타)와 `ICEBERG_CATALOG_*`(카탈로그)는 in-cluster 판본에서 처음으로 갈렸다.
 `common/constants.py`가 후자 미지정 시 전자로 **폴백**하므로 빠뜨리면 **접속은 되고 접근에서 거부**된다.
 규칙 정본은 [conventions/dagster.md](../conventions/dagster.md) §K8s in-cluster 배포.
 

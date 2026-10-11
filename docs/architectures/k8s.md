@@ -62,7 +62,8 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
   `catalog-postgres-rw`/`-ro`/`-r`이다(접미사 없는 이름은 생기지 않는다).
   **메타 Postgres는 compose(호스트)에 남긴다** — Dagster가 호스트라 순환 의존을 피한다.
 - **Spark 실행**: Apache 공식 **Spark Kubernetes Operator**를 Helm으로 설치하고(`ns=spark-operator`),
-  Dagster 자산이 `PipesK8sClient`로 `SparkApplication`(CRD)을 제출·폴링한다.
+  `defs/poc/`의 커스텀 리소스가 kubernetes 클라이언트로 `SparkApplication`(CRD)을 제출·폴링한다
+  (`dagster-k8s`의 `PipesK8sClient`는 **미채택**).
   규칙은 [../conventions/k8s.md](../conventions/k8s.md) §9~11.
 - **Dagster 위치**: Dagster는 **호스트**에 두고 클러스터에 배포하지 않으며, **Airflow로 대체 예정**이다
   (in-cluster 판본은 철거 — [../argocd-gitops.md](../argocd-gitops.md) D6, 이력은 [dagster.md](dagster.md)).
