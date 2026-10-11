@@ -29,7 +29,7 @@ in-cluster에서는 이 전부가 **서비스 DNS 직결**로 대체된다.
 | 축 | 호스트 Dagster | in-cluster |
 | --- | --- | --- |
 | Spark Connect | `sc://spark-grpc.localtest.me:8443/;use_ssl=true` + CA 파일 | `sc://spark-connect:15002` (평문) |
-| S3 | `http://localhost:8333` (compose 직결) | `http://seaweedfs:8333` (ExternalName → 클러스터 밖) |
+| S3 | `http://localhost:8333` (스택 A 컨테이너 직결) | `http://seaweedfs:8333` (ExternalName → 클러스터 밖) |
 | 카탈로그 PG | `localhost:15432` (port-forward) | `catalog-postgres-rw:5432` |
 | 메타 PG | compose `postgres` | 같은 CNPG의 `dagster` DB |
 

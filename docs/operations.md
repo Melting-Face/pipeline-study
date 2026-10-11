@@ -96,7 +96,7 @@ compose `postgres`를 쓰고, 호스트 `dg dev`는 `.env`의 `POSTGRES_HOST`·`
 | `POSTGRES_HOST` | `postgres` — `compose.yml`이 리터럴 고정 | `localhost`(port-forward) | `catalog-postgres-rw` |
 | `POSTGRES_PORT` | `5432` | **`15432`** — port-forward 포트 | `5432` |
 | `POSTGRES_DB` | `dagster`(compose DB) | `dagster`(CNPG DB) | `dagster`(CNPG DB) |
-| `ICEBERG_S3_ENDPOINT` | `http://seaweedfs:8333` | `http://localhost:8333`(직결) | `http://seaweedfs:8333`(ExternalName) |
+| `ICEBERG_S3_ENDPOINT` | `http://host.containers.internal:8333` — `compose.yml`이 리터럴 고정 | `http://localhost:8333`(직결) | `http://seaweedfs:8333`(ExternalName) |
 | `SPARK_REMOTE` | (미설정) | TLS Ingress 또는 port-forward | `sc://spark-connect:15002` |
 
 ⚠️ **호스트 경로의 `POSTGRES_PORT`가 급소다.** 5432면 compose DB를, 15432면 CNPG DB를 본다 —
@@ -122,13 +122,18 @@ in-cluster Dagster 매니페스트는 철거돼(새 클러스터에 배포하지
 - **Iceberg S3 접속 키**: `ICEBERG_S3_ENDPOINT`·`ICEBERG_S3_ACCESS_KEY`·`ICEBERG_S3_SECRET_KEY`
   (`common/constants.py`의 `S3_ENDPOINT`·`S3_ACCESS_KEY_ID`·`S3_SECRET_ACCESS_KEY`가 읽는다).
   미지정 시 공용 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`로 **폴백**한다 — 단 SeaweedFS 인증이 켜져 있어
-  `AWS_*`도 **같은 값**이어야 한다(compose Dagster·Trino·compute log가 읽는다, 다르면 `storage-up.sh`가 멈춘다).
-  위 카탈로그 키와 같은 이유로 **`compose.yml`에 넣지 않는다**(의도된 예외 — 값을 바꿔야 하는 쪽은
-  호스트 실행뿐이다).
-  - S3는 **클러스터 밖 compose SeaweedFS 하나**다(`./scripts/storage-up.sh`). 호스트는 `localhost:8333`으로
-    직결하고 파드는 `Service seaweedfs`(ExternalName → kind 네트워크 별칭 `seaweedfs-ext`)로 같은 곳에 닿는다.
-  - **엔드포인트와 자격증명은 한 쌍으로 바꾼다.** `ICEBERG_S3_*` 키가 단일 출처다 — `storage-up.sh`가 이 값으로
-    `seaweedfs/s3.json`을 만들고, k8s Secret `lakehouse-creds`도 같은 값이어야 한다. 키를 공용 `AWS_*`로 두면
+  `AWS_*`도 **같은 값**이어야 한다(compose Dagster·Trino·compute log가 읽는다). 일치를 검사하는 단계는 없다 —
+  다르면 `ACCESS_DENIED`로만 드러나므로 기동 전 체크리스트로 확인한다([setup/local-k8s.md](setup/local-k8s.md) 2단계).
+  키 두 개는 위 카탈로그 키와 같은 이유로 **`compose.yml`에 넣지 않는다**(의도된 예외 — 값을 바꿔야 하는 쪽은
+  호스트 실행뿐이다). **엔드포인트만은 `x-dagster-common`에 리터럴로 고정**한다(`POSTGRES_HOST=postgres`와 같은
+  패턴) — 컨테이너에서는 `seaweedfs` 서비스명이 더 이상 풀리지 않아 코드 기본값이 틀리기 때문이다.
+  - S3는 **클러스터 밖 SeaweedFS 컨테이너 하나**이고 소유는 Terraform 스택 A(`docker_container.seaweedfs`)다.
+    호스트는 `localhost:8333`으로, compose 컨테이너는 `host.containers.internal:8333`(podman 전제 — Docker
+    Desktop은 `host.docker.internal`)으로 직결하고 파드는 `Service seaweedfs`(ExternalName → kind 네트워크 별칭
+    `seaweedfs-ext`)로 같은 곳에 닿는다. compose 의존으로 표현할 수 없어 **스택 A를 먼저 apply**한다.
+  - **엔드포인트와 자격증명은 한 쌍으로 바꾼다.** `ICEBERG_S3_*` 키가 단일 출처다 — 같은 값을
+    `TF_VAR_s3_access_key`/`TF_VAR_s3_secret_key`로 스택 A에 넘기면 컨테이너 내부 `s3.json`이 만들어지고
+    (호스트 파일 없음), k8s Secret `lakehouse-creds`도 같은 값이어야 한다. 키를 공용 `AWS_*`로 두면
     **부분 성공**이 난다 — 카탈로그 나열(`list_tables`)은 Postgres만 보므로 성공하고, `load_table`이
     `metadata.json`을 S3에서 읽는 순간 `ACCESS_DENIED during HeadObject`로 죽는다.
     **접속 대상을 바꾸는 값은 한 벌로 묶어 바꾼다.**
@@ -152,7 +157,7 @@ in-cluster Dagster 매니페스트는 철거돼(새 클러스터에 배포하지
 | --- | --- |
 | Iceberg 유지보수 | `iceberg_maintenance_job`이 주 1회 **컴팩션 → 스냅샷 만료 → orphan 정리** 순서로 처리한다 |
 | SeaweedFS 용량 | 수명주기 정책 없음 |
-| Docker 컨테이너 로그 | `max-size` × `max-file`로 컨테이너당 상한을 건다 |
+| Docker 컨테이너 로그 | `max-size` × `max-file`로 컨테이너당 상한을 건다(podman은 `max-file` 미적용 — [conventions/docker.md](conventions/docker.md) §1-1) |
 | Claude Code 세션 로그 | `~/.claude/settings.json`의 `cleanupPeriodDays` |
 
 🔴 **순서 강제가 이 잡의 설계다** — 컴팩션이 새 파일을 쓰고 만료가 옛 스냅샷을 끊은 **뒤에야**
@@ -347,14 +352,15 @@ kubectl exec catalog-postgres-1 -c postgres -- pg_dump -U iceberg iceberg > <저
 ```shell
 ./scripts/k8s-down.sh          # ⚠️ 현재는 kind + 레지스트리 컨테이너를 직접 삭제한다(PR2에서 스택 A destroy로 정리 예정)
 ./scripts/k8s-up.sh            # podman 머신 · 레지스트리
-terraform -chdir=terraform/cluster/kind apply
+terraform -chdir=terraform/cluster/kind apply   # TF_VAR_* 3개 필요(setup/local-k8s.md 2단계) · 루트 체크아웃에서만
 terraform -chdir=terraform/platform apply
 source scripts/k8s-env.sh      # KUBECONFIG + 컨텍스트 가드
 ```
 
 오퍼레이터(cert-manager·CNPG·Spark·Flink)는 ArgoCD가 `git`에서 수렴시키므로 따로 올리지 않는다.
 카탈로그 DB는 ArgoCD 앱 `catalog-postgres`가, 그 Secret은 `scripts/k8s-secrets.sh`가, SeaweedFS(S3)는
-클러스터 밖 `scripts/storage-up.sh`가 맡는다 — 클러스터를 다시 만들어도 S3 객체는 남고 카탈로그만 비어 있다.
+스택 A(`docker_container.seaweedfs`)가 맡는다 — 클러스터를 다시 만들면 컨테이너도 교체되지만 데이터는 호스트
+바인드(`seaweedfs/data`)라 S3 객체는 남고 카탈로그만 비어 있다.
 
 ⚠️ **복구 순서는 SeaweedFS(S3 객체) → 카탈로그 PG(메타)** 다. 반대로 하면 **테이블은 보이는데
 읽기가 실패**한다 — 메타가 가리키는 객체가 아직 없기 때문이다. 이 저장소가 두 번 겪은

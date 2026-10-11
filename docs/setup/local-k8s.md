@@ -15,14 +15,14 @@
 | --- | --- | --- | --- |
 | ① VM | `podman machine` | podman machine(rootful) | `podman machine list` |
 | ② 레지스트리 | `podman run` | 컨테이너 `kind-registry` · 볼륨 `kind-registry-data` | `podman ps -a --filter name=kind-registry` |
-| ②' 외부 S3 | `podman compose` | 컨테이너 `seaweedfs` · `./seaweedfs/data` · 버킷 3개 | `podman inspect -f '{{.State.Health.Status}}' seaweedfs` |
-| ③ 클러스터 | 스택 A `terraform/cluster/kind` | kind 노드 · 포트 매핑 · kubeconfig · 노드의 레지스트리 설정 | `kubectl get nodes` |
+| ③ 클러스터 · S3 | 스택 A `terraform/cluster/kind` | kind 노드 · 포트 매핑 · kubeconfig · 노드의 레지스트리 설정 · 컨테이너 `seaweedfs` · 버킷 3개 | `kubectl get nodes` · `podman inspect -f '{{.State.Health.Status}}' seaweedfs` |
 | Secret | `kubectl create secret` | `lakehouse-creds` · `catalog-pg-app` | `kubectl get secret` |
 | ④ 플랫폼 | 스택 B `terraform/platform` | `helm_release` 3개(ingress-nginx · argo-cd · appset) | `helm list -A` |
 | ⑤ 앱 | ArgoCD | `gitops/charts/<app>` | `kubectl get applications -n argocd` |
 
-- **Terraform이 관리하는 것은 ③과 ④**다. ①②②'·Secret은 Terraform state에 없다.
-- ②'(오브젝트 스토리지)는 **클러스터와 수명이 독립**이다 — ③을 지우고 다시 만들어도 데이터가 남는다.
+- **Terraform이 관리하는 것은 ③과 ④**다. ①②·Secret은 Terraform state에 없다.
+- 오브젝트 스토리지 **컨테이너**는 ③에 속하지만 **데이터** `seaweedfs/data`는 호스트 바인드 마운트라 state 밖이다 —
+  ③을 지우고 다시 만들어도 데이터가 남는다(Terraform은 그 디렉터리를 만들지도 지우지도 않는다).
 - Secret은 비밀값이라 Git(ArgoCD)에 두지 않는다. 그래서 유일하게 손(또는 스크립트)으로 만드는 클러스터 객체다.
 - ⑤는 `terraform apply`로 바뀌지 않는다. `gitops/charts/`에 커밋하고 push하면 ArgoCD가 반영한다.
 
@@ -56,46 +56,26 @@ podman run -d --restart=always \
     전용 머신 `dagster-k8s`를 강제하려면 `MANAGE_MACHINE=true`.
   - 레지스트리: 상태가 셋이다 — 실행 중이면 그대로, 중지면 `podman start kind-registry`, 없을 때만 `podman run`.
 
-### 2단계 — ②' 외부 S3 (podman compose)
+### 2단계 — ③ 클러스터 · S3 (Terraform 스택 A)
 
-클러스터보다 **먼저** 띄운다 — 3단계의 스택 A가 클러스터를 만들 때 이 컨테이너를 kind 네트워크에 붙인다.
-**메인 체크아웃에서만** 실행한다(데이터 경로 `./seaweedfs/`가 체크아웃마다 따로 생긴다).
+스택 A는 클러스터와 함께 **오브젝트 스토리지(SeaweedFS) 컨테이너**도 만든다 — 컨테이너는 클러스터 밖에 서고
+(파드는 엔드포인트와 자격증명으로만 닿는다), 「클러스터 다음에 S3를 kind 네트워크에 붙인다」는 순서는
+의존 그래프가 지킨다. **메인 체크아웃에서만** apply한다 — 데이터 기본 경로 `seaweedfs/data`가 체크아웃마다 따로
+생기므로 linked worktree에서 apply하면 precondition이 멈춘다.
 
-```shell
-# (a) 인증 설정 — 키는 .env 의 ICEBERG_S3_ACCESS_KEY / ICEBERG_S3_SECRET_KEY 와 같은 값
-mkdir -p seaweedfs
-(umask 077 && cat > seaweedfs/s3.json) <<'EOF'
-{"identities":[{"name":"lakehouse","credentials":[{"accessKey":"<ACCESS_KEY>","secretKey":"<SECRET_KEY>"}],
- "actions":["Admin","Read","Write","List","Tagging"]}]}
-EOF
-
-# (b) 기동 — compose.yml 의 seaweedfs 서비스(profile storage)
-podman compose --profile storage up -d seaweedfs
-podman inspect -f '{{.State.Health.Status}}' seaweedfs      # healthy 가 될 때까지 다시 친다
-
-# (c) 버킷 3개 — weed shell 은 실패해도 0으로 끝날 수 있어 목록으로 확인한다
-for b in warehouse pg-backup dagster-logs; do
-  podman exec seaweedfs sh -c "echo 's3.bucket.create -name $b' | weed shell -master localhost:9333 -filer localhost:8888"
-done
-podman exec seaweedfs sh -c "echo 's3.bucket.list' | weed shell -master localhost:9333 -filer localhost:8888"
-```
-
-- **생기는 것**: S3 API `http://localhost:8333`(루프백만), 데이터 디렉터리 `./seaweedfs/data`, 버킷
-  `warehouse`·`pg-backup`·`dagster-logs`.
-- **확인**: 위 `s3.bucket.list` 출력에 버킷 3개가 있다.
-- **단축**: `scripts/storage-up.sh` — **이 단계는 단축을 권장한다.** `.env`에서 키를 읽어 `s3.json`을 만들고
-  (값을 화면·히스토리에 남기지 않는다), `AWS_*`와 `ICEBERG_S3_*`가 다르면 멈추고, 키가 바뀌었으면 restart한다.
-  kind 네트워크가 이미 있으면 (d)까지 한다.
-- (d) **kind 네트워크 연결**은 3단계의 스택 A가 한다. 클러스터가 있는 상태에서 `seaweedfs` 컨테이너를
-  **재생성**했다면(설정 변경 후 `up` 등) 연결이 풀리므로 손으로 다시 붙인다(`restart`는 연결을 유지한다).
-
-  ```shell
-  podman network connect --alias seaweedfs-ext kind seaweedfs
-  ```
-
-### 3단계 — ③ 클러스터 (Terraform 스택 A)
+**체크리스트** — `.env`의 `AWS_*`와 `ICEBERG_S3_*`는 같은 값이다(compose 컨테이너는 `AWS_*`를 읽는다).
+일치를 검사하는 단계는 없고, 다르면 나열은 되는데 `load_table`이 `ACCESS_DENIED`로 죽는다.
 
 ```shell
+# (a) S3 키 — .env 의 ICEBERG_S3_* 를 환경변수로만 넘긴다(값을 화면·히스토리에 남기지 않는다)
+env_value() { grep -E "^$1=" .env | tail -n 1 | cut -d= -f2- | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"//; s/"$//'; }
+export TF_VAR_s3_access_key="$(env_value ICEBERG_S3_ACCESS_KEY)"
+export TF_VAR_s3_secret_key="$(env_value ICEBERG_S3_SECRET_KEY)"
+
+# (b) docker 프로바이더가 붙을 podman 소켓 — 기본 머신이 아니면 inspect 뒤에 머신 이름을 붙인다
+export TF_VAR_container_host="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"
+
+# (c) 클러스터 + S3
 terraform -chdir=terraform/cluster/kind init
 terraform -chdir=terraform/cluster/kind plan \
   -var cluster_name=lakehouse-next -var http_host_port=8082 -var https_host_port=8445
@@ -105,31 +85,49 @@ terraform -chdir=terraform/cluster/kind apply \
 export KUBECONFIG=~/.kube/lakehouse-next.config   # 스택 A가 쓴 클러스터 전용 kubeconfig — 이후 kubectl 전부가 쓴다
 ```
 
-- **`plan`에서 읽을 것** — 새로 만드는 리소스는 4개다([`main.tf`](../../terraform/cluster/kind/main.tf)).
+- `TF_VAR_*` 세 개는 기본값이 없다. 키가 비면 `validation`이 멈추고(빈 키로 띄우지 않는다), 소켓은 `unix://`로
+  시작해야 한다. 이 셸에서 `destroy`할 때도 같은 셋이 필요하다.
+- 위 `env_value`는 큰따옴표와 줄 끝 주석만 벗긴다 — 그래서 **키 값에 「공백+`#`」을 넣지 않는다**(잘려도 에러가
+  없다). `.env` 파싱 규칙(작은따옴표 등)의 스크립트 간 정합은 Issue #177이 추적한다.
+- **`plan`에서 읽을 것** — 새로 만드는 리소스는 6개다([`main.tf`](../../terraform/cluster/kind/main.tf)).
 
   | 리소스 | 하는 일 |
   | --- | --- |
   | `kind_cluster.this` | 노드 컨테이너 `lakehouse-next-control-plane` · 호스트 포트 매핑(80→8082, 443→8445) · kubeconfig 파일 |
   | `terraform_data.registry_certs` | 노드 containerd가 `localhost:5001`을 `kind-registry:5000`으로 보내게 한다 |
   | `terraform_data.registry_network` | 레지스트리 컨테이너를 kind 네트워크에 붙인다 |
-  | `terraform_data.seaweedfs_network` | `seaweedfs`를 kind 네트워크에 별칭 `seaweedfs-ext`로 붙인다(없으면 경고만) |
+  | `docker_image.seaweedfs` | `chrislusf/seaweedfs` 이미지(태그 고정). destroy해도 로컬 이미지는 남긴다 |
+  | `docker_container.seaweedfs` | 컨테이너 `seaweedfs` — kind 별칭 `seaweedfs-ext`, 포트는 `127.0.0.1`에만(9333·8333·8888·9324), 데이터는 `seaweedfs/data` 바인드, `s3.json`은 컨테이너 내부로 주입 |
+  | `terraform_data.seaweedfs_buckets` | 버킷 `warehouse`·`pg-backup`·`dagster-logs`를 만든다(생성만 — destroy 동작 없음) |
 
-  `data.external.runtime`은 만들지 않고 읽기만 한다 — PATH에서 잡히는 런타임이 `podman`인지 보는 precondition이다.
+  `data.external.runtime`·`data.external.checkout`은 만들지 않고 읽기만 한다 — PATH에서 잡히는 런타임이
+  `podman`인지, 지금 체크아웃이 linked worktree인지 보는 precondition의 입력이다.
+  예전 구성(compose `seaweedfs` + `terraform_data.seaweedfs_network`)의 state에서 넘어오면
+  `seaweedfs_network` **1개가 제거**로 나온다 — destroy 동작이 없는 리소스라 무해하다.
 - **확인**:
 
   ```shell
   terraform -chdir=terraform/cluster/kind output   # kubeconfig_path · kube_context(kind-lakehouse-next)
   kubectl get nodes                                # lakehouse-next-control-plane  Ready
   kubectl get pods -A                              # kube-system · local-path-storage 파드
+  podman inspect -f '{{.State.Health.Status}}' seaweedfs   # healthy
   ```
 
+- **생기는 것(S3)**: S3 API `http://localhost:8333`(루프백만), 데이터 디렉터리 `seaweedfs/data`, 버킷 3개.
+  compose 컨테이너(Trino·Prometheus·`host-dagster`)는 `host.containers.internal:<게시 포트>`로 닿는다 —
+  compose 의존으로 표현할 수 없어 **스택 A를 먼저 apply하는 것은 운영자 몫**이다. 이 이름은 podman 전제다
+  (Docker Desktop은 `host.docker.internal`).
 - `kubectl`에 옵션을 붙이는 대신 `KUBECONFIG`를 export한다(zsh는 `$K` 형태의 명령 변수를 쪼개지 않는다).
 - 포트 매핑은 **생성 시점에만** 정해진다. 포트를 바꾸려면 destroy → 새 `-var`로 apply.
+- **클러스터를 다시 만들면 `seaweedfs` 컨테이너도 교체**된다(`replace_triggered_by` — 새 kind 네트워크에 별칭을
+  다시 붙이기 위해서다). 데이터는 바인드라 그대로다.
+- 키를 바꾸면 컨테이너 내부 `s3.json`이 바뀌어 `plan`에 컨테이너 교체로 나온다. Secret `lakehouse-creds`와
+  `.env`도 같은 값으로 함께 바꾼다(3단계).
 
 #### 스택 A가 `kind_cluster` 말고 하는 일 — 손으로 하기
 
-위 `terraform_data` 3개는 `local-exec`로 호스트의 podman을 부른다. 그래서 ③은 ①에 묶여 있다.
-손으로 하면 다음과 같다.
+`terraform_data` 3개는 `local-exec`로 호스트의 podman을 부르고, `docker_*`는 podman 소켓에 직접 붙는다.
+그래서 이 층은 ①에 묶여 있다. `terraform_data`를 손으로 하면 다음과 같다.
 
 ```shell
 # registry_certs
@@ -141,17 +139,24 @@ podman exec -i lakehouse-next-control-plane \
 # registry_network — 이미 연결돼 있으면 스택 A는 건너뛴다
 podman network connect kind kind-registry
 
-# seaweedfs_network — 컨테이너가 없거나 이미 연결돼 있으면 스택 A는 건너뛴다
-podman network connect --alias seaweedfs-ext kind seaweedfs
+# seaweedfs_buckets — weed shell 은 실패해도 0으로 끝날 수 있어 목록으로 확인한다
+for b in warehouse pg-backup dagster-logs; do
+  podman exec seaweedfs sh -c "echo 's3.bucket.create -name $b' | weed shell -master localhost:9333 -filer localhost:8888"
+done
+podman exec seaweedfs sh -c "echo 's3.bucket.list' | weed shell -master localhost:9333 -filer localhost:8888"
 ```
 
-- 이 셋은 **클러스터가 새로 만들어질 때만** 다시 돈다(`registry_certs`는 `hosts.toml`이 바뀔 때도).
-  노드 안의 설정이 지워져도 Terraform state는 그 사실을 모르므로 `plan`에 차이가 나오지 않는다.
-- precondition은 PATH의 런타임 이름만 본다. VM이 멈춰 있어도 통과하므로 `podman machine list`로 따로 확인한다.
+- 컨테이너(`docker_container.seaweedfs`)의 손 경로는 두지 않는다 — 설정 전부가 `main.tf`의 한 블록에 있고
+  `plan`에 그대로 드러난다. 손으로 띄우면 state가 모르는 컨테이너가 이름을 점유해 apply가 충돌한다.
+- `registry_*`는 **클러스터가 새로 만들어질 때만** 다시 돈다(`registry_certs`는 `hosts.toml`이 바뀔 때도),
+  `seaweedfs_buckets`는 컨테이너가 교체될 때 다시 돈다. 노드·컨테이너 안의 설정이 지워져도 Terraform state는
+  그 사실을 모르므로 `plan`에 차이가 나오지 않는다.
+- 런타임 precondition은 PATH의 런타임 이름만 본다. VM이 멈춰 있어도 통과하므로 `podman machine list`로 따로
+  확인한다.
 
-### 4단계 — Secret (kubectl)
+### 3단계 — Secret (kubectl)
 
-카탈로그 Postgres(5단계 뒤 ArgoCD가 만든다)와 Spark·Flink 파드가 읽는 비밀값이다.
+카탈로그 Postgres(4단계 뒤 ArgoCD가 만든다)와 Spark·Flink 파드가 읽는 비밀값이다.
 ArgoCD보다 먼저 두는 편이 깔끔하지만 늦어도 된다 — CNPG가 Secret이 생길 때까지 기다린다.
 
 ```shell
@@ -164,7 +169,7 @@ kubectl -n default create secret generic catalog-pg-app --type=kubernetes.io/bas
   --from-literal=password='<카탈로그 비밀번호>'
 ```
 
-- `lakehouse-creds`의 값은 2단계 `s3.json`과 **같은 키**다.
+- `lakehouse-creds`의 값은 2단계 `TF_VAR_s3_*`와 **같은 키**다.
   다르면 파드는 뜨는데 `load_table`이 `ACCESS_DENIED`로 죽는다.
 - `catalog-pg-app`의 `username`은 CNPG Cluster CR의 `owner`
   ([`catalog-postgres/templates/cluster.yaml`](../../gitops/charts/catalog-postgres/templates/cluster.yaml))와 같아야 한다.
@@ -177,7 +182,7 @@ kubectl -n default create secret generic catalog-pg-app --type=kubernetes.io/bas
   `CLUSTER_NAME`을 빼면 스크립트가 `KUBECONFIG`를 `~/.kube/lakehouse.config`로 **덮어써**
   ([`k8s-env.sh`](../../scripts/k8s-env.sh)) 컨텍스트 검사에서 멈춘다.
 
-### 5단계 — ④ 플랫폼 (Terraform 스택 B)
+### 4단계 — ④ 플랫폼 (Terraform 스택 B)
 
 ```shell
 terraform -chdir=terraform/platform init
@@ -209,7 +214,7 @@ terraform -chdir=terraform/platform apply \
 - 스택 B가 어느 클러스터에 붙을지는 위 두 `-var`(kubeconfig·context)가 정한다 — 스택 A의 `output`과 같은 값이다.
 - 기능 브랜치를 클러스터에서 검증할 때만 `target_revision=<브랜치>`로 바꾸고, 그 전에 브랜치를 push한다.
 
-### 6단계 — ⑤ 앱 수렴 (ArgoCD)
+### 5단계 — ⑤ 앱 수렴 (ArgoCD)
 
 여기서부터는 명령을 치지 않는다. ApplicationSet이 만든 Application이 `gitops/charts/<app>`을 Git에서 읽어
 클러스터에 적용한다.
@@ -218,8 +223,8 @@ terraform -chdir=terraform/platform apply \
 kubectl get applications -n argocd                # 전부 Synced · Healthy
 kubectl get pods -n cert-manager                  # 앱마다 자기 네임스페이스에 파드가 뜬다
 kubectl get pods -n cnpg-system
-kubectl get clusters.postgresql.cnpg.io -n default  # catalog-postgres  (Secret 4단계가 있어야 진행)
-kubectl get svc seaweedfs -n default              # ExternalName → seaweedfs-ext (2단계의 별칭)
+kubectl get clusters.postgresql.cnpg.io -n default  # catalog-postgres  (Secret 3단계가 있어야 진행)
+kubectl get svc seaweedfs -n default              # ExternalName → seaweedfs-ext (2단계 스택 A의 별칭)
 
 terraform -chdir=terraform/platform output -raw argocd_url
 terraform -chdir=terraform/platform output -raw argocd_initial_admin_password_command
@@ -237,7 +242,7 @@ terraform -chdir=terraform/platform output -raw argocd_initial_admin_password_co
 Terraform state가 남아 다음 `apply`가 꼬인다.
 
 ```shell
-# ④ → ③ (Secret은 클러스터와 함께 사라진다)
+# ④ → ③ (Secret은 클러스터와 함께 사라진다). 스택 A destroy에도 2단계의 TF_VAR_* 세 개가 필요하다
 terraform -chdir=terraform/platform destroy \
   -var kubeconfig_path=~/.kube/lakehouse-next.config -var kube_context=kind-lakehouse-next \
   -var http_host_port=8082 -var target_revision=main
@@ -253,7 +258,8 @@ podman volume rm -f kind-registry-data        # 삭제까지 할 때만 — 푸�
 podman machine rm -f <머신>                   #   〃 VM 안의 데이터가 모두 사라진다
 ```
 
-- ②'(SeaweedFS)는 클러스터와 수명이 독립이라 여기서 내리지 않는다.
+- 스택 A destroy는 컨테이너 `seaweedfs`도 지운다. **destroy해도 `seaweedfs/data`는 남는다** — 바인드 마운트라
+  컨테이너 밖에 있고, 버킷도 그 안에 있다. 다음 apply가 같은 디렉터리를 다시 마운트해 기존 객체가 그대로 보인다.
 - `<머신>`은 ①에서 기존 머신을 재사용했다면 `dagster-k8s`가 아니다.
 - **단축**: Terraform destroy 뒤 `CLUSTER_NAME=lakehouse-next scripts/k8s-down.sh`.
 
@@ -267,5 +273,6 @@ podman machine rm -f <머신>                   #   〃 VM 안의 데이터가 �
   **아무것도 지우지 않고** 실패한다.
 - tfstate는 `terraform/*/terraform.tfstate`에 생긴다. 그래서 Terraform은 **저장소 루트에서만** 실행한다
   ([`conventions/terraform.md`](../conventions/terraform.md) §4).
-- worktree에서 apply했다면 그 worktree를 지우기 전에 state를 루트로 옮기고,
+- 스택 A는 linked worktree에서 apply하면 precondition이 멈춘다(2단계). 스택 B를 worktree에서 apply했다면
+  그 worktree를 지우기 전에 state를 루트로 옮기고,
   **apply 때와 같은 `-var`로** `plan`해 `No changes.`를 확인한다. `-var`를 빼면 기본값과 비교돼 교체가 나온다.

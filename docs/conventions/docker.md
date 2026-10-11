@@ -25,6 +25,10 @@ x-docker-logging: &docker-logging
 
 모든 서비스에 `<<: *docker-logging`으로 적용한다. (보존 정책은 [../operations.md](../operations.md) §2)
 
+> ⚠️ **podman의 json-file 드라이버는 `max-file`을 적용하지 않는다** — 선언은 Docker와의 호환을 위해 남긴다.
+> compose 밖 컨테이너(스택 A `docker_container.seaweedfs`)도 같은 값을 `log_opts`로 선언하지만, podman이
+> 그 값을 되읽어 주지 않아 매 `plan`이 교체로 나오므로 `ignore_changes`로 둔다.
+
 ### 1-2. 환경변수·공통부는 YAML 앵커로 중복 제거 (DRY)
 
 동일 이미지·설정을 공유하는 서비스는 앵커로 공통부를 모은다.
@@ -137,8 +141,10 @@ services:
 ```
 
 - **뼈대(core)**: `dagster-webserver`·`dagster-daemon`·`postgres` — profile 없음.
-- **옵션**: `prometheus`(`monitoring`) · `trino`(`legacy-sql`) ·
-  `seaweedfs`(`storage`+`legacy-sql`+`monitoring`) — 오브젝트 스토리지 정본, 기동은 `./scripts/storage-up.sh`.
+- **옵션**: `prometheus`(`monitoring`) · `trino`(`legacy-sql`).
+- **compose 밖**: 오브젝트 스토리지 정본 `seaweedfs`는 Terraform 스택 A(`docker_container.seaweedfs`)가 소유한다.
+  compose 서비스는 `host.containers.internal:<게시 포트>`로 닿고(podman 전제 — Docker Desktop은
+  `host.docker.internal`), compose `depends_on`으로 표현할 수 없어 **스택 A를 먼저 apply하는 것은 운영자 몫**이다.
 
 ```bash
 docker compose up -d                        # 뼈대만
@@ -151,17 +157,18 @@ COMPOSE_PROFILES=monitoring docker compose up -d   # 프로필 고정
 > ([../architectures/trino.md](../architectures/trino.md)). 상시 기동만 끊어 자원(3 CPU / 6G)을
 > 회수하고 대조할 때만 올린다 — **"중단"과 "삭제"를 분리**하면 자원은 즉시 회수되면서
 > 롤백 비용이 0으로 유지된다.
-> `seaweedfs`는 이 처리에서 **되돌아왔다** — 정본을 K8s로 옮겨 중단했었으나 클러스터 밖 외부 스토리지로
-> 다시 정본이 됐다(profile `storage`, [../architectures/storage.md](../architectures/storage.md)).
-> profile을 단 이유는 「제거 예정」이 아니라 **뼈대가 비어 전부 opt-in**이라는 규칙 때문이다.
+> `seaweedfs`는 이 처리에서 **되돌아왔다가 compose를 떠났다** — 정본을 K8s로 옮겨 중단했었고, 클러스터 밖
+> 외부 스토리지로 compose에서 다시 정본이 된 뒤, 지금은 Terraform 스택 A가 컨테이너를 소유한다
+> ([../architectures/storage.md](../architectures/storage.md)). 그래서 profile `storage`는 없다.
 
 > `profiles`를 붙인 서비스를 **의존**(`depends_on`)하는 뼈대 서비스가 없어야 한다(있으면 기본 기동이 깨진다).
 > 옵션↔옵션 의존은 같은 프로필을 공유하거나 함께 활성화한다. 대안인 다중 파일 `-f` override는
 > YAML 앵커가 파일 스코프라 기능 파일에서 공용 앵커를 못 써 이 레포에선 profiles를 택했다.
 >
-> 🔴 **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받아야 한다.** `seaweedfs`에
-> `storage` 하나만 붙이면 `--profile legacy-sql`(trino)·`--profile monitoring`(prometheus,
-> `seaweedfs:9324` 스크랩)이 **의존 비활성으로 깨진다**. 그래서 profile이 3개다.
+> 🔴 **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받아야 한다.** 빠뜨리면 의존하는 쪽의
+> profile만 켰을 때 **의존 비활성으로 깨진다**. 현행 사례는 `postgres`다 — `dagster-*`(`host-dagster`)와
+> `trino`(`legacy-sql`)가 의존하므로 자기 profile `legacy-meta`에 둘을 더해 profile이 3개다.
+> (옛 compose `seaweedfs`도 `trino`·`prometheus`의 의존으로 3개였으나 스택 A로 옮겨 사례에서 빠졌다.)
 > 바꾼 뒤에는 **profile별로 `docker compose --profile <p> config --services`를 돌려 확인**한다
 > — 이 검증은 기동 없이 수초면 끝난다.
 
