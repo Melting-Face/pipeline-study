@@ -1,0 +1,18 @@
+# Airflow 메타 DB — CNPG `Database` CR로 선언한다(롤 `airflow`는 cluster.yaml의 managed.roles).
+# 크리덴셜 Secret(airflow-pg-app)은 ArgoCD 밖 — scripts/k8s-secrets.sh 가 만든다.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+    name: airflow
+    namespace: default
+    annotations:
+        # 데이터 층 앱 규약(docs/argocd-gitops.md §4) — 앱 삭제·prune 이 메타 DB를 지우지 않게 한다.
+        argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+    name: airflow
+    owner: airflow
+    ensure: present
+    # CRD 기본값(retain)을 명시한다 — CR을 지워도 DB를 보존하고, 생략 시 라이브에만 값이 생겨 OutOfSync가 된다.
+    databaseReclaimPolicy: retain
+    cluster:
+        name: catalog-postgres

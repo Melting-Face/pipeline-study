@@ -54,9 +54,16 @@ spec:
               comment: Iceberg JDBC 카탈로그 소유자 (bootstrap.initdb에서 생성 후 선언 관리로 인수)
               passwordSecret:
                   name: catalog-pg-app
-            # Dagster 메타 롤은 두지 않는다 — Dagster는 Airflow로 대체 예정이라 소비자가 없다.
-            # 오케스트레이터 메타 DB를 다시 둘 때는 `iceberg` 롤을 재사용하지 말고 롤·Secret을 따로 선언한다
-            # (크리덴셜 하나의 폭발반경을 두 배로 만들지 않는다).
+            - name: airflow
+              ensure: present
+              login: true
+              connectionLimit: -1
+              inherit: true
+              comment: Airflow 메타 DB 소유자
+              passwordSecret:
+                  name: airflow-pg-app
+            # 오케스트레이터(Airflow) 메타 롤은 `iceberg`와 분리한다 — 롤·Secret(airflow-pg-app)을 따로 선언해
+            # 크리덴셜 하나의 폭발반경을 두 배로 만들지 않는다. DB는 templates/database-airflow.yaml.
     # 🚧 백업·PITR(Barman Cloud 플러그인)은 **아직 배선하지 않는다.**
     # 2026-08-19 실측: 플러그인·ObjectStore까지는 떴으나 **SeaweedFS로의 `PutObject`가
     # `InternalError`(max retries 4)로 실패**해 WAL 아카이빙이 무한 재시도에 빠졌다
