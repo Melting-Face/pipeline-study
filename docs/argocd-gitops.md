@@ -179,8 +179,8 @@ syncPolicy:
 
 | 시기 | 클러스터 | 포트 | kubeconfig |
 | --- | --- | --- | --- |
-| PR1·PR2 검증 | `lakehouse-next`(`-var`) | 8082/8445 | `~/.kube/lakehouse-next.config` |
-| 교체 뒤 | `lakehouse`(기본값) | 8080/8443 | `~/.kube/lakehouse.config` |
+| PR1·PR2 검증(종료) | `lakehouse-next`(`-var`) | 8082/8445 | `~/.kube/lakehouse-next.config` |
+| 교체 뒤(현행) | `lakehouse`(기본값) | 8080/8443 | `~/.kube/lakehouse.config` |
 
 - 8081/8444는 `argocd-study` 클러스터 몫이다. 검증 중에는 그 클러스터를 **내려** VM 위 동시 클러스터를 최대 2개로 둔다
   (그쪽은 상태 데이터가 없어 Terraform으로 재생성 비용이 낮다). 급소가 CPU 축이다([resource-sizing.md](resource-sizing.md)).

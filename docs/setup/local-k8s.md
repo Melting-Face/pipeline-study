@@ -28,8 +28,8 @@
 
 ## 올리기
 
-지금 클러스터는 **`lakehouse-next`(8082/8445)** 다. 아래 이름·포트·`-var`는 매번 그대로 쓴다.
-PR2 뒤에는 `-var` 없이 기본값(`lakehouse`, 8080/8443)으로 올린다.
+클러스터는 변수 기본값 **`lakehouse`(8080/8443)** 다 — 아래 명령은 `-var` 없이 기본값으로 올린다.
+검증용 병행 클러스터처럼 이름·포트를 바꿀 때만 `-var`를 붙인다([`../setup.md`](../setup.md) §3).
 명령은 모두 저장소 **루트**에서 실행한다(Terraform state 위치 때문이다 — 아래 「내리기」).
 
 각 단계는 **명령 → 무엇이 생기나 → 확인 → 단축** 순서다.
@@ -81,12 +81,10 @@ export TF_VAR_container_host="unix://$(podman machine inspect --format '{{.Conne
 
 # (c) 클러스터 + S3
 terraform -chdir=terraform/cluster/kind init
-terraform -chdir=terraform/cluster/kind plan \
-  -var cluster_name=lakehouse-next -var http_host_port=8082 -var https_host_port=8445
-terraform -chdir=terraform/cluster/kind apply \
-  -var cluster_name=lakehouse-next -var http_host_port=8082 -var https_host_port=8445
+terraform -chdir=terraform/cluster/kind plan
+terraform -chdir=terraform/cluster/kind apply
 
-export KUBECONFIG=~/.kube/lakehouse-next.config   # 스택 A가 쓴 클러스터 전용 kubeconfig — 이후 kubectl 전부가 쓴다
+export KUBECONFIG=~/.kube/lakehouse.config   # 스택 A가 쓴 클러스터 전용 kubeconfig — 이후 kubectl 전부가 쓴다
 ```
 
 - `TF_VAR_*` 세 개는 기본값이 없다. 키가 비면 `validation`이 멈추고(빈 키로 띄우지 않는다), 소켓은 `unix://`로
@@ -97,7 +95,7 @@ export KUBECONFIG=~/.kube/lakehouse-next.config   # 스택 A가 쓴 클러스터
 
   | 리소스 | 하는 일 |
   | --- | --- |
-  | `kind_cluster.this` | 노드 컨테이너 `lakehouse-next-control-plane` · 호스트 포트 매핑(80→8082, 443→8445) · kubeconfig 파일 |
+  | `kind_cluster.this` | 노드 컨테이너 `lakehouse-control-plane` · 호스트 포트 매핑(80→8080, 443→8443) · kubeconfig 파일 |
   | `terraform_data.registry_certs` | 노드 containerd가 `localhost:5001`을 `kind-registry:5000`으로 보내게 한다 |
   | `terraform_data.registry_network` | 레지스트리 컨테이너를 kind 네트워크에 붙인다 |
   | `docker_image.seaweedfs` | `chrislusf/seaweedfs` 이미지(태그 고정). destroy해도 로컬 이미지는 남긴다 |
@@ -111,8 +109,8 @@ export KUBECONFIG=~/.kube/lakehouse-next.config   # 스택 A가 쓴 클러스터
 - **확인**:
 
   ```shell
-  terraform -chdir=terraform/cluster/kind output   # kubeconfig_path · kube_context(kind-lakehouse-next)
-  kubectl get nodes                                # lakehouse-next-control-plane  Ready
+  terraform -chdir=terraform/cluster/kind output   # kubeconfig_path · kube_context(kind-lakehouse)
+  kubectl get nodes                                # lakehouse-control-plane  Ready
   kubectl get pods -A                              # kube-system · local-path-storage 파드
   podman inspect -f '{{.State.Health.Status}}' seaweedfs   # healthy
   ```
@@ -135,8 +133,8 @@ export KUBECONFIG=~/.kube/lakehouse-next.config   # 스택 A가 쓴 클러스터
 
 ```shell
 # registry_certs
-podman exec lakehouse-next-control-plane mkdir -p /etc/containerd/certs.d/localhost:5001
-podman exec -i lakehouse-next-control-plane \
+podman exec lakehouse-control-plane mkdir -p /etc/containerd/certs.d/localhost:5001
+podman exec -i lakehouse-control-plane \
   sh -c "cat > '/etc/containerd/certs.d/localhost:5001/hosts.toml'" \
   < terraform/cluster/kind/registry/hosts.toml
 
@@ -182,7 +180,7 @@ kubectl -n default create secret generic catalog-pg-app --type=kubernetes.io/bas
 - **Airflow Secret 8종**(ns `airflow` 7개 + `default/airflow-pg-app`)은 **손 경로가 없다** — 짝 규칙(한쪽만
   만들면 거부) 때문에 `scripts/k8s-secrets.sh`로만 만든다.
 - **확인**: `kubectl get secret -n default`에 두 이름이 있고, `kubectl -n airflow get secret`에 Airflow 7개가 있다.
-- **단축**: `CLUSTER_NAME=lakehouse-next ./scripts/k8s-secrets.sh` — **이 단계도 단축을 권장한다**(값이 셸 히스토리에
+- **단축**: `./scripts/k8s-secrets.sh` — **이 단계도 단축을 권장한다**(값이 셸 히스토리에
   남지 않는다). 스크립트는 `.env`에서 S3 키를 읽고, 위 `owner` 일치를 먼저 검사하고, **없을 때만** 만든다(get‖create).
   `PHYSIONET_*`가 있으면 `physionet-creds`도 만든다.
   `CLUSTER_NAME`을 빼면 스크립트가 `KUBECONFIG`를 `~/.kube/lakehouse.config`로 **덮어써**
@@ -192,19 +190,15 @@ kubectl -n default create secret generic catalog-pg-app --type=kubernetes.io/bas
 
 ```shell
 terraform -chdir=terraform/platform init
-terraform -chdir=terraform/platform plan \
-  -var kubeconfig_path=~/.kube/lakehouse-next.config -var kube_context=kind-lakehouse-next \
-  -var http_host_port=8082 -var target_revision=main
-terraform -chdir=terraform/platform apply \
-  -var kubeconfig_path=~/.kube/lakehouse-next.config -var kube_context=kind-lakehouse-next \
-  -var http_host_port=8082 -var target_revision=main
+terraform -chdir=terraform/platform plan
+terraform -chdir=terraform/platform apply
 ```
 
 - **`plan`에서 읽을 것** — `helm_release` 3개가 이 순서로 생긴다(각각 `wait = true`라 Ready까지 기다린다).
 
   | 리소스 | 네임스페이스 | 하는 일 |
   | --- | --- | --- |
-  | `helm_release.ingress_nginx` | `ingress-nginx` | 호스트 8082/8445 → 클러스터 Ingress 입구 |
+  | `helm_release.ingress_nginx` | `ingress-nginx` | 호스트 8080/8443 → 클러스터 Ingress 입구 |
   | `helm_release.argo_cd` | `argocd` | ArgoCD 본체 |
   | `helm_release.appset` | `argocd` | ApplicationSet `apps` — `var.apps`의 원소마다 Application 하나를 만든다 |
 
@@ -251,11 +245,8 @@ Terraform state가 남아 다음 `apply`가 꼬인다.
 
 ```shell
 # ④ → ③ (Secret은 클러스터와 함께 사라진다). 스택 A destroy에도 2단계의 TF_VAR_* 세 개가 필요하다
-terraform -chdir=terraform/platform destroy \
-  -var kubeconfig_path=~/.kube/lakehouse-next.config -var kube_context=kind-lakehouse-next \
-  -var http_host_port=8082 -var target_revision=main
-terraform -chdir=terraform/cluster/kind destroy \
-  -var cluster_name=lakehouse-next -var http_host_port=8082 -var https_host_port=8445
+terraform -chdir=terraform/platform destroy
+terraform -chdir=terraform/cluster/kind destroy
 
 # ② 레지스트리 — 컨테이너만 지운다. 볼륨 kind-registry-data(푸시한 이미지)는 남는다
 podman rm -f kind-registry
@@ -269,7 +260,7 @@ podman machine rm -f <머신>                   #   〃 VM 안의 데이터가 �
 - 스택 A destroy는 컨테이너 `seaweedfs`도 지운다. **destroy해도 `seaweedfs/data`는 남는다** — 바인드 마운트라
   컨테이너 밖에 있고, 버킷도 그 안에 있다. 다음 apply가 같은 디렉터리를 다시 마운트해 기존 객체가 그대로 보인다.
 - `<머신>`은 ①에서 기존 머신을 재사용했다면 `dagster-k8s`가 아니다.
-- **단축**: Terraform destroy 뒤 `CLUSTER_NAME=lakehouse-next scripts/k8s-down.sh`.
+- **단축**: Terraform destroy 뒤 `scripts/k8s-down.sh`.
 
   | 명령 | 하는 일 |
   | --- | --- |
