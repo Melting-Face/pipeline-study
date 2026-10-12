@@ -197,14 +197,21 @@ USER 1000
 Airflow 커스텀 이미지(`images/airflow/` — 공식 base + DAG)는 **CI가 GHCR에 발행**한다.
 Spark·Flink 러너 이미지는 이 경로가 아니라 로컬 레지스트리 `localhost:5001`에 사람이 push한다([k8s.md](k8s.md)).
 
-- **트리거는 `airflow-vX.Y.Z` 태그 push**다(`.github/workflows/airflow-image.yml`).
-  `v*`는 저장소 릴리스(`release.yml`)가 쓰므로 접두어로 공간을 나눈다.
-  이미지 태그는 접두어를 뗀 `vX.Y.Z`이고 이름은 `ghcr.io/melting-face/pipeline-study-airflow`다.
-- **태그는 불변이다** — 같은 태그가 레지스트리에 있으면 워크플로가 실패한다. 롤백은 이전 태그를 다시
-  가리키는 것이지 덮어쓰기가 아니다. 잘못 발행한 태그는 git 태그를 지우고 다시 달아도 불변 검사에 막힌다 —
-  다음 패치 버전으로 전진한다. 태그 커밋은 **`main`의 조상**이어야 한다(브랜치 작업물 발행 차단).
-- **발행 전 로컬 검증**: `bash images/airflow/tests/dag-import.test.sh`(podman arm64 빌드 → DagBag 파싱,
-  import 오류 0건 + DAG `hello` 존재). DB 없이 파싱만 하므로 클러스터가 필요 없다.
+- **버전의 단일 출처는 `gitops/charts/airflow/values.yaml`의 `# bump-image-tag` 한 줄**이다.
+  ArgoCD는 그 태그를 당겨 가고 `.github/workflows/airflow-image.yml`은 같은 태그를 발행한다.
+  추출은 `scripts/airflow-image-version.sh`(마커 0·2개·형식 위반은 실패).
+  이미지 이름은 `ghcr.io/melting-face/pipeline-study-airflow:vX.Y.Z`다.
+- **트리거는 `main` 머지**다 — 이미지·values·워크플로·발행 스크립트(`scripts/airflow-image-version.sh`·
+  `scripts/ghcr-tag-exists.sh`)가 바뀐 커밋이 `main`에 들어오면 DAG import 테스트 후 그 태그가 GHCR에
+  **없을 때만** 빌드·push한다. 있으면 건너뛰되, 그 push가 이미지 내용을 바꿨으면 **실패**한다(조용한 미발행 방지).
+  태그 존재를 판정하지 못하면(레지스트리 오류)도 실패한다. git 태그 push 단계는 없다.
+- **PR 검사**: 이미지 내용(`images/airflow`에서 `tests/` 제외)이 바뀐 PR은 values 태그를 올려야 하고,
+  그 태그는 아직 발행 전이어야 한다. 필수 체크가 아니라 권고 수준이고, 머지 뒤 발행 단계가 같은 조건을 다시 본다.
+- **태그는 불변이다** — 덮어쓰지 않는다. 롤백은 **values 태그만** 이전 값으로 되돌리는 PR이다
+  (이미지 내용 변경을 섞으면 PR 검사에 걸린다). 잘못 발행한 태그는 다음 패치 버전으로 전진한다.
+- **발행 전 검증**: `bash images/airflow/tests/dag-import.test.sh`(arm64 빌드 → DagBag 파싱 —
+  import 오류 0건·DAG `hello`·태스크별 executor·태스크 의존, executor 목록은 values에서 읽는다).
+  로컬은 podman, CI는 `CONTAINER_CLI=docker`로 같은 스크립트를 돈다. DB 없이 파싱만 하므로 클러스터가 필요 없다.
 - **발행은 곧 공개다** — 이 패키지는 public 저장소에 연결돼 **처음 생길 때부터 public**이었다(실측).
   「private으로 올리고 확인한 뒤 공개」하는 단계가 없으므로, 공개 전 게이트는 **발행 전**에 있다:
   위 로컬 검증과 `images/airflow/` 변경의 PR 리뷰. 빌드 컨텍스트에 비밀·데이터가 들어갈 경로를 만들지 않는다
