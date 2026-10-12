@@ -133,6 +133,8 @@ variable "apps" {
     { name = "storage-external", path = "gitops/charts/storage-external", namespace = "default" },
     # Iceberg JDBC 카탈로그(CNPG Cluster CR) — 데이터 층이라 Prune=false,Delete=false. Secret 은 k8s-secrets.sh.
     { name = "catalog-postgres", path = "gitops/charts/catalog-postgres", namespace = "default" },
+    # Airflow(CeleryExecutor+KubernetesExecutor) — 메타 DB는 위 catalog-postgres의 airflow 롤·DB. Secret 은 k8s-secrets.sh 가 먼저.
+    { name = "airflow", path = "gitops/charts/airflow", namespace = "airflow" },
   ]
 
   validation {
