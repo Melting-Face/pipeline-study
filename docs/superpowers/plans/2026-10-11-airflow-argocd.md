@@ -295,6 +295,8 @@ values 결정(키는 모두 `airflow:` 아래, 출처 `argocd-study/gitops/chart
       `kubectl -n default get database airflow -o jsonpath='{.status.applied}'` = `true`.
 - [ ] **Step 3: 이미지 발행** — 머지 커밋에 `airflow-v0.2.0` 태그 push → `airflow-image` 워크플로 성공 →
       `podman pull ghcr.io/melting-face/pipeline-study-airflow:v0.2.0` 인증 없이 성공.
+      ⚠️ **대체됨**: 태그 push 트리거는 걷어냈다 — 발행은 `main` 머지가 부르고 버전은 values 태그다
+      ([`docs/conventions/docker.md`](../../conventions/docker.md) §3). v0.2.0은 그 전환 PR의 머지가 발행한다.
 - [ ] **Step 4: 등록** — `terraform -chdir=terraform/platform apply`(main에서) →
       `kubectl -n argocd get application airflow` Synced/Healthy.
 - [ ] **Step 5: 결정성** — ArgoCD에서 수동 Sync 1회 후 5분 뒤에도 Synced(자동 재sync 루프 없음).

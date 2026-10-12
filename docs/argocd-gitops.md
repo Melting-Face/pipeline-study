@@ -66,8 +66,8 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
 | Terraform A | kind 클러스터 · 전용 kubeconfig 파일 |
 | Terraform B | ingress-nginx · ArgoCD · ApplicationSet과 그 앱 목록(`var.apps`) |
 | ArgoCD | `gitops/charts/` 하위 전부 |
-| GitHub Actions | Airflow 커스텀 이미지 빌드·GHCR 발행(`airflow-vX.Y.Z` 태그 push가 트리거 — [conventions/docker.md §3](conventions/docker.md#3-이미지-발행-ghcr)) |
-| 사람 | Secret · 로컬 레지스트리 컨테이너 · Spark Connect·Flink 세션 기동/회수 · 러너 이미지 빌드·push · 발행 태그 push |
+| GitHub Actions | Airflow 커스텀 이미지 빌드·GHCR 발행(`main` 머지가 트리거, 버전은 values 태그 — [conventions/docker.md §3](conventions/docker.md#3-이미지-발행-ghcr)) |
+| 사람 | Secret · 로컬 레지스트리 컨테이너 · Spark Connect·Flink 세션 기동/회수 · 러너 이미지 빌드·push · 발행을 부르는 PR 머지 |
 
 - **업스트림 차트는 umbrella로 감싼다** — `Chart.yaml` dependency + `Chart.lock` 커밋, `charts/*.tgz`는 gitignore.
   repo-server가 dependency를 받는다. 버전은 정확 고정하고 [`scripts/k8s-env.sh`](../scripts/k8s-env.sh)의 현행 짝을 따른다
