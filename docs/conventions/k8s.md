@@ -345,10 +345,10 @@ resources:
 Spark Connect는 `--replicas=0`, Flink 세션은 `delete`로 회수되지만 **오케스트레이터는 회수 대상이 아니다**
 (내리면 스케줄·센서·런큐가 함께 멈춘다). 그래서 Airflow 상주분(`gitops/charts/airflow/values.yaml`의 `requests`)은
 경계 ①~③의 **모든 시나리오에 상시 더해지는 워크로드**다. BATCH+STREAM 동시 피크에 이것이 얹힌 상태에서
-`spark.executor.instances`를 2로 올리면 **Allocatable을 넘겨 스케줄 자체가 실패**한다(피크 미측정) — 경계 ②는 이제
-"여유가 없다"가 아니라 **"안 된다"** 이다. 확장이 필요하면 늘리는 쪽이 아니라 **Flink 세션을 먼저 내린다.**
-K8s 태스크 파드는 온디맨드라 얹힐 수 있다(스펙 기준, 미측정). 호스트 Dagster의 `max_concurrent_runs`↔daemon
-메모리 결합은 별개 축이다([../resource-sizing.md](../resource-sizing.md) §Dagster).
+`spark.executor.instances`를 2로 올리면 **Allocatable을 넘겨 스케줄 자체가 실패**한다(Airflow 포함 피크는 미측정) — 경계
+②는 이제 "여유가 없다"가 아니라 **"안 된다"** 이다. 확장이 필요하면 늘리는 쪽이 아니라 **Flink 세션을 먼저 내린다.** K8s
+태스크 파드는 온디맨드라 얹힐 수 있다(스펙 기준, 미측정). 호스트 Dagster의 `max_concurrent_runs`↔daemon 메모리 결합은
+별개 축이다([../resource-sizing.md](../resource-sizing.md) §Dagster).
 
 ### ResourceQuota는 도입하지 않는다
 
