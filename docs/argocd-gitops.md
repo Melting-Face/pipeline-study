@@ -58,7 +58,7 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
   flink-operator/            ①  flink-kubernetes-operator 차트 + 웹훅·워크로드 RBAC + operator-values
   storage-external/          ②  직접 작성(ExternalName Service — 클러스터 밖 SeaweedFS)
   catalog-postgres/          ②  CNPG Cluster CR
-  airflow/                   ③  argocd-study 차트 재사용(PR3-B) — 이미지는 images/airflow/(PR3-A)
+  airflow/                   ③  Airflow umbrella 차트(PR3-B) — 메타 DB는 CNPG 별도 롤·DB, 이미지는 images/airflow/
 ```
 
 | 주체 | 소유 |
@@ -257,7 +257,7 @@ scripts/k8s-secrets.sh                    # ② 이후. 순서 강제 아님 —
 | PR1 | 스택 A·B, appset, ① 오퍼레이터 차트 4종, CI(helm 스텝·재귀 탐색), `k8s-env.sh` 가드, 철거 대상(§3), 문서 갱신 | 정적 게이트 + 관문 ①②③. 머지 시 계획 문서 삭제 |
 | PR2 | ② `storage-external`·`catalog-postgres` 차트, `k8s-secrets.sh`, `k8s-poc-storage.sh` 철거, 클러스터 교체 | 관문 ⓪①④ |
 | PR3-A | Airflow 커스텀 이미지(`images/airflow/`) + GHCR 발행 워크플로 | 태그 발행 후 인증 없이 pull |
-| PR3-B | ③ Airflow 차트(CNPG 메타DB) + values 태그 갱신(bump) 브랜치 push — Airflow 이행 미션과 합류 | 별도 설계 |
+| PR3-B | ③ Airflow 차트(CNPG 메타DB) + values 태그 갱신(bump) 브랜치 push | [설계](superpowers/specs/2026-10-11-airflow-argocd-design.md) |
 
 PR마다 함께 갱신할 단일 출처: [setup.md](setup.md) §3·[setup/local-k8s.md](setup/local-k8s.md)(부트스트랩),
 [architectures/terraform.md](architectures/terraform.md)(스택 분할),

@@ -30,6 +30,16 @@
   `bootstrap.initdb`로 만든 롤을 **선언 관리로 인수**하는 형태이며 `name`은 initdb의 `owner`와 같아야 한다.
   구 클러스터에선 `dagster` 롤도 같은 방식이었다(실측 `reconciled: ["iceberg","dagster"]` — Airflow 대체 예정이라 철거).
   단 **이미 떠 있는 워크로드의 env는 여전히 수동**이라 Spark Connect·Flink 파드는 **재기동까지 한 벌**이다.
+- **쌍 Secret은 한 벌로 회전하고 반쪽을 거부한다** — 「같은 비밀번호를 두 시크릿에 두지 않는다」의 예외 둘이다.
+  CNPG `passwordSecret`은 Cluster 네임스페이스(`default`)에, 차트가 읽는 `connection`·`password`는 앱
+  네임스페이스(`airflow`)에 있어야 해 **교차 참조가 불가능**하다. 한 랜덤 값에서 쌍으로 만든다.
+  - **PG 쌍**: `default/airflow-pg-app`(CNPG 롤) ↔ `airflow/airflow-metadata`(메타 DB 접속 문자열).
+  - **Redis 쌍**: `airflow/airflow-redis-password`(Redis 인증) ↔ `airflow/airflow-broker-url`(Celery 브로커 URL).
+  - `k8s-secrets.sh`의 `ensure_secret_pair`가 판정한다: 둘 다 있으면 건드리지 않고, 둘 다 없으면 같은 값으로
+    둘 다 만들며, **한쪽만 있으면 아무것도 만들지 않고 중단**한다(새 값을 만들면 두 쪽이 갈려 인증에서 죽는다).
+  - 회전은 **쌍의 양쪽 Secret을 지우고 스크립트를 다시 돌린 뒤** 롤 재적용(PG 쌍)과 워크로드 재기동까지 한 벌이다.
+    한쪽만 지우면 반쪽 거부에 걸리는 것이 의도된 동작이다.
+  - 쌍을 만드는 도중 실패해 **반쪽이 남으면** 남은 쪽을 지우고 스크립트를 다시 실행한다.
 - **`bootstrap.initdb.owner`와 시크릿 `username`은 반드시 같아야 한다**(CNPG 문서 명시).
   CR의 `owner`는 리터럴이라 `PG_USER` env override와 자동으로 맞춰지지 않으므로,
   `k8s-secrets.sh`가 **Secret을 만들기 전에 CR의 `owner`와 `PG_USER`를 대조해 불일치 시 중단**한다.
@@ -93,7 +103,7 @@
   PHI 경로는 아니다 — [security.md](../../security.md) 4-4).
 - **PVC 사후 확장이 안 된다** — kind 기본 SC(`rancher.io/local-path`)는 `ALLOWVOLUMEEXPANSION=false`다
   (실측). 용량은 처음에 넉넉히 잡고, 늘리려면 클러스터 재생성이다.
-- **메타 Postgres(Dagster) — 두지 않는다.** 구 클러스터에선 같은 `catalog-postgres`에 `Database` CR로
-  `dagster` DB와 전용 롤을 더했었으나, Dagster를 Airflow로 대체하기로 해 DB·롤·Secret(`dagster-meta-pg-app`)을
-  모두 철거했다. 오케스트레이터 메타 DB를 다시 둘 때(Airflow)는 같은 형태 — `Database` CR + 카탈로그와
-  **분리된** 롤·Secret — 로 선언한다.
+- **메타 Postgres** — Dagster는 배포하지 않는다: 구 클러스터의 `dagster` DB·롤·Secret(`dagster-meta-pg-app`)은
+  Airflow로 대체하며 모두 철거했다. Airflow 메타 DB는 같은 `catalog-postgres`에 선언한다 —
+  `gitops/charts/catalog-postgres/templates/database-airflow.yaml`(`Database` CR) + `managed.roles`의 `airflow`
+  롤(Secret `airflow-pg-app`). 카탈로그와 **분리된** 롤·Secret이다.

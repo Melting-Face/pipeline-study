@@ -15,6 +15,10 @@
 #       service_accounts: [name...] — 그 이름의 ServiceAccount 가 렌더에 있다(릴리스 이름 변경으로
 #       SA 이름이 바뀌어 RBAC 가 조용히 빗나가는 것을 잡는다)
 #       fields: [{ref: Kind/name, path: [키·목록 인덱스...], value: V}] — 그 리소스의 필드 값이 V 다(null = 부재)
+#       absent: [Kind/name...] — 그 리소스가 렌더 결과에 없다(켜면 안 되는 구성요소가 새어 나오는 것을 잡는다)
+#       no_hook_kinds: [Kind...] — 그 kind 의 모든 문서에 helm.sh/hook 어노테이션이 없다(대상 0개면 실패).
+#         hook 리소스는 ArgoCD 에서 sync 후 정리돼 상주해야 할 것이 사라지는 것을 잡는다
+#       위 외의 최상위 키는 `(c) 알 수 없는 키` 로 실패한다(오타가 조용히 무시되는 것을 막는다)
 #   빈 렌더(문서 0개)는 실패다.
 # 앱명·네임스페이스는 terraform/platform 의 var.apps 와 같은 값을 쓴다(아래 case).
 # 마지막 줄은 `검사한 차트: N개` 이며, 0개면 실패한다.
@@ -50,6 +54,7 @@ for dir in "${charts[@]}"; do
         flink-operator) ns="flink-operator" ;;
         storage-external) ns="default" ;;
         catalog-postgres) ns="default" ;;
+        airflow) ns="airflow" ;;
         *)
             echo "FAIL [${app}] 네임스페이스 매핑이 없다 — 이 스크립트의 case 와 var.apps 에 등록"
             failed=1
@@ -134,7 +139,12 @@ for doc in crds:
 
 # (c) 차트별 기대
 waves = 0
+allowed_keys = {
+    "crd_keep_exempt", "min_crds", "service_accounts", "fields", "kinds_with_wave", "absent", "no_hook_kinds",
+}
 if expect_path:
+    for key in sorted(set(expect) - allowed_keys):
+        errors.append(f"(c) 알 수 없는 키 {key}")
     min_crds = expect.get("min_crds")
     if min_crds is not None and len(crds) < min_crds:
         errors.append(f"(c) CRD {len(crds)}개 < min_crds {min_crds}")
@@ -157,6 +167,20 @@ if expect_path:
                 got = got.get(key) if isinstance(got, dict) else None
         if got != f["value"]:
             errors.append(f"(c) {f['ref']} {'.'.join(map(str, f['path']))}: 기대 {f['value']!r}, 실제 {got!r}")
+    # absent: ["Kind/name"] — 렌더 결과에 있으면 실패
+    for ref in expect.get("absent") or []:
+        kind, _, name = ref.partition("/")
+        if any(d["kind"] == kind and (d.get("metadata") or {}).get("name") == name for d in docs):
+            errors.append(f"(c) {ref}: 렌더 결과에 있다(absent)")
+    # no_hook_kinds: [Kind] — 그 kind 문서에 helm.sh/hook 이 하나라도 있으면 실패, 대상 0개도 실패
+    for kind in expect.get("no_hook_kinds") or []:
+        targets = [d for d in docs if d["kind"] == kind]
+        if not targets:
+            errors.append(f"(c) kind {kind}: 렌더 결과에 없다(대상 0개, no_hook_kinds)")
+        for doc in targets:
+            ann = (doc.get("metadata") or {}).get("annotations") or {}
+            if "helm.sh/hook" in ann:
+                errors.append(f"(c) {name_of(doc)}: helm.sh/hook 이 있다(no_hook_kinds): {ann['helm.sh/hook']!r}")
     for kind, wave in (expect.get("kinds_with_wave") or {}).items():
         targets = [d for d in docs if d["kind"] == kind]
         if not targets:

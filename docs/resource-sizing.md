@@ -87,7 +87,7 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu / memo
 
 ### (B) 컴포넌트 배분 (requests / limits) — 동시 기동
 
-원칙: **Σrequests ≤ 노드 Allocatable**. 실측으로 **BATCH+STREAM 동시 기동이 예산 안에 들어옴**이
+원칙: **Σrequests ≤ 노드 Allocatable**. 실측으로 **BATCH+STREAM 동시 기동이 예산 안에 들어옴(Airflow 제외)**이
 확인돼 시분할 금지가 **동시 기동 허용**으로 바뀌었다([conventions/k8s.md](conventions/k8s.md) §9-3).
 
 🔴 **이 표에는 합계 행과 백분율 열이 없다 — 누락이 아니라 결정이다.**
@@ -120,6 +120,7 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 | | `argocd-server`(UI·API) | 50m | 128Mi | 250m | 256Mi |
 | | `argocd-applicationset-controller` | 50m | 64Mi | 250m | 128Mi |
 | | `argocd-redis` | 50m | 64Mi | 200m | 128Mi |
+| **Airflow**(상주, 회수 불가) | apiServer·scheduler·dagProcessor·Celery worker·redis·사이드카 3 — 값 정본은 `gitops/charts/airflow/values.yaml` requests, 합계 없음. 일회성 Job(migrate·create-user)과 K8s 태스크 파드는 상주 아님 | 정본 참조 | 정본 참조 | 정본 참조 | 정본 참조 |
 | **온디맨드 상주** | **Spark Connect 서버**(dbt 접속용 · driver 겸용, 미사용 시 `--replicas=0`) | 500m | 1536Mi | 1 | 2Gi |
 | | **Spark Connect executor × 1** ⁸ — `k8s://`라 **함께 상주** | 1000m | 1408Mi | 1 | 1408Mi |
 | | Flink JobManager(세션 클러스터, 잡 없어도 상주) | 1000m | 2048Mi | 1 | 2Gi |
@@ -153,8 +154,7 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 ⁵ 🔴 **executor는 1개로 제한**한다. 하나를 더 붙이면 `+1000m`이 얹혀 Allocatable을 넘긴다 —
   그 시점은 "여유가 없다"가 아니라 **스케줄 자체가 실패**하는 지점이다.
   ⚠️ **기준선이 둘이라 계산도 둘**이다(과거 Dagster 상주분 포함 여부 —
-  지금은 ArgoCD가 대신 상주) — 둘 다 참이고 값은 볼트 §6-2.
-  늘려야 하면 **Flink 세션을 먼저 내린다.**
+  지금은 ArgoCD가 대신 상주) — 둘 다 참이고 값은 볼트 §6-2. 늘려야 하면 **Flink 세션을 먼저 내린다.**
 ⁶ **"일시"는 배치 잡 기준이다** — **스트리밍 잡의 TM은 잡 수명 내내 상주**한다.
   예산상으로는 배치 동시 피크보다 낮지만 **경계 ①의 전제는 여전히 깨진다.**
   ⇒ 이 표는 그대로 둔다. TM 상주는 **상시 구성이 아니라 시연 창 안의 일시 구성**이고,

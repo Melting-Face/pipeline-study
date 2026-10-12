@@ -33,10 +33,14 @@ import json
 from airflow.models.dagbag import DagBag
 
 bag = DagBag(dag_folder="/opt/airflow/dags", include_examples=False)
-print(json.dumps({"errors": bag.import_errors, "dag_ids": sorted(bag.dag_ids)}))
+hello = bag.dags.get("hello")
+tasks = {t.task_id: t.executor for t in hello.tasks} if hello else {}
+print(json.dumps({"errors": bag.import_errors, "dag_ids": sorted(bag.dag_ids), "tasks": tasks}))
 '
 
-if ! result="$(podman run --rm "${IMAGE}" python -c "${CHECK_PY}" | tail -n 1)"; then
+# 배포(차트)와 같은 executor 목록을 주입한다. 없으면 태스크의 executor="KubernetesExecutor"가
+# UnknownExecutorException으로 import 오류가 된다. 첫 번째가 기본 executor다.
+if ! result="$(podman run --rm -e AIRFLOW__CORE__EXECUTOR=CeleryExecutor,KubernetesExecutor "${IMAGE}" python -c "${CHECK_PY}" | tail -n 1)"; then
     echo "FAIL [run] 컨테이너에서 DagBag 검사 실행 실패"
     exit 1
 fi
@@ -55,6 +59,14 @@ if echo "${result}" | jq -e '.dag_ids | index("hello")' >/dev/null; then
     echo "PASS [dag-id] DAG id 'hello' 존재"
 else
     echo "FAIL [dag-id] DAG id 'hello'가 없다"
+    rc=1
+fi
+
+# 미지정 태스크는 null(→ 배포 기본 Celery), k8s 태스크만 명시 executor를 가진다.
+if echo "${result}" | jq -e '.tasks == {"say_hello": null, "say_hello_k8s": "KubernetesExecutor"}' >/dev/null; then
+    echo "PASS [executors] say_hello=기본(Celery), say_hello_k8s=KubernetesExecutor"
+else
+    echo "FAIL [executors] 태스크별 executor가 기대와 다르다"
     rc=1
 fi
 
