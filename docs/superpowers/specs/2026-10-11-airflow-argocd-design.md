@@ -87,14 +87,17 @@
 | `airflow-api-secret` | airflow | `api-secret-key` | `apiSecretKeySecretName` |
 | `airflow-redis-password` | airflow | `password` | `redis.passwordSecretName` |
 | `airflow-broker-url` | airflow | `connection` = `redis://:<pw>@airflow-redis:6379/0` | `data.brokerUrlSecretName` |
+| `airflow-admin` | airflow | `password`(사용자명은 `admin`) | `createUserJob`의 `args`·`env`(`$(AIRFLOW_ADMIN_PASSWORD)`) |
+
+Secret은 모두 **8종**(ns `airflow` 7 + `default`의 `airflow-pg-app` 1)이다.
 
 🔴 **비밀번호 하나가 Secret 두 벌에 산다** — PG(`airflow-pg-app` ↔ `airflow-metadata`),
 Redis(`airflow-redis-password` ↔ `airflow-broker-url`). 스크립트는 한 값으로 **두 벌을 한 번에** 만들고,
 한쪽만 있으면 만들지 않고 실패한다(get-or-create가 반쪽을 새 값으로 채우면 쌍이 어긋난다).
 회전 규칙은 `docs/conventions/k8s/cnpg.md`의 회전 절에 쌍으로 적는다.
 
-UI 계정은 `createUserJob`의 admin을 쓰되 비밀번호를 values에 두지 않는다. 차트에 Secret 참조 키가
-없으면 「로컬 dev 한정 기본값」으로 **선언**하고 남긴다(조용한 기본값과 구분).
+UI 계정은 `createUserJob`의 admin을 쓰되 비밀번호를 values에 두지 않는다. 차트에 Secret 참조 키가 없어
+`airflow-admin` Secret을 만들고 `createUserJob`의 `args`·`env`로 주입한다(확정 — 기본값 대신 Secret).
 
 ### 5. DAG — 두 경로 검증
 

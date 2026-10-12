@@ -152,6 +152,7 @@ kubectl get applications -n argocd        # 전부 Synced · Healthy 면 수렴
 | 경로 | 주소(기본 포트 — 지금은 8082/8445) | 상태 |
 | --- | --- | --- |
 | ArgoCD UI | http://argocd.localtest.me:8080 | ✅ 상시 |
+| Airflow UI | http://airflow.localtest.me:8080 | ✅ 상시(Ingress `airflow-ingress`) |
 | Flink Web UI | http://flink.localtest.me:8080 | ⏸ 세션 클러스터가 떠 있을 때 |
 | Spark Web UI | http://spark.localtest.me:8080 | ⏸ Spark Connect `--replicas=1`일 때 |
 | Spark Connect (gRPC) | `sc://spark-grpc.localtest.me:8443/;use_ssl=true` | ⏸ `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` 필요 |
@@ -165,6 +166,23 @@ kubectl port-forward svc/spark-connect       15002:15002  # Spark Connect 폴백
 
 - Flink UI를 열면 잡 제출 REST API도 같은 포트로 열린다.
 - S3는 클러스터 밖(compose)이라 port-forward 없이 `http://localhost:8333`으로 직결한다.
+
+#### Airflow 선행 순서·로그인·회전
+
+- **`scripts/k8s-secrets.sh`를 먼저 돌린다** — `catalog-postgres` 변경(airflow 롤·DB)과 `airflow` 앱이 sync되기 전에.
+  ApplicationSet은 `main`을 추적하므로 머지가 곧 sync다. 늦으면 파드가 `CreateContainerConfigError`로 멈추고(일반 K8s
+  동작) 롤의 `passwordSecret`이 없으면 CNPG가 롤을 조정하지 못한다(CNPG 문서상 — 미측정).
+- 로그인 사용자는 `admin`이고 비밀번호는 Secret `airflow/airflow-admin`의 키 `password`다(값은 화면에 찍지 않는다).
+
+  ```shell
+  kubectl -n airflow get secret airflow-admin -o jsonpath='{.data.password}' | base64 -d | pbcopy
+  ```
+
+- **Secret 값을 바꿔도 파드는 자동 재기동되지 않는다** — 차트 checksum 어노테이션은 Secret 이름만 해시한다
+  (차트 1.22.0 렌더 확인). 회전은 PG 쌍·Redis 쌍 규칙([conventions/k8s/cnpg.md](conventions/k8s/cnpg.md))에 더해
+  **Airflow 워크로드 재기동**까지 한 벌이다.
+- K8s executor 태스크의 로그는 파드와 함께 사라진다(선언된 공백, Celery 태스크는 worker PVC에서 UI가 서빙).
+  설계는 [spec](superpowers/specs/2026-10-11-airflow-argocd-design.md) §7.
 
 ### 3-2. 컴퓨트 기동·회수 ⏸
 

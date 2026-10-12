@@ -244,7 +244,7 @@
   재기동만으로 카탈로그가 소멸했다). 서비스명에 **`-rw`/`-ro`/`-r` 접미사**가 붙고 접미사 없는 이름은 없다.
   **비밀번호 회전은 Secret·DB 롤·`.env`·워크로드 재기동을 한 벌로** 한다 — 한쪽만 바꾸면
   **성공한 것처럼 보이는데 안 바뀐 상태**가 된다(§12에 해소 내역).
-  **메타 Postgres는 두지 않는다**(Dagster→Airflow 대체 예정, `dagster` DB·롤·Secret 철거). 카탈로그 CR은 ArgoCD 차트다.
+  **메타 Postgres는 따로 없다**(Airflow 메타는 CNPG 별도 롤·DB, `dagster` DB·롤 철거). 카탈로그 CR은 ArgoCD 차트다.
   **SeaweedFS(S3)는 클러스터 밖 컨테이너, 소유는 스택 A**(`docker_container.seaweedfs`)이고 파드는
   `Service seaweedfs`(ExternalName → 별칭 `seaweedfs-ext`)로 닿는다 — 데이터는 바인드라 destroy에도 남는다.
   엔진 버전은 **최신이 아니라 Iceberg가 지원하는 짝**으로 고정한다(예: `iceberg-flink-runtime`이 2.1까지라 Flink는 2.1).
