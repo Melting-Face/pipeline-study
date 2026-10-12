@@ -152,7 +152,7 @@ kubectl get applications -n argocd        # 전부 Synced · Healthy 면 수렴
 | 경로 | 주소(기본 포트 — 지금은 8082/8445) | 상태 |
 | --- | --- | --- |
 | ArgoCD UI | http://argocd.localtest.me:8080 | ✅ 상시 |
-| Airflow UI | http://airflow.localtest.me:8080 | ✅ 상시(Ingress `airflow-ingress`) |
+| Airflow UI | http://airflow.localtest.me:8080 | ✅ 이미지 `v0.2.0` 발행 + 플랫폼 apply 뒤 상시(그 전엔 ImagePullBackOff, Ingress `airflow-ingress`) |
 | Flink Web UI | http://flink.localtest.me:8080 | ⏸ 세션 클러스터가 떠 있을 때 |
 | Spark Web UI | http://spark.localtest.me:8080 | ⏸ Spark Connect `--replicas=1`일 때 |
 | Spark Connect (gRPC) | `sc://spark-grpc.localtest.me:8443/;use_ssl=true` | ⏸ `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` 필요 |

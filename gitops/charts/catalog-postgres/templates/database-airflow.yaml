@@ -12,7 +12,7 @@ spec:
     name: airflow
     owner: airflow
     ensure: present
-    # CRD 기본값(retain)을 명시한다 — CR을 지워도 DB를 보존하고, 생략 시 라이브에만 값이 생겨 OutOfSync가 된다.
+    # CRD 기본값(retain)을 명시한다 — CR을 지워도 DB를 보존하고, 생략 시 라이브에만 값이 생겨 OutOfSync가 된다(가설).
     databaseReclaimPolicy: retain
     cluster:
         name: catalog-postgres

@@ -87,7 +87,7 @@ kubectl get node -o jsonpath='{.items[0].status.allocatable}'       # cpu / memo
 
 ### (B) 컴포넌트 배분 (requests / limits) — 동시 기동
 
-원칙: **Σrequests ≤ 노드 Allocatable**. 실측으로 **BATCH+STREAM 동시 기동이 예산 안에 들어옴**이
+원칙: **Σrequests ≤ 노드 Allocatable**. 실측으로 **BATCH+STREAM 동시 기동이 예산 안에 들어옴(Airflow 제외)**이
 확인돼 시분할 금지가 **동시 기동 허용**으로 바뀌었다([conventions/k8s.md](conventions/k8s.md) §9-3).
 
 🔴 **이 표에는 합계 행과 백분율 열이 없다 — 누락이 아니라 결정이다.**

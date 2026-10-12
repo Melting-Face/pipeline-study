@@ -39,6 +39,9 @@ airflow:
         database:
             sql_alchemy_pool_size: 2
             sql_alchemy_max_overflow: 3
+        celery:
+            # 차트 기본 16 은 worker limit 1Gi 에 과하다 — 동시성이 조절 손잡이(A3), 메모리 limit 1Gi 기준 4
+            worker_concurrency: 4
 
     # --- 4. 끄는 컴포넌트 ---
     # 내장 PG: 메타 DB 는 CNPG catalog-postgres 의 별도 롤·DB 를 쓴다(A4)
@@ -101,6 +104,8 @@ airflow:
             # StatefulSet+PVC — 태스크 로그를 들고 있어 UI 가 서빙한다. StorageClass 를 눈에 보이게 적는다
             persistence:
                 storageClassName: standard
+                # 차트 기본 100Gi 는 VM 디스크(93GiB)보다 커서 local-path PVC 가 의미 없는 약속이 된다 — 로그용 5Gi
+                size: 5Gi
             logGroomerSidecar:
                 resources:
                     requests: {cpu: 50m, memory: 64Mi}

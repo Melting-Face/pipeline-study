@@ -103,7 +103,7 @@
   PHI 경로는 아니다 — [security.md](../../security.md) 4-4).
 - **PVC 사후 확장이 안 된다** — kind 기본 SC(`rancher.io/local-path`)는 `ALLOWVOLUMEEXPANSION=false`다
   (실측). 용량은 처음에 넉넉히 잡고, 늘리려면 클러스터 재생성이다.
-- **메타 Postgres(Dagster) — 두지 않는다.** 구 클러스터에선 같은 `catalog-postgres`에 `Database` CR로
-  `dagster` DB와 전용 롤을 더했었으나, Dagster를 Airflow로 대체하기로 해 DB·롤·Secret(`dagster-meta-pg-app`)을
-  모두 철거했다. 오케스트레이터 메타 DB를 다시 둘 때(Airflow)는 같은 형태 — `Database` CR + 카탈로그와
-  **분리된** 롤·Secret — 로 선언한다.
+- **메타 Postgres** — Dagster는 배포하지 않는다: 구 클러스터의 `dagster` DB·롤·Secret(`dagster-meta-pg-app`)은
+  Airflow로 대체하며 모두 철거했다. Airflow 메타 DB는 같은 `catalog-postgres`에 선언한다 —
+  `gitops/charts/catalog-postgres/templates/database-airflow.yaml`(`Database` CR) + `managed.roles`의 `airflow`
+  롤(Secret `airflow-pg-app`). 카탈로그와 **분리된** 롤·Secret이다.

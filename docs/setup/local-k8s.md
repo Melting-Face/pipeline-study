@@ -16,7 +16,7 @@
 | ① VM | `podman machine` | podman machine(rootful) | `podman machine list` |
 | ② 레지스트리 | `podman run` | 컨테이너 `kind-registry` · 볼륨 `kind-registry-data` | `podman ps -a --filter name=kind-registry` |
 | ③ 클러스터 · S3 | 스택 A `terraform/cluster/kind` | kind 노드 · 포트 매핑 · kubeconfig · 노드의 레지스트리 설정 · 컨테이너 `seaweedfs` · 버킷 3개 | `kubectl get nodes` · `podman inspect -f '{{.State.Health.Status}}' seaweedfs` |
-| Secret | `kubectl create secret` | `lakehouse-creds` · `catalog-pg-app` | `kubectl get secret` |
+| Secret | `kubectl create secret` | `lakehouse-creds` · `catalog-pg-app` · Airflow 8종(`scripts/k8s-secrets.sh`만) | `kubectl get secret` |
 | ④ 플랫폼 | 스택 B `terraform/platform` | `helm_release` 3개(ingress-nginx · argo-cd · appset) | `helm list -A` |
 | ⑤ 앱 | ArgoCD | `gitops/charts/<app>` | `kubectl get applications -n argocd` |
 
@@ -179,7 +179,9 @@ kubectl -n default create secret generic catalog-pg-app --type=kubernetes.io/bas
   ([`catalog-postgres/templates/cluster.yaml`](../../gitops/charts/catalog-postgres/templates/cluster.yaml))와 같아야 한다.
 - 이미 있으면 `create`는 실패한다. 값을 바꾸려면 지우고 다시 만들되, 회전은 Secret·DB 롤·`.env`·워크로드를
   한 벌로 한다([`conventions/k8s/cnpg.md`](../conventions/k8s/cnpg.md)).
-- **확인**: `kubectl get secret -n default`에 두 이름이 있다.
+- **Airflow Secret 8종**(ns `airflow` 7개 + `default/airflow-pg-app`)은 **손 경로가 없다** — 짝 규칙(한쪽만
+  만들면 거부) 때문에 `scripts/k8s-secrets.sh`로만 만든다.
+- **확인**: `kubectl get secret -n default`에 두 이름이 있고, `kubectl -n airflow get secret`에 Airflow 7개가 있다.
 - **단축**: `CLUSTER_NAME=lakehouse-next ./scripts/k8s-secrets.sh` — **이 단계도 단축을 권장한다**(값이 셸 히스토리에
   남지 않는다). 스크립트는 `.env`에서 S3 키를 읽고, 위 `owner` 일치를 먼저 검사하고, **없을 때만** 만든다(get‖create).
   `PHYSIONET_*`가 있으면 `physionet-creds`도 만든다.
@@ -229,6 +231,7 @@ kubectl get pods -n cert-manager                  # 앱마다 자기 네임스�
 kubectl get pods -n cnpg-system
 kubectl get clusters.postgresql.cnpg.io -n default  # catalog-postgres  (Secret 3단계가 있어야 진행)
 kubectl get svc seaweedfs -n default              # ExternalName → seaweedfs-ext (2단계 스택 A의 별칭)
+kubectl get pods -n airflow                       # 이미지 v0.2.0 발행 전에는 ImagePullBackOff
 
 terraform -chdir=terraform/platform output -raw argocd_url
 terraform -chdir=terraform/platform output -raw argocd_initial_admin_password_command
@@ -238,6 +241,7 @@ terraform -chdir=terraform/platform output -raw argocd_initial_admin_password_co
   `apps` 원소 수, 전부 `Synced` · `Healthy`. apply 직후엔 몇 분 걸린다.
 - `Healthy`인데 `OutOfSync`가 남으면 `argocd app diff --core <앱>`으로 필드를 확인한다
   ([`argocd-gitops.md`](../argocd-gitops.md) §5).
+- ⚠️ Airflow 이미지 `v0.2.0`이 레지스트리에 발행되기 전에는 `airflow` 파드가 `ImagePullBackOff`다(앱 결함이 아니다).
 - 오퍼레이터 변경은 `terraform apply`가 아니라 `gitops/charts/` 커밋 → push로 반영된다.
 
 ## 내리기

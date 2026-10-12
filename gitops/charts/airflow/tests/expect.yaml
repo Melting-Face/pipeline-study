@@ -24,6 +24,9 @@ fields:
     - {ref: Job/airflow-run-airflow-migrations, path: [metadata, annotations, argocd.argoproj.io/hook], value: Sync}
     - {ref: Job/airflow-create-user, path: [metadata, annotations, argocd.argoproj.io/hook], value: PostSync}
     - {ref: StatefulSet/airflow-worker, path: [spec, replicas], value: 1}
+    - ref: StatefulSet/airflow-worker
+      path: [spec, volumeClaimTemplates, 0, spec, resources, requests, storage]
+      value: 5Gi
     # admin 비밀번호가 Secret 참조로 치환되는지 — values 의 args 가 차트 기본을 통째로 덮으므로 위치(14·15)를 함께 잡는다
     - {ref: Job/airflow-create-user, path: [spec, template, spec, containers, 0, args, 14], value: "-p"}
     - ref: Job/airflow-create-user
