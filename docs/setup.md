@@ -117,28 +117,29 @@ kubectl get secret spark-grpc-tls  -o jsonpath='{.data.ca\.crt}'      | base64 -
 
 ### 올리기 (단축 경로)
 
-지금 클러스터는 **`lakehouse-next`(8082/8445)** 다. 명령은 저장소 **루트**에서 실행한다.
+클러스터는 변수 기본값 **`lakehouse`(8080/8443)** 이고 kubeconfig는 `~/.kube/lakehouse.config`다.
+명령은 저장소 **루트 체크아웃(`main`)** 에서 실행한다 — 로컬 state(`terraform/*/terraform.tfstate`)가 그 트리에
+있고, 스택 A는 linked worktree에서 apply하면 precondition이 멈춘다(SeaweedFS 데이터 경로가 체크아웃마다 갈린다).
 
 ```shell
 scripts/k8s-up.sh
 
 # 스택 A 변수 3개(S3 키 2개 · podman 소켓) — 값을 화면에 찍지 않는 준비 명령은 setup/local-k8s.md 2단계
 terraform -chdir=terraform/cluster/kind init                # 클러스터 + SeaweedFS 컨테이너 + 버킷
-terraform -chdir=terraform/cluster/kind apply \
-  -var cluster_name=lakehouse-next -var http_host_port=8082 -var https_host_port=8445
-export KUBECONFIG=~/.kube/lakehouse-next.config
+terraform -chdir=terraform/cluster/kind apply
+export KUBECONFIG=~/.kube/lakehouse.config
 
-CLUSTER_NAME=lakehouse-next ./scripts/k8s-secrets.sh   # CLUSTER_NAME을 빼면 다른 kubeconfig를 본다
+./scripts/k8s-secrets.sh                  # 앱보다 먼저 — Airflow Secret 8종 포함
 
 terraform -chdir=terraform/platform init
-terraform -chdir=terraform/platform apply \
-  -var kubeconfig_path=~/.kube/lakehouse-next.config -var kube_context=kind-lakehouse-next \
-  -var http_host_port=8082 -var target_revision=main
+terraform -chdir=terraform/platform apply   # 기본값: kind-lakehouse · 8080 · target_revision=main
 
 kubectl get applications -n argocd        # 전부 Synced · Healthy 면 수렴
 ```
 
 내리기·통과 기준·각 단계가 하는 일은 [`setup/local-k8s.md`](setup/local-k8s.md).
+검증용으로 클러스터를 **나란히** 하나 더 띄울 때만 `-var cluster_name=… -var http_host_port=…`로 이름·포트를 바꾼다
+(그때는 `CLUSTER_NAME`·`kubeconfig_path`·`kube_context`도 한 벌로 — [`argocd-gitops.md`](argocd-gitops.md) §6).
 
 ### 다이얼
 
@@ -149,10 +150,10 @@ kubectl get applications -n argocd        # 전부 Synced · Healthy 면 수렴
 
 ### 3-1. 접근 경로
 
-| 경로 | 주소(기본 포트 — 지금은 8082/8445) | 상태 |
+| 경로 | 주소(기본 포트 8080/8443) | 상태 |
 | --- | --- | --- |
-| ArgoCD UI | http://argocd.localtest.me:8080 | ✅ 상시 |
-| Airflow UI | http://airflow.localtest.me:8080 | ✅ 이미지 `v0.2.0` 발행 + 플랫폼 apply 뒤 상시(그 전엔 ImagePullBackOff, Ingress `airflow-ingress`) |
+| ArgoCD UI | http://argocd.localtest.me:8080 | ✅ 상시 — 로그인은 아래 「로그인·비밀값」 |
+| Airflow UI | http://airflow.localtest.me:8080 | ✅ 상시(첫 기동 중에는 503) — Ingress `airflow-ingress`, REST `/api/v2`도 같은 호스트 |
 | Flink Web UI | http://flink.localtest.me:8080 | ⏸ 세션 클러스터가 떠 있을 때 |
 | Spark Web UI | http://spark.localtest.me:8080 | ⏸ Spark Connect `--replicas=1`일 때 |
 | Spark Connect (gRPC) | `sc://spark-grpc.localtest.me:8443/;use_ssl=true` | ⏸ `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` 필요 |
@@ -164,20 +165,43 @@ kubectl port-forward svc/catalog-postgres-rw 15432:5432   # Iceberg JDBC 카탈�
 kubectl port-forward svc/spark-connect       15002:15002  # Spark Connect 폴백
 ```
 
-- Flink UI를 열면 잡 제출 REST API도 같은 포트로 열린다.
+- Flink UI를 열면 잡 제출 REST API도 같은 포트로 열린다. Airflow도 같다 — UI 호스트로 REST API가 함께 나간다
+  (FAB 로그인 인증). 모든 주소는 `127.0.0.1`에만 바인딩된다(kind 포트 매핑).
 - S3는 클러스터 밖(compose)이라 port-forward 없이 `http://localhost:8333`으로 직결한다.
 
-#### Airflow 선행 순서·로그인·회전
+#### 로그인·비밀값
+
+| UI | 사용자 | 비밀번호 꺼내기 |
+| --- | --- | --- |
+| ArgoCD | `admin` | `eval "$(terraform -chdir=terraform/platform output -raw argocd_initial_admin_password_command)" \| pbcopy` |
+| Airflow | `admin` | `kubectl -n airflow get secret airflow-admin -o jsonpath='{.data.password}' \| base64 -d \| pbcopy` |
+
+- 둘 다 **실행 시 생성된 랜덤 값**이다(정해진 기본 비밀번호가 없다). 클립보드로 받고 화면에 찍지 않는다.
+- ArgoCD 명령은 **`eval`이 필요하다** — output은 파이프가 든 명령 문자열이라 `$(…)`로만 펼치면 따옴표·`|`가
+  kubectl 인자로 넘어가 빈 값이 나온다. state가 있는 **루트 체크아웃**에서 실행한다.
+- Airflow 명령은 `export KUBECONFIG=~/.kube/lakehouse.config`가 된 셸을 전제로 한다(§3 올리기).
+- 🔴 **AI 에이전트 세션 안에서 꺼내지 않는다**(`!` 접두 실행 포함) — 출력이 대화 기록(transcript)에 남는다.
+  비밀값은 세션 밖 터미널에서 다룬다.
+- 다른 Secret(`catalog-pg-app`·`lakehouse-creds`)도 같다. 값의 출처는 §2 `.env`와 `scripts/k8s-secrets.sh`다.
+
+#### Airflow 기동 확인·버전
+
+```shell
+kubectl get pods -n airflow                                   # api-server·scheduler·dag-processor·worker·redis Ready
+curl -s http://airflow.localtest.me:8080/api/v2/monitor/health   # metadatabase·scheduler·dag_processor healthy
+kubectl -n airflow exec deploy/airflow-api-server -- airflow version
+```
+
+- 첫 sync는 마이그레이션 Job(ArgoCD `Sync` 훅) → 상주 파드 → admin 생성 Job(`PostSync`) 순서다.
+  api-server가 Ready가 되기 전에는 nginx가 **503**을 낸다 — 앱 결함이 아니라 기동 중이다.
+- health의 `triggerer`가 `null`인 것은 정상이다(설계상 끔 — deferrable 태스크를 쓰는 첫 DAG에서 켠다).
+- 버전의 정본은 `gitops/charts/airflow/`의 `Chart.yaml`(차트)과 `values.yaml`의 이미지 태그(`# bump-image-tag`)다.
+
+#### Airflow 선행 순서·회전
 
 - **`scripts/k8s-secrets.sh`를 먼저 돌린다** — `catalog-postgres` 변경(airflow 롤·DB)과 `airflow` 앱이 sync되기 전에.
   ApplicationSet은 `main`을 추적하므로 머지가 곧 sync다. 늦으면 파드가 `CreateContainerConfigError`로 멈추고(일반 K8s
   동작) 롤의 `passwordSecret`이 없으면 CNPG가 롤을 조정하지 못한다(CNPG 문서상 — 미측정).
-- 로그인 사용자는 `admin`이고 비밀번호는 Secret `airflow/airflow-admin`의 키 `password`다(값은 화면에 찍지 않는다).
-
-  ```shell
-  kubectl -n airflow get secret airflow-admin -o jsonpath='{.data.password}' | base64 -d | pbcopy
-  ```
-
 - **Secret 값을 바꿔도 파드는 자동 재기동되지 않는다** — 차트 checksum 어노테이션은 Secret 이름만 해시한다
   (차트 1.22.0 렌더 확인). 회전은 PG 쌍·Redis 쌍 규칙([conventions/k8s/cnpg.md](conventions/k8s/cnpg.md))에 더해
   **Airflow 워크로드 재기동**까지 한 벌이다.
@@ -321,6 +345,11 @@ kubectl port-forward svc/spark-connect 15002:15002   # 별도 터미널
 | --- | --- | --- |
 | `k8s-up.sh`가 rootful 오류로 멈춤 | `podman machine set --rootful` 후 재시작 | [`architectures/k8s.md`](architectures/k8s.md) |
 | `MACHINE_*`를 바꿔도 VM 자원이 그대로 | 머신을 중지하고 `podman machine set --cpus/--memory` | [`resource-sizing.md`](resource-sizing.md) |
+| Airflow UI가 503 | 기동 중이다 — `kubectl get pods -n airflow`에서 api-server Ready를 기다린다 | §3-1 Airflow 기동 확인 |
+| airflow 파드 `ImagePullBackOff` | values 태그의 이미지가 아직 GHCR에 없다 — `main` 머지 발행 워크플로를 본다 | [`conventions/docker.md`](conventions/docker.md) §3 |
+| airflow 파드 `CreateContainerConfigError` | Secret이 없다 — `scripts/k8s-secrets.sh`(멱등) | §3-1 Airflow 선행 순서 |
+| `k8s-secrets.sh`가 「반쪽 Secret 쌍」으로 멈춤 | 쌍 중 남은 쪽을 지우고 다시 실행한다 | [`conventions/k8s/cnpg.md`](conventions/k8s/cnpg.md) |
+| `terraform apply`(스택 A)가 linked worktree 거부 | 루트 체크아웃에서 실행한다(state도 거기 있다) | §3 올리기 |
 | 호스트 포트를 바꿔야 함 | 스택 A destroy → 새 `-var`로 apply(생성 시점에만 정해진다) | [`argocd-gitops.md`](argocd-gitops.md) §6 |
 | 15002 port-forward 실패 | Spark Connect를 `--replicas=1`로 올린다(평시 0) | §3-2 |
 | 15432 port-forward가 접속마다 끊김 | 재기동 루프로 감싼다 | [`resource-sizing.md`](resource-sizing.md) §호스트 압박 판정 지표 |
