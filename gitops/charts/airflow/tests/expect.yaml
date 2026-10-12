@@ -1,0 +1,43 @@
+# 렌더 결과에 대한 기대 — scripts/gitops-charts-check.sh (c)
+# 설계(docs/superpowers/specs/*-airflow-argocd-design.md §2)의 핵심 가정 셋을 직접 겨눈다.
+#   1. helm.sh/hook 이 붙은 Job 0개 — ArgoCD 가 Helm post-install 훅을 PostSync 로 옮겨 마이그레이션을 기다리는
+#      파드와 교착한다(A6). Secret 은 렌더 0개가 기대값이라 no_hook_kinds 가 아니라 absent 가 맡는다
+#   2. migrate Job 에 argocd.argoproj.io/hook: Sync(A6)
+#   3. 차트가 랜덤 생성하는 Secret 0개(A5) — 이름을 values 로 넘기면 차트는 Secret 을 만들지 않는다
+no_hook_kinds: [Job]
+# absent 의 Secret 이름은 「이름을 안 줬을 때 차트가 만드는 이름」이어야 단언이 무언가를 본다.
+# 6종 이름을 모두 null 로 렌더해 실측했다 — 5종은 values 에 준 이름과 같고, api 만 다르다:
+# 차트 기본은 `<release>-api-secret-key` 라 values 의 airflow-api-secret 은 차트가 결코 렌더하지 않는 이름이다
+# (그 줄만으로는 항상 통과하는 공허한 단언). 그래서 airflow-api-secret-key 를 함께 둔다.
+absent:
+    - Secret/airflow-fernet-key
+    - Secret/airflow-jwt-secret
+    - Secret/airflow-api-secret
+    - Secret/airflow-api-secret-key
+    - Secret/airflow-metadata
+    - Secret/airflow-broker-url
+    - Secret/airflow-redis-password
+    - Deployment/airflow-triggerer
+    - StatefulSet/airflow-triggerer
+    - StatefulSet/airflow-postgresql
+fields:
+    - {ref: Job/airflow-run-airflow-migrations, path: [metadata, annotations, argocd.argoproj.io/hook], value: Sync}
+    - {ref: Job/airflow-create-user, path: [metadata, annotations, argocd.argoproj.io/hook], value: PostSync}
+    - {ref: StatefulSet/airflow-worker, path: [spec, replicas], value: 1}
+    # admin 비밀번호가 Secret 참조로 치환되는지 — values 의 args 가 차트 기본을 통째로 덮으므로 위치(14·15)를 함께 잡는다
+    - {ref: Job/airflow-create-user, path: [spec, template, spec, containers, 0, args, 14], value: "-p"}
+    - ref: Job/airflow-create-user
+      path: [spec, template, spec, containers, 0, args, 15]
+      value: "$(AIRFLOW_ADMIN_PASSWORD)"
+    # Ingress 이름은 차트가 ingress.apiServer 에 붙이는 `<release>-ingress` 다(`airflow-api-server` 가 아니다)
+    - {ref: Ingress/airflow-ingress, path: [spec, rules, 0, host], value: airflow.localtest.me}
+    - {ref: Ingress/airflow-ingress, path: [spec, ingressClassName], value: nginx}
+    # executor 순서(첫 자리 = 기본, A2)의 대리 단언 — 차트 templates/scheduler/scheduler-deployment.yaml 이
+    # `.Values.executor | replace "," "-"` 를 scheduler 라벨로 렌더한다(순서 보존). 뒤집으면 이 값이 바뀐다
+    - ref: Deployment/airflow-scheduler
+      path: [metadata, labels, executor]
+      value: "CeleryExecutor-KubernetesExecutor"
+# 선언된 공백(좁힌 범위) — executor 원문은 ConfigMap/airflow-config 안 두 곳에만 있다:
+#   `airflow.cfg` 의 `executor = ...` 와 `pod_template_file.yaml` 의 AIRFLOW__CORE__EXECUTOR env
+#   (차트 files/pod-template-file.kubernetes-helm-yaml). 둘 다 ConfigMap 의 문자열 값 안이라 fields(값 전체 일치)로
+#   표현할 수 없다. 위 scheduler 라벨이 순서를 대리 단언한다 — 단 라벨은 `,`→`-` 치환·63자 절단을 거친 값이다.

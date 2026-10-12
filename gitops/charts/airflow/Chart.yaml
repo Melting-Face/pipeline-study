@@ -1,0 +1,9 @@
+apiVersion: v2
+name: airflow
+description: 공식 Apache Airflow chart(umbrella) — 이미지·Secret 참조·훅 회피만 덧씌운다
+type: application
+version: 0.1.0
+dependencies:
+    - name: airflow
+      version: 1.22.0
+      repository: https://airflow.apache.org

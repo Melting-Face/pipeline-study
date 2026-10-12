@@ -1,0 +1,185 @@
+# 서브차트(공식 apache-airflow/airflow 1.22.0, Airflow 3.2.2) 값 — 업스트림 키는 `airflow:` 아래에 둔다.
+# 이식 출발점은 자매 저장소 argocd-study 의 같은 차트다. 그쪽은 LocalExecutor·내장 PG 라 그 부분은 옮기지 않았다.
+# 설계: docs/superpowers/specs/*-airflow-argocd-design.md (A1~A8). 자원 근거: docs/resource-sizing.md §B.
+# 🔴 Secret 값은 Git 에 두지 않는다 — 이름만 넘기고 scripts/k8s-secrets.sh 가 미리 만든다(A5).
+airflow:
+    # --- 0. 이미지 ---
+    # 태그 한 줄이 배포 상태의 단일 출처다. 🔴 bump 마커 주석은 이 파일에서 아래 tag 줄에만 둔다(정확히 1줄).
+    images:
+        airflow:
+            repository: ghcr.io/melting-face/pipeline-study-airflow
+            tag: "v0.2.0"  # bump-image-tag
+
+    # --- 1. Executor (A2) ---
+    # 순서가 의미다 — 첫 자리(Celery)가 기본, 태스크 단위 `executor="KubernetesExecutor"` 로 라우팅한다.
+    # 차트 values.schema.json 의 executor 패턴이 쉼표 구분 다중 executor 를 허용한다.
+    executor: "CeleryExecutor,KubernetesExecutor"
+
+    # --- 2. 랜덤 Secret 고정 (A5) ---
+    # 이름을 주지 않으면 차트가 렌더(=sync)마다 randAlphaNum 으로 새 값을 만든다 → 영구 OutOfSync,
+    # 재기동 시 암호화된 Connection 복호화 실패. 이름을 주면 차트는 Secret 을 만들지 않고 참조만 한다.
+    fernetKeySecretName: airflow-fernet-key  # 키 fernet-key
+    jwtSecretName: airflow-jwt-secret  # 키 jwt-secret
+    # Airflow 3 에서 AIRFLOW__API__SECRET_KEY 를 채우는 키. webserverSecretKeySecretName 은 <3.0.0 게이트라 쓰지 않는다
+    apiSecretKeySecretName: airflow-api-secret  # 키 api-secret-key
+    data:
+        # 키 connection — postgresql+psycopg2://airflow:<pw>@catalog-postgres-rw.default.svc:5432/airflow (A4)
+        # result backend: 차트는 AIRFLOW__CELERY__RESULT_BACKEND env 를 렌더하지 않는다(resultBackend* 미지정) →
+        # celery provider 가 런타임에 db+<sql_alchemy_conn> 으로 폴백한다고 본다
+        # (근거 등급: 차트 템플릿 _helpers.yaml 확인, provider 소스는 미대조)
+        metadataSecretName: airflow-metadata
+        # 키 connection — redis://:<pw>@airflow-redis:6379/0. 🔴 redis.passwordSecretName 과 **함께** 줘야
+        # templates/secrets/redis-secrets.yaml 의 randAlphaNum + pre-install 훅 Secret 이 렌더되지 않는다
+        brokerUrlSecretName: airflow-broker-url
+
+    # --- 3. 메타 DB 풀 (설계 §3) ---
+    # max_connections 를 카탈로그(iceberg)와 공유하므로 프로세스마다 SQLAlchemy 풀을 작게 묶는다.
+    # 차트 기본 config 와 deep merge 된다(다른 섹션은 차트 기본 유지).
+    config:
+        database:
+            sql_alchemy_pool_size: 2
+            sql_alchemy_max_overflow: 3
+
+    # --- 4. 끄는 컴포넌트 ---
+    # 내장 PG: 메타 DB 는 CNPG catalog-postgres 의 별도 롤·DB 를 쓴다(A4)
+    postgresql:
+        enabled: false
+    # triggerer: hello DAG 에 deferrable 태스크가 없다(A7·YAGNI). 재활성 조건: deferrable operator 를 쓰는 첫 DAG
+    triggerer:
+        enabled: false
+    # statsd: 긁어갈 수집기가 없다(계측 대상 없는 수집기를 두지 않는다)
+    statsd:
+        enabled: false
+    flower:
+        enabled: false
+    pgbouncer:
+        enabled: false
+    # webserver: Airflow 3 에서는 templates/webserver/*.yaml 이 전부 `semverCompare "<3.0.0"` 게이트라 이미 no-op.
+    # UI 는 apiServer 가 서빙한다는 판단을 값으로 남겨, airflowVersion 을 2.x 로 내려도 조용히 살아나지 않게 한다
+    webserver:
+        enabled: false
+
+    # --- 5. 상주 컴포넌트 자원 (설계 §1 — 차트 기본값에 맡기지 않는다) ---
+    apiServer:
+        resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {cpu: 500m, memory: 1Gi}
+    scheduler:
+        resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {cpu: 500m, memory: 1Gi}
+        logGroomerSidecar:
+            resources:
+                requests: {cpu: 50m, memory: 64Mi}
+                limits: {cpu: 100m, memory: 128Mi}
+    # Airflow 3 에서 필수(standalone dag processor) — 끌 수 있는 선택이 아니다
+    dagProcessor:
+        resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {cpu: 500m, memory: 1Gi}
+        logGroomerSidecar:
+            resources:
+                requests: {cpu: 50m, memory: 64Mi}
+                limits: {cpu: 100m, memory: 128Mi}
+    # Celery 브로커. 🔴 passwordSecretName 은 data.brokerUrlSecretName 과 한 쌍(같은 비밀번호가 두 Secret 에 산다)
+    redis:
+        enabled: true
+        passwordSecretName: airflow-redis-password  # 키 password
+        resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 250m, memory: 256Mi}
+
+    # --- 6. Worker ---
+    # 최상위 workers.replicas·workers.resources·workers.persistence 는 deprecated — 차트가 권하는 workers.celery.* 를 쓴다.
+    workers:
+        celery:
+            # replicas 1, KEDA·HPA 없음(A3) — CPU 가 급소, 동시성은 worker_concurrency 로 조절
+            replicas: 1
+            resources:
+                requests: {cpu: 250m, memory: 512Mi}
+                limits: {cpu: 500m, memory: 1Gi}
+            # StatefulSet+PVC — 태스크 로그를 들고 있어 UI 가 서빙한다. StorageClass 를 눈에 보이게 적는다
+            persistence:
+                storageClassName: standard
+            logGroomerSidecar:
+                resources:
+                    requests: {cpu: 50m, memory: 64Mi}
+                    limits: {cpu: 100m, memory: 128Mi}
+        # KubernetesExecutor 태스크 파드(온디맨드, pod_template_file). 렌더 검사 (a)는 ConfigMap 안의 템플릿을
+        # 보지 못하지만 "모든 컨테이너에 requests/limits" 규약(docs/conventions/k8s.md)의 대상이라 worker 와 같은 값을 준다.
+        # 이미지: pod_template 은 차트 기본 apache/airflow:3.2.2 로 렌더되지만, 실제 태스크 파드 이미지는 airflow.cfg 의
+        # [kubernetes_executor] worker_container_repository/tag(= 위 images.airflow)가 덮어쓴다(차트 values.yaml
+        # images.pod_template 주석 근거, 런타임 미실측 — Task 7 에서 실측). images.pod_template 은 지정하지 않는다
+        # (bump 마커 1줄 제약 — 태그를 두 줄에 두지 않는다)
+        kubernetes:
+            resources:
+                requests: {cpu: 250m, memory: 512Mi}
+                limits: {cpu: 500m, memory: 1Gi}
+
+    # --- 7. 일회성 Job — ArgoCD 훅 교착 회피 (A6) ---
+    # 근거: Airflow Helm chart 문서 "Installing the Helm Chart with Argo CD, Flux, Rancher or Terraform",
+    # Argo CD 문서 "Helm Hooks", 자매 저장소 기록 argocd-study/wiki/airflow-on-argocd.md.
+    # 차트의 두 Job 은 기본으로 helm.sh/hook: post-install,post-upgrade 를 달고 ArgoCD 는 이를 PostSync 로 옮긴다.
+    # PostSync 는 리소스가 Healthy 가 된 뒤에야 도는데 파드는 wait-for-airflow-migrations 에서 마이그레이션을 기다려
+    # Init:Error 를 반복한다 → 교착. 그래서 Helm 훅을 끄고(useHelmHooks: false) migrate Job 은 ArgoCD Sync 훅으로 돌린다.
+    # 트레이드오프(문서가 인정): sync 마다 마이그레이션이 다시 돈다.
+    # applyCustomEnv: false — Job manifest 의 불변성 유지(문서 값).
+    migrateDatabaseJob:
+        useHelmHooks: false
+        applyCustomEnv: false
+        jobAnnotations:
+            argocd.argoproj.io/hook: Sync
+        resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: 250m, memory: 512Mi}
+
+    # PostSync 는 문서 값이 아니라 선택이다: 훅 없이 일반 리소스로 두면 ttlSecondsAfterFinished(기본 300)로 Job 이
+    # 지워져 Missing → OutOfSync → selfHeal 재생성이 5분마다 반복된다. 파드는 create-user 를 기다리지 않아
+    # PostSync 여도 교착하지 않고, 훅은 BeforeHookCreation 으로 sync 때 재생성된다.
+    createUserJob:
+        useHelmHooks: false
+        applyCustomEnv: false
+        jobAnnotations:
+            argocd.argoproj.io/hook: PostSync
+        # admin 비밀번호를 values 에 두지 않는다 — Secret 참조로 주입하고 아래 args 의 `-p` 값에서 K8s 가 치환한다
+        env:
+            - name: AIRFLOW_ADMIN_PASSWORD
+              valueFrom:
+                  secretKeyRef:
+                      name: airflow-admin
+                      key: password
+        # 차트 기본 args 를 그대로 옮기고 `-p` 다음 원소만 $(AIRFLOW_ADMIN_PASSWORD) 로 바꿨다(나머지는 차트 기본 유지).
+        # 🔴 차트 버전을 올리면 기본 args 가 바뀌었는지 대조한다 — 이 목록은 차트 기본을 통째로 덮어쓴다
+        # yamllint disable rule:line-length
+        args:
+            - "bash"
+            - "-c"
+            - |-
+              exec \
+              airflow users create "$@"
+            - --
+            - "-r"
+            - "{{ if .Values.webserver.defaultUser }}{{ .Values.webserver.defaultUser.role }}{{ else }}{{ .Values.createUserJob.defaultUser.role }}{{ end }}"
+            - "-u"
+            - "{{ if .Values.webserver.defaultUser }}{{ .Values.webserver.defaultUser.username }}{{ else }}{{ .Values.createUserJob.defaultUser.username }}{{ end }}"
+            - "-e"
+            - "{{ if .Values.webserver.defaultUser }}{{ .Values.webserver.defaultUser.email }}{{ else }}{{ .Values.createUserJob.defaultUser.email }}{{ end }}"
+            - "-f"
+            - "{{ if .Values.webserver.defaultUser }}{{ .Values.webserver.defaultUser.firstName }}{{ else }}{{ .Values.createUserJob.defaultUser.firstName }}{{ end }}"
+            - "-l"
+            - "{{ if .Values.webserver.defaultUser }}{{ .Values.webserver.defaultUser.lastName }}{{ else }}{{ .Values.createUserJob.defaultUser.lastName }}{{ end }}"
+            - "-p"
+            - "$(AIRFLOW_ADMIN_PASSWORD)"
+        # yamllint enable rule:line-length
+        resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 200m, memory: 256Mi}
+
+    # --- 8. Ingress (A8) — apiServer 만 연다(ingress.web 은 <3.0.0 게이트). HTTP, TLS 없음 ---
+    # ingress.apiServer.host 는 deprecated — 차트가 권하는 hosts[*].name 을 쓴다
+    ingress:
+        apiServer:
+            enabled: true
+            hosts:
+                - name: airflow.localtest.me
+            ingressClassName: nginx
