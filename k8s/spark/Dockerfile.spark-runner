@@ -1,35 +1,40 @@
 # PySpark + Iceberg + S3(SeaweedFS) 러너 이미지 (PoC Phase 0)
-# 빌드: podman build -f k8s/spark/Dockerfile.spark-runner -t localhost:5001/spark-runner:0.5.0 k8s/spark
+# 빌드: podman build -f k8s/spark/Dockerfile.spark-runner -t localhost:5001/spark-runner:0.6.0 k8s/spark
 # 태그는 구체 버전 고정(가변 채널 태그 금지, docs/conventions/docker.md). 0.1.0 = 구 `:poc`.
-FROM apache/spark:3.5.9-scala2.12-java17-python3-ubuntu
+# 0.6.0 = Spark 4.1.3(Scala 2.13 전용 — 모든 `_2.12` 좌표가 `_2.13`으로 바뀐다).
+FROM apache/spark:4.1.3-scala2.13-java17-python3-ubuntu
 
 # 버전 핀(빌드 인자로 override 가능)
 ARG ICEBERG_VERSION=1.11.0
-ARG SCALA_BINARY=2.12
+ARG SCALA_BINARY=2.13
 ARG POSTGRES_JDBC_VERSION=42.7.4
 # hadoop-aws는 베이스 이미지의 hadoop-client와 **정확히 같은 버전**이어야 한다
-# (spark 3.5.9 → hadoop-client-api/runtime 3.3.4, 이미지에서 실측).
-ARG HADOOP_VERSION=3.3.4
-# hadoop-aws 3.3.4가 요구하는 AWS SDK v1 번들 버전(정본: hadoop-project 3.3.4 pom의
-# <aws-java-sdk.version>). Iceberg가 쓰는 AWS SDK v2와는 패키지가 달라 공존한다.
-ARG AWS_SDK_VERSION=1.12.262
-# Spark Connect 서버 jar — dbt-spark가 `spark.remote`로 붙는 상시 SQL 엔드포인트용.
-# 베이스 이미지에는 없다. 런타임 `--packages`로 받으면 파드 기동마다 네트워크에 의존하므로 굽는다.
-ARG SPARK_VERSION=3.5.9
+# (spark 4.1.3 → hadoop-client-api/runtime 3.4.2, 이미지에서 실측).
+ARG HADOOP_VERSION=3.4.2
+# 🔴 AWS SDK v2 번들 — **클래스패스에 SDK v2는 이 한 벌뿐**이어야 한다.
+#   - 값의 정본: hadoop-project 3.4.2 pom의 <aws-java-sdk-v2.version>(= hadoop-aws 3.4.2가 검증한 판본).
+#     3.4.x부터 S3A는 SDK **v2**다(HADOOP-18073) — 3.5 러너의 v1 bundle(1.12.262)은 더 이상 쓰지 않는다.
+#   - 2.30.0부터 S3 클라이언트가 기본으로 체크섬을 계산(aws-chunked)해 SeaweedFS 객체가 손상된다
+#     (docs/conventions/k8s/checksum.md §2). 2.29.52는 그 경계 **이전**이다 — 「최신 bundle」로 올리는 순간
+#     S3A·S3FileIO 양 경로에 위험이 복귀한다.
+#   - `iceberg-aws-bundle`을 **싣지 않는다**: 1.11.0은 SDK 2.44.4를 **재배치 없이**(`software/amazon/awssdk/...`)
+#     담고 있어, 같이 실으면 같은 패키지가 두 벌이 되고 어느 쪽이 로드될지 클래스패스 순서에 달린다
+#     (2026-10-13 0.5.0 실측). S3FileIO도 이 번들로 돈다.
+ARG AWS_SDK_V2_VERSION=2.29.52
 
 USER root
 
-# Iceberg Spark 런타임 + AWS 번들(S3FileIO용 AWS SDK v2 포함) + Postgres JDBC(카탈로그 접속)
+# Iceberg Spark 런타임 + Postgres JDBC(카탈로그 접속)
 # + S3A 파일시스템(hadoop-aws): Iceberg의 S3FileIO는 카탈로그 테이블 I/O만 담당하고,
 #   `s3a://` 스킴으로 **원본 파일**(csv.gz)을 읽거나 이벤트로그를 쓰려면 별도로 필요하다.
+# + AWS SDK v2 번들: S3A와 S3FileIO가 **공유**한다(위 ARG 주석).
+# Spark Connect 서버 jar(`spark-connect_2.13-4.1.3.jar`)는 4.x 베이스 이미지에 **기본 포함**이라 받지 않는다(실측).
 RUN set -eux; \
     cd /opt/spark/jars; \
-    curl -fLO "https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.5_${SCALA_BINARY}/${ICEBERG_VERSION}/iceberg-spark-runtime-3.5_${SCALA_BINARY}-${ICEBERG_VERSION}.jar"; \
-    curl -fLO "https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar"; \
+    curl -fLO "https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.1_${SCALA_BINARY}/${ICEBERG_VERSION}/iceberg-spark-runtime-4.1_${SCALA_BINARY}-${ICEBERG_VERSION}.jar"; \
     curl -fLO "https://repo1.maven.org/maven2/org/postgresql/postgresql/${POSTGRES_JDBC_VERSION}/postgresql-${POSTGRES_JDBC_VERSION}.jar"; \
     curl -fLO "https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar"; \
-    curl -fLO "https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_VERSION}/aws-java-sdk-bundle-${AWS_SDK_VERSION}.jar"; \
-    curl -fLO "https://repo1.maven.org/maven2/org/apache/spark/spark-connect_${SCALA_BINARY}/${SPARK_VERSION}/spark-connect_${SCALA_BINARY}-${SPARK_VERSION}.jar"
+    curl -fLO "https://repo1.maven.org/maven2/software/amazon/awssdk/bundle/${AWS_SDK_V2_VERSION}/bundle-${AWS_SDK_V2_VERSION}.jar"
 
 # 잡 스크립트 배치
 # 주의: driver의 CWD(=이미지 WORKDIR `/opt/spark/work-dir`)에 두면 안 된다.

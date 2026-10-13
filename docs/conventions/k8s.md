@@ -102,18 +102,18 @@ resources:
   - **Secret→env**: `spark.kubernetes.{driver,executor}.secretKeyRef.<ENV>=<secret>:<key>`(§4 비밀 참조, 평문 금지)
 - **버전 고정**: 오퍼레이터 차트/이미지와 Spark 런타임 태그는 **구체 버전으로 고정**한다(`latest` 금지, §4).
   최신 릴리스는 설치 시점에 [releases](https://github.com/apache/spark-kubernetes-operator/releases)에서 확인해 핀한다.
-- **러너 이미지**: PySpark + `iceberg-spark-runtime`/`iceberg-aws-bundle` + `postgresql`(JDBC 카탈로그)
-  + **`hadoop-aws`/`aws-java-sdk-bundle`(S3A)** 를 포함한 **전용 이미지**를 빌드해 로컬 레지스트리에 push하고,
+- **러너 이미지**: PySpark + `iceberg-spark-runtime` + `postgresql`(JDBC 카탈로그)
+  + **`hadoop-aws` + SDK v2 `bundle`** 을 포함한 **전용 이미지**를 빌드해 로컬 레지스트리에 push하고,
   `spark.kubernetes.container.image`가 이를 참조한다(§10 이름 규칙 주의).
   태그는 **구체 버전 고정**(`:0.2.0` 등) — `:poc` 같은 가변 채널 태그는 `pullPolicy: Always`와 만나면
   같은 태그가 다른 내용을 가리키는 드리프트를 만든다(§4 `latest` 금지와 같은 이유).
   - **S3 접근 경로가 둘이고 역할이 다르다**(혼동 주의):
-    **Iceberg `S3FileIO`**(AWS SDK v2, `iceberg-aws-bundle`)는 **테이블 데이터 I/O** 전담이고,
-    **S3A**(`hadoop-aws`, AWS SDK v1)는 `s3a://` 스킴으로 **원본 파일**(csv.gz)을 읽거나 이벤트로그를 쓸 때 쓴다.
+    **`S3FileIO`**=테이블 데이터 I/O, **S3A**(`hadoop-aws`)=`s3a://` **원본 파일**(csv.gz)·이벤트로그.
+    Spark 4.1(Hadoop 3.4.x)부터 **둘 다 SDK v2이고 `bundle` 한 벌을 공유**한다([k8s/checksum.md](k8s/checksum.md) §2-1).
     Iceberg만 쓰는 잡은 S3A가 없어도 돌기 때문에 **부재를 알아차리기 어렵다**(한동안 이미지에 없었다).
   - **`hadoop-aws` 버전은 베이스 이미지의 `hadoop-client-*`와 정확히 일치**시킨다
-    (Spark 3.5.9 → **3.3.4**). SDK 번들 버전은 추측하지 말고 `hadoop-project` pom의
-    `<aws-java-sdk.version>`을 본다(3.3.4 → **1.12.262**).
+    (Spark 4.1.3 → **3.4.2**). SDK 번들 버전은 추측하지 말고 `hadoop-project` pom의
+    `<aws-java-sdk-v2.version>`을 본다(3.4.2 → **2.29.52**).
   - **S3A로 직접 쓰기(`df.write.parquet("s3a://...")`)는 SeaweedFS에서 실패한다** — 기본
     `FileOutputCommitter`가 `_temporary` **rename**에 의존하는데 오브젝트 스토어에는 rename이 없다
     (실측: `Could not rename ... _temporary/...`). 필요해지면 S3A committer(magic)와
@@ -402,8 +402,8 @@ Spark Connect는 `--replicas=0`, Flink 세션은 `delete`로 회수되지만 **�
   `remove_orphan_files`(카탈로그가 *모르는* 파일을 찾는 게 목적)는 **Hadoop FileSystem**을 탄다.
   설정이 없으면 `UnsupportedFileSystemException: No FileSystem for scheme "s3"`로 죽는다(실측).
   warehouse가 `s3://`라 **`fs.s3.impl`도 S3A로 매핑**해야 하고(`fs.s3a.impl`만으론 안 잡힌다),
-  jar(`hadoop-aws`·`aws-java-sdk-bundle`)는 러너 이미지에 이미 있어 **설정만** 추가하면 된다.
-  S3A는 AWS SDK **v1**이라 SeaweedFS의 aws-chunked 문제(SDK v2 flexible checksum)와는 무관하다.
+  jar(`hadoop-aws`·SDK v2 `bundle`)는 러너 이미지에 이미 있어 **설정만** 추가하면 된다.
+  S3A도 SDK **v2**라 aws-chunked 대상이다 — 판본 고정이 방어선이다([k8s/checksum.md](k8s/checksum.md) §2-1).
   참조: `k8s/spark/spark-connect-server.yaml`.
 - **서비스 접근**: **HTTP 계열(웹 UI·REST)은 Ingress**, **JDBC는 `port-forward`**, **gRPC는 TLS Ingress**(§gRPC).
   **S3는 클러스터 밖**이라 호스트는 `localhost:8333` 직결, 파드는 `Service seaweedfs`(ExternalName → kind 별칭
@@ -481,7 +481,7 @@ Spark Connect는 `--replicas=0`, Flink 세션은 `delete`로 회수되지만 **�
   Dagster `common/constants.py:CATALOG_NAME` / Trino `iceberg.jdbc-catalog.catalog-name`.
 - **SeaweedFS는 AWS SDK의 flexible checksum(aws-chunked)을 풀지 못해 객체가 조용히 손상된다.**
   `AWS_REQUEST_CHECKSUM_CALCULATION`·`AWS_RESPONSE_CHECKSUM_VALIDATION`을 `when_required`로 끈다.
-  영향 경로는 **SDK 버전이 가른다**(S3A=v1 무관 / S3FileIO·pyiceberg=v2 해당) — 종전의
+  영향 경로는 **SDK 버전이 가른다**(Flink S3A=v1 무관 / Spark S3A·S3FileIO·pyiceberg=v2 해당) — 종전의
   *"Java 경로는 무관"* 서술은 러너가 `iceberg-aws-bundle 1.11.0`을 실으면서 **거짓이 됐다.**
   버전 경계·전수 적용 대상·오진 갈래·미확인 축은 **[k8s/checksum.md](k8s/checksum.md)** 가 정본이다.
 

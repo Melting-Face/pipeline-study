@@ -228,8 +228,8 @@ kubectl delete -f k8s/flink/flinkdeployment-session.yaml
 이미지 build·push는 지금도 된다(최초 1회 / 이미지 변경 시).
 
 ```shell
-podman build -f k8s/spark/Dockerfile.spark-runner -t localhost:5001/spark-runner:0.5.0 k8s/spark
-podman push --tls-verify=false localhost:5001/spark-runner:0.5.0
+podman build -f k8s/spark/Dockerfile.spark-runner -t localhost:5001/spark-runner:0.6.0 k8s/spark
+podman push --tls-verify=false localhost:5001/spark-runner:0.6.0
 
 podman build -f k8s/flink/Dockerfile.flink-runner -t localhost:5001/flink-runner:0.3.0 k8s/flink
 podman push --tls-verify=false localhost:5001/flink-runner:0.3.0

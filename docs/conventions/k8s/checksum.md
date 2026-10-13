@@ -22,11 +22,14 @@
 
 | 경로 | SDK | 체크섬 env |
 | --- | --- | --- |
-| S3A (`spark.hadoop.fs.s3*`) | AWS SDK **v1** | 무관 |
-| S3FileIO (Iceberg `io-impl` = `iceberg-aws-bundle`) | AWS SDK **v2** | **필요** |
+| S3A — Flink(`flink-s3-fs-hadoop`) | AWS SDK **v1** | 무관 |
+| S3A — Spark 4.1 러너(`hadoop-aws` 3.4.x) | AWS SDK **v2**(`software.amazon.awssdk:bundle`) | 판본이 가른다(§2-1) |
+| S3FileIO (Iceberg `io-impl`) | AWS SDK **v2** — Spark는 위 bundle, Flink는 `iceberg-aws-bundle` | **필요** |
 | pyiceberg·pyarrow·boto3 | 파이썬 SDK(boto3/botocore) — **별개 계보** | **필요**(경계 판본 미측정) |
 
-- S3A가 무관한 근거는 **번들 실측**이다 — `flink-s3-fs-hadoop` jar에 `com/amazonaws/*`는 있고
+- **「S3A는 v1이라 무관」은 Hadoop 3.3.x까지만 참이다.** Hadoop 3.4.x부터 S3A가 SDK v2로 바뀌었다
+  (HADOOP-18073). 그래서 Spark 4.1 러너(Hadoop 3.4.2)의 S3A는 이 표의 「무관」 행에서 빠진다.
+- Flink S3A가 무관한 근거는 **번들 실측**이다 — `flink-s3-fs-hadoop` jar에 `com/amazonaws/*`는 있고
   `software/amazon/awssdk/*`는 **0개**다(`k8s/flink/flinkdeployment-session.yaml` 주석).
   v1은 위 환경변수를 **모르는 변수라 무시**하므로 안전 근거는 "env로 덮었다"가 아니라
   **SDK 버전 하나뿐**이다.
@@ -43,8 +46,30 @@
 | `1.11.0` | `2.44.4` | **이후** | `WHEN_SUPPORTED` — **손상** |
 
 번들 SDK 값의 출처는 `apache-iceberg-<버전>` **릴리스 태그**의 `gradle/libs.versions.toml`(A등급).
-현재 러너 2종(`spark-runner`·`flink-runner`)의 `ARG ICEBERG_VERSION`은 **`1.11.0`** 이므로
-**Spark·Flink의 S3FileIO 경로도 영향을 받는다.**
+`flink-runner`는 `iceberg-aws-bundle 1.11.0`을 실으므로 **Flink의 S3FileIO 경로는 영향을 받는다.**
+`spark-runner`는 이 번들을 **싣지 않는다**(§2-1).
+
+### 2-1. Spark 러너: 클래스패스의 SDK v2는 **한 벌**이어야 한다
+
+`iceberg-aws-bundle`은 SDK를 **재배치하지 않고**(`software/amazon/awssdk/...` 원 경로) 담는다.
+S3A용 `software.amazon.awssdk:bundle`과 함께 실으면 **같은 패키지가 두 벌**이 되고, 두 경로가 어느
+판본으로 도는지는 **클래스패스 순서**가 정한다 — 빌드 성공·기동 성공·에러 없음으로는 구분되지 않는다.
+
+- **관측**: 4.1 러너에 두 jar를 함께 실은 위반 프로브 이미지에서 `VersionInfo`·`S3Client`의 출처가
+  **`iceberg-aws-bundle`(SDK `2.44.4`)** 이었고, **S3A의 S3 클라이언트도 그쪽에서 로드**됐다.
+  즉 S3A가 경계 `2.30.0`을 넘은 SDK로 돈다 — 우려가 아니라 실제 로드 순서였다.
+- **처방**: `iceberg-aws-bundle`을 빼고 **`bundle`(SDK v2) 하나**를 S3A·S3FileIO가 공유한다.
+  판본은 `hadoop-project` pom의 `<aws-java-sdk-v2.version>`에 고정한다(Hadoop 3.4.2 → **`2.29.52`**,
+  경계 **이전**). 「최신 bundle」로 올리면 두 경로가 함께 경계를 넘는다.
+- **처방 후 관측**: 4.1 러너로 SparkApplication을 돌려 driver에서 `VersionInfo`·S3A 클라이언트가
+  `bundle` 한 벌에서 로드됨을 찍고, S3A로 쓴 객체(재독 sha256 일치)와 S3FileIO가 쓴 객체(프레이밍 없음)를
+  잡 안과 호스트 boto3 두 경로로 대조해 손상이 없음을 확인했다(`k8s/spark/poc_ingest.py`의
+  `POC_S3A_PROBE_URI` 프로브 — 판본을 올릴 때 같은 프로브를 다시 돌린다).
+- **판정 수단은 jar 개수다**: `/opt/spark/jars` 전 jar 중 `software/amazon/awssdk/core/util/VersionInfo.class`를
+  담은 jar가 **정확히 1개**여야 한다. 대조군(구 러너)에서도 같은 검사가 1을 세고, 위반 프로브에서 2를 센다.
+- 체크섬 env 2종은 **그대로 둔다** — `2.29.52`에서는 기본값이 이미 `WHEN_REQUIRED`라 덮을 것이 없지만,
+  판본을 올리는 변경이 env까지 지우지 않게 하는 이중 방어다. `2.30.0` 이상에서 S3A에 이 env가
+  먹는지는 **미확인**이다(§7 ⓙ).
 
 ## 3. 🔴 「Java 경로는 무관」은 무조건이 아니라 **버전 조건부**다
 
@@ -57,9 +82,12 @@
 체크섬 env와 실측 주석을 넣었으므로 **매니페스트가 맞고 문서가 틀린** 상태로 갈라졌다.
 
 ⇒ **옛 서술을 기억하고 무조건 면제로 되돌리지 마라.** 되돌릴 조건은 하나뿐이다 —
-러너가 싣는 `iceberg-aws-bundle`의 번들 SDK가 **`2.30.0` 미만**으로 내려갈 때.
-그래서 **`ICEBERG_VERSION`을 움직이는 변경은 위 대응표를 함께 갱신**한다. 이것이
-이 서술을 낡게 만드는 유일한 입력이다.
+러너가 싣는 SDK v2가 **`2.30.0` 미만**으로 내려갈 때.
+그래서 **이 서술을 낡게 만드는 입력은 둘**이다.
+- `ICEBERG_VERSION`을 움직이는 변경(Flink)
+- `AWS_SDK_V2_VERSION`·`HADOOP_VERSION`을 움직이는 변경(Spark)
+
+둘 다 위 대응표와 §2-1을 함께 갱신한다.
 
 ## 4. 적용 대상 전수
 
@@ -131,3 +159,5 @@ SeaweedFS의 `InternalError`를 체크섬 탓으로 돌렸다가 틀린 기록�
   (`k8s/flink/flinkdeployment-session.yaml` 주석에 남은 미확인).
 - ⓘ **파이썬 경로(boto3/botocore)의 기본값 전환 판본을 조사하지 않았다.** 영향받는다는 것은 이
   저장소의 실측이고 어느 판본부터인지는 모른다 — **자바의 `2.30.0`을 옮겨 적지 마라**(다른 계보다).
+- ⓙ **`2.30.0` 이상 SDK에서 체크섬 env가 S3A(Hadoop 3.4.x)에 먹는지 확인하지 않았다.** 지금은 판본을
+  경계 아래에 고정해 이 질문을 피했다. 판본을 올리려면 이 미확인을 먼저 닫는다.
