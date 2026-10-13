@@ -276,7 +276,7 @@ repos:
   - repo: local
     hooks:
       - id: guard-tests
-        name: 가드 단위 테스트 (journal · worktree · 배선 실재)
+        name: 가드 단위 테스트 (journal · worktree · research_gate · 배선 실재)
         language: system
         entry: python3 scripts/tests/run_guard_tests.py
         pass_filenames: false

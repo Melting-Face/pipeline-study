@@ -259,8 +259,8 @@ python3 scripts/tests/run_guard_tests.py
 
 | 축 | 대상 |
 | --- | --- |
-| 테스트 있음(이 계층) | `journal_guard` · `worktree_guard` · 배선 대상 실재(`test_all_wired_hook_scripts_exist`) · Codex 릴레이 타임아웃 |
-| **테스트 0건** | `research_gate_guard` |
+| 테스트 있음(이 계층) | `journal_guard` · `worktree_guard` · `research_gate_guard`(현행 동작 고정 특성 테스트) · 배선 대상 실재(`test_all_wired_hook_scripts_exist`) · Codex 릴레이 타임아웃 |
+| **테스트 0건** | `.codex/hooks/policy_guard.py`(Codex 런타임) |
 
 이 훅의 초록을 **「가드 전부가 검증됐다」로 읽지 않는다**.
 
