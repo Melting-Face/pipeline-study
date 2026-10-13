@@ -18,7 +18,7 @@ metadata:
     namespace: default
 spec:
     runtimeVersions:
-        sparkVersion: "3.5.9"
+        sparkVersion: "4.1.3"
     # 파이썬 메인 파일 (spec 직속 pyFiles — CRD·공식 예제로 확정)
     pyFiles: "local:///opt/spark/app/poc_ingest.py"
     applicationTolerations:
@@ -29,7 +29,7 @@ spec:
         resourceRetainDurationMillis: 600000
     sparkConf:
         # 러너 이미지(로컬 레지스트리, 호스트·클러스터 공통 이름)
-        spark.kubernetes.container.image: "localhost:5001/spark-runner:0.5.0"
+        spark.kubernetes.container.image: "localhost:5001/spark-runner:0.6.0"
         spark.kubernetes.container.image.pullPolicy: "Always"
         spark.kubernetes.authenticate.driver.serviceAccountName: "spark"
         # driver/executor 자원 (수치 근거: docs/resource-sizing.md)
@@ -41,6 +41,8 @@ spec:
         # 평문 env (driver: spark.kubernetes.driverEnv.* / executor: spark.executorEnv.*)
         # 카탈로그 이름은 전 엔진 공통(Dagster·Trino와 동일). 다르면 레지스트리가 분리된다.
         spark.kubernetes.driverEnv.ICEBERG_CATALOG_NAME: "iceberg"
+        # 쓰기 대상 네임스페이스(필수 — poc_ingest.py는 기본값 없이 KeyError로 멈춘다)
+        spark.kubernetes.driverEnv.POC_NAMESPACE: "poc"
         spark.executorEnv.ICEBERG_CATALOG_NAME: "iceberg"
         spark.kubernetes.driverEnv.ICEBERG_JDBC_URI: "jdbc:postgresql://catalog-postgres-rw:5432/iceberg"
         spark.kubernetes.driverEnv.ICEBERG_WAREHOUSE: "s3://warehouse"
@@ -53,14 +55,15 @@ spec:
         spark.executorEnv.S3_ENDPOINT: "http://seaweedfs:8333"
         spark.executorEnv.AWS_REGION: "us-east-1"
         spark.executorEnv.AWS_DEFAULT_REGION: "us-east-1"
-        # 🔴 이 잡의 S3 접근 경로는 **둘**이고, aws-chunked 체크섬 영향이 서로 다르다.
-        #   ① S3A(`spark.hadoop.fs.s3*`) → aws-java-sdk-bundle = AWS SDK **v1**(1.12.262)
-        #      → flexible checksum이 없어 SeaweedFS의 aws-chunked 문제와 **무관**하다.
-        #   ② S3FileIO(Iceberg `io-impl`, iceberg-aws-bundle) → AWS SDK **v2**
-        #      → **영향받는다.** 아래 env 2종이 없으면 PUT 객체가 손상된 채 저장된다.
+        # 🔴 이 잡의 S3 접근 경로는 **둘**이고, 0.6.0(Spark 4.1 · Hadoop 3.4.2)부터 **둘 다 SDK v2**다.
+        #   ① S3A(`fs.s3a.*`, hadoop-aws 3.4.2) ② S3FileIO(Iceberg `io-impl`)
+        #   두 경로는 러너의 SDK v2 `bundle` **한 벌**(2.29.52)을 공유한다 — 경계 2.30.0 **이전**이라
+        #   기본값이 이미 WHEN_REQUIRED다. iceberg-aws-bundle(SDK 2.44.4)을 함께 실으면 S3A까지
+        #   경계를 넘은 판본으로 돈다(docs/conventions/k8s/checksum.md §2-1).
         #   SeaweedFS가 SDK v2의 aws-chunked 프레이밍을 풀지 못해 객체가 조용히 손상된다
         #   (CLAUDE.md 운영 §K8s). 2026-08-21 실측 — aws-bundle 1.6.1(SDK v2 2.26.20)에서는
         #   문제없었으나 러너 0.5.0의 1.11.0(SDK v2 2.44.4)에서 재현됐다.
+        #   아래 env 2종은 판본을 올리는 변경이 방어선까지 지우지 않게 하는 이중 방어로 **유지**한다.
         #   driver·executor 어느 쪽이 metadata를 쓰는지 단정할 수 없어 **양쪽 모두** 주입한다.
         #   ⚠️ Iceberg `s3.checksum-enabled`와 혼동하지 말 것 — 이름만 비슷하고 방향이 반대다
         #   (S3FileIO가 체크섬을 **더 붙이는** 옵션이며 기본 false, 여기서 건드리지 않는다).

@@ -61,6 +61,10 @@ S3A용 `software.amazon.awssdk:bundle`과 함께 실으면 **같은 패키지가
 - **처방**: `iceberg-aws-bundle`을 빼고 **`bundle`(SDK v2) 하나**를 S3A·S3FileIO가 공유한다.
   판본은 `hadoop-project` pom의 `<aws-java-sdk-v2.version>`에 고정한다(Hadoop 3.4.2 → **`2.29.52`**,
   경계 **이전**). 「최신 bundle」로 올리면 두 경로가 함께 경계를 넘는다.
+- **처방 후 관측**: 4.1 러너로 SparkApplication을 돌려 driver에서 `VersionInfo`·S3A 클라이언트가
+  `bundle` 한 벌에서 로드됨을 찍고, S3A로 쓴 객체(재독 sha256 일치)와 S3FileIO가 쓴 객체(프레이밍 없음)를
+  잡 안과 호스트 boto3 두 경로로 대조해 손상이 없음을 확인했다(`k8s/spark/poc_ingest.py`의
+  `POC_S3A_PROBE_URI` 프로브 — 판본을 올릴 때 같은 프로브를 다시 돌린다).
 - **판정 수단은 jar 개수다**: `/opt/spark/jars` 전 jar 중 `software/amazon/awssdk/core/util/VersionInfo.class`를
   담은 jar가 **정확히 1개**여야 한다. 대조군(구 러너)에서도 같은 검사가 1을 세고, 위반 프로브에서 2를 센다.
 - 체크섬 env 2종은 **그대로 둔다** — `2.29.52`에서는 기본값이 이미 `WHEN_REQUIRED`라 덮을 것이 없지만,
