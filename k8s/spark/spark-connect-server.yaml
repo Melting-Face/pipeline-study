@@ -37,7 +37,7 @@ spec:
                   # 🔴 앵커를 쓰는 이유: executor 이미지(`spark.kubernetes.container.image`)는 driver와
                   #   **같은 것**이어야 하는데, 값을 두 번 적으면 한쪽만 올리는 드리프트가 생긴다.
                   #   앵커로 묶어 **단일 출처**로 둔다(아래 env `SPARK_K8S_IMAGE`가 이 값을 받는다).
-                  image: &spark_image localhost:5001/spark-runner:0.5.0
+                  image: &spark_image localhost:5001/spark-runner:0.6.0
                   imagePullPolicy: Always
                   # `spark.hadoop.fs.*` 가 따로 필요한 이유:
                   #   Iceberg의 S3FileIO(`io-impl`)는 **카탈로그가 아는 파일**만 읽고 쓴다.
@@ -45,14 +45,13 @@ spec:
                   #   카탈로그가 모르는 파일을 찾아낸다 → S3FileIO로는 대체가 안 된다.
                   #   설정이 없으면 `UnsupportedFileSystemException: No FileSystem for scheme "s3"`로 죽는다
                   #   (2026-08-19 실측). warehouse가 `s3://`라 `fs.s3.impl`도 S3A로 매핑해야 한다.
-                  #   jar(hadoop-aws·aws-java-sdk-bundle)는 러너 이미지에 이미 구워져 있다.
+                  #   jar(hadoop-aws·SDK v2 bundle)는 러너 이미지에 이미 구워져 있다.
                   #
-                  # 🔴 이 파드에는 S3 접근 경로가 **둘**이고, aws-chunked 체크섬 영향이 서로 다르다.
-                  #   ① S3A(`spark.hadoop.fs.s3*`) → aws-java-sdk-bundle = AWS SDK **v1**(1.12.262)
-                  #      → flexible checksum이 없어 SeaweedFS의 aws-chunked 문제와 **무관**하다.
-                  #   ② S3FileIO(Iceberg `io-impl`, iceberg-aws-bundle) → AWS SDK **v2**
-                  #      → **영향받는다.** 아래 env 2종이 없으면 PUT 객체가 손상된 채 저장된다.
-                  #   이전 주석은 ①만 보고 "무관"으로 닫아 ②의 설정 누락이 잠복했다.
+                  # 🔴 이 파드에는 S3 접근 경로가 **둘**이고, 0.6.0(Spark 4.1 · Hadoop 3.4.2)부터 **둘 다 SDK v2**다.
+                  #   ① S3A(`spark.hadoop.fs.s3*`, hadoop-aws 3.4.2) ② S3FileIO(Iceberg `io-impl`)
+                  #   두 경로는 러너의 SDK v2 `bundle` **한 벌**(2.29.52, 경계 2.30.0 이전)을 공유한다
+                  #   (docs/conventions/k8s/checksum.md §2-1). 아래 env 2종은 이중 방어로 유지한다.
+                  #   이전 주석은 「S3A=v1이라 무관」만 보고 닫아 S3FileIO의 설정 누락이 잠복했던 적이 있다.
                   #   2026-08-21 실측 — aws-bundle 1.6.1(SDK v2 2.26.20)에서는 문제없었으나
                   #   1.11.0(SDK v2 2.44.4)에서 PUT 객체가 aws-chunked 프레이밍인 채 저장됨.
                   # 🔴 실행 모드는 **client**다 — `--deploy-mode`를 주지 않는다.
