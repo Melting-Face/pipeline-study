@@ -19,7 +19,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.research_gate_guard import matches, normalize
+from scripts.research_gate_guard import format_problems, matches, normalize
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 GUARD = PROJECT_ROOT / "scripts" / "research_gate_guard.py"
@@ -161,6 +161,48 @@ class ResearchGateGuardTest(unittest.TestCase):
         )
         self._assert_passed(self._run("WebFetch", {"url": "https://example.com/a"}))
 
+    def test_malformed_entries_are_named_in_deny_reason(self) -> None:
+        """「승인했는데 막힌다」의 원인이 항목 형식이면 거부 사유에 드러난다(#206)."""
+        self._approve("example.com/Docs/Page", "https://example.com/ref/*")
+        reason = self._assert_denied(
+            self._run("WebFetch", {"url": "https://example.com/Docs/Page"})
+        )
+        assert "형식 오류 항목 2건" in reason
+        assert "`example.com/Docs/Page`(`https://` 누락" in reason
+        assert "`https://example.com/ref/*`(`/*` 대신 `*`로 끝낸다)" in reason
+
+    def test_unparsable_fetch_url_is_denied_not_crashed(self) -> None:
+        """페치 URL이 `urlsplit`을 터뜨려도 크래시가 아니라 `deny`다(#207)."""
+        self._approve("https://example.com/a")
+        reason = self._assert_denied(self._run("WebFetch", {"url": "http://["}))
+        assert "내부 오류" in reason
+        assert "ValueError" in reason
+
+    def test_unparsable_manifest_entry_is_denied_not_crashed(self) -> None:
+        """매니페스트 항목이 `urlsplit`을 터뜨려도 `deny`다(#207)."""
+        self._approve("http://[")
+        reason = self._assert_denied(
+            self._run("WebFetch", {"url": "https://example.com/a"})
+        )
+        assert "내부 오류" in reason
+
+    def test_non_dict_payload_is_denied_not_crashed(self) -> None:
+        """payload·`tool_input`이 dict가 아니어도 `deny`다(#207 재검토)."""
+        reason = self._assert_denied(self._run_raw("[1]"))
+        assert "AttributeError" in reason
+        reason = self._assert_denied(
+            self._run_raw(json.dumps({"tool_name": "WebFetch", "tool_input": "x"}))
+        )
+        assert "AttributeError" in reason
+
+    def test_well_formed_entries_add_no_format_notice(self) -> None:
+        """음성 대조 — 형식이 맞는 항목만 있으면 형식 오류 문구가 붙지 않는다."""
+        self._approve("https://example.com/a", "https://example.com/ref*")
+        reason = self._assert_denied(
+            self._run("WebFetch", {"url": "https://example.com/b"})
+        )
+        assert "형식 오류" not in reason
+
 
 class MatchesTest(unittest.TestCase):
     """승인 항목 3형태(완전일치·경로 접두어·호스트 전체)의 경계를 고정한다."""
@@ -198,6 +240,31 @@ class MatchesTest(unittest.TestCase):
         target = normalize("https://example.com/Docs/Page")
         assert not matches(target, "example.com/Docs/Page")
         assert matches(target, "https://example.com/Docs/Page")
+
+    def test_format_problems_flags_only_the_two_forms(self) -> None:
+        """형식 검사는 스킴 누락·`/*`만 잡고 규약대로 쓴 3형태는 통과시킨다."""
+        assert (
+            format_problems(
+                [
+                    "https://example.com/a",
+                    "https://example.com/ref*",
+                    "https://example.com",
+                ]
+            )
+            == []
+        )
+        assert len(format_problems(["Example.com/R", "https://example.com/r/*"])) == 2
+
+    def test_schemeless_entry_flagged_only_when_it_actually_mismatches(self) -> None:
+        """스킴 누락은 실제로 어긋날 때만 지적한다 — 거짓 라벨 방지(#206 리뷰 R1)."""
+        # 소문자 호스트·경로만 적은 항목은 매칭되므로 지적하지 않는다
+        assert matches(normalize("https://example.com/a/b"), "example.com")
+        assert format_problems(["example.com", "example.com/ref/*"]) == [
+            "`example.com/ref/*`(`/*` 대신 `*`로 끝낸다)"
+        ]
+        # 대문자 경로·`www.`는 정규화가 갈려 실제로 어긋난다
+        assert len(format_problems(["example.com/Docs"])) == 1
+        assert len(format_problems(["www.example.com"])) == 1
 
 
 if __name__ == "__main__":
