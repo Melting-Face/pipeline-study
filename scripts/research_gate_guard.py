@@ -170,9 +170,12 @@ def matches(target: str, entry: str) -> bool:
     """승인 항목 하나와 대조한다.
 
     승인 항목은 세 형태를 받는다 — 왕복을 줄이기 위해서다.
-      `docs.getdbt.com/reference/resource-configs`  완전일치
-      `docs.getdbt.com/reference/*`                 경로 접두어
-      `docs.getdbt.com`                             호스트 전체
+      `https://docs.getdbt.com/reference/resource-configs`  완전일치
+      `https://docs.getdbt.com/reference*`                  경로 접두어
+      `https://docs.getdbt.com`                             호스트 전체
+
+    🔴 형식이 어긋난 항목은 **승인해도 영원히 deny**된다 — 매칭을 넓혀 흡수하지 않고
+    `format_problems`가 거부 사유에 드러낸다(게이트를 여는 쪽으로 고치지 않는다).
     """
     item = normalize(entry)
     if item.endswith("*"):
@@ -180,6 +183,34 @@ def matches(target: str, entry: str) -> bool:
     if "/" not in item:  # 호스트만 적힌 항목
         return target == item or target.startswith(item + "/")
     return target == item
+
+
+def format_problems(entries: list[str]) -> list[str]:
+    """승인 항목 중 **승인해도 매칭이 어긋나는 형식**을 사유와 함께 돌려준다.
+
+    두 형식이 `deny`를 「승인 누락」처럼 보이게 만든다(Issue #206):
+      - 스킴 없음 — `normalize`가 호스트를 못 찾아 **경로까지 소문자화**하고 `www.`도
+        떼지 않는다. 대문자 경로·`www.` URL과 영원히 갈린다.
+      - `/*`로 끝남 — 접두어가 `…/`가 되어 **디렉터리 자신은 열지 않는다**(하위만).
+
+    🔴 스킴 누락은 **`https://`를 붙였을 때와 정규화 결과가 갈릴 때만** 지적한다 —
+    `example.com`처럼 소문자 호스트만 적은 항목은 실제로 매칭되므로, 무조건 지적하면
+    「승인해도 매칭되지 않는다」가 **거짓 라벨**이 된다.
+    """
+    # 두 검사는 **독립**이다 — 스킴 없는 `/*` 항목은 둘 다에 걸릴 수 있다.
+    problems = []
+    for entry in entries:
+        bare = entry.strip()
+        reasons = []
+        if not urlsplit(bare).netloc and normalize(bare) != normalize(
+            f"https://{bare}"
+        ):
+            reasons.append("`https://` 누락 — 대소문자·`www.` 불일치")
+        if normalize(bare).endswith("/*"):
+            reasons.append("`/*` 대신 `*`로 끝낸다")
+        if reasons:
+            problems.append(f"`{entry}`({'; '.join(reasons)})")
+    return problems
 
 
 def main() -> None:
@@ -260,6 +291,14 @@ def main() -> None:
         ),
     }[state]
 
+    # 「승인했는데 막힌다」의 원인이 항목 형식이면 그 자리에서 드러낸다(Issue #206).
+    problems = format_problems(approved)
+    if problems:
+        detail += (
+            f" 형식 오류 항목 {len(problems)}건 — 승인해도 매칭되지 않는다: "
+            f"{', '.join(problems)}. supervisor에 매니페스트 수정을 요청하라."
+        )
+
     record(root, {**entry, "decision": "deny", "why": state})
     deny(
         f"`researcher`는 승인되지 않은 URL을 페치할 수 없다: {value}. {detail} "
@@ -268,4 +307,17 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # 🔴 예상 못 한 예외는 **크래시 = fail-open**이다(Issue #207). 무출력 + 비-0 종료를
+    #    하네스는 「결정 없음」으로 읽는다 — `urlsplit("http://[")`의 `ValueError`가
+    #    실제로 그 경로였고, 페치 URL은 페이지가 유도할 수 있는 입력이다.
+    #    `deny`가 던지는 `SystemExit`은 `Exception`의 하위가 아니라 여기 걸리지 않는다
+    #    (`worktree_guard.py` `main`과 같은 처방).
+    #    사유에는 예외 **타입만** 넣는다 — 일부 예외 메시지는 입력 조각을 담아
+    #    페이지 유래 값을 사유로 반사할 수 있다.
+    try:
+        main()
+    except Exception as exc:
+        deny(
+            f"조사 게이트 내부 오류로 판정하지 못했다({type(exc).__name__}). "
+            "통과시키지 않는다(fail-closed). supervisor에 보고하라."
+        )
