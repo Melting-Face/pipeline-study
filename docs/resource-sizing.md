@@ -187,8 +187,8 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 >   | grep BestEffort
 > ```
 
-> **Redpanda는 아직 미도입**이라 위 표에 없다. 도입 시 STREAM 피크가 그만큼 올라가므로
-> **이 표와 [conventions/k8s.md](conventions/k8s.md) §9-3의 경계를 함께 재계산**한다.
+> **Redpanda는 미도입·Kafka 학습 PoC는 창 한정**이라 위 표에 없다(PoC 선언값 정본 [`k8s/kafka/`](../k8s/kafka/README.md)).
+> 도입 시 STREAM 피크가 올라가므로 **이 표와 [conventions/k8s.md](conventions/k8s.md) §9-3의 경계를 함께 재계산**한다.
 
 > **Spark Operator 행 정정** — 종전 `100m/256Mi req · 250m/512Mi lim`은
 > **Kubeflow(Go) 오퍼레이터 시절 수치**였다. 이 저장소는 Apache 오퍼레이터(**JVM**)로 갈아탔는데

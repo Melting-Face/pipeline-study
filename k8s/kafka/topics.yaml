@@ -1,0 +1,24 @@
+# PoC 토픽 — 브로커 자동 생성에 기대지 않고 선언한다(복제 계수·파티션을 명시).
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+    name: poc-events
+    namespace: default
+    labels:
+        strimzi.io/cluster: kafka-poc
+spec:
+    partitions: 1
+    replicas: 1
+---
+# Iceberg Sink의 커밋 조정용 control 토픽. 이름은 Sink 기본값 `control-iceberg`(1.11.0 문서)와 같다.
+# kafka-connect.yaml의 `iceberg.control.topic`에도 같은 이름을 명시한다 — 기본값에 기대면 한쪽만 바뀌었을 때 조용히 갈린다.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+    name: control-iceberg
+    namespace: default
+    labels:
+        strimzi.io/cluster: kafka-poc
+spec:
+    partitions: 1
+    replicas: 1

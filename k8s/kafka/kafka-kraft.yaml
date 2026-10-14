@@ -1,0 +1,54 @@
+# Kafka 단일 노드 KRaft (학습 PoC — Strimzi 1.3.0 / Kafka 4.3.1, API `kafka.strimzi.io/v1`)
+#
+# 업스트림 예제 `examples/kafka/kafka-single-node.yaml`을 기준으로 아래만 바꿨다.
+#   - 스토리지: persistent JBOD → ephemeral. PoC는 창 안에서만 살고 회수 시 데이터가 함께 사라지는 편이 맞다.
+#   - listener: plain(9092)만. 클러스터 내부 학습용이라 TLS·인증을 붙이지 않는다(외부 노출 없음).
+#   - 내부 토픽 복제 계수 1. 🔴 Iceberg Sink는 control 토픽에 **트랜잭션**으로 쓰므로
+#     `transaction.state.log.*`이 1이 아니면 단일 노드에서 트랜잭션 코디네이터가 뜨지 않는다.
+#   - 모든 컨테이너에 resources 명시(BestEffort 금지, k8s.md §2).
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+    name: dual-role
+    namespace: default
+    labels:
+        strimzi.io/cluster: kafka-poc
+spec:
+    replicas: 1
+    roles: [controller, broker]
+    storage:
+        type: ephemeral
+        sizeLimit: 2Gi
+    resources:
+        requests: {cpu: 500m, memory: 1Gi}
+        limits: {cpu: 1000m, memory: 1Gi}
+    # 힙을 limits 안에 고정한다 — 미지정 시 JVM이 컨테이너 메모리 비율로 잡아 limits와 어긋날 수 있다.
+    jvmOptions:
+        "-Xms": 512m
+        "-Xmx": 512m
+---
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+    name: kafka-poc
+    namespace: default
+spec:
+    kafka:
+        version: 4.3.1
+        listeners:
+            - name: plain
+              port: 9092
+              type: internal
+              tls: false
+        config:
+            offsets.topic.replication.factor: 1
+            transaction.state.log.replication.factor: 1
+            transaction.state.log.min.isr: 1
+            default.replication.factor: 1
+            min.insync.replicas: 1
+    entityOperator:
+        # KafkaTopic CR(topics.yaml)을 쓰려면 topicOperator가 필요하다. userOperator는 인증을 안 쓰므로 끈다.
+        topicOperator:
+            resources:
+                requests: {cpu: 100m, memory: 256Mi}
+                limits: {cpu: 250m, memory: 256Mi}
