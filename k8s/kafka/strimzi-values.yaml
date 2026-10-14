@@ -1,0 +1,14 @@
+# Strimzi Cluster Operator Helm 값 (학습 PoC 전용 — ArgoCD var.apps 미등록, 창 안 수동 설치)
+#
+# 설치(차트 버전 = Strimzi 버전, 아래 README 절차 참고):
+#   helm install strimzi <OCI 차트> --version 1.3.0 -n strimzi --create-namespace -f k8s/kafka/strimzi-values.yaml
+#
+# 오퍼레이터는 `strimzi` 네임스페이스에 두고 CR은 `default`만 감시한다.
+# 🔴 CR을 `default`에 두는 이유: Iceberg Sink가 쓰는 시크릿(`lakehouse-creds`·`catalog-pg-app`)이 `default`에 있다.
+#   다른 네임스페이스로 시크릿을 복제하면 사본이 늘어 회전을 한 벌로 못 한다(CLAUDE.md §인프라).
+watchNamespaces: [default]
+
+# 차트 기본값과 같은 값이다(values.yaml 확인). 기본에 기대지 않고 명시해 예산표와 대조할 수 있게 둔다.
+resources:
+    requests: {cpu: 200m, memory: 384Mi}
+    limits: {cpu: 1000m, memory: 384Mi}

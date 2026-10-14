@@ -312,8 +312,8 @@ resources:
    겹쳐야 하면 **Connect를 먼저 `--replicas=0`으로 내린다.**
    그 회수는 **`spark.kubernetes.driver.pod.name`이 걸려 있을 때만 참이다** — 없으면
    `--replicas=0`이 driver만 내리고 executor가 남는다(§9-4).
-3. **허용은 Redpanda까지 확장되지 않는다.** 도입하면 STREAM 피크가 올라가므로
-   배분표와 이 경계를 **함께 재계산**한다. 재계산 전에는 허용 범위가 넓어지지 않는다.
+3. **허용은 Redpanda·Kafka까지 확장되지 않는다**(학습 PoC는 교대 기동 — [`k8s/kafka/`](../../k8s/kafka/README.md)).
+   도입하면 STREAM 피크가 올라가므로 배분표와 이 경계를 **함께 재계산**하고, 그 전에는 허용 범위가 넓어지지 않는다.
 
 ### 경계 ①의 스트리밍 단서
 
@@ -396,7 +396,7 @@ Spark Connect는 `--replicas=0`, Flink 세션은 `delete`로 회수되지만 **�
   ```
 
   **태그를 올렸으면 그 태그를 참조하는 매니페스트를 함께 올린다** — 한쪽만 올리면 구 이미지가 계속 돈다.
-  참조처 전수 확인은 `grep -rn 'image: localhost:5001' k8s/`이며, 현재 Spark 2곳·Flink 1곳이다.
+  참조처 전수 확인은 `grep -rn 'image: localhost:5001' k8s/`이며, 현재 Spark 2곳·Flink 1곳·Kafka Connect 1곳이다.
 - **Iceberg의 `io-impl`(S3FileIO)만으로는 부족한 작업이 있다** — `spark.hadoop.fs.s3*`(S3A)를 **함께** 준다.
   S3FileIO는 **카탈로그가 아는 파일**만 다루므로, warehouse 디렉터리를 직접 나열해야 하는
   `remove_orphan_files`(카탈로그가 *모르는* 파일을 찾는 게 목적)는 **Hadoop FileSystem**을 탄다.
