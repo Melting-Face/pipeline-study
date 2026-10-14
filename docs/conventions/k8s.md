@@ -27,11 +27,11 @@ resources:
   requests: { cpu: "500m", memory: "1Gi" }
   limits:   { cpu: "1",    memory: "2Gi" }
 ```
-
 - 수치의 단일 출처는 [../resource-sizing.md](../resource-sizing.md). `limits.memory` 합 ≤ 노드 할당가능 메모리.
 - **예외는 외부 매니페스트를 그대로 적용하는 경우뿐**이고, 그때는 예외임을 기록한다.
   현재 유일한 예외는 **ingress-nginx**(kind provider `deploy.yaml`) — `requests` 100m/90Mi만 있고
   **`limits`가 없다**(실측). 상주 부하가 작아 수용하되, 자체 오버레이로 값을 얹는 것은 후속 과제로 둔다.
+- **CPU·메모리 말고 PID도 상한이 있다** — 노드 systemd가 컨테이너마다 `TasksMax`를 건다([k8s/pids.md](k8s/pids.md)).
 
 ## 3. 헬스체크는 probe로 (compose healthcheck 매핑)
 

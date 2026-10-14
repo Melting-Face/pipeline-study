@@ -72,6 +72,33 @@ else
     fi
 fi
 
+# 1-1) 컨테이너 PID 상한 드롭인 — kind 노드가 받을 `pids_limit`(값·근거는 k8s-env.sh NODE_PIDS_LIMIT).
+#      VM의 /etc는 재부팅에도 남는다. 내용이 같으면 쓰지 않는다(멱등).
+ACTIVE_MACHINE="${REUSE_MACHINE:-${MACHINE_NAME}}"
+PIDS_DROPIN="/etc/containers/containers.conf.d/50-kind-pids-limit.conf"
+PIDS_CONTENT="$(printf '# k8s-up.sh가 관리한다(scripts/k8s-env.sh NODE_PIDS_LIMIT)\n[containers]\npids_limit = %s\n' "${NODE_PIDS_LIMIT}")"
+if [ "$(podman machine ssh "${ACTIVE_MACHINE}" "cat ${PIDS_DROPIN} 2>/dev/null" || true)" = "${PIDS_CONTENT}" ]; then
+    log "PID 상한 드롭인 유지: pids_limit=${NODE_PIDS_LIMIT}"
+else
+    log "PID 상한 드롭인 쓰기: ${PIDS_DROPIN} (pids_limit=${NODE_PIDS_LIMIT})"
+    printf '%s\n' "${PIDS_CONTENT}" | podman machine ssh "${ACTIVE_MACHINE}" \
+        "sudo mkdir -p /etc/containers/containers.conf.d && sudo tee ${PIDS_DROPIN} >/dev/null"
+    # 🔴 macOS의 podman은 원격 클라이언트라 컨테이너 기본값을 **VM의 API 서비스**가 채운다. 서비스는 기동 시점의
+    #    설정을 들고 있어 드롭인만 쓰면 반영되지 않는다(실측: VM 안 직접 실행은 65536, 원격은 2048).
+    #    재시작해도 실행 중 컨테이너(conmon 관리)는 그대로다.
+    log "podman API 서비스 재시작(드롭인 반영)"
+    podman machine ssh "${ACTIVE_MACHINE}" "sudo systemctl restart podman.service"
+fi
+# 드롭인은 **새로 만드는 컨테이너에만** 적용된다. 이미 있는 kind 노드가 다른 값이면 재생성 전까지 옛 상한이다.
+NODE_CONTAINER="${CLUSTER_NAME}-control-plane"
+if podman container exists "${NODE_CONTAINER}"; then
+    NODE_PIDS="$(podman inspect -f '{{.HostConfig.PidsLimit}}' "${NODE_CONTAINER}")"
+    if [ "${NODE_PIDS}" != "${NODE_PIDS_LIMIT}" ]; then
+        printf '⚠️  kind 노드 %s의 PidsLimit=%s (기대 %s) — 클러스터를 재생성해야 반영된다.\n' \
+            "${NODE_CONTAINER}" "${NODE_PIDS}" "${NODE_PIDS_LIMIT}" >&2
+    fi
+fi
+
 # 2) 로컬 레지스트리 컨테이너 (127.0.0.1:5001)
 # 🔴 상태는 **셋**이다 — 실행중 / 중지(컨테이너는 존재) / 부재.
 #    이분법(`Running != true` → `podman run`)으로 보면 중지 상태에서
