@@ -32,10 +32,11 @@ Sink가 쓰는 시크릿 `lakehouse-creds`·`catalog-pg-app`이 `default`에 있
 | 오퍼레이터 기본 resources(`200m`/`384Mi` req · `1000m`/`384Mi` lim)·`watchNamespaces` 키 | 확인(A · 차트 values.yaml) |
 | Iceberg Sink: `connector.class`·`iceberg.tables`·`iceberg.control.topic`(기본 `control-iceberg`)·커밋 주기 기본 5분·JDBC 드라이버 미포함·소스 빌드 배포 | 확인(A · 1.11.0 문서) |
 | Helm 차트 **OCI 주소** | 🔴 **미확인** — 설치 전 아래 §사전 조건 3으로 확인 |
-| `EnvVarConfigProvider`·`template.connectContainer.env`의 secretKeyRef | 🔴 **미확인** |
-| `iceberg.tables.auto-create-enabled`·`iceberg.catalog`(카탈로그 이름) 키 | 🔴 **미확인** |
-| 배포 zip에 S3FileIO(`iceberg-aws`) 포함 | 🔴 **미확인** — 없으면 이미지 빌드가 그 자리에서 실패한다(Dockerfile 단언) |
-| 태그 아카이브만으로 `./gradlew` 빌드 가능(wrapper jar 포함 여부) | 🔴 **미확인** — 이미지를 실제로 빌드해야 닫힌다 |
+| `EnvVarConfigProvider` 클래스 존재 | 확인(이미지 실측 — `kafka-clients-4.3.1.jar`에 클래스 있음) |
+| 그 provider가 커넥터 설정의 `${env:...}`를 실제로 치환하는가·`template.connectContainer.env`의 secretKeyRef | 🔴 **미확인** — 클래스 존재와 런타임 치환은 다른 축이다. 창에서 JDBC 인증 성공으로 닫힌다 |
+| `iceberg.tables.auto-create-enabled`·`iceberg.catalog`(설명 문자열 "Iceberg catalog name") 키 | 확인(이미지 실측 — `IcebergSinkConfig.class` 상수) |
+| 배포 zip에 S3FileIO 포함 | 확인(이미지 실측 — `iceberg-aws-1.11.0.jar`·AWS SDK `s3-*.jar` 있음, Hive jar 0건) |
+| 태그 아카이브로 `./gradlew` 빌드 | 확인(이미지 실측) — wrapper는 동작한다. 단 `.git` 부재로 `version.txt` 주입과 `-x generateGitProperties`가 필요하다 |
 | 브로커·Connect resources | 선언값(근거 문서 없음) — 창에서 실측하고 값은 볼트에 둔다 |
 
 ## 사전 조건
