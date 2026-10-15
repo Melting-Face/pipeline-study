@@ -344,6 +344,7 @@ kubectl port-forward svc/spark-connect 15002:15002   # 별도 터미널
 | 증상 | 조치 | 상세 |
 | --- | --- | --- |
 | `k8s-up.sh`가 rootful 오류로 멈춤 | `podman machine set --rootful` 후 재시작 | [`architectures/k8s.md`](architectures/k8s.md) |
+| JVM 파드가 `unable to create native thread`(메모리는 여유) | 컨테이너 PID 상한 — `k8s-up.sh`가 경고하면 클러스터 재생성 | [`conventions/k8s/pids.md`](conventions/k8s/pids.md) |
 | `MACHINE_*`를 바꿔도 VM 자원이 그대로 | 머신을 중지하고 `podman machine set --cpus/--memory` | [`resource-sizing.md`](resource-sizing.md) |
 | Airflow UI가 503 | 기동 중이다 — `kubectl get pods -n airflow`에서 api-server Ready를 기다린다 | §3-1 Airflow 기동 확인 |
 | airflow 파드 `ImagePullBackOff` | values 태그의 이미지가 아직 GHCR에 없다 — `main` 머지 발행 워크플로를 본다 | [`conventions/docker.md`](conventions/docker.md) §3 |

@@ -24,6 +24,15 @@ MACHINE_CPUS="${MACHINE_CPUS:-8}"
 MACHINE_MEMORY_MIB="${MACHINE_MEMORY_MIB:-26702}"    # =26.08 GiB(28.0 GB 십진), VM 총량
 MACHINE_DISK_GIB="${MACHINE_DISK_GIB:-93}"           # =99.9 GB 십진
 
+# --- 컨테이너 PID 상한(podman machine의 containers.conf 드롭인) ---
+# 🔴 kind는 노드 컨테이너를 만들 때 `--pids-limit`을 넘기지 않아 podman 기본값(실측 2048)이 걸린다.
+#    노드 안 systemd는 `DefaultTasksMax`를 「kernel.pid_max·threads-max·root cgroup pids.max 중 최솟값의 15%」로
+#    잡으므로(systemd-system.conf(5)) **모든 컨테이너가 TasksMax=307**을 받는다 — Spark 4.1 Connect driver가
+#    여기서 `unable to create native thread`로 죽었다. 2048은 노드 전체(모든 파드 합계)의 상한이기도 하다.
+#    값은 kind 공식 문서(rootless 절)의 예시를 따른다. **노드 컨테이너 생성 시점에만 반영**되므로
+#    바꾼 뒤에는 클러스터 재생성이 필요하다(k8s-up.sh가 불일치를 경고한다). 상세 docs/conventions/k8s.md.
+NODE_PIDS_LIMIT="${NODE_PIDS_LIMIT:-65536}"
+
 # --- 로컬 레지스트리 (호스트·클러스터 공통 이름 localhost:5001) ---
 REGISTRY_NAME="${REGISTRY_NAME:-kind-registry}"
 REGISTRY_PORT="${REGISTRY_PORT:-5001}"
