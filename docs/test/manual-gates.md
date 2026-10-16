@@ -30,7 +30,7 @@ uv run scripts/spark_connect_smoke.py
 `session.py`가 `builder.config()` → `getOrCreate()`를 타서 pyspark classic 빌더가 `spark.remote`를
 RemoteSparkSession으로 위임하는 **내부 동작**에 얹히기 때문이다([architectures/spark.md](../architectures/spark.md)).
 **계약이 아니라 구현에 의존**하므로 `dbt-spark`·`pyspark` 업그레이드가 **에러 없이** 깨뜨릴 수 있다.
-그래서 `pyproject.toml`이 상한을 minor로 묶어 두고(`dbt-spark<1.12`·`pyspark<3.6`),
+그래서 `pyproject.toml`이 상한을 minor로 묶어 두고(`dbt-spark<1.12`·`pyspark<4.2`),
 **상한을 올리기 직전에** 이 스모크를 관문으로 통과시킨다.
 
 검증 경로: 접속 → `create table`(iceberg) → 스키마 테스트 → **`merge into` 실발행 확인** →

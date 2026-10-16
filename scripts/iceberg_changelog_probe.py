@@ -105,7 +105,7 @@ def main() -> int:
         return 2
     print(f"✓ 사전 조건 — venv·{host}:{port} 도달 확인 (remote={remote})")
 
-    # pyspark 핀(`pyspark[connect]>=3.5.9,<3.6`)의 단일 출처는 프로젝트 pyproject.toml
+    # pyspark 핀(`pyspark[connect]>=4.1.3,<4.2`)의 단일 출처는 프로젝트 pyproject.toml
     # 이다. 여기서 PEP 723으로 다시 선언하면 핀이 두 곳이 되므로,
     # `spark_connect_smoke.py`와 같은 취지로 **프로젝트 venv 파이썬에 위임**한다 —
     # 다만 별도 워커 파일을 두지 않고 자기 자신을 그 인터프리터로 다시 실행해
