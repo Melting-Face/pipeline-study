@@ -125,8 +125,8 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 | | **Spark Connect executor × 1** ⁸ — `k8s://`라 **함께 상주** | 1000m | 1408Mi | 1 | 1408Mi |
 | | Flink JobManager(세션 클러스터, 잡 없어도 상주) | 1000m | 2048Mi | 1 | 2Gi |
 | **STREAM(일시)** | Flink TaskManager × 1 — **잡 제출 시 온디맨드**, 종료 시 자동 회수 ⁶ | 1000m | 2048Mi | 1 | 2Gi |
-| **BATCH(일시)** | Spark driver ⁴ | 1000m | 실측 ⁴ | 1 | 1.5Gi |
-| | Spark executor × **1** ⁴ ⁵ | 1000m | 실측 ⁴ | 1 | 1.5Gi |
+| **BATCH(일시)** | Spark driver ⁴ | 1000m | 1433Mi ⁴ | — | 1433Mi |
+| | Spark executor × **1** ⁴ ⁵ | 1000m | 1433Mi ⁴ | — | 1433Mi |
 
 ¹ **kube-system은 선언값이 아니라 실측이다**(kind가 만든 것이라 우리 매니페스트에 없다) —
   값은 볼트 §6-3. ⚠️ **구 문서 값은 틀렸는데 합계만 맞아 오래 살아남았다.**
@@ -145,10 +145,10 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 ⁴ ⚠️ **driver·executor의 실제 request는 선언값이 아니다** — `spark.{driver,executor}.memory=1024m`에
   **JVM overhead가 더해진 값**을 오퍼레이터가 request로 환산한다. **유도값을 쓰지 마라**:
   계획 예측이 메모리에서 빗나간 원인이 정확히 이것이었다(실측·오차는 볼트 §6-3).
-  **그래서 이 값은 Spark 3.5.9 → 4.1 상향 시 재실측 대상이다**(결정됨 · **이행 전** —
-  [architectures/spark.md](architectures/spark.md) §Spark 3.5.9 → 4.1 상향 결정).
-  환산 결과이므로 런타임이 바뀌면(Scala 2.13 · JDK 17+) **같은 `1024m` 선언에서도 다른 값이 나온다.**
-  **새 값을 미리 적지 않는다 — 상향 후 실측한다.**
+  **표의 값은 Spark 4.1.3 러너(`spark-runner` 0.6.0)에서 내장 `pi.py`로 재실측한 파드 `.resources`다** —
+  `memory=1024m`에 overhead가 더해진 `1433Mi`가 request이자 limit이고, **CPU limit은 붙지 않는다**.
+  환산 결과라 런타임이 바뀌면 **같은 `1024m`에서도 값이 바뀐다** — 러너를 올리면 다시 잰다.
+  재는 법: 같은 `memory`로 `SparkApplication`을 띄워 파드 `.spec.containers[*].resources`를 읽는다(유도 금지).
   이것은 §(B) 서두의 교훈("엔진·오퍼레이터를 교체하면 사이징 근거가 통째로 무효가 된다")이
   **엔진 버전 축에서 반복되는 경우**다.
 ⁵ 🔴 **executor는 1개로 제한**한다. 하나를 더 붙이면 `+1000m`이 얹혀 Allocatable을 넘긴다 —
