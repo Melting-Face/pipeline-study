@@ -1,0 +1,7 @@
+# CloudNativePG 오퍼레이터 — catalog-postgres(Cluster CR)의 전제
+name: cnpg-operator
+namespace: cnpg-system
+tier: "0"
+source:
+  type: umbrella
+  path: gitops/charts/cnpg-operator

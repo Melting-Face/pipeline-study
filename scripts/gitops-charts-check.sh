@@ -20,7 +20,7 @@
 #         hook 리소스는 ArgoCD 에서 sync 후 정리돼 상주해야 할 것이 사라지는 것을 잡는다
 #       위 외의 최상위 키는 `(c) 알 수 없는 키` 로 실패한다(오타가 조용히 무시되는 것을 막는다)
 #   빈 렌더(문서 0개)는 실패다.
-# 앱명·네임스페이스는 terraform/platform 의 var.apps 와 같은 값을 쓴다(아래 case).
+# 앱명·네임스페이스는 gitops/apps/<app>/config.yaml(앱 목록의 단일 출처)에서 읽는다.
 # 마지막 줄은 `검사한 차트: N개` 이며, 0개면 실패한다.
 set -euo pipefail
 
@@ -46,21 +46,16 @@ for dir in "${charts[@]}"; do
         failed=1
         continue
     fi
-    # terraform/platform/variables.tf 의 var.apps 와 같은 값 — 앱이 늘면 여기에도 추가(미등록은 실패)
-    case "${app}" in
-        cert-manager) ns="cert-manager" ;;
-        cnpg-operator) ns="cnpg-system" ;;
-        spark-operator) ns="spark-operator" ;;
-        flink-operator) ns="flink-operator" ;;
-        storage-external) ns="default" ;;
-        catalog-postgres) ns="default" ;;
-        airflow) ns="airflow" ;;
-        *)
-            echo "FAIL [${app}] 네임스페이스 매핑이 없다 — 이 스크립트의 case 와 var.apps 에 등록"
-            failed=1
-            continue
-            ;;
-    esac
+    # 앱명·네임스페이스는 이 차트를 source.path 로 참조하는 gitops/apps/<app>/config.yaml 에서 읽는다
+    # (이중 등록 제거 — 형식 검사는 scripts/gitops-apps-check.sh 몫). 참조가 없으면 실패한다.
+    config="$(grep -lx "  path: ${dir}" gitops/apps/*/config.yaml || true)"
+    if [ "$(printf '%s' "${config}" | grep -c .)" -ne 1 ]; then
+        echo "FAIL [${app}] ${dir} 를 source.path 로 참조하는 gitops/apps/*/config.yaml 이 정확히 1개가 아니다: ${config:-없음}"
+        failed=1
+        continue
+    fi
+    app="$(sed -n 's/^name: //p' "${config}")"
+    ns="$(sed -n 's/^namespace: //p' "${config}")"
 
     "${root}/scripts/helm-dep-build.sh" "${dir}" >"${tmp}/dep.log" 2>&1 || {
         cat "${tmp}/dep.log"

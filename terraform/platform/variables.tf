@@ -124,6 +124,8 @@ variable "apps" {
     path      = string
     namespace = string
   }))
+  # 🔴 이행 중(docs/argocd-gitops.md §3 「앱 목록 이행」) — 원소를 바꾸면 gitops/apps/<app>/config.yaml 도 함께 바꾼다.
+  #    scripts/gitops-apps-check.sh (g)가 둘의 (name·path·namespace) 집합이 다르면 CI 를 막는다. 한 줄 형식을 유지한다(그 검사의 파서).
   default = [
     { name = "cert-manager", path = "gitops/charts/cert-manager", namespace = "cert-manager" },
     { name = "cnpg-operator", path = "gitops/charts/cnpg-operator", namespace = "cnpg-system" },

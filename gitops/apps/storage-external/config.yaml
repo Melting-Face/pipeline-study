@@ -1,0 +1,7 @@
+# 클러스터 밖 SeaweedFS 를 가리키는 ExternalName — 데이터 층(리소스 단위 Prune=false,Delete=false)
+name: storage-external
+namespace: default
+tier: "0"
+source:
+  type: umbrella
+  path: gitops/charts/storage-external
