@@ -29,12 +29,12 @@ dependencies = [
   #   **minor 업그레이드가 조용히 깨뜨릴 수 있다.** 상한을 올릴 때는 반드시
   #   `scripts/spark_connect_smoke.py`를 통과시킨 뒤 올린다(docs/test.md §5-1).
   "dbt-spark[session]>=1.11,<1.12",
-  # pyspark는 **클러스터 러너 이미지와 같은 계열로 고정**한다(현재 Spark 3.5.9).
-  # 기본 해석은 4.x를 끌어오는데, Iceberg 런타임 jar(1.6.1 = Spark 3.5용)와 방언이 어긋난다.
+  # pyspark는 **클러스터 러너 이미지와 같은 계열로 고정**한다(현재 Spark 4.1.3 = spark-runner 0.6.0).
+  # Spark Connect는 major·minor 간 클라이언트↔서버 호환을 보장한다는 정책 문서가 없다 → 계열을 맞춘다.
   # `connect` extra(gRPC 클라이언트)까지 받아야 dbt-spark가 `spark.remote`로 붙는다.
-  # 상한이 `<3.6`인 이유는 위 dbt-spark와 같다 — `spark.remote` 위임은 pyspark 내부 동작이라
-  # 버전 계약이 없다. 러너 이미지(3.5.9)와의 계열 일치도 함께 지킨다.
-  "pyspark[connect]>=3.5.9,<3.6",
+  # 상한이 `<4.2`인 이유는 위 dbt-spark와 같다 — `spark.remote` 위임은 pyspark 내부 동작이라
+  # 버전 계약이 없다. 러너 이미지(4.1.3)와의 계열 일치도 함께 지킨다.
+  "pyspark[connect]>=4.1.3,<4.2",
   # Trino 파이썬 클라이언트 — Iceberg 유지보수 프로시저 실행(common/trino.py)에 직접 사용.
   # dbt-trino 전이 의존이나, 직접 import하므로 명시 선언(explicit dependencies).
   "trino>=0.330",

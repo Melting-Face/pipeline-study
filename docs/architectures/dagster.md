@@ -101,9 +101,9 @@ Dagster는 compute log 업로드 예외를 삼키므로 **run 상태만 보면 �
 
 ### 이미지 — 베이스 버전이 dbt/pyspark에 묶인다
 
-`python:3.13-slim`으로는 **빌드가 통째로 실패**한다. `pyspark[connect]<3.6`이 `numpy<2`를 요구하는데
-numpy 1.26.x에는 cp313 휠이 없어 소스 빌드로 떨어지고 `-slim`에 컴파일러가 없다. 베이스는 **3.12**이고,
-올리려면 **pyspark의 numpy 상한이 먼저 풀려야 한다**(베이스만 올리면 다시 깨진다).
+pyspark 3.5 시절 `python:3.13-slim`으로는 **빌드가 통째로 실패**했다. `pyspark[connect]<3.6`이 `numpy<2`를
+요구하는데 numpy 1.26.x에는 cp313 휠이 없어 소스 빌드로 떨어지고 `-slim`에 컴파일러가 없었다.
+pyspark 4.1로 오르며 그 numpy 상한은 **풀렸다**. 다만 3.13 베이스 빌드는 아직 검증하지 않아 베이스는 **3.12**로 둔다.
 
 ### `.dockerignore`는 조용히 죽는다
 

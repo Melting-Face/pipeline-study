@@ -292,7 +292,7 @@ dbt-spark의 기본 `file_format`은 iceberg가 아니며, **없으면 아래 �
 `spark.remote`를 보고 위임하는 **내부 동작** 때문이다.
 
 - ⇒ **계약이 아니라 구현에 의존**하므로 minor 업그레이드가 **에러 없이** 깨뜨릴 수 있다.
-  그래서 `pyproject.toml`이 상한을 **`dbt-spark<1.12`·`pyspark<3.6`** 으로 묶는다.
+  그래서 `pyproject.toml`이 상한을 **`dbt-spark<1.12`·`pyspark<4.2`** 로 묶는다.
 - **상한을 올리기 직전에 `scripts/spark_connect_smoke.py`를 통과시킨다**
   ([../test/manual-gates.md](../test/manual-gates.md) §5-1). 단 그 스모크가 무엇을 보지
   **못하는지**는 같은 절의 「이 스모크가 보증하지 않는 것」을 함께 읽는다.

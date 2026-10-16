@@ -39,8 +39,10 @@ dbt_pipelines:
       schema: poc
       threads: 1
       server_side_parameters:
-        # 러너 이미지와 **같은 Iceberg 버전**을 쓴다(Spark 3.5 계열).
-        spark.jars.packages: "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:{{ env_var('ICEBERG_VERSION', '1.11.0') }},org.apache.iceberg:iceberg-aws-bundle:{{ env_var('ICEBERG_VERSION', '1.11.0') }},org.postgresql:postgresql:42.7.4"
+        # 러너 이미지와 **같은 Iceberg 버전**을 쓴다(Spark 4.1 계열 · Scala 2.13 전용).
+        # 호스트 pip pyspark에는 S3A·SDK jar가 없어 iceberg-aws-bundle(SDK v2 2.44.4) **한 벌만** 실린다
+        # → 판본이 경계 2.30.0 이후라 체크섬 env 2종(.env)이 방어선이다(docs/conventions/k8s/checksum.md).
+        spark.jars.packages: "org.apache.iceberg:iceberg-spark-runtime-4.1_2.13:{{ env_var('ICEBERG_VERSION', '1.11.0') }},org.apache.iceberg:iceberg-aws-bundle:{{ env_var('ICEBERG_VERSION', '1.11.0') }},org.postgresql:postgresql:42.7.4"
         spark.sql.extensions: "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
         spark.sql.catalog.iceberg: "org.apache.iceberg.spark.SparkCatalog"
         spark.sql.catalog.iceberg.catalog-impl: "org.apache.iceberg.jdbc.JdbcCatalog"
@@ -57,9 +59,11 @@ dbt_pipelines:
     spark_connect:
       <<: *spark_session
       # 🔴 **여기에 `spark.remote` 말고 다른 conf를 추가하지 마라.**
-      #   리모트 세션에서는 `pyspark/sql/connect/session.py:179-185`의 `_apply_options`가
-      #   `conf.set()` 예외를 `warnings.warn()`으로 강등한다 → static conf는 **조용히 무시**된다.
-      #   2026-08-19 실측: `enableHiveSupport()`가 넣는 `spark.sql.catalogImplementation`이
+      #   리모트 세션에서는 `_apply_options`가 옵션을 세션 생성 **뒤에** 적용하며 실패를 삼킨다
+      #   → static conf는 **조용히 무시**된다. pyspark 4.1.3 기준 `pyspark/sql/connect/session.py:209-233`
+      #   — `session.conf._set_all(configs=opts, silent=True)`로 서버에 일괄 전달해 **서버가** 실패를 삼킨다
+      #   (3.5는 클라이언트가 예외를 `warnings.warn()`으로 강등했다 — 방식만 바뀌고 결과는 같다).
+      #   2026-08-19 실측(3.5): `enableHiveSupport()`가 넣는 `spark.sql.catalogImplementation`이
       #   "Cannot modify the value of a static config"로 거부됐고 경고 2건만 남았다(질의는 성공).
       #   지금은 무해하다(테이블이 전부 Iceberg JDBC 카탈로그에 있고 Hive 카탈로그를 안 쓴다).
       #   하지만 여기 넣은 Iceberg/S3 설정은 **적용된 것처럼 보이고 실제로는 안 먹는다.**
@@ -69,7 +73,7 @@ dbt_pipelines:
       #   debug / build(threads 1·4) / incremental `merge into` 실발행 / docs generate /
       #   22모델 compile 전부 통과했다(상세 docs/architectures/spark.md).
       #   🔴 단 이 경로는 **어댑터 계약이 아니라 pyspark 내부 동작에 의존**한다. 그래서
-      #   `pyproject.toml`이 `dbt-spark<1.12`·`pyspark<3.6`으로 상한을 묶고,
+      #   `pyproject.toml`이 `dbt-spark<1.12`·`pyspark<4.2`로 상한을 묶고,
       #   상한을 올릴 때는 `scripts/spark_connect_smoke.py`를 먼저 통과시킨다(docs/test.md §5-1).
       server_side_parameters:
         spark.remote: "{{ env_var('SPARK_REMOTE', 'sc://localhost:15002') }}"
@@ -98,8 +102,8 @@ dbt_pipelines:
     #   `dbt/adapters/spark/connections.py:77-81` 기준 thrift/http/odbc/session 4개뿐이고
     #   **Connect는 없다**. 위 `spark_connect`는 어댑터 기능이 아니라, classic 빌더가
     #   `spark.remote`를 보고 RemoteSparkSession으로 위임하는 pyspark 내부 동작에 얹은 우회다
-    #   (`pyspark/sql/session.py:460-479`). 게다가 `pyspark/sql/connect/session.py:179-185`의
-    #   `_apply_options`가 `conf.set()` 예외를 `warnings.warn()`으로 **강등**해,
+    #   (pyspark 4.1.3 `pyspark/sql/session.py:495-525`). 게다가 `pyspark/sql/connect/session.py:209-233`의
+    #   `_apply_options`가 설정 실패를 **삼켜**(`_set_all(silent=True)`),
     #   `enableHiveSupport()`가 넣는 static conf(`spark.sql.catalogImplementation`) 거부가
     #   조용히 삼켜진다. 죽지 않는 것과 지원되는 것은 다르다(docs/philosophy.md 원칙 7).
     #

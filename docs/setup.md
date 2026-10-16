@@ -276,7 +276,7 @@ pre-commit run --all-files
 uv run --project dagster/dockerfile.d/src --with types-PyYAML --with types-requests \
   --with mypy mypy dagster/dockerfile.d/src/src
 
-# 정의 로드 — ⚠️ 지금은 의존성 해석 결함(pyarrow ↔ numpy<2)으로 import 단계에서 실패한다
+# 정의 로드 — `.env` 값이 env로 있어야 한다(`common/constants.py`가 import 시점에 읽는다)
 (cd dagster/dockerfile.d/src && DAGSTER_HOME="$(mktemp -d)" uv run dg check defs)
 
 # 실인프라 ⏸

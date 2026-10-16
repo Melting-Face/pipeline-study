@@ -384,8 +384,8 @@ in-cluster는 port-forward 주소 대신 서비스 DNS를 쓴다 —
 
 - 하나의 이미지를 compose와 K8s가 공유한다(`dagster/dockerfile.d/`). 태그는 **구체 버전 고정**이고
   올릴 때는 그 태그를 참조하는 곳(compose)을 **같은 커밋에서** 올린다.
-- 베이스는 **Python 3.12**다. `pyspark[connect]`가 `numpy<2`를 요구하는데 numpy 1.26.x에는
-  cp313 휠이 없어 3.13에서는 소스 빌드로 떨어지고 `-slim`에 컴파일러가 없어 빌드가 실패한다.
+- 베이스는 **Python 3.12**다. 3.13을 막던 근거(`pyspark[connect]<3.6`의 `numpy<2` — cp313 휠 없음)는
+  pyspark 4.1로 오르며 사라졌으나, 3.13 베이스 빌드는 검증 전이라 상향은 별건으로 한다.
 - `pip install -e .`이지 `-e ".[dev]"`가 아니다 — 상세는 [docker.md](docker.md) §2.
 - `.dockerignore` 패턴은 **빌드 컨텍스트 루트 기준**이라 `src/` 접두어가 필요하다.
   🔴 빠뜨리면 조용히 통과한다 — 실제로 `src/.venv`가 통째로 이미지에 들어갔다.
