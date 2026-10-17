@@ -1,0 +1,7 @@
+# Spark Kubernetes Operator(배치) + 워크로드 정리 RBAC
+name: spark-operator
+namespace: spark-operator
+tier: "0"
+source:
+  type: umbrella
+  path: gitops/charts/spark-operator

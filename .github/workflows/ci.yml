@@ -140,6 +140,13 @@ jobs:
       #    검사기는 업스트림 차트 저장소에서 의존 차트를 받으므로 네트워크는 쓰지만 인프라는 아니다.
       - uses: astral-sh/setup-uv@v10.0.1
 
+      # 앱 목록(gitops/apps/*/config.yaml)이 차트 검사기의 앱명·네임스페이스 출처라 먼저 돈다.
+      # 테스트는 검사기 자체의 음성·양성 대조다(새 게이트는 일부러 위반시켜 막히는지 본다).
+      - name: gitops 앱 설정 검사
+        run: |
+          scripts/gitops-apps-check.sh
+          bash scripts/tests/gitops-apps-check.test.sh
+
       - name: gitops 차트 검사
         run: scripts/gitops-charts-check.sh
 

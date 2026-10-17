@@ -1,0 +1,7 @@
+# Flink Kubernetes Operator(스트림)
+name: flink-operator
+namespace: flink-operator
+tier: "0"
+source:
+  type: umbrella
+  path: gitops/charts/flink-operator

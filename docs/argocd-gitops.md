@@ -51,6 +51,7 @@ terraform/cluster/kind/      스택 A — kind 클러스터
 terraform/platform/          스택 B — ingress-nginx · argo-cd · appset(두 번째 helm_release)
   charts/appset/             ApplicationSet 하나(List generator) — argocd-study에서 이식
   values/argocd.yaml.tftpl
+gitops/apps/<app>/config.yaml  앱 목록의 git 쪽 사본 — name·namespace·tier·source (이행 중, 아래 §앱 목록 이행)
 gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrella 차트 하나
   cert-manager/              ①  jetstack 차트 dependency + 로컬 CA(local-ca.yaml, sync-wave 1)
   cnpg-operator/             ①  cloudnative-pg 차트
@@ -82,6 +83,22 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
 - **로컬 레지스트리**(`localhost:5001`)는 spark-runner·flink-runner 이미지 때문에 유지한다. 클러스터 밖 컨테이너라
   `k8s-up.sh`는 **podman 머신·레지스트리 기동만** 남긴다.
 - **Barman 백업 플러그인은 옮기지 않는다** — 백업 배선이 꺼져 있다(YAGNI). 켤 때 `catalog-postgres` 차트에 함께 넣는다.
+
+### 앱 목록 이행 — `var.apps` → `gitops/apps/`
+
+목표는 **앱 추가 = git 커밋 하나**(`terraform apply` 없음)다. Terraform B는 ArgoCD와 부트스트랩 ApplicationSet만 남기고,
+앱 목록은 ApplicationSet **git files generator**가 `gitops/apps/*/config.yaml`에서 읽는다. 두 단계로 나눈다.
+
+| 단계 | 내용 | 앱 목록의 정본 |
+| --- | --- | --- |
+| A1 | 설정 파일 7개 + 검사기(`scripts/gitops-apps-check.sh`) 추가. 차트 검사기의 앱명·네임스페이스 출처를 설정 파일로 옮긴다. **클러스터 동작 변화 없음** | `var.apps`(설정 파일은 CI가 같음을 강제하는 사본) |
+| A2 | ApplicationSet을 files generator·RollingSync(tier)로 교체, `var.apps` 제거, 검사기의 `var.apps` 대조(g) 삭제 | `gitops/apps/` |
+
+- **A1이 `main`에 먼저 있어야 A2를 apply한다** — `targetRevision: main`이라 파일이 없으면 generator가 0건을 내고
+  ApplicationSet이 Application을 **지우려 든다**.
+- 설정 파일 스키마와 검사 항목은 [`scripts/gitops-apps-check.sh`](../scripts/gitops-apps-check.sh) 머리 주석이 정본이다.
+  `tier`는 앱 사이 순서(`"0"` 오퍼레이터·외부 저장소 → `"1"` 데이터 층 CR → `"2"` 워크로드), `source.type`은
+  `umbrella`(기존 방식) 또는 `upstream`(상류 차트 직접 참조 — 새 앱부터)이다.
 
 ### 걷어내는 것 · 남기는 것
 
