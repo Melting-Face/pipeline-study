@@ -34,7 +34,7 @@
 | D2 | 단계는 **① 오퍼레이터 → ② 데이터 저장소 → ③ Airflow**, 단계 = PR | 되돌리기 쉬운(데이터 없는) 층부터 |
 | D3 | 클러스터는 **Terraform 스택 A**로 **재생성**, 기존 데이터 폐기 | §1 |
 | D4 | ArgoCD는 **그 클러스터 안**, Terraform 스택 B가 설치 | `argocd-study`와 같은 경계 — "Terraform은 ArgoCD까지" |
-| D5 | 순서 보장은 **ApplicationSet(List generator) + 재시도 수렴**(§5) | `argocd-study` 구조 재사용 |
+| D5 | 순서 보장은 **ApplicationSet(git files generator) + RollingSync(tier) + 같은 tier 안 재시도 수렴**(§5) — *개정됨*(§5 「D5 개정 기록」) | 앱 추가 = 커밋 하나, 앱 사이 순서를 선언으로 |
 | D6 | **Dagster는 새 클러스터에 배포하지 않는다**, k8s 배포 산출물은 삭제 | Airflow 전환 예정 — 실행 경로 없는 파일을 남기지 않는다 |
 | D7 | Secret은 **수동 생성·Git엔 이름만**, 온디맨드 컴퓨트는 **ArgoCD 밖** | 저장소가 public / selfHeal이 수동 기동·회수를 되돌린다 |
 | D8 | 검증은 **나란히 띄운 신규 클러스터**에서, 교체는 PR2 뒤 | 데이터 폐기 시점을 검증 뒤로 미룬다(§6) |
@@ -49,9 +49,9 @@ terraform/cluster/kind/      스택 A — kind 클러스터
                               containerd가 localhost:5001 레지스트리를 쓰도록 선언,
                               kubeconfig를 전용 파일로 출력)
 terraform/platform/          스택 B — ingress-nginx · argo-cd · appset(두 번째 helm_release)
-  charts/appset/             ApplicationSet 하나(List generator) — argocd-study에서 이식
+  charts/appset/             ApplicationSet 하나(git files generator + RollingSync) — 앱 목록은 갖지 않는다
   values/argocd.yaml.tftpl
-gitops/apps/<app>/config.yaml  앱 목록의 git 쪽 사본 — name·namespace·tier·source (이행 중, 아래 §앱 목록 이행)
+gitops/apps/<app>/config.yaml  앱 목록의 정본 — name·namespace·tier·source (아래 §앱 추가·제거)
 gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrella 차트 하나
   cert-manager/              ①  jetstack 차트 dependency + 로컬 CA(local-ca.yaml, sync-wave 1)
   cnpg-operator/             ①  cloudnative-pg 차트
@@ -65,8 +65,8 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
 | 주체 | 소유 |
 | --- | --- |
 | Terraform A | kind 클러스터 · 전용 kubeconfig 파일 |
-| Terraform B | ingress-nginx · ArgoCD · ApplicationSet과 그 앱 목록(`var.apps`) |
-| ArgoCD | `gitops/charts/` 하위 전부 |
+| Terraform B | ingress-nginx · ArgoCD · 부트스트랩 ApplicationSet 1개(앱 목록은 갖지 않는다) |
+| ArgoCD | `gitops/apps/`가 선언한 Application과 `gitops/charts/` 하위 전부 |
 | GitHub Actions | Airflow 커스텀 이미지 빌드·GHCR 발행(`main` 머지가 트리거, 버전은 values 태그 — [conventions/docker.md §3](conventions/docker.md#3-이미지-발행-ghcr)) |
 | 사람 | Secret · 로컬 레지스트리 컨테이너 · Spark Connect·Flink 세션 기동/회수 · 러너 이미지 빌드·push · 발행을 부르는 PR 머지 |
 
@@ -94,11 +94,32 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
 | A1 | 설정 파일 7개 + 검사기(`scripts/gitops-apps-check.sh`) 추가. 차트 검사기의 앱명·네임스페이스 출처를 설정 파일로 옮긴다. **클러스터 동작 변화 없음** | `var.apps`(설정 파일은 CI가 같음을 강제하는 사본) |
 | A2 | ApplicationSet을 files generator·RollingSync(tier)로 교체, `var.apps` 제거, 검사기의 `var.apps` 대조(g) 삭제 | `gitops/apps/` |
 
-- **A1이 `main`에 먼저 있어야 A2를 apply한다** — `targetRevision: main`이라 파일이 없으면 generator가 0건을 내고
-  ApplicationSet이 Application을 **지우려 든다**.
+- **A1이 `main`에 먼저 있어야 A2를 apply한다** — `targetRevision: main`이라 파일이 없으면 generator가 0건을 낸다.
+  A2는 여기에 `applicationsSync: create-update`를 더해 **generator 결과에서 빠진 Application을 지우지 않게** 한다.
 - 설정 파일 스키마와 검사 항목은 [`scripts/gitops-apps-check.sh`](../scripts/gitops-apps-check.sh) 머리 주석이 정본이다.
   `tier`는 앱 사이 순서(`"0"` 오퍼레이터·외부 저장소 → `"1"` 데이터 층 CR → `"2"` 워크로드), `source.type`은
   `umbrella`(기존 방식) 또는 `upstream`(상류 차트 직접 참조 — 새 앱부터)이다.
+- **cutover 판정**: 이름이 같은 Application이 **갱신(in-place)인지 재생성인지는 문서에 없다** — apply 전후
+  `metadata.uid`를 대조해 판정한다(§7).
+
+### 앱 추가·제거
+
+**추가는 커밋 하나다 — `terraform apply`가 필요 없다.**
+
+1. `gitops/apps/<앱>/config.yaml`을 만든다. `name`은 디렉터리 이름과 같게, `tier`는 의존하는 앱보다 큰 값으로.
+   - `umbrella`: `gitops/charts/<앱>/`에 umbrella 차트를 함께 둔다(`source.path`).
+   - `upstream`: `source.repoURL`·`chart`·`targetRevision`(정확 버전)을 적고 **같은 디렉터리에 `values.yaml`** 을 둔다
+     — ApplicationSet이 상류 차트 + 이 저장소 `$values` ref의 multi-source Application을 만든다.
+   - 최상위에 `path` 키를 두지 않는다 — files generator가 설정 파일 위치로 주입하는 예약 파라미터다.
+2. 로컬에서 `scripts/gitops-apps-check.sh`(·umbrella면 `scripts/gitops-charts-check.sh`)를 통과시킨다.
+   CI도 같은 검사를 한다. ⚠️ 설정 파일 **하나의 오류가 ApplicationSet 생성 전체를 실패**시킨다
+   (`argocd appset generate` 드라이런에서 정상 원소까지 함께 실패) — 이 검사기가 막는 것은 그 파일 하나가 아니라
+   **모든 앱의 갱신 정지**다.
+3. PR 머지 → ApplicationSet이 `main`의 설정 파일을 읽어 Application을 만들고, RollingSync가 tier 순서로 sync한다.
+
+**제거는 두 단계다** — 설정 파일을 지워도 `create-update` 때문에 Application은 **남는다**(의도된 보호).
+설정 파일 삭제 PR 머지 뒤 `kubectl -n argocd delete application <앱>`으로 손으로 내린다(비가역 — [risk.md](risk.md) §4 게이트).
+하위 리소스는 `preserveResourcesOnDeletion`과 리소스 단위 `Delete=false`(§4)가 따로 지킨다.
 
 ### 걷어내는 것 · 남기는 것
 
@@ -119,6 +140,7 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
 
 | 겹 | 막는 사고 | 수단 | 근거 |
 | --- | --- | --- | --- |
+| 0. 앱 목록 | 설정 파일 오삭제·generator 0건이 Application 삭제로 번짐 | ApplicationSet `syncPolicy.applicationsSync: create-update`(생성·갱신만, 삭제 안 함) | R2 |
 | 1. 앱 삭제 | Application 삭제 시 하위 리소스 연쇄 삭제 | ApplicationSet `syncPolicy.preserveResourcesOnDeletion: true` | R2 |
 | 2. 상태 리소스 | prune·삭제로 CNPG Cluster·SeaweedFS 소실 | 해당 리소스에 `argocd.argoproj.io/sync-options: Prune=false,Delete=false` | R1 |
 | 3. CRD | CRD 삭제 → 그 CRD의 CR이 GC로 연쇄 삭제 | `helm.sh/resource-policy: keep` — ArgoCD가 `Delete=false`와 동등하게 지원 | R3·R4·R6 |
@@ -140,13 +162,14 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
 - ⚠️ **겹 1이 List 원소 제거에도 적용되는지는 문서에 명시가 없다**(R2 — 문서는 Application 삭제만 말한다).
   §7 관문 ③ 관측: `spark-operator` 원소를 빼자 Application만 사라지고 Deployment·CRD·RBAC는 **남았다**.
   단 Application에 `resources-finalizer`가 원래 없어(템플릿이 달지 않는다) 비연쇄 삭제가 기본이므로,
-  **이 잔존이 겹 1 덕인지는 가르지 못했다**. 그래서 데이터 층 앱은 여전히 `var.apps`에서 **빼지 않는다**.
+  **이 잔존이 겹 1 덕인지는 가르지 못했다**. 그래서 데이터 층 앱은 여전히 `gitops/apps/`에서 **빼지 않는다**.
+  (관측 당시는 List generator였다. 지금은 겹 0이 원소 제거 자체를 Application 삭제로 잇지 않는다.)
 - SeaweedFS는 클러스터 밖(compose)이라 데이터가 ArgoCD·클러스터 수명과 무관하다. `storage-external`은 Service 1개뿐이다.
 
-## 5. sync 정책 — 앱 사이는 재시도, 앱 안은 wave
+## 5. sync 정책 — 앱 사이는 tier(RollingSync), tier 안은 재시도, 앱 안은 wave
 
-ApplicationSet template의 `syncPolicy`를 **모든 앱에 같게** 건다. 앱별로 갈리지 않으므로 List 원소 스키마는
-`argocd-study`와 같은 `name·path·namespace` 셋으로 유지된다.
+ApplicationSet template의 `syncPolicy`를 **모든 앱에 같게** 건다. 앱별로 갈리는 것은 설정 파일의
+`tier`(순서)와 `source.type`(단일/multi-source)뿐이다.
 
 ```yaml
 syncPolicy:
@@ -165,17 +188,19 @@ syncPolicy:
       maxDuration: 3m
 ```
 
-- **앱 사이 — 재시도 수렴**: CR 앱(예: `catalog-postgres`)이 CRD보다 먼저 sync되면 실패하고 재시도한다.
-  오퍼레이터 앱이 CRD를 깔면 다음 재시도에서 성공한다. 순서가 **확정적이지 않은 대가**로 검증은
-  **최종 상태**(전부 Synced·Healthy)로만 판정하고, 소요 시간은 임계값 없이 실측만 남긴다(§7 관문 ①).
+- **앱 사이 — tier(RollingSync)**: ApplicationSet `strategy: RollingSync`가 Application 라벨 `tier`로
+  `"0"` → `"1"` → `"2"` 단계를 나누고, 앞 단계가 전부 Healthy가 된 뒤 다음 단계를 sync한다(R7).
+  컨트롤러 파라미터 `applicationsetcontroller.enable.progressive.syncs: "true"`(`values/argocd.yaml.tftpl`)가
+  없으면 strategy가 **에러 없이 무시**되므로 `terraform test`가 렌더를 고정한다.
+- **tier 안 — 재시도 수렴**: 같은 tier의 앱끼리는 순서가 없다 — CRD가 아직 없어 실패한 앱은 재시도로 수렴한다.
+  검증은 **최종 상태**(전부 Synced·Healthy)로 판정하고, 소요 시간은 임계값 없이 실측만 남긴다(§7 관문 ①).
   기준선이 없는 값에 임계를 먼저 박지 않는다.
 - **앱 안 — sync-wave**: 같은 앱 안에서 웹훅이 준비돼야 받아들여지는 리소스는 wave로 뒤에 둔다.
   `cert-manager` 앱의 로컬 CA(Issuer·Certificate)는 `argocd.argoproj.io/sync-wave: "1"` —
   wave 0(cert-manager 본체)이 Healthy가 된 뒤 적용된다. 재시도에만 기대는 것보다 확정적이다.
   Flink 웹훅 RBAC 등 같은 형태가 더 있는지는 구현 시 `helm template`으로 판단한다.
 - **기각한 대안**: app-of-apps + **앱 간** sync-wave(순서는 확정적이나
-  `argocd-study`가 걷어낸 루트 Application 구조로 돌아간다),
-  ApplicationSet Progressive Sync(별도 활성화가 필요한 기능).
+  `argocd-study`가 걷어낸 루트 Application 구조로 돌아간다).
 - syncPolicy는 **블록 스타일**로 쓴다 — flow 스타일은 영구 drift를 낸다(`argocd-study` appset 템플릿 주석).
 - `ignoreDifferences`는 **비워 두고 시작**했고, 반복 OutOfSync가 관측된 필드만 추가한다. 첫(현재 유일한) 항목은
   spark-operator·flink-operator의 영구 OutOfSync 때문이다 — 두 차트의 `crds/` CRD 6종이
@@ -183,6 +208,22 @@ syncPolicy:
   범위는 **CRD printer-column `priority`** 하나이고, appset 템플릿이 아니라 **ArgoCD 시스템 수준
   (`argocd-cm`, `terraform/platform/values/argocd.yaml.tftpl`의 `configs.cm`)** 에 둔다 — 전 Application에
   균일하게 적용되고 템플릿은 그대로다. 렌더 여부는 `terraform test`가 확인한다.
+
+### D5 개정 기록 — List generator + 재시도 → files generator + RollingSync
+
+- **이전 결정**: List generator(원소 = Terraform `var.apps`) + 앱 사이 재시도 수렴. Progressive Sync는
+  「별도 활성화가 필요한 기능」이라 기각했다.
+- **바꾼 이유**: ①앱 추가마다 `terraform apply`가 필요했다 — 목표 구조(Terraform은 ArgoCD까지)와 어긋난다.
+  ②ApplicationSet 패턴(generator·multi-source·순서 제어) 학습이 이 저장소의 목적이 됐다.
+  「별도 활성화」는 파라미터 1줄 + `terraform test` 셀 1개로 비용이 확정돼 기각 사유가 아니게 됐다.
+- **수용한 대가**: RollingSync는 **생성 Application의 자동 sync를 강제로 끈다**(R7) — template의
+  `automated`(selfHeal·prune)는 남아 있지만 컨트롤러가 무시한다. git 변경은 RollingSync가 단계 순서로 sync한다고
+문서는 말하고(R7 — 이 저장소에서는 첫 앱 추가 때 실측한다),
+  **라이브 drift를 git 상태로 되돌리는 selfHeal은 꺼진 것으로 읽힌다** — 관문 ②의 실측 결과로 확정한다.
+  D7(온디맨드 컴퓨트는 ArgoCD 밖)이라 수동 기동·회수가 되돌려지지 않는 쪽은 오히려 마찰이 준다.
+- **재검토 조건**: ⓐ RollingSync가 생성 Application의 자동 sync를 보존하는 옵션을 제공할 때
+  ⓑ 관문 ②에서 drift 미복원이 실제 장애·데이터 오류로 이어졌을 때
+  ⓒ 앱 사이 의존이 tier 3단으로 표현되지 않을 때(같은 tier 안 순서가 재시도로 수렴하지 않는 경우 포함).
 
 ### 추적할 리비전
 
@@ -244,7 +285,7 @@ scripts/k8s-secrets.sh                    # ② 이후. 순서 강제 아님 —
   **에러 없이 빠진다**. 루프를 재귀 탐색으로 고치고, 로그의 **검증한 스택 수**가 기대값과 같은지 본다
   (0건 가드는 "하나라도 찾았다"만 보므로 일부 누락을 못 잡는다).
 - **음성 대조**(새로 건 게이트는 일부러 위반시킨다):
-  ⓐ `var.apps`에 `gitops/charts/` 밖 경로 → validation 거부 ⓑ 필수 값 누락 → `helm template` 실패
+  ⓐ 설정 파일에 `gitops/charts/` 밖 경로 → `scripts/gitops-apps-check.sh` 실패 ⓑ 필수 값 누락 → `helm template` 실패
   ⓒ `KUBECONFIG` 미설정 셸에서 스크립트 실행 → 컨텍스트 가드가 멈춘다.
 
 **수동 관문(실인프라, 단계마다 1회)**
@@ -252,9 +293,10 @@ scripts/k8s-secrets.sh                    # ② 이후. 순서 강제 아님 —
 | # | 관문 | 판정 |
 | --- | --- | --- |
 | ⓪ | health 판정 생존(②부터) | 일부러 실패하는 CR(없는 Secret을 참조하는 CNPG Cluster)이 **Healthy로 표시되지 않는다**. 표시되면 `resource.customizations.health`를 추가 |
-| ① | 빈 클러스터 수렴 | **Application 객체 수 == `var.apps` 원소 수**이고 전부 Synced·Healthy. 소요 시간은 실측해 볼트에 둔다 |
-| ② | selfHeal | 오퍼레이터 Deployment를 수동 scale → Git 상태로 복원 |
-| ③ | 삭제 보호(§4 미확인 판정) | 데이터 없는 `spark-operator`를 `var.apps`에서 잠시 빼고 Deployment·CRD가 남는지 본다 |
+| ① | 빈 클러스터 수렴 | **Application 객체 수 == `gitops/apps/*/config.yaml` 수**이고 전부 Synced·Healthy. 소요 시간은 실측해 볼트에 둔다 |
+| ② | selfHeal | 오퍼레이터 Deployment를 수동 scale → Git 상태로 복원되는지. RollingSync 아래에서는 **결과를 그대로 기록**한다(§5 D5 개정 기록) |
+| ③ | 삭제 보호(§4 미확인 판정) | 데이터 없는 `spark-operator`의 설정 파일을 브랜치에서 빼고 `-var target_revision=<브랜치>`로 apply → Application이 **남는지**(겹 0) |
+| A2 | generator 교체(cutover) | apply 전 `argocd appset generate`로 생성 결과를 라이브 spec과 대조, apply 전후 Application `metadata.uid` 동일(재생성 없음) |
 | ④ | 기능 스모크(② 단계 뒤) | Spark Connect 수동 기동 → `scripts/spark_connect_smoke.py` 통과, Flink 세션의 Iceberg 읽기 |
 
 관문 ⓪은 관문 ①의 전제다 — CR의 health를 ArgoCD가 판정할 줄 모르면 생성 즉시 Healthy로 보일 수 있어
@@ -307,14 +349,16 @@ PR마다 함께 갱신할 단일 출처: [setup.md](setup.md) §3·[setup/local-
 - `docs/superpowers/specs/2026-10-07-applicationset-image-cd-design.md` §3 <!-- date-ok -->
   — 소유권 표, "Terraform이 ArgoCD를 소유"
 - `wiki/argocd-bootstrap.md` — CRD 선행 때문에 appset을 두 번째 `helm_release`로 분리한 근거
-- `terraform/platform/charts/appset/templates/applicationset.yaml` — List generator·블록 스타일 syncPolicy
+- `terraform/platform/charts/appset/templates/applicationset.yaml` — 블록 스타일 syncPolicy·Helm 이중 템플릿
+  이스케이프(이식 당시 List generator)
 - `terraform/platform/values/argocd.yaml.tftpl` — repo-server probe 타임아웃 교정
 
 외부 1차 출처(A등급, stable 문서)
 
 - **R1** Argo CD, *Sync Options* — §Server-Side Apply · §Skip Dry Run for New Custom Resources Types ·
   §No Prune Resources · §No Resource Deletion. https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/
-- **R2** Argo CD, *ApplicationSet — Controlling Resource Modification*, §Preserving Resources on Deletion.
+- **R2** Argo CD, *ApplicationSet — Controlling Resource Modification*, §Preserving Resources on Deletion ·
+  §Managed Applications modification Policies(`create-update`).
   https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Controlling-Resource-Modification/
 - **R3** Argo CD, *Helm* (user guide) — Helm 주석 지원 표, `helm.sh/resource-policy: keep`.
   https://argo-cd.readthedocs.io/en/stable/user-guide/helm/
@@ -323,6 +367,9 @@ PR마다 함께 갱신할 단일 출처: [setup.md](setup.md) §3·[setup/local-
 - **R5** Apache Software Foundation, *Release Distribution Policy*. https://infra.apache.org/release-distribution.html
 - **R6** CloudNativePG charts, `charts/cloudnative-pg/templates/crds/crds.yaml`·`values.yaml`(`crds.create`).
   https://github.com/cloudnative-pg/charts
+- **R7** Argo CD, *ApplicationSet — Progressive Syncs* — 활성화 파라미터, RollingSync steps,
+  생성 Application의 자동 sync 해제.
+  https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Progressive-Syncs/
 
 교차 검토: `argocd-expert` 스킬(C등급 — 모범사례 목록). §5 앱 내부 wave, §7 관문 ⓪, §9 기각 목록의 계기가 됐고
 판단 근거는 위 A등급 출처와 이 저장소 규칙이다.

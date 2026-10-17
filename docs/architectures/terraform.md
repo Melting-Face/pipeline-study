@@ -18,7 +18,7 @@ Terraform은 **선언형 인프라 프로비저닝** 도구다. 리소스의 목
 | 스택 | 경로 | 내용 | `destroy` 시 |
 | --- | --- | --- | --- |
 | **A. cluster** | `terraform/cluster/kind/` | kind 클러스터 · containerd 레지스트리 설정 · 전용 kubeconfig | 클러스터와 그 안의 PVC 전부 소멸 |
-| **B. platform** | `terraform/platform/` | ingress-nginx · argo-cd · ApplicationSet(`var.apps`) | ArgoCD와 그 앱 정의 소멸(앱이 만든 워크로드는 보호 겹이 따로 있다) |
+| **B. platform** | `terraform/platform/` | ingress-nginx · argo-cd · 부트스트랩 ApplicationSet(앱 목록은 `gitops/apps/`) | ArgoCD와 그 앱 정의 소멸(앱이 만든 워크로드는 보호 겹이 따로 있다) |
 | 그 아래 | `gitops/charts/<app>/` | 오퍼레이터 이하 전부 — **ArgoCD가 소유**, Terraform이 아니다 | — |
 
 지켜지지 않던 **「셸 유지」 결정을 뒤집었다.** 이전 판은 클러스터(A)·데이터(B)를 셸에 남기기로 했다 —
@@ -47,7 +47,7 @@ Terraform은 **ArgoCD까지** 설치하고 그 위는 `git push`로 수렴한다
 ```text
 terraform/cluster/kind/   스택 A — kind 클러스터 · 레지스트리 설정 · 전용 kubeconfig 출력
 terraform/platform/       스택 B — ingress-nginx · argo-cd · appset(두 번째 helm_release)
-  charts/appset/          ApplicationSet 하나(List generator)
+  charts/appset/          ApplicationSet 하나(git files generator + RollingSync)
   values/argocd.yaml.tftpl
 gitops/charts/<app>/      ArgoCD가 sync하는 대상(앱 하나 = umbrella 차트 하나)
 ```

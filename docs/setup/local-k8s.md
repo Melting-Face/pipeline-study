@@ -200,7 +200,7 @@ terraform -chdir=terraform/platform apply
   | --- | --- | --- |
   | `helm_release.ingress_nginx` | `ingress-nginx` | 호스트 8080/8443 → 클러스터 Ingress 입구 |
   | `helm_release.argo_cd` | `argocd` | ArgoCD 본체 |
-  | `helm_release.appset` | `argocd` | ApplicationSet `apps` — `var.apps`의 원소마다 Application 하나를 만든다 |
+  | `helm_release.appset` | `argocd` | ApplicationSet `apps` — `gitops/apps/*/config.yaml`마다 Application 하나를 만든다(앱 목록은 git 소유) |
 
 - **확인**:
 

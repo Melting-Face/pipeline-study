@@ -114,7 +114,8 @@ Kafka도 **producer→broker는 push, broker→consumer는 pull인 혼합**이�
 
 **학습 PoC 창 — 판정은 미도입 유지.** 위 「학습은 별도 PoC 창」을 실제로 연 경로가
 [`k8s/kafka/`](../../k8s/kafka/README.md)다(Strimzi 단일 노드 KRaft + Iceberg Sink).
-`var.apps`에 등록하지 않고 창 안에서 띄웠다 회수하므로 **상주가 늘지 않고 이 문서의 판정도 바뀌지 않는다.**
+ArgoCD 앱 목록(`gitops/apps/`)에 등록하지 않고 창 안에서 띄웠다 회수하므로
+**상주가 늘지 않고 이 문서의 판정도 바뀌지 않는다.**
 아래 표의 Kafka 열은 그 PoC를 돌린 뒤에도 **이 저장소의 배선**이 아니라 가정으로 읽는다.
 
 ### 이 저장소에서 갈리는 것 — Flink 현행 vs Kafka 가정
