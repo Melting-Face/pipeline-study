@@ -206,8 +206,8 @@
   전 서비스 `deploy.resources` 명시. **옵션 기능은 `profiles`로 분리**(뼈대는 profile
   없이 항상 실행, `--profile <name>`으로 opt-in) — `monitoring`(prometheus)·`legacy-sql`(trino)·
   `host-dagster`·`legacy-meta`. **뼈대(core)는 이제 비었다** — 전부 opt-in이다.
-  **`profiles`는 "제거 예정"의 중간 단계로도 쓴다** — `trino`는 재설계 제거 대상이나 22모델 방언
-  교정이 끝날 때까지 **값 대조의 정본**이라 정의는 남기고 **상시 기동만 끊는다**("중단"과 "삭제"의 분리:
+  **`profiles`는 "제거 예정"의 중간 단계로도 쓴다** — compose `trino`는 K8s로 옮겼으나(다른 카탈로그 DB) dbt 이관이
+  끝날 때까지 **값 대조의 정본**이라 정의는 남기고 **상시 기동만 끊는다**("중단"과 "삭제"의 분리:
   자원은 즉시 회수, 롤백 비용 0).
   **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받는다** — `postgres`가 `host-dagster`·`legacy-sql`을
   더해 3개인 이유다(빠뜨리면 그 profile만 켤 때 의존 비활성으로 깨진다).
@@ -232,8 +232,9 @@
   로컬 레지스트리 `localhost:5001`. 기동은 `k8s-up.sh` → **`terraform apply`**(`cluster/kind`) → **`terraform apply`**
   (`platform`: ArgoCD가 `gitops/charts/`를 수렴, 설계 `docs/argocd-gitops.md`). **Dagster는 미배포**(호스트)다.
   규칙 [`docs/conventions/k8s.md`](docs/conventions/k8s.md), 예산·배분 [`docs/resource-sizing.md`](docs/resource-sizing.md).
-  클러스터에는 **Spark Operator**(배치)·**Spark Connect**(dbt-spark 접속용 상주)가 있고,
-  Spark·Flink가 **같은 Iceberg JDBC 카탈로그**를 공유한다.
+  클러스터에는 **Spark Operator**(배치)·**Spark Connect**(dbt-spark 접속용 상주)·**Trino**(dbt 엔진 후보 —
+  upstream 앱 `gitops/apps/trino/`, 제거 번복은 `docs/redesign.md` §3)가 있고,
+  세 엔진이 **같은 Iceberg JDBC 카탈로그**를 공유한다.
   **Flink Operator**(기본 설치)와 세션 클러스터로 **Spark가 쓴 Iceberg 테이블을 읽는 것까지**
   확인됐다(쓰기는 검증 SELECT가 없어 `write_verified: False` — **「돌았다」와 「실증」은 다른 축**이다).
   예산 규약은 **시분할 → 동시 기동**으로 개정됐고(급소는 **CPU 축**·실측은 볼트) 경계가 셋이다 — Flink 상주는

@@ -112,16 +112,23 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
    - `umbrella`: `gitops/charts/<앱>/`에 umbrella 차트를 함께 둔다(`source.path`).
    - `upstream`: `source.repoURL`·`chart`·`targetRevision`(정확 버전)을 적고 **같은 디렉터리에 `values.yaml`** 을 둔다
      — ApplicationSet이 상류 차트 + 이 저장소 `$values` ref의 multi-source Application을 만든다.
+     첫 사례는 [`gitops/apps/trino/`](../gitops/apps/trino/)다. ⚠️ upstream 앱의 `values.yaml`은 `gitops-charts-check`의
+     **검사 대상이 아니다**(차트 디렉터리가 없다) — requests/limits·Secret 렌더 0건은 핀 버전으로 `helm template`을
+     떠서 손으로 본다(선언된 공백).
    - 최상위에 `path` 키를 두지 않는다 — files generator가 설정 파일 위치로 주입하는 예약 파라미터다.
 2. 로컬에서 `scripts/gitops-apps-check.sh`(·umbrella면 `scripts/gitops-charts-check.sh`)를 통과시킨다.
    CI도 같은 검사를 한다. ⚠️ 설정 파일 **하나의 오류가 ApplicationSet 생성 전체를 실패**시킨다
    (`argocd appset generate` 드라이런에서 정상 원소까지 함께 실패) — 이 검사기가 막는 것은 그 파일 하나가 아니라
    **모든 앱의 갱신 정지**다.
 3. PR 머지 → ApplicationSet이 `main`의 설정 파일을 읽어 Application을 만들고, RollingSync가 tier 순서로 sync한다.
+   ⚠️ **git 변경(새 앱)에 대한 자동 sync는 아직 실측 전**이다 — 머지 뒤 Application의 `Synced` 여부를 직접 본다.
 
 **제거는 두 단계다** — 설정 파일을 지워도 `create-update` 때문에 Application은 **남는다**(의도된 보호).
 설정 파일 삭제 PR 머지 뒤 `kubectl -n argocd delete application <앱>`으로 손으로 내린다(비가역 — [risk.md](risk.md) §4 게이트).
 하위 리소스는 `preserveResourcesOnDeletion`과 리소스 단위 `Delete=false`(§4)가 따로 지킨다.
+⚠️ 생성 Application에는 finalizer가 없어 손 삭제도 **연쇄 삭제가 아니다** — 워크로드까지 내리려면 세 번째 단계로
+`app.kubernetes.io/instance=<앱>` 라벨 리소스를 손으로 지운다(별도 비가역 게이트).
+「Application이 사라졌다」는 「앱이 내려갔다」가 아니다.
 
 ### 걷어내는 것 · 남기는 것
 

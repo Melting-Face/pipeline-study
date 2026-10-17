@@ -408,10 +408,10 @@ Spark Connect는 `--replicas=0`, Flink 세션은 `delete`로 회수되지만 **�
 - **서비스 접근**: **HTTP 계열(웹 UI·REST)은 Ingress**, **JDBC는 `port-forward`**, **gRPC는 TLS Ingress**(§gRPC).
   **S3는 클러스터 밖**이라 호스트는 `localhost:8333` 직결, 파드는 `Service seaweedfs`(ExternalName → kind 별칭
   `seaweedfs-ext`)로 나간다 — 컨테이너·별칭은 스택 A `docker_container.seaweedfs` 소유(클러스터 재생성 때 함께 교체).
-  **Flink는 REST와 UI가 같은 포트(8081)** 라 UI를 Ingress로 낸 순간 **REST도 함께 나간다** —
-  `port-forward`가 필요 없고(실측: `curl http://flink.localtest.me:8080/overview` → JSON),
-  동시에 **인증 없이 잡 제출·취소가 가능한 면**이 열린다는 뜻이다. kind가 `127.0.0.1`로만 바인딩해
-  위험은 낮지만 **"UI만 열었다"로 읽지 않는다**(노출 범위는 포트가 아니라 그 포트가 제공하는 API가 정한다).
+  **Flink는 REST와 UI가 같은 포트(8081)** 라 UI를 Ingress로 낸 순간 **REST도 함께 나간다** — `port-forward`가
+  필요 없고(실측: `curl http://flink.localtest.me:8080/overview` → JSON) **무인증 잡 제출·취소 면**이 열린다.
+  **Trino(`trino.localtest.me`)도 UI와 쿼리 프로토콜이 한 포트**라 무인증 쿼리 제출이 함께 열린다.
+  kind가 `127.0.0.1`로만 바인딩해 위험은 낮지만 **"UI만 열었다"로 읽지 않는다**(노출 범위는 그 포트의 API가 정한다).
 - **kind는 공개 포트를 클러스터 생성 시점에만 정할 수 있다.** 노드가 컨테이너라 사후에 포트를 추가할 수 없어,
   스택 A(`terraform/cluster/kind`)의 **`extraPortMappings`가 없으면
   Ingress·NodePort 둘 다 호스트에서 닿지 않는다**

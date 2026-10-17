@@ -26,6 +26,7 @@
 | S3A — Spark 4.1 러너(`hadoop-aws` 3.4.x) | AWS SDK **v2**(`software.amazon.awssdk:bundle`) | 판본이 가른다(§2-1) |
 | S3FileIO (Iceberg `io-impl`) | AWS SDK **v2** — Spark는 위 bundle, Flink는 `iceberg-aws-bundle` | **필요** |
 | pyiceberg·pyarrow·boto3 | 파이썬 SDK(boto3/botocore) — **별개 계보** | **필요**(경계 판본 미측정) |
+| Trino native S3(`fs.s3.enabled`, 483) | AWS SDK **v2** `2.47.4`(Iceberg 플러그인 번들 실측) — 경계 이후 | **필요** — 효력은 미확인(§7 ⓚ) |
 
 - **「S3A는 v1이라 무관」은 Hadoop 3.3.x까지만 참이다.** Hadoop 3.4.x부터 S3A가 SDK v2로 바뀌었다
   (HADOOP-18073). 그래서 Spark 4.1 러너(Hadoop 3.4.2)의 S3A는 이 표의 「무관」 행에서 빠진다.
@@ -100,6 +101,7 @@ S3A용 `software.amazon.awssdk:bundle`과 함께 실으면 **같은 패키지가
 | `k8s/spark/sparkapplication-poc.yaml` | `driverEnv` + `executorEnv` **양쪽** |
 | `k8s/flink/flinkdeployment-session.yaml` | `podTemplate` env — **JM·TM 양쪽** |
 | `k8s/catalog-pg-backup.yaml` | barman 사이드카 env |
+| `gitops/apps/trino/values.yaml` | 차트 `env`(coordinator 단독이라 한 곳) |
 
 **driver에만 주면 샌다** — client mode의 driver는 파드 자신이고 executor는 별도 파드다.
 로컬 모드에서는 둘이 한 몸이라 driver env 하나가 양쪽을 덮었고, client mode가 그 우연을 깬다
@@ -163,3 +165,7 @@ SeaweedFS의 `InternalError`를 체크섬 탓으로 돌렸다가 틀린 기록�
   저장소의 실측이고 어느 판본부터인지는 모른다 — **자바의 `2.30.0`을 옮겨 적지 마라**(다른 계보다).
 - ⓙ **`2.30.0` 이상 SDK에서 체크섬 env가 S3A(Hadoop 3.4.x)에 먹는지 확인하지 않았다.** 지금은 판본을
   경계 아래에 고정해 이 질문을 피했다. 판본을 올리려면 이 미확인을 먼저 닫는다.
+- ⓚ **Trino 483이 체크섬 env를 따르는지 확인하지 않았다.** 전용 키(`s3.checksum-algorithm`·
+  `s3.chunked-encoding-enabled`)는 484부터라 483에서는 SDK 기본 해석에 기댄다 — Trino가 클라이언트 빌더에서
+  값을 덮어쓰면 env는 무력하다. 판정은 **Trino로 쓴 파일을 다른 엔진(Spark)으로 읽는 것**이다(§5의 「쓰기는 성공하고
+  이후 읽기가 실패」 갈래).
