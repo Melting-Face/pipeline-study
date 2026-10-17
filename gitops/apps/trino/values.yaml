@@ -1,0 +1,100 @@
+# Trino upstream 차트(trinodb/charts 1.44.0) values — 상위 기본값 위에 덮는 것만 둔다.
+#
+# 관측 경로 선언(docs/conventions/monitoring.md §1):
+#   - probe  : 차트 기본 — liveness `GET /v1/info`, readiness·startup `health-check` exec
+#   - 로그   : stdout(`kubectl logs deploy/trino-coordinator`)
+#   - 메트릭 : 안 둔다 — 클러스터에 수집기가 없다(계측 대상 없는 수집기 금지와 같은 축)
+
+image:
+  # 차트 기본(appVersion)과 같은 값이지만 latest 금지 규약대로 명시 고정
+  tag: "483"
+
+server:
+  # coordinator 단독 — worker Deployment 는 0이면 렌더 자체가 안 된다
+  workers: 0
+  config:
+    query:
+      # 클러스터 전체 상한 — 노드가 하나라 노드당 상한(1GB)과 같게 둔다(기본 4GB 는 실재하지 않는 용량)
+      maxMemory: "1GB"
+
+coordinator:
+  jvm:
+    # 고정 힙 — 한도 계산을 이 파일 안에서 끝낸다(compose 에서는 퍼센트 방식이 호스트 메모리를 기준으로 잡혔다)
+    maxHeapSize: "2G"
+  config:
+    nodeScheduler:
+      # worker 가 없으므로 coordinator 가 스플릿을 직접 처리한다(기본 false)
+      includeCoordinator: true
+    query:
+      # 힙 2G − headroom 30%(기본) 안에 들어가야 기동한다
+      maxMemoryPerNode: "1GB"
+  # 이 값이 정본이다(docs/resource-sizing.md §(B) 행은 요약 — 바꾸면 한 벌로 갱신).
+  # 상시 기동 — 회수 다이얼이 없다(온디맨드는 켜고 끌 때마다 커밋, 손 scale 은 RollingSync 아래서 drift).
+  # 메모리 req = lim: 힙 2G + 힙 밖 영역이 요청보다 크면 노드 압박 때 먼저 퇴출된다.
+  # CPU 는 쿼리 중에만 lim 까지 오르므로 Connect·Flink JM 과 겹치는 창에서 재측정한다(값은 시작값, 실측은 볼트)
+  resources:
+    requests:
+      cpu: 500m
+      memory: 3Gi
+    limits:
+      cpu: "1"
+      memory: 3Gi
+
+# 기본 카탈로그 tpch·tpcds 는 남긴다(map 병합) — 스토리지 없이 엔진만 확인하는 대조군
+catalogs:
+  # 카탈로그 이름 = catalog-name = iceberg — 전 엔진 통일(이름이 다르면 같은 DB 를 봐도 테이블이 안 보인다)
+  iceberg: |
+    connector.name=iceberg
+    iceberg.catalog.type=jdbc
+    iceberg.jdbc-catalog.catalog-name=iceberg
+    iceberg.jdbc-catalog.driver-class=org.postgresql.Driver
+    iceberg.jdbc-catalog.connection-url=jdbc:postgresql://catalog-postgres-rw:5432/iceberg
+    iceberg.jdbc-catalog.connection-user=${ENV:PG_USER}
+    iceberg.jdbc-catalog.connection-password=${ENV:PG_PASSWORD}
+    iceberg.jdbc-catalog.default-warehouse-dir=s3://warehouse
+    fs.s3.enabled=true
+    s3.endpoint=http://seaweedfs:8333
+    s3.region=us-east-1
+    s3.path-style-access=true
+    s3.aws-access-key=${ENV:AWS_ACCESS_KEY_ID}
+    s3.aws-secret-key=${ENV:AWS_SECRET_ACCESS_KEY}
+
+# 비밀은 기존 Secret 참조만(scripts/k8s-secrets.sh 소유) — 이 앱은 Secret 을 만들지 않는다
+env:
+  - name: PG_USER
+    valueFrom:
+      secretKeyRef:
+        name: catalog-pg-app
+        key: username
+  - name: PG_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: catalog-pg-app
+        key: password
+  - name: AWS_ACCESS_KEY_ID
+    valueFrom:
+      secretKeyRef:
+        name: lakehouse-creds
+        key: s3-access-key
+  - name: AWS_SECRET_ACCESS_KEY
+    valueFrom:
+      secretKeyRef:
+        name: lakehouse-creds
+        key: s3-secret-key
+  # SeaweedFS 는 aws-chunked 체크섬을 못 푼다 — 483 에는 전용 키(s3.checksum-algorithm 등, 484~)가 없어
+  # AWS SDK v2 환경변수에 기댄다. 효력은 쓰기 후 다른 엔진으로 읽어 판정한다
+  - name: AWS_REQUEST_CHECKSUM_CALCULATION
+    value: when_required
+  - name: AWS_RESPONSE_CHECKSUM_VALIDATION
+    value: when_required
+
+# ⚠️ UI 와 클라이언트 프로토콜(쿼리 제출)이 같은 포트다 — UI 를 내면 무인증 쿼리 API 도 함께 나간다.
+#    kind 포트 매핑이 127.0.0.1 바인드라 호스트 밖으로는 안 나간다
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: trino.localtest.me
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
