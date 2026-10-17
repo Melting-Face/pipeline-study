@@ -59,7 +59,10 @@ catalogs:
     s3.aws-access-key=${ENV:AWS_ACCESS_KEY_ID}
     s3.aws-secret-key=${ENV:AWS_SECRET_ACCESS_KEY}
 
-# 비밀은 기존 Secret 참조만(scripts/k8s-secrets.sh 소유) — 이 앱은 Secret 을 만들지 않는다
+# 비밀은 기존 Secret 참조만(scripts/k8s-secrets.sh 소유) — 이 앱은 Secret 을 만들지 않는다.
+# 기동 로그는 카탈로그 속성 표를 치환값으로 찍는다: password·secret-key 는 [REDACTED], user·access-key 는
+# 평문이다(483 센티널 실측). 식별자 쪽 절반이라 단독으로는 인증이 안 되고 로그는 노드 로컬뿐이라 수용한다
+# — 재검토: 로그 수집기를 들이는 때
 env:
   - name: PG_USER
     valueFrom:

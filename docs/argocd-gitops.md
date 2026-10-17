@@ -126,6 +126,9 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
 **제거는 두 단계다** — 설정 파일을 지워도 `create-update` 때문에 Application은 **남는다**(의도된 보호).
 설정 파일 삭제 PR 머지 뒤 `kubectl -n argocd delete application <앱>`으로 손으로 내린다(비가역 — [risk.md](risk.md) §4 게이트).
 하위 리소스는 `preserveResourcesOnDeletion`과 리소스 단위 `Delete=false`(§4)가 따로 지킨다.
+⚠️ 생성 Application에는 finalizer가 없어 손 삭제도 **연쇄 삭제가 아니다** — 워크로드까지 내리려면 세 번째 단계로
+`app.kubernetes.io/instance=<앱>` 라벨 리소스를 손으로 지운다(별도 비가역 게이트).
+「Application이 사라졌다」는 「앱이 내려갔다」가 아니다.
 
 ### 걷어내는 것 · 남기는 것
 
