@@ -65,7 +65,7 @@ API 권한이 필요한 것은 **원격 컴퓨트를 부르는 자산들**뿐이
 
 | 경로 | 수단 | 왜 이 형태인가 |
 | --- | --- | --- |
-| **Spark 세션** | `dagster-pyspark`의 `LazyPySparkResource` (`spark.remote`) | 공식 통합. `Lazy~`라서 `spark_session` **접근 시점**에만 붙어, 무관한 run이 Connect 가용성에 묶이지 않는다 |
+| **SQL 엔진** | 자체 `TrinoResource` — dbapi 래퍼(k8s Trino) | 공식 Trino 리소스가 없다. 연결을 `execute` 호출 시점에 맺어 무관한 run이 Trino 가용성에 묶이지 않는다(구 `LazyPySparkResource`는 Connect 철거로 제거) |
 | **Spark 배치** | 자체 `SparkOperatorResource` — `SparkApplication` CR 제출·폴링 | 🔴 오퍼레이터 watch가 죽어 상태가 **영구 고착**한 전례가 있어 **driver 파드 phase를 보조 신호로 병행**한다 |
 | **Flink 배치** | 자체 `FlinkSessionResource` — `FlinkDeployment` 기동 + `sql-client` **exec 스트림** + 회수 | 잡이 jar가 아니라 SQL이라 CRD 제출 경로가 없고, `PipesK8sClient`는 §C5 조건 2와 충돌한다 |
 

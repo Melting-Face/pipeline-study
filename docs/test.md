@@ -4,10 +4,9 @@
 계층별로 *무엇을 · 어디서 · 어떻게* 테스트하는지 정하고, 각 계층의 세부 규약은
 [`conventions/dbt.md`](conventions/dbt.md)·[`conventions/python.md`](conventions/python.md)·[`conventions/dagster.md`](conventions/dagster.md)와 교차링크한다.
 
-버전 컨텍스트: `dagster==1.12.12` · `pytest`(dev 의존성) · **`dbt-spark>=1.11,<1.12`(현행 기본)** ·
-`dbt-trino>=1.8,<2.0`(값 대조용 존치) — dbt-core 1.8+ = 단위 테스트 지원 계열.
-dbt 기본 타깃은 **`spark_connect`** 다. 아래 명령의 `--target dev`는 **trino 경로**를 뜻한다
-([conventions/dbt.md](conventions/dbt.md) §dbt-spark 타깃).
+버전 컨텍스트: `dagster==1.12.12` · `pytest`(dev 의존성) · **`dbt-trino>=1.8,<2.0`(유일한 어댑터)**
+— dbt-core 1.8+ = 단위 테스트 지원 계열. dbt 기본 타깃은 **`dev`**(k8s Trino)다
+([conventions/dbt.md](conventions/dbt.md)). dbt-spark는 Spark Connect 철거와 함께 제거했다.
 
 ## 테스트 계층 (우선순위 순)
 
@@ -23,17 +22,17 @@ dbt 기본 타깃은 **`spark_connect`** 다. 아래 명령의 `--target dev`는
 | 5 | **dbt singular 테스트** | ★★☆☆☆ | 스키마 테스트로 표현 못 하는 교차 테이블 불변식만 선별 사용 |
 | 6 | **분석 재현성** | ★★☆☆☆ | 파이프라인이 아니라 **결론**을 방어한다. 실인프라가 필요해 비싸고 느리지만, 다른 어떤 계층도 "이 수치가 재현되는가"를 묻지 않는다 |
 
-> **실인프라에 붙는 계층은 넷이고, 넷 다 상시 CI가 아니라 수동 관문이다** — §5-1(Spark Connect
-> 어댑터 스모크, *의존성 상한 인상 직전*) · **§5-3**(Iceberg changelog 판독, *changelog 경로를 건드리기
-> 직전*) · **§5-5**(S3 호환 스토리지 합격 스위트, *스토어 교체 판단 직전* — 대조군이 현행 스토어라
+> **실인프라에 붙는 계층은 지금 둘이고, 둘 다 상시 CI가 아니라 수동 관문이다** —
+> **§5-5**(S3 호환 스토리지 합격 스위트, *스토어 교체 판단 직전* — 대조군이 현행 스토어라
 > 우리 인프라에 붙는다) · §6(분석 재현성, *분석 산출물 공유 직전*).
-> 앞의 셋은 [test/manual-gates.md](test/manual-gates.md)에 있다. 나머지는 실인프라 미접속이
+> §5-1(Spark Connect 어댑터 스모크)은 **철거**, §5-3(Iceberg changelog 판독)은 **중단**이다 —
+> 둘 다 Spark Connect 철거로 실행 경로가 사라졌다. 관문 본문은 [test/manual-gates.md](test/manual-gates.md). 나머지는 실인프라 미접속이
 > 원칙이다(격리·재현).
 >
-> **예외는 둘 → 셋 → 넷으로 늘어 왔다.** "분석 재현성만 실인프라에 붙는다"는 초기 서술은
-> 이미 §5-1로 깨졌고 §5-3·§5-5가 차례로 더해졌다 — **예외는 계층이 아니라 *관문 시점*으로
-> 구분**한다. 넷 다 "무엇을 하기 직전에 통과시키는가"가 다르고, 그것이 이 예외들을 정당화하는
-> 유일한 축이다. ⚠️ **관문을 더할 때 이 수를 함께 고친다** — 본문만 늘리면 이 "넷"이 조용히 낡는다.
+> **예외는 둘 → 셋 → 넷 → 둘로 움직여 왔다.** "분석 재현성만 실인프라에 붙는다"는 초기 서술은
+> §5-1로 깨졌고 §5-3·§5-5가 더해졌다가 Connect 철거로 둘이 빠졌다 — **예외는 계층이 아니라
+> *관문 시점*으로 구분**한다. "무엇을 하기 직전에 통과시키는가"가 이 예외들을 정당화하는
+> 유일한 축이다. ⚠️ **관문을 더하거나 뺄 때 이 수를 함께 고친다** — 본문만 바꾸면 이 "둘"이 조용히 낡는다.
 >
 > ⚠️ **§5-4는 이 넷에 더하지 않는다** — 붙는 대상이 *우리 실인프라*가 아니라 **외부 서비스**다.
 > "수동 관문"이라는 성질은 같아도 축이 달라 같은 수로 세지 않는다.
@@ -185,14 +184,14 @@ def test_patient_loads_table() -> None:
 
 | 절 | 관문 | 무엇을 하기 직전에 통과시키나 |
 | --- | --- | --- |
-| §5-1 | Spark Connect 어댑터 스모크 | 의존성 상한 인상 직전 |
+| §5-1 | 🗑 철거 — Spark Connect 어댑터 스모크 | (대상 소멸) |
 | §5-2 | — (관문 아님) | `iceberg_maintenance_job`이 구조적으로 못 하는 것 |
-| §5-3 | Iceberg changelog 판독 + 소스 적격성 진단 | changelog 경로 변경 직전 |
+| §5-3 | ⏸ 중단 — Iceberg changelog 판독 + 소스 적격성 진단 | (미션 C 이후 재수립) |
 | §5-4 | PhysioNet 접근 판정 | 수집 자산을 처음 켜기 직전 |
 | §5-5 | S3 호환 스토리지 합격 스위트 | 스토어 교체를 판단하기 직전 |
 
 요지만: 넷 다 **상시 CI 게이트가 아니고**, 각자 *무엇을 보증하지 않는지*를 본문에 달고 있다.
-🔴 **종료 코드의 의미가 관문마다 같지 않다** — §5-1·§5-3·§5-4는 `0`=통과 / `1`=회귀 /
+🔴 **종료 코드의 의미가 관문마다 같지 않다** — §5-4(와 철거·중단 전의 §5-1·§5-3)는 `0`=통과 / `1`=회귀 /
 `2`=판정 불가이지만 **§5-5는 `0`이 "관측 경로가 살아 있었다"** 이고 `1`을 쓰지 않는다.
 표가 닮았다고 같은 뜻으로 읽으면 FAIL이 섞인 `0`을 전부 통과로 읽는다.
 
@@ -207,8 +206,7 @@ def test_patient_loads_table() -> None:
   중간에 죽는 노트북은 고치거나 지운다(탐색이 끝난 노트북은 지우는 게 기본이다).
 
 ```shell
-kubectl port-forward svc/spark-connect 15002:15002   # 별도 터미널 (실인프라 필요)
-
+# 전제: k8s Trino(trino.localtest.me:8080)와 조회 대상 테이블이 있어야 한다(실인프라 필요)
 cd dagster/dockerfile.d/src
 uv run --group notebook jupyter nbconvert --to notebook --execute \
     --output /tmp/_verify.ipynb ../../../notebooks/00-lakehouse-connect.ipynb
@@ -307,8 +305,6 @@ python3 scripts/tests/run_guard_tests.py
 uv run --project dagster/dockerfile.d/src --with mypy mypy dagster/dockerfile.d/src/src
 
 # 수동 관문 (실인프라 필요 — 상시 CI 아님. 규약은 test/manual-gates.md)
-uv run scripts/spark_connect_smoke.py          # §5-1 의존성 상한 인상 직전
-uv run scripts/iceberg_changelog_probe.py      # §5-3 changelog 경로 변경 직전
 uv run scripts/physionet_access_probe.py       # §5-4 수집 자산을 처음 켜기 직전
 uv run scripts/storage_conformance_probe.py    # §5-5 스토어 교체 판단 직전
 ```

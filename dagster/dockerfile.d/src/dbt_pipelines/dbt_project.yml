@@ -52,6 +52,8 @@ models:
           group: stock_forecast_silver
       tables:
         +materialized: table
+        # 이유는 아래 mimic_iv.tables의 on_table_exists 주석과 같다
+        +on_table_exists: replace
         +file_format: iceberg
     mimic_iv:
       +schema: mimiciv
@@ -63,5 +65,14 @@ models:
         # Iceberg 스냅샷 히스토리가 소멸하고, schema.yml의 컬럼 description이
         # 에러 없이 통째로 무시된다(dbt-spark adapters.sql의 persist_docs 분기가
         # file_format in ['delta','hudi','iceberg']일 때만 ALTER TABLE을 발행).
-        # dbt-trino는 이 config를 무시하므로 Trino 타깃에는 무해하다.
+        # dbt-trino는 file_format을 무시한다 — Trino에서 같은 위험을 막는 것은 아래
+        # on_table_exists다.
         +file_format: iceberg
+        # 🔴 dbt-trino 기본값 `rename`은 테이블이 있으면 `__dbt_tmp`를 새로 만들어
+        #    rename으로 바꿔 끼운다(dbt-trino 1.10.6 table.sql) → 매 실행 **새 테이블**이라
+        #    스냅샷 이력이 1로 리셋되고 location이 바뀐다. `replace`는 CREATE OR REPLACE라
+        #    location·스냅샷 이력이 유지된다(Trino 483 실측: rename 1→1·location 변경 /
+        #    replace 1→3·location 불변). ⚠️ 단 replace 스냅샷은 parent_id가 없는 독립
+        #    루트라 계보는 선형이 아니다(Spark createOrReplace와 같은 모양) — 이 테이블들을
+        #    증분 읽기 소스로 쓰지 않는다(common/helper.py 경고).
+        +on_table_exists: replace

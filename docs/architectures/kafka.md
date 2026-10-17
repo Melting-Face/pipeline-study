@@ -143,7 +143,7 @@ ArgoCD 앱 목록(`gitops/apps/`)에 등록하지 않고 창 안에서 띄웠다
 - **① Kafka가 이기는 곳 — append-only 소스 제약이 사라진다.** 현행의 급소는 스트림 소스가
   append 전용이어야 한다는 것이다. 그래서 `merge into`를 쓰는 dbt 실버는 소스로 못 쓰고,
   `UPDATE`·`replace`가 한 번만 들어가도 **에러가 아니라 조용한 누락**으로 자격을 잃는다
-  (`common/helper.py`·`defs/usgs_water/assets.py`의 경고와 `scripts/iceberg_changelog_probe.py`가
+  (`common/helper.py`·`defs/usgs_water/assets.py`의 경고와 삭제된 `scripts/iceberg_changelog_probe.py`가
   이 제약이 물리는 비용이다). **토픽은 로그라서 이 제약이 통째로 없어진다** —
   Kafka로 갈 때 얻는 가장 확실한 것이다.
 - **② Flink가 이기는 곳 — 홉 수와 상주 수.** Flink는 Iceberg를 직접 읽고 직접 쓴다. Kafka는

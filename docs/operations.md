@@ -97,7 +97,7 @@ compose `postgres`를 쓰고, 호스트 `dg dev`는 `.env`의 `POSTGRES_HOST`·`
 | `POSTGRES_PORT` | `5432` | **`15432`** — port-forward 포트 | `5432` |
 | `POSTGRES_DB` | `dagster`(compose DB) | `dagster`(CNPG DB) | `dagster`(CNPG DB) |
 | `ICEBERG_S3_ENDPOINT` | `http://host.containers.internal:8333` — `compose.yml`이 리터럴 고정 | `http://localhost:8333`(직결) | `http://seaweedfs:8333`(ExternalName) |
-| `SPARK_REMOTE` | (미설정) | TLS Ingress 또는 port-forward | `sc://spark-connect:15002` |
+| `TRINO_HOST` · `TRINO_PORT` | (미설정 — 기본 `trino.localtest.me`/`8080`) | 같음(Ingress) | `trino`/`8080`(Service) |
 
 ⚠️ **호스트 경로의 `POSTGRES_PORT`가 급소다.** 5432면 compose DB를, 15432면 CNPG DB를 본다 —
 둘 다 이름이 `dagster`라 **접속은 어느 쪽이든 성공하고 run 이력만 조용히 갈린다.**
@@ -140,10 +140,9 @@ in-cluster Dagster 매니페스트는 철거돼(새 클러스터에 배포하지
 - **`AWS_REQUEST_CHECKSUM_CALCULATION`/`AWS_RESPONSE_CHECKSUM_VALIDATION`**: SeaweedFS 호환 필수 키.
   값이 없으면 최신 SDK 기본값이 객체를 손상시킨다([conventions/k8s/checksum.md](conventions/k8s/checksum.md)).
   코드 기본값이 있지만 컨테이너·외부 도구를 위해 `.env`·compose 앵커에도 명시한다.
-- **dbt-spark 타깃 키**(`ICEBERG_*`·`SPARK_REMOTE`)도 같은 성격이다. 호스트에서 dbt를 돌리면
-  in-cluster 서비스(카탈로그 Postgres·SeaweedFS·Spark Connect)에 **port-forward가 필요**하므로
-  `.env` 기본값은 `localhost:<로컬포트>`를 가리킨다. 클러스터 안에서 도는 워크로드는
-  매니페스트가 서비스명(`catalog-postgres-rw`·`seaweedfs`)을 직접 주입한다.
+- **dbt·유지보수 접속 키**(`TRINO_HOST`·`TRINO_PORT`)는 dbt 프로파일과 `TrinoResource`가 **같은 값**을
+  읽는다 — 한쪽만 바꾸면 dbt와 유지보수가 서로 다른 카탈로그 DB를 본다(compose Trino는 다른 DB다).
+  카탈로그 설정은 Trino 서버 측에 있어 dbt 쪽엔 비밀정보가 없다.
   - **카탈로그 PG의 서비스명에는 접미사가 붙는다** — CloudNativePG가 `<cluster>-rw`(쓰기)·`-ro`(읽기 전용)·
     `-r`(전체)를 만들고 `<cluster>` 이름의 서비스는 **만들지 않는다**. 오퍼레이터 이전 시 `catalog-postgres`를
     그대로 두면 DNS가 안 풀려 죽는다. 계정 시크릿도 `lakehouse-creds`(S3 전용)에서 분리해
@@ -219,15 +218,10 @@ find ~/.claude/projects -name '*.jsonl' -mtime +<보존일> | wc -l
 > 원본 값을 먼저 기록해 두고 손댄다.
 
 > Iceberg 유지보수는 `iceberg_maintenance_job`(주간 스케줄, **컴팩션→만료→orphan** 순서)으로
-> 자동화했다. 컴팩션·orphan 정리는 **Spark Iceberg 프로시저**로 실행한다(Trino에서 이관 —
-> [architectures/trino.md](architectures/trino.md)). 실행에는 **Spark Connect 접속**이 필요하다:
-> 호스트에서 돌릴 때는 `kubectl port-forward svc/spark-connect 15002:15002`, 주소는 `SPARK_REMOTE`.
-> ⚠️ 서버가 `--master k8s://`라 **`--replicas=1`이면 executor 파드도 함께 뜬다** — 유지보수 잡을
-> 돌리는 동안 `SparkApplication` 배치 잡을 겹치지 않는다([conventions/k8s.md](conventions/k8s.md) §9-3).
->
-> `remove_orphan_files`는 warehouse를 **Hadoop FileSystem으로 나열**하므로 Spark Connect 서버에
-> `spark.hadoop.fs.s3*` 설정이 있어야 한다(Iceberg S3FileIO로 대체 불가 — 카탈로그가 *모르는* 파일을
-> 찾는 게 목적이다). 없으면 `No FileSystem for scheme "s3"`로 죽는다([conventions/k8s.md](conventions/k8s.md)).
+> 자동화했다. 컴팩션·orphan 정리는 **Trino `ALTER TABLE … EXECUTE`** 로 실행한다(Spark 프로시저로 갔다가
+> Connect 철거로 되돌아옴 — [architectures/trino.md](architectures/trino.md)). 실행에는 k8s Trino
+> (`trino.localtest.me:8080`)가 필요하고 상주 컴퓨트를 올리고 내릴 절차는 없다(coordinator 상시).
+> 엔진은 op config `engine`(지금 `trino`만)으로 고른다 — Spark·Flink 경로는 후속 미션이다.
 >
 > 남은 결정은 **보존기간(기본 7일)·컴팩션 임계값
 > (기본 100MB)·대상 테이블 범위** 확정이며, 확정 시 이 표·[security.md §4-1](security.md)·[resource-sizing.md](resource-sizing.md)를 함께 갱신한다.
@@ -376,8 +370,7 @@ source scripts/k8s-env.sh      # KUBECONFIG + 컨텍스트 가드
 
 ```shell
 cd dagster/dockerfile.d/src && uv run dg check defs
-uv run scripts/spark_connect_smoke.py       # 종료코드 2 = 사전조건 미충족(판정 불가) — 통과 아님
-uv run scripts/iceberg_changelog_probe.py
+uv run --directory dbt_pipelines dbt debug --profiles-dir .   # k8s Trino 접속 확인
 ```
 
 **최종 판정은 §4-3의 기준선과 행 수 대조**다. 스크립트가 도는 것은 *실행됐다*이지

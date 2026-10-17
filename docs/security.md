@@ -324,16 +324,16 @@ git에 들어가지 않는다. 바뀐 것은 *데이터가 어떻게 들어오�
 
 | 단계 | 실행 | 근거 |
 | --- | --- | --- |
-| 1. 컴팩션 | **Spark** 프로시저 `rewrite_data_files` | 청크 append로 쌓인 small-files 병합 |
+| 1. 컴팩션 | **Trino** `ALTER TABLE … EXECUTE optimize` | 청크 append로 쌓인 small-files 병합 |
 | 2. 스냅샷 만료 | pyiceberg `table.maintenance.expire_snapshots().older_than(dt).commit()` (`older_than`는 tz-aware datetime) | 보존기간 `SNAPSHOT_RETENTION_DAYS`(기본 7일) 경과분 |
-| 3. orphan 정리 | **Spark** 프로시저 `remove_orphan_files` | pyiceberg 미지원. 보존기간 `ORPHAN_RETENTION_DAYS`(기본 7일) |
+| 3. orphan 정리 | **Trino** `ALTER TABLE … EXECUTE remove_orphan_files` | pyiceberg 미지원. 보존기간 `ORPHAN_RETENTION_DAYS`(7일, `retention_threshold`로 명시) |
 
-접속은 공식 통합 `dagster-pyspark`의 `LazyPySparkResource`로 Spark Connect에 붙는다
-(유지보수는 재설계에서 Trino → Spark로 이관됐다).
+접속은 `TrinoResource`로 k8s Trino에 붙는다(유지보수는 Trino → Spark로 갔다가 Spark Connect 철거로
+되돌아왔다). 엔진은 op config `engine`으로 고르며 지금 값은 `trino` 하나다.
 
-> **`remove_orphan_files`는 warehouse를 Hadoop FileSystem으로 나열**한다(카탈로그가 *모르는* 파일을
-> 찾는 것이 목적이라 S3FileIO로 대체 불가). Spark Connect 서버에 `spark.hadoop.fs.s3*` 설정이
-> 있어야 하며, 없으면 `UnsupportedFileSystemException`으로 죽는다.
+> **`remove_orphan_files`는 카탈로그가 *모르는* 파일을 찾으려고 테이블 location을 직접 나열**한다.
+> Trino는 자체 S3 파일시스템으로 나열하므로 Spark 시절의 S3A(`spark.hadoop.fs.s3*`) 전제가 없다.
+> 엔진을 더할 때 보존기간 기본값이 다를 수 있어(Spark 3일) 값을 **명시**한다.
 
 > **스캔 진입점은 테이블이다.** 인자로 받은 테이블의 location 하위만 스캔하므로,
 > **테이블이 0개인 네임스페이스의 잔재는 이 잡의 사정거리 밖**이다. 네임스페이스를 지울 때는

@@ -310,7 +310,7 @@ scripts/k8s-secrets.sh                    # ② 이후. 순서 강제 아님 —
 | ② | selfHeal | 오퍼레이터 Deployment를 수동 scale → Git 상태로 복원되는지. RollingSync 아래에서는 **복원되지 않는 것이 기대값**이다(§5) — 관측 뒤 손으로 원복. 전제는 표 아래 |
 | ③ | 삭제 보호(§4 미확인 판정) | 데이터 없는 `spark-operator`의 설정 파일을 브랜치에서 빼고 `-var target_revision=<브랜치>`로 apply → Application이 **남는지**(겹 0) |
 | A2 | generator 교체(cutover) | apply 전 `argocd appset generate`로 생성 결과를 라이브 spec과 대조, apply 전후 Application `metadata.uid` 동일(재생성 없음) |
-| ④ | 기능 스모크(② 단계 뒤) | Spark Connect 수동 기동 → `scripts/spark_connect_smoke.py` 통과, Flink 세션의 Iceberg 읽기 |
+| ④ | 기능 스모크(② 단계 뒤) | k8s Trino `dbt debug`(접속 OK)·Iceberg 조회, Flink 세션의 Iceberg 읽기(구 Spark Connect 스모크는 철거) |
 
 관문 ⓪은 관문 ①의 전제다 — CR의 health를 ArgoCD가 판정할 줄 모르면 생성 즉시 Healthy로 보일 수 있어
 (미확인) ①이 "Postgres가 안 떴는데 통과"한다.

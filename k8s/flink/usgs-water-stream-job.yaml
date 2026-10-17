@@ -9,7 +9,7 @@
 #     - 03-usgs-echo.sql : 스트리밍 읽기**만**. 소스 = `usgs_water.water_iv_raw`(append-only)
 #     - 04-usgs-join.sql : 03 통과 후 관측소 차원과 조인. regular join의 상태 증가를 관측한다.
 #
-# 소스 적격성은 실측으로 닫혀 있다(2026-09-06 `scripts/iceberg_changelog_probe.py`):
+# 소스 적격성은 실측으로 닫혀 있다(2026-09-06 `scripts/iceberg_changelog_probe.py` — 지금은 삭제, git 이력):
 #   `usgs_water.water_iv_raw` — 6,667행 / 계보 2(고아 0) / ops=append / flink_stream=**가능**
 #   2회 머티리얼라이즈 뒤에도 append만 남아 C4 함정(첫 회는 적격처럼 보이고 두 번째에 자격 상실)을
 #   통과했다. **1회 관측으로 판정하지 않았다.**

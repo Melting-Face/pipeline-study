@@ -6,7 +6,7 @@ variable: 'dbt'`). 린트 목적에 한해 파싱 가능한 SQL 표현식으로 
 
 🔴 이 파일은 **런타임 경로가 아니다** — 실제 컴파일은 dbt가 수행하고, 여기서 뱉는
 문자열은 sqlfluff 파서에만 전달된다. 그래서 **의미론이 아니라 파싱 가능성만** 맞으면
-된다. 반환 형태는 선언된 dialect(`sparksql`)에 맞춘다.
+된다. 반환 형태는 선언된 dialect(`trino`)에 맞춘다.
 상세 근거는 루트 pyproject.toml `[tool.sqlfluff.core]` 주석 참고.
 
 ⚠️ 스텁이 **의미론을 재현하지 않는다**는 점이 특히 중요한 사례가 `dateadd`다 —
@@ -30,9 +30,9 @@ def dateadd(datepart: str, interval: int, from_date_or_timestamp: str) -> str:
         from_date_or_timestamp: 대상 컬럼식.
 
     Returns:
-        `timestampadd(...)` 표현식 문자열.
+        `date_add(...)` 표현식 문자열.
     """
-    return f"timestampadd({datepart}, {interval}, {from_date_or_timestamp})"
+    return f"date_add('{datepart}', {interval}, {from_date_or_timestamp})"
 
 
 def datediff(first_date: str, second_date: str, datepart: str) -> str:
@@ -48,6 +48,6 @@ def datediff(first_date: str, second_date: str, datepart: str) -> str:
         datepart: 시간 단위 리터럴.
 
     Returns:
-        `timestampdiff(...)` 표현식 문자열.
+        `date_diff(...)` 표현식 문자열.
     """
-    return f"timestampdiff({datepart}, {first_date}, {second_date})"
+    return f"date_diff('{datepart}', {first_date}, {second_date})"

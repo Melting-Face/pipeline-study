@@ -99,4 +99,4 @@ kubectl get pods -l spark-role=executor          # 비어야 한다
 
 대신 **Spark REST API로 센다.** 쿼리 전후의 executor별 `completedTasks` 증가분을 보고,
 `driver` 행이 **함께 0으로 남는 것**을 음성 대조로 삼는다.
-실행 예시는 [`notebooks/01-spark-on-k8s.ipynb`](../../../notebooks/01-spark-on-k8s.ipynb).
+실행 예시였던 `notebooks/01-spark-on-k8s.ipynb`는 노트북의 Trino 이관 때 삭제했다(git 이력).
