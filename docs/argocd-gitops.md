@@ -121,7 +121,8 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
    (`argocd appset generate` 드라이런에서 정상 원소까지 함께 실패) — 이 검사기가 막는 것은 그 파일 하나가 아니라
    **모든 앱의 갱신 정지**다.
 3. PR 머지 → ApplicationSet이 `main`의 설정 파일을 읽어 Application을 만들고, RollingSync가 tier 순서로 sync한다.
-   ⚠️ **git 변경(새 앱)에 대한 자동 sync는 아직 실측 전**이다 — 머지 뒤 Application의 `Synced` 여부를 직접 본다.
+   새 앱은 머지 수십 초~수 분 뒤 생성·sync된다(Trino 실측). ⚠️ **Healthy는 probe 기준**이다 — Ingress를 내는 앱은
+   밖에서 한 번 호출해 본다(Trino는 Healthy인 채 프록시 경유 요청을 406으로 거부했다).
 
 **제거는 두 단계다** — 설정 파일을 지워도 `create-update` 때문에 Application은 **남는다**(의도된 보호).
 설정 파일 삭제 PR 머지 뒤 `kubectl -n argocd delete application <앱>`으로 손으로 내린다(비가역 — [risk.md](risk.md) §4 게이트).
@@ -227,8 +228,8 @@ syncPolicy:
   「별도 활성화」는 파라미터 1줄 + `terraform test` 셀 1개로 비용이 확정돼 기각 사유가 아니게 됐다.
 - **수용한 대가**: RollingSync는 **생성 Application의 자동 sync를 강제로 끈다**(R7). v3.5.3에서는 컨트롤러가
   Application에 **`automated.enabled: false`를 덧붙이는 방식**이다 — `selfHeal`·`prune` 값은 그대로 남아
-  `kubectl get`으로는 켜진 것처럼 보이므로 `enabled`를 함께 읽는다. git 변경은 RollingSync가 단계 순서로 sync한다고
-  문서는 말하고(R7 — 이 저장소에서는 첫 앱 추가 때 실측한다),
+  `kubectl get`으로는 켜진 것처럼 보이므로 `enabled`를 함께 읽는다. git 변경은 **ApplicationSet 컨트롤러가 sync한다**
+  (Trino 추가·값 수정 2회 실측 — `initiatedBy: applicationset-controller`),
   **라이브 drift를 git 상태로 되돌리는 selfHeal은 돌지 않는다** — 관문 ②에서 오퍼레이터 Deployment를 scale 0으로
   내리자 수 분 동안 `OutOfSync`로 남고 복원되지 않았다. drift 복구는 손 sync다
   ([setup/local-k8s.md](setup/local-k8s.md) §운영 — 바꾸기·되돌리기).
