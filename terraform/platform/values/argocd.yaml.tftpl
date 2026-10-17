@@ -8,6 +8,11 @@ configs:
   params:
     # TLS 종료는 Ingress(ingress-nginx)가 한다 - ArgoCD 서버 자체는 평문 HTTP 로 띄운다.
     server.insecure: true
+    # ApplicationSet Progressive Syncs(RollingSync, v3.3.0부터 Beta) — apps AppSet 의 strategy 가 이 스위치 없이는
+    # 무시된다. 🔴 켜면 RollingSync 를 쓰는 AppSet 이 만든 Application 의 자동 sync 가 강제로 꺼진다
+    # (수용 사유·재검토 조건은 docs/argocd-gitops.md D5 개정 기록). 차트가 argocd-cmd-params-cm 을 거쳐
+    # applicationset-controller 의 env 로 넘긴다. 문자열이어야 한다(ConfigMap 값).
+    applicationsetcontroller.enable.progressive.syncs: "true"
   cm:
     # Spark·Flink 오퍼레이터 차트의 crds/ CRD 는 additionalPrinterColumns[].priority: 0 을
     # 선언하는데, API server 는 기본값 0 을 저장 시 떨어뜨린다. 그래서 라이브 상태에 이 필드가
