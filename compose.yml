@@ -34,6 +34,12 @@ x-dagster-common: &dagster-common
     # S3(스택 A docker_container.seaweedfs)는 compose 네트워크 밖이라 서비스명이 안 풀린다 —
     # 컨테이너에서는 항상 호스트 루프백 게시 포트로 닿는다(호스트 실행 시엔 .env의 localhost).
     - ICEBERG_S3_ENDPOINT=http://host.containers.internal:8333
+    # Trino(dbt·유지보수). 코드 기본값 `trino.localtest.me`는 컨테이너 안에서 자기 루프백으로
+    # 풀린다. 게다가 컨테이너 Dagster는 ICEBERG_CATALOG_*를 받지 않아 **compose postgres
+    # 카탈로그**를 보므로, 짝이 맞는 엔진은 같은 카탈로그를 보는 compose Trino(`legacy-sql`)다.
+    # k8s Trino(CNPG 카탈로그)로 돌리면 dbt와 적재가 서로 다른 카탈로그 DB를 본다.
+    - TRINO_HOST=trino
+    - TRINO_PORT=8080
     # PhysioNet credentialed 원천 접근(수집 자산). 비어 있어도 정의 로드는
     # 성공하고 수집 자산 실행에서만 실패한다 — 코드가 dg.EnvVar로 받는다.
     - PHYSIONET_USERNAME=${PHYSIONET_USERNAME:-}
@@ -151,7 +157,8 @@ services:
     # 인증 배선이 없어, 호스트 밖으로 낼 이유가 없다.
     ports:
       # 호스트 8080은 kind ingress(terraform/cluster/kind의 호스트 포트 매핑)가 점유한다.
-      # 컨테이너 내부 포트는 8080 그대로라 dbt profiles.yml(host: trino, port: 8080)은 영향 없다.
+      # 컨테이너 내부 포트는 8080 그대로다 — compose Dagster는 앵커의 TRINO_HOST=trino·TRINO_PORT=8080으로
+      # 붙는다(호스트에서 붙을 때는 127.0.0.1:8081, dbt profiles.yml의 env 두 값을 한 벌로).
       - "127.0.0.1:8081:8080"
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
