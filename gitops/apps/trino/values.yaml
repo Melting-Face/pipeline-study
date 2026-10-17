@@ -17,6 +17,11 @@ server:
       # 클러스터 전체 상한 — 노드가 하나라 노드당 상한(1GB)과 같게 둔다(기본 4GB 는 실재하지 않는 용량)
       maxMemory: "1GB"
 
+# Ingress(ingress-nginx)가 붙이는 X-Forwarded-* 를 받아들인다 — 끄면(기본) 프록시 경유 요청이 406 으로
+# 거부되는데 probe 는 파드 직접 접속이라 Healthy 로 보인다. 앞단 프록시는 ingress-nginx 하나뿐이다
+additionalConfigProperties:
+  - http-server.process-forwarded=true
+
 coordinator:
   jvm:
     # 고정 힙 — 한도 계산을 이 파일 안에서 끝낸다(compose 에서는 퍼센트 방식이 호스트 메모리를 기준으로 잡혔다)
