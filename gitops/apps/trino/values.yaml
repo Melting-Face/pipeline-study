@@ -90,7 +90,8 @@ env:
         name: lakehouse-creds
         key: s3-secret-key
   # SeaweedFS 는 aws-chunked 체크섬을 못 푼다 — 483 에는 전용 키(s3.checksum-algorithm 등, 484~)가 없어
-  # AWS SDK v2 환경변수에 기댄다. 효력은 쓰기 후 다른 엔진으로 읽어 판정한다
+  # AWS SDK v2 환경변수에 기댄다. 켠 상태로 쓴 파일을 Spark 가 같은 값으로 읽었다 — 원인 귀속은
+  # docs/conventions/k8s/checksum.md §7 ⓚ
   - name: AWS_REQUEST_CHECKSUM_CALCULATION
     value: when_required
   - name: AWS_RESPONSE_CHECKSUM_VALIDATION

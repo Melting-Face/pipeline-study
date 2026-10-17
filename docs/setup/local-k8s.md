@@ -259,8 +259,10 @@ terraform -chdir=terraform/platform output -raw argocd_initial_admin_password_co
 생성된 Application은 **자동 sync가 꺼져 있다**(`spec.syncPolicy.automated.enabled: false` — RollingSync가 강제한다,
 [`argocd-gitops.md`](../argocd-gitops.md) §5 「D5 개정 기록」). 그래서:
 
-- **git 변경** — RollingSync가 OutOfSync가 된 앱을 tier 순서로 sync한다고 문서(R7)는 말한다. 첫 앱 추가 때 이 저장소에서
-  실측하기 전까지는, 머지 뒤 `kubectl get applications -n argocd`로 **Synced가 됐는지 직접 본다**.
+- **git 변경** — **ApplicationSet 컨트롤러가 sync를 건다**(실측 2회 — Trino 추가와 그 값 수정. `operationState`의
+  `initiatedBy`가 `applicationset-controller`·`automated: true`). Application의 `enabled: false`와 무관하게 돈다.
+  머지에서 sync까지 **수 분 걸린다** — 대부분이 repo 반영(reconcile 주기) 대기라,
+  그 사이의 Synced는 **이전 revision 기준**이다. 판정은 `status.sync.revisions`에 머지 커밋이 보이는지로 한다.
 - **라이브 drift**(손으로 바꾼 replicas·리소스) — **되돌려지지 않는다**(관문 ②에서 scale 0이 복원되지 않음을 확인).
   되돌리려면 손 sync한다:
 
@@ -270,8 +272,9 @@ terraform -chdir=terraform/platform output -raw argocd_initial_admin_password_co
   scripts/argocd-core.sh app sync <앱>              # 적용(prune 없음 — 지우기는 --prune 를 명시할 때만)
   ```
 
-  UI(`argocd_url`)의 **SYNC** 버튼도 같은 동작이다. 이 래퍼로는 `list`·`diff`·`sync --dry-run`까지 확인했고
-  실제 `sync`로 drift를 되돌린 실측은 아직 없다 — 처음 쓸 때 `diff`가 0으로 돌아오는지로 판정한다.
+  UI(`argocd_url`)의 **SYNC** 버튼도 같은 동작이다. 실측(Trino): scale 0 → `diff` 종료코드 1 → 기다려도
+  자동 복구 없음 → `app sync trino` → Synced·Healthy, Deployment는 재생성 없이 replicas만 복귀.
+  손 sync의 `initiatedBy`는 비어 있다(core 모드) — 컨트롤러 sync와 이것으로 구분한다.
 
 ### 스택 B(Terraform) 바꾸기
 

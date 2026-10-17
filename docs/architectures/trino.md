@@ -3,6 +3,8 @@
 > (`gitops/apps/trino/` — 공식 차트 `trinodb/charts` + 저장소 values)이고, ns `default`·coordinator 단독·
 > `trino.localtest.me`(Ingress)다. 카탈로그는 Spark·Flink와 **같은 CNPG Iceberg JDBC 카탈로그**다.
 > dbt 타깃 이관은 별도 미션이다 — 그전까지 아래 compose 서술이 현행이다.
+> **교차 엔진 실증**: Trino로 CTAS한 테이블을 Spark Connect가 같은 값으로 읽었다(행 수·합계·문자열 해시) —
+> 카탈로그 공유와 쓰기 경로가 함께 확인됐다. 체크섬 축의 남은 미확인은 [checksum.md](../conventions/k8s/checksum.md) §7 ⓚ.
 >
 > 🔴 **「Trino」가 두 엔진을 가리킨다.** compose `legacy-sql` Trino는 **compose postgres의 다른 카탈로그 DB**를
 > 보고, K8s Trino는 CNPG 카탈로그를 본다 — 이름이 같아도 **같은 테이블을 보지 않는다**. 값 대조를 인용할 때
