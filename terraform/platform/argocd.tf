@@ -37,9 +37,11 @@ resource "helm_release" "argo_cd" {
 # ⇒ depends_on + wait = true 로 "argo_cd 릴리스가 완전히 끝난 뒤"에만 적용한다.
 # kubernetes_manifest 는 여전히 쓰지 않는다(plan 시점 CRD 스키마 조회 문제).
 #
-# 값은 repoUrl·targetRevision·apps 뿐이다 - 이미지 태그는 절대 여기 넣지 않는다.
+# 값은 repoUrl·targetRevision 둘뿐이다 - 이미지 태그는 절대 여기 넣지 않는다. 앱 목록은 Terraform 이
+# 아니라 git(gitops/apps/*/config.yaml)이 소유한다 - files generator 가 직접 읽으므로 앱 추가에 apply 가 필요 없다
+# (docs/argocd-gitops.md §3 「앱 추가·제거」).
 # targetRevision 은 PR 검증 중 -var target_revision=<기능 브랜치> 로만 바꾼다(tfvars 에 쓰지
-# 않으므로 되돌리기를 잊어도 다음 apply 가 기본값 main 으로 돌아간다).
+# 않으므로 되돌리기를 잊어도 다음 apply 가 기본값 main 으로 돌아간다). generator 도 이 리비전의 설정 파일을 읽는다.
 resource "helm_release" "appset" {
   name       = "appset"
   chart      = "${path.module}/charts/appset"
@@ -50,6 +52,5 @@ resource "helm_release" "appset" {
   values = [yamlencode({
     repoUrl        = var.repo_url
     targetRevision = var.target_revision
-    apps           = var.apps
   })]
 }

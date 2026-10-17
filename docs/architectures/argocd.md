@@ -20,28 +20,30 @@ Secret 생성(`k8s-secrets.sh` — **PR2 산출물, 아직 없다**) 뒤, 사람
 
 ### 채택 근거 — 순서 보장을 무엇으로 하는가 (D5)
 
-앱 사이 순서는 **ApplicationSet(List generator) + 재시도 수렴**으로, 앱 안 순서는 **sync-wave**로 보장한다.
-CR 앱(예: 카탈로그 Postgres)이 CRD보다 먼저 sync되면 실패하고 재시도한다 — 오퍼레이터 앱이 CRD를 깔면
-다음 재시도에서 성공한다. 순서가 **확정적이지 않은 대가**로 검증은 **최종 상태**(전부 Synced·Healthy)로만
-판정한다. 같은 앱 안에서 웹훅이 준비돼야 받아들여지는 리소스(로컬 CA)는 `sync-wave: "1"`로 뒤에 둔다.
-이 구조는 `argocd-study`에서 이미 쓰는 것을 재사용한다(두 저장소의 운영 방식 통일이 동기).
+앱 목록은 **ApplicationSet git files generator**가 `gitops/apps/*/config.yaml`에서 읽고(앱 추가 = 커밋 하나),
+앱 사이 순서는 **RollingSync**가 설정 파일의 `tier`(`"0"` 오퍼레이터 → `"1"` 데이터 층 → `"2"` 워크로드)로,
+같은 tier 안은 **재시도 수렴**으로, 앱 안 순서는 **sync-wave**로 보장한다.
+같은 앱 안에서 웹훅이 준비돼야 받아들여지는 리소스(로컬 CA)는 `sync-wave: "1"`로 뒤에 둔다.
+처음에는 `argocd-study`와 같은 List generator + 재시도였다 — 바꾼 이유와 수용한 대가(RollingSync가 생성
+Application의 자동 sync를 끈다)는 [../argocd-gitops.md](../argocd-gitops.md) §5 「D5 개정 기록」.
 
 ### 대안 비교
 
 | 선택지 | 판정 | 이유 |
 | --- | --- | --- |
-| **ApplicationSet(List) + 재시도 수렴** | ✅ 채택 | 앱 목록이 `var.apps` 한 곳. 자매 저장소와 같은 구조 |
+| **ApplicationSet(git files) + RollingSync(tier)** | ✅ 채택 | 앱 추가에 `terraform apply` 불필요, 앱 사이 순서를 선언으로. 대가: 생성 Application 자동 sync 해제(수용) |
+| ApplicationSet(List, 원소 = Terraform `var.apps`) + 재시도 수렴 | 대체됨 | 앱 추가마다 apply. 순서 비결정 |
 | app-of-apps + **앱 간** sync-wave | 🔎 기각 | 순서는 확정적이나 `argocd-study`가 걷어낸 루트 구조로 회귀 |
-| ApplicationSet Progressive Sync | 🔎 기각 | 별도 활성화가 필요한 기능 |
 | Terraform `helm_release`로 오퍼레이터 유지 | 철거 | 빈 클러스터는 CRD 해석 때문에 2단 apply, 변경마다 `apply` |
 | AppProject 분리 | 🔎 보류 | 사용자·저장소가 하나라 격리 대상이 없다. `sourceRepos` 제한은 Airflow 단계에서 재판단 |
 | Sync Windows·Notifications·SSO·RBAC | 🔎 기각 | 로컬 단일 사용자. 읽는 사람 없는 알림은 관측이 아니다 |
 | Secret을 Git에 두기(sealed 등) | 🔎 기각 | 저장소가 public — Git엔 이름만, 값은 `k8s-secrets.sh`(PR2 산출물, 아직 없다)로 수동 생성 |
 | Spark Connect·Flink 세션을 ArgoCD로 | 🔎 기각 | 온디맨드 기동·회수를 selfHeal이 되돌린다 |
 
-### 데이터 보호 — 3겹 (요약)
+### 데이터 보호 — 4겹 (요약)
 
-재적재는 공짜가 아니므로 평상시 실수로 잃지 않게 세 겹을 둔다: ① ApplicationSet
+재적재는 공짜가 아니므로 평상시 실수로 잃지 않게 네 겹을 둔다: ⓪ ApplicationSet `applicationsSync: create-update`
+(설정 파일 삭제·generator 0건이 Application 삭제로 번지지 않음, R2) ① ApplicationSet
 `preserveResourcesOnDeletion`(Application 삭제 방지, R2) ② 상태 리소스의 `Prune=false,Delete=false`(R1)
 ③ CRD의 `helm.sh/resource-policy: keep`(R3·R4·R6). **Spark·Flink 오퍼레이터는 CRD 어노테이션을 넣을 values
 키가 없어 ③이 선언된 공백**이며, sync 시점 prune에는 ①이 닿지 않는다 — 수용 근거와 재검토 트리거는

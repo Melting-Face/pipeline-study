@@ -4,19 +4,20 @@
 # 사용법: scripts/gitops-apps-check.sh [apps-dir]   (기본 gitops/apps — 음성 대조 테스트가 임시 디렉터리를 넘긴다)
 #
 # 설정 파일은 ApplicationSet git files generator 가 읽을 앱 목록의 단일 출처다(docs/argocd-gitops.md).
-# terraform/platform 의 var.apps validation 이 하던 검사를 여기로 옮기고 몇 가지를 더한다.
+# 옛 terraform/platform var.apps validation 이 하던 검사(이름 유일·DNS-1123·경로 접두)를 포함한다.
 #   (a) 최상위 키는 name·namespace·tier·source 넷 — 누락·알 수 없는 키 모두 실패(오타가 조용히 무시되는 것을 막는다)
+#       — 특히 path 는 files generator 가 설정 파일 위치로 주입하는 예약 파라미터라 설정 파일에 두면 충돌한다
 #   (b) name 은 디렉터리 이름과 같고 DNS-1123 label(63자 이하)이며 전체에서 유일하다
 #       — name 이 Application 이름이라 중복되면 하나가 다른 하나를 덮어쓴다
 #   (c) namespace 는 DNS-1123 label
 #   (d) tier 는 문자열 "0"·"1"·"2" 중 하나(RollingSync 단계 라벨 — 숫자로 쓰면 라벨 값 비교가 어긋난다)
+#       — 🔴 terraform/platform/charts/appset 의 rollingSync.steps 와 같은 집합이어야 한다(어느 step 에도 안 걸리는
+#         tier 의 앱은 RollingSync 가 sync 하지 않는다). 렌더 테스트가 steps 쪽을 고정한다
 #   (e) source.type 별 필수 키
 #       umbrella: path — gitops/charts/ 로 시작하고 그 아래 Chart.yaml 이 있다
 #       upstream: repoURL·chart·targetRevision — targetRevision 은 정확 버전(범위·와일드카드 금지),
 #                 같은 디렉터리에 values.yaml 이 있다
 #   (f) gitops/charts/* 의 모든 차트가 정확히 하나의 umbrella 설정에서 참조된다(고아 차트 = 배포 안 되는 차트)
-#   (g) [이행기] terraform/platform/variables.tf 의 var.apps 기본값과 (name·path·namespace) 집합이 같다
-#       — A2 에서 AppSet 이 이 파일들을 직접 읽게 되면 var.apps 와 함께 이 검사를 지운다
 # 마지막 줄은 `검사한 앱: N개` 이며, 0개면 실패한다.
 set -euo pipefail
 
@@ -43,7 +44,6 @@ source_keys = {"umbrella": {"type", "path"}, "upstream": {"type", "repoURL", "ch
 paths = sorted(glob.glob(os.path.join(apps_dir, "*", "config.yaml")))
 names = {}
 umbrella_paths = {}
-triples = set()
 for path in paths:
     app_dir = os.path.dirname(path)
     label = os.path.basename(app_dir)
@@ -95,7 +95,6 @@ for path in paths:
         if chart_path in umbrella_paths:
             errors.append(f"[{label}] (f) {chart_path} 를 {umbrella_paths[chart_path]} 도 참조한다")
         umbrella_paths[chart_path] = label
-        triples.add((name, chart_path, ns))
     else:
         if not exact_version.match(str(src.get("targetRevision", ""))):
             errors.append(f"[{label}] (e) source.targetRevision {src.get('targetRevision')!r} 는 정확 버전이어야 한다")
@@ -107,16 +106,6 @@ if os.path.normpath(apps_dir) == os.path.normpath("gitops/apps"):
     for chart in sorted(d.rstrip("/") for d in glob.glob("gitops/charts/*/")):
         if chart not in umbrella_paths:
             errors.append(f"(f) {chart} 를 참조하는 설정 파일이 없다(배포되지 않는 차트)")
-    # (g) [이행기] var.apps 와 대조
-    tf = open("terraform/platform/variables.tf").read()
-    entry = re.compile(r'\{\s*name\s*=\s*"([^"]+)",\s*path\s*=\s*"([^"]+)",\s*namespace\s*=\s*"([^"]+)"\s*\}')
-    tf_triples = set(entry.findall(tf))
-    if not tf_triples:
-        errors.append("(g) variables.tf 에서 var.apps 원소를 하나도 읽지 못했다(파서가 죽었다 — 0건을 일치로 읽지 않는다)")
-    for t in sorted(tf_triples - triples):
-        errors.append(f"(g) var.apps 에만 있다: {t}")
-    for t in sorted(triples - tf_triples):
-        errors.append(f"(g) 설정 파일에만 있다: {t}")
 
 for e in errors:
     print(f"FAIL {e}")

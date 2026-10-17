@@ -88,6 +88,12 @@ write "${d}" cert-manager "${ok_umbrella}
 wave: 1"
 expect_fail "(a) 알 수 없는 키" "${d}" "(a) 알 수 없는 키 wave"
 
+# path 는 files generator 가 설정 파일 위치(객체)로 주입하는 예약 파라미터 — 최상위에 두면 충돌한다
+d="$(case_dir reserved-path)"
+write "${d}" cert-manager "${ok_umbrella}
+path: gitops/charts/cert-manager"
+expect_fail "(a) 예약 키 path" "${d}" "(a) 알 수 없는 키 path"
+
 d="$(case_dir name-mismatch)"
 write "${d}" cert-manager "${ok_umbrella/name: cert-manager/name: certmanager}"
 expect_fail "(b) 디렉터리와 다른 name" "${d}" "(b) name 'certmanager' 이 디렉터리 이름과 다르다"

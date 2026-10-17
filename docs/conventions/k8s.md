@@ -61,7 +61,7 @@ resources:
 - **ArgoCD가 sync하는 앱은 `gitops/charts/<app>/` umbrella 차트 하나**다. 업스트림 차트는 `Chart.yaml`
   dependency로 감싸고 `Chart.lock`을 커밋하며(`charts/*.tgz`는 gitignore) 버전은 정확 고정한다.
   로컬 매니페스트는 `templates/`, 값은 `values.yaml`이 정본, 정적 게이트는 `scripts/gitops-charts-check.sh`.
-  **상태 보호 3겹**(`Prune=false,Delete=false`·CRD `resource-policy: keep`)은 [../argocd-gitops.md](../argocd-gitops.md) §4.
+  **상태 보호 4겹**(`create-update`부터 CRD `resource-policy: keep`까지)은 [../argocd-gitops.md](../argocd-gitops.md) §4.
 - 환경별 차이는 `values-<env>.yaml`로 분리(값 오버라이드), 템플릿은 공통. 차트 버전·appVersion을 관리한다.
 - compose profiles(옵션 기능)는 Helm values 토글(`monitoring.enabled` 등)로 옮긴다.
 
@@ -195,7 +195,7 @@ resources:
 > 소유하며 **항상 설치된다** — 구 `INSTALL_FLINK` 다이얼은 이관과 함께 사라졌다.
 > 그 다이얼을 `true`로 두었던 이유는 유효하다: **opt-in으로 남기면 "문서엔 있는데 기본 기동엔
 > 없는" 드리프트를 재생산**하기 때문이고, 이제는 선언 자체가 그 상태를 만들 수 없다.
-> 빼야 한다면 값이 아니라 `terraform/platform`의 `var.apps`에서 **앱을 제거**하는 결정이다.
+> 빼야 한다면 값이 아니라 `gitops/apps/`에서 **앱을 제거**하는 결정이다([argocd-gitops.md](../argocd-gitops.md) §앱 추가·제거).
 > 한때 제거했던 이유(잡 없는 세션 클러스터가 1 CPU / 2Gi를 상주 점유)는
 > **예산 상향과 동시 기동 실측**으로 해소됐다(§9-3). VM 실측값의 정본은
 > [resource-sizing.md](../resource-sizing.md) §(A)이고 **여기에 수치를 복제하지 않는다**

@@ -1,4 +1,4 @@
-# Strimzi Cluster Operator Helm 값 (학습 PoC 전용 — ArgoCD var.apps 미등록, 창 안 수동 설치)
+# Strimzi Cluster Operator Helm 값 (학습 PoC 전용 — ArgoCD gitops/apps 미등록, 창 안 수동 설치)
 #
 # 설치(차트 버전 = Strimzi 버전, 아래 README 절차 참고):
 #   helm install strimzi <OCI 차트> --version 1.3.0 -n strimzi --create-namespace -f k8s/kafka/strimzi-values.yaml

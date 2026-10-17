@@ -2,7 +2,7 @@
 
 > 🔎 **도입이 아니다.** Kafka는 [`docs/architectures/kafka.md`](../../docs/architectures/kafka.md)에서
 > **미도입 유지**로 결정돼 있고, 이 디렉터리는 그 문서의 「학습은 별도 PoC 창」 경로다.
-> ArgoCD `var.apps`에 등록하지 않는다 — 창 안에서 수동으로 띄우고 **그 자리에서 회수**한다.
+> ArgoCD 앱 목록(`gitops/apps/`)에 등록하지 않는다 — 창 안에서 수동으로 띄우고 **그 자리에서 회수**한다.
 
 ## 구성
 
