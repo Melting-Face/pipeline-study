@@ -68,7 +68,8 @@
   port-forward 2개와 TLS Ingress + 로컬 CA 신뢰 주입이 필요했고, in-cluster에서 그 우회가 전부
   **서비스 DNS 직결**로 사라졌다. 정본은 [architectures/dagster.md](architectures/dagster.md).
 - **컴퓨트·데이터 서비스는 K8s로 통일**한다(하이브리드 이중관리 회피). 컴퓨트는 **Spark(배치)+Flink(스트림)**.
-- **Trino는 제거**한다. dbt는 **dbt-spark**로 이관하고, ad-hoc 조회는 Spark SQL로 대체한다.
+- ~~**Trino는 제거**한다. dbt는 **dbt-spark**로 이관하고, ad-hoc 조회는 Spark SQL로 대체한다.~~
+  → **번복됐다 — Trino는 K8s로 올라오고 dbt 엔진이 된다**(아래 「Trino 제거 결정 번복」).
 - 자원 배분(**8 CPU / 26,702 MiB** VM — `scripts/k8s-env.sh`가 정본, **동시 기동 허용**)은
   [resource-sizing.md](resource-sizing.md) "Kubernetes 재설계 시나리오"와 [conventions/k8s.md](conventions/k8s.md) §9-3.
   🔴 백분율의 분모는 VM 총량이 아니라 **노드 Allocatable**이다(둘은 다른 축이고, 값은 읽어서 쓴다).
@@ -81,7 +82,8 @@
 
 현재 데이터 규모(최대 파일 ≈ 3.3GB)는 그 자체로 Spark/Flink가 필수는 아니다. 따라서 **역할이 겹치지 않도록**
 분업을 명시해 "엔진을 위한 엔진"(오버엔지니어링)을 방지한다.
-lineage(배치): **Spark(bronze·인제스트) → Iceberg → dbt-spark(silver/gold)** /
+lineage(배치): **Spark(bronze·인제스트) → Iceberg → dbt(silver/gold)** /
+dbt 엔진은 dbt-spark에서 **dbt-trino로 개정**됐다 — §3 「Trino 제거 결정 번복」 /
 lineage(스트림): **Iceberg bronze(changelog 스트리밍 읽기) → Flink(실시간 피처·경보) → Iceberg**.
 **스트림 소스가 Redpanda에서 바뀌었고** **같은 날 이행됐다** — 근거는
 [architectures/flink.md](architectures/flink.md) §스트림 소스를 Redpanda에서 Iceberg changelog로 바꾼 근거,
@@ -93,7 +95,7 @@ lineage(스트림): **Iceberg bronze(changelog 스트리밍 읽기) → Flink(�
 | --- | --- | --- | --- |
 | **bronze 적재(대용량)** | **Spark** `SparkApplication` | `mimiciv.chartevents`·`labevents`·`eicu.nurse_charting` | 기존 `load_heavy_csv_gz_to_iceberg`(boto3 청크 append) **대체** → 커스텀 코드 은퇴 + Spark 존재이유 확보 |
 | bronze 적재(일반) | Dagster IO매니저(`pa.Table`) 유지 | 소형 테이블 | 현행 경로 유지(YAGNI) |
-| **silver/gold 변환** | **dbt-spark**(Trino 대체) | `sofa`·`sepsis3`·`suspicion_of_infection` 등 22모델 | dbt 자산·스키마테스트 보존, 어댑터만 `dbt-trino`→`dbt-spark` |
+| **silver/gold 변환** | **dbt-trino** — 개정, 구 판정은 "dbt-spark" | `sofa`·`sepsis3`·`suspicion_of_infection` 등 22모델 | dbt 자산·스키마테스트 보존. 방언은 dispatch 매크로(`macros/cross_engine.sql`)가 흡수한다 — 컴파일 통과는 **같은 값**의 보증이 아니다 |
 | **실시간 스트리밍** | **Flink** `FlinkDeployment` | Iceberg **bronze changelog** → **실시간 SOFA/Sepsis-3 조기경보** | Flink의 존재이유. Iceberg 소스·싱크, 체크포인트는 SeaweedFS |
 | Iceberg 유지보수 | Spark `rewrite_data_files`·`remove_orphan_files` | maintenance job | Trino 제거로 컴팩션도 Spark로 이관([spark.md](architectures/spark.md)) |
 | ad-hoc 조회 | Spark SQL(Trino 대체) | 검증·탐색 | 인터랙티브 편의는 Trino보다 낮음(트레이드오프) |
@@ -111,8 +113,8 @@ lineage(스트림): **Iceberg bronze(changelog 스트리밍 읽기) → Flink(�
 | 포인트 | 결정 | 근거 |
 | --- | --- | --- |
 | 로컬 K8s 배포판 | **kind on Podman(rootful)** | Docker Desktop 탈피. kind Podman provider는 experimental이라 rootful 머신 필수([conventions/k8s.md](conventions/k8s.md) §10) |
-| 컴퓨트 엔진 | **Spark(배치) + Flink(스트림)**, **Trino 제거** | 배치=Spark(bronze+dbt-spark), 스트림=Flink(실시간 경보). 역할 분리 |
-| dbt 실행 엔진 | **dbt-spark**(← dbt-trino) | Trino 제거 대응. dbt-spark는 dbt Labs 유지보수 어댑터 |
+| 컴퓨트 엔진 | **Spark(배치) + Flink(스트림) + Trino(SQL)**(개정 — 구 판정은 "Trino 제거") | 배치 인제스트=Spark, 스트림=Flink, SQL 변환=Trino. 아래 「Trino 제거 결정 번복」 |
+| dbt 실행 엔진 | **dbt-trino** — 개정, 구 판정은 "dbt-spark" | Spark Connect·Thrift 철거로 dbt-spark의 접속 경로가 사라진다. 타깃 이관은 별도 미션 |
 | Dagster↔컴퓨트 트리거 | **자체 리소스**(← `PipesK8sClient`, 개정) | Spark=CRD 제출·폴링 / Flink=CRD 기동 + `exec` 스트림. 아래 주 참조 |
 | 오브젝트 스토어 | **SeaweedFS 유지** + `path-style` 강제 | Spark·Flink S3A 모두 `fs.s3a.path.style.access=true` 필수 |
 | 스트림 소스 | **Iceberg bronze 테이블**(changelog 스트리밍 읽기) | 신규 상주 인프라 0 — 브로커·소스DB·Debezium이 불요하다. Redpanda는 미도입 유지 |
@@ -129,6 +131,27 @@ lineage(스트림): **Iceberg bronze(changelog 스트리밍 읽기) → Flink(�
 > 종전 서술은 **착수 전 계획이 그대로 남아 있던 것**이며, Spark 배선 시점에 이미 사실과 달랐다.
 > `K8sRunLauncher`는 축이 다르다(run 자체를 파드로 띄우는 옵션이라 트리거 수단이 아니다).
 > 경로별 비교는 [architectures/dagster.md](architectures/dagster.md) §원격 컴퓨트 트리거.
+
+### Trino 제거 결정 번복
+
+**Trino가 제거 대상에서 K8s 앱으로 돌아왔다.** 종전 결정은 「컴퓨트를 Spark+Flink 2엔진으로 통일하고
+dbt는 dbt-spark로 이관한다」였다(위 §2·「그 외 결정」 표의 구 판정).
+
+- **번복 이유**: Spark Connect(·Thrift)를 **완전히 철거**하기로 하면서 dbt-spark가 붙을 서버가 사라진다.
+  dbt-spark의 Connect 경로는 원래 **어댑터 계약이 아니라 pyspark 내부 위임 동작**에 기대고 있어
+  업그레이드마다 회귀를 감시해야 했다([architectures/spark.md](architectures/spark.md)). dbt 엔진으로는
+  이미 22모델의 값 대조 정본인 Trino를 쓴다. 배치(대용량 인제스트·Iceberg 유지보수)와 스트림은 그대로
+  Spark·Flink가 맡는다.
+- **배포**: ArgoCD ApplicationSet의 **upstream 앱**(공식 Helm 차트 + `gitops/apps/trino/values.yaml`)이다 —
+  multi-source 패턴의 첫 사례다([argocd-gitops.md](argocd-gitops.md) §3). 카탈로그는 Spark·Flink와 **같은
+  CNPG Iceberg JDBC 카탈로그**(`catalog-name=iceberg`)다.
+- **지키는 것**: 2엔진 통일로 얻으려던 **카탈로그 단일성**. Trino는 새 메타스토어 없이 같은 카탈로그를 읽고 쓴다.
+- **잃는 것**: 엔진이 셋이 되어 **CPU 예산을 하나 더 나눈다** — [resource-sizing.md](resource-sizing.md) §(B).
+  엔진 간 **같은 값** 보증 대상도 Spark↔Trino 쌍으로 늘어난다.
+- **아직 남은 것**: compose `legacy-sql` Trino는 **다른 카탈로그 DB**(compose postgres)를 보며 22모델 값 대조의
+  정본으로 남아 있다. dbt 타깃 이관과 함께 정리한다 — 그전까지 "Trino"라는 이름이 **두 엔진**을 가리킨다.
+- **재검토 조건**: ⓐ CPU 축 실측이 Connect 철거 후에도 동시 기동 경계를 넘는다 ⓑ dbt-trino로 옮긴 모델에서
+  Spark 쓰기와 **값이 갈리는** 사례가 해소되지 않는다.
 
 ## 4. 이행 플랜
 
@@ -161,8 +184,9 @@ lineage(스트림): **Iceberg bronze(changelog 스트리밍 읽기) → Flink(�
 
 - **데이터 규모 대비 Spark/Flink 과함**은 인정하고, 급소①의 분업으로 정당성을 확보한다
   — 대용량 인제스트는 Spark, 실시간 경보는 Flink.
-- **Trino 제거 비용**: 성숙한 인터랙티브 SQL과 `dbt-trino`를 잃는다.
-  ad-hoc 조회 편의가 낮아지고 방언 교정이 필요하다(수용된 트레이드오프).
+- ~~**Trino 제거 비용**: 성숙한 인터랙티브 SQL과 `dbt-trino`를 잃는다.
+  ad-hoc 조회 편의가 낮아지고 방언 교정이 필요하다(수용된 트레이드오프).~~
+  → 제거가 번복돼 이 비용은 발생하지 않는다. 대신 **엔진 셋의 CPU 예산**을 진다(§3 「Trino 제거 결정 번복」).
 
 ## 6. 참고 (공식 문서)
 

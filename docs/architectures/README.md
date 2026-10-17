@@ -20,7 +20,7 @@
 | [storage.md](storage.md) | ✅ | 오브젝트 스토리지 — 현행 **SeaweedFS**. 교체 검토의 동기는 **정확성 축 하나**이고, 후보 판정 수단은 **실측 프로브뿐**이다 |
 | [terraform.md](terraform.md) | ✅ | IaC — 스택 A(cluster)·B(platform)가 ArgoCD까지 설치. 분할 축은 부트스트랩이 아니라 **폭발반경**이다 |
 | [oci.md](oci.md) | 🔎 | 클라우드 이행 — OCI Always Free A1(ARM) + Terraform + k3s(학습·확장 경로) |
-| [trino.md](trino.md) | 🔎 | MPP SQL 엔진 — 현행 compose까지 채택, **재설계로 제거**(dbt→dbt-spark) |
+| [trino.md](trino.md) | 🚧 | MPP SQL 엔진 — dbt 엔진으로 **K8s upstream 앱**(재설계의 제거 결정 번복). compose `legacy-sql`은 값 대조용으로 잔존 |
 | [monitoring.md](monitoring.md) | 🔎 | 모니터링·관측 — Grafana·Loki·Robusta 등을 **지금 쓰지 않는 이유** |
 | [kafka.md](kafka.md) | 🔎 | 이벤트 스트리밍 — **미도입 유지**(스트림 소스가 Iceberg로 대체). 근거 인덱스 + 재검토 트리거 |
 | [duckdb.md](duckdb.md) | 🔎 | 인프로세스 OLAP — **미채택**. 선언은 남아 있었고 실행 경로가 없었다 |

@@ -1,4 +1,14 @@
-> **이행 상태**: **상시 기동 해제** — compose `trino`가 `profiles: ["legacy-sql"]`로
+> **이행 상태(K8s)**: 🚧 **K8s로 올라온다 — 재설계의 「Trino 제거」가 번복됐다**
+> ([../redesign.md](../redesign.md) §3 「Trino 제거 결정 번복」). ArgoCD ApplicationSet의 **upstream 앱**
+> (`gitops/apps/trino/` — 공식 차트 `trinodb/charts` + 저장소 values)이고, ns `default`·coordinator 단독·
+> `trino.localtest.me`(Ingress)다. 카탈로그는 Spark·Flink와 **같은 CNPG Iceberg JDBC 카탈로그**다.
+> dbt 타깃 이관은 별도 미션이다 — 그전까지 아래 compose 서술이 현행이다.
+>
+> 🔴 **「Trino」가 두 엔진을 가리킨다.** compose `legacy-sql` Trino는 **compose postgres의 다른 카탈로그 DB**를
+> 보고, K8s Trino는 CNPG 카탈로그를 본다 — 이름이 같아도 **같은 테이블을 보지 않는다**. 값 대조를 인용할 때
+> 어느 쪽인지 병기한다.
+>
+> **이행 상태(compose)**: **상시 기동 해제** — compose `trino`가 `profiles: ["legacy-sql"]`로
 > 내려가 기본 `up`에서 빠졌다(자원 3 CPU / 6G 회수). 호스트 게시 포트도 `8080→8081`로 옮겼다
 > (8080은 kind ingress가 점유).
 >
@@ -38,10 +48,11 @@ Trino는 **MPP(대규모 병렬 처리) 분산 SQL 쿼리 엔진**이다. 데이
 coordinator가 SQL을 분해해 worker들에 분산하고, 메모리 기반 파이프라인으로 배치 SQL을
 빠르게 처리한다.
 
-## 이 프로젝트에서의 위치 — 🔎 재설계로 제거(현행 compose까지 채택)
+## 이 프로젝트에서의 위치 — 🚧 K8s 이행중(재설계의 제거 결정 번복)
 
-> **상태 변경**: 현행 compose 스택에서는 ✅ 채택이었으나, [재설계](../redesign.md)에서 **제거**한다.
-> dbt는 **`dbt-spark`** 로 이관하고, ad-hoc 조회는 **Spark SQL**로 대체한다.
+> **상태 변경 이력**: compose 스택에서 ✅ 채택 → [재설계](../redesign.md)에서 **제거** 결정(dbt-spark 이관) →
+> Spark Connect 철거로 dbt 엔진이 필요해져 **번복**, K8s upstream 앱으로 올라왔다. 아래 「제거 이유」는 번복된 판단이며
+> 이력으로 남긴다.
 
 - **(현행) 역할**: dbt(`dbt-trino`)가 접속하는 쿼리 엔진. Iceberg 테이블을 읽고 써서 silver 모델을 만든다.
 - **(현행) 채택 이유**:
@@ -49,7 +60,8 @@ coordinator가 SQL을 분해해 worker들에 분산하고, 메모리 기반 파�
     재사용한다(별도 메타스토어 불필요, [overview.md](overview.md)).
   - **dbt 친화** — `dbt-trino` 어댑터로 SQL 변환을 선언적으로 관리.
   - **경량 SQL 전용** — 배치 SQL 변환이 주 워크로드라 범용 엔진(Spark)보다 단순(YAGNI).
-- **제거 이유·트레이드오프**: 재설계에서 컴퓨트를 **Spark(배치)+Flink(스트림)** 2엔진으로 통일하며 Trino를 뺀다.
+- **(번복됨) 제거 이유·트레이드오프**: 재설계에서 컴퓨트를 **Spark(배치)+Flink(스트림)** 2엔진으로 통일하며
+  Trino를 뺀다.
   단일 PC 자원(6/16) 절약과 엔진 수 축소가 목적이나, **성숙한 인터랙티브 SQL·`dbt-trino`를 잃는 비용**을 감수한다
   ([redesign.md](../redesign.md) §5). 배치 SQL은 dbt-spark, 대규모 rewrite/compaction은 Spark로 이관([spark.md](spark.md)).
 

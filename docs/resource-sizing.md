@@ -48,8 +48,7 @@
   ⇒ **raw 값과 환산식을 함께** 남긴다(볼트 §6-1).
   **값과 함께 "무엇을 세는가"를 적지 않으면 재검산이 불가능**하다.
 - ⚠️ **`podman machine list`의 표시값을 그대로 옮기지 마라** — GiB로 반올림해 보여주므로
-  거기서 MiB를 역산하면 어긋난다. 선언값의 정본은 **`podman machine inspect`의
-  `.Resources.Memory`(단위 MiB)** 다.
+  거기서 MiB를 역산하면 어긋난다. 선언값의 정본은 **`podman machine inspect`의 `.Resources.Memory`(단위 MiB)** 다.
 
 ```bash
 # kind는 rootful 요구. 자원은 생성 시 지정하되, 사후 변경도 가능하다(코드블록 아래 참조).
@@ -121,6 +120,7 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 | | `argocd-applicationset-controller` | 50m | 64Mi | 250m | 128Mi |
 | | `argocd-redis` | 50m | 64Mi | 200m | 128Mi |
 | **Airflow**(상주, 회수 불가) | apiServer·scheduler·dagProcessor·Celery worker·redis·사이드카 3 — 값 정본은 `gitops/charts/airflow/values.yaml` requests, 합계 없음. 일회성 Job(migrate·create-user)과 K8s 태스크 파드는 상주 아님 | 정본 참조 | 정본 참조 | 정본 참조 | 정본 참조 |
+| **Trino**(상주, 회수 다이얼 없음) | coordinator 단독 — 정본·근거(req=lim 메모리)는 `gitops/apps/trino/values.yaml` | 500m | 3Gi | 1 | 3Gi |
 | **온디맨드 상주** | **Spark Connect 서버**(dbt 접속용 · driver 겸용, 미사용 시 `--replicas=0`) | 500m | 1536Mi | 1 | 2Gi |
 | | **Spark Connect executor × 1** ⁸ — `k8s://`라 **함께 상주** | 1000m | 1408Mi | 1 | 1408Mi |
 | | Flink JobManager(세션 클러스터, 잡 없어도 상주) | 1000m | 2048Mi | 1 | 2Gi |
