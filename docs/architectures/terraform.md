@@ -64,7 +64,7 @@ YAML 매니페스트를 `yamldecode`로 감싸 적용하던 방식은 폐기됐�
 > `terraform/lakehouse-platform` 스택 기준이며, 현행 스택 A·B는 `kubernetes_manifest`를 쓰지 않는다.
 > 특히 **CRD 폭발반경**과 **`helm_release` 인수** 두 절은 철거된 스택(`terraform/lakehouse-platform/`,
 > 오퍼레이터를 `helm_release`로 설치)에서 얻은 실측이다. 그 스택은 없지만 교훈은 남긴다 — 오퍼레이터
-> 삭제가 CRD와 CR을 연쇄 삭제하는 경로는 ArgoCD에서도 같고, 그 방어는 [argocd.md](argocd.md)의 3겹이다.
+> 삭제가 CRD와 CR을 연쇄 삭제하는 경로는 ArgoCD에서도 같고, 그 방어는 [argocd.md](argocd.md)의 4겹이다.
 
 ### 🔴 폭발반경은 스택 경계를 새어 나간다 — CRD
 

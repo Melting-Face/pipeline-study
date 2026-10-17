@@ -99,8 +99,10 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
 - 설정 파일 스키마와 검사 항목은 [`scripts/gitops-apps-check.sh`](../scripts/gitops-apps-check.sh) 머리 주석이 정본이다.
   `tier`는 앱 사이 순서(`"0"` 오퍼레이터·외부 저장소 → `"1"` 데이터 층 CR → `"2"` 워크로드), `source.type`은
   `umbrella`(기존 방식) 또는 `upstream`(상류 차트 직접 참조 — 새 앱부터)이다.
-- **cutover 판정**: 이름이 같은 Application이 **갱신(in-place)인지 재생성인지는 문서에 없다** — apply 전후
-  `metadata.uid`를 대조해 판정한다(§7).
+- **cutover 판정**: 이름이 같은 Application이 갱신(in-place)인지 재생성인지는 문서에 없어 apply 전후
+  `metadata.uid`로 판정했고, **in-place였다**(v3.5.3 — 7개 UID 불변, spec 차이는 `automated.enabled: false`뿐).
+  apply가 끝난 직후에는 `tier` 라벨이 아직 없다 — 컨트롤러가 재기동 뒤 reconcile해야 붙으므로,
+  사후 확인은 AppSet `status.applicationStatus`가 채워진 뒤에 한다(그 전의 「라벨 없음」은 실패가 아니다).
 
 ### 앱 추가·제거
 
@@ -133,10 +135,10 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
 | `scripts/k8s-poc-storage.sh` | 철거 — 데이터 층은 차트로, Secret은 `scripts/k8s-secrets.sh`로 | ② |
 | `k8s/spark/spark-connect-server.yaml` · `k8s/flink/*` | 그대로(수동 운영) | — |
 
-## 4. 데이터 보호 — 3겹
+## 4. 데이터 보호 — 4겹
 
 데이터는 재적재 가능하다고 정했지만 재적재는 공짜가 아니다(원천 대용량 + dbt 재빌드).
-평상시 실수로 잃지 않도록 3겹을 둔다.
+평상시 실수로 잃지 않도록 4겹을 둔다(겹 0은 A2에서 files generator와 함께 추가).
 
 | 겹 | 막는 사고 | 수단 | 근거 |
 | --- | --- | --- | --- |
@@ -216,10 +218,13 @@ syncPolicy:
 - **바꾼 이유**: ①앱 추가마다 `terraform apply`가 필요했다 — 목표 구조(Terraform은 ArgoCD까지)와 어긋난다.
   ②ApplicationSet 패턴(generator·multi-source·순서 제어) 학습이 이 저장소의 목적이 됐다.
   「별도 활성화」는 파라미터 1줄 + `terraform test` 셀 1개로 비용이 확정돼 기각 사유가 아니게 됐다.
-- **수용한 대가**: RollingSync는 **생성 Application의 자동 sync를 강제로 끈다**(R7) — template의
-  `automated`(selfHeal·prune)는 남아 있지만 컨트롤러가 무시한다. git 변경은 RollingSync가 단계 순서로 sync한다고
-문서는 말하고(R7 — 이 저장소에서는 첫 앱 추가 때 실측한다),
-  **라이브 drift를 git 상태로 되돌리는 selfHeal은 꺼진 것으로 읽힌다** — 관문 ②의 실측 결과로 확정한다.
+- **수용한 대가**: RollingSync는 **생성 Application의 자동 sync를 강제로 끈다**(R7). v3.5.3에서는 컨트롤러가
+  Application에 **`automated.enabled: false`를 덧붙이는 방식**이다 — `selfHeal`·`prune` 값은 그대로 남아
+  `kubectl get`으로는 켜진 것처럼 보이므로 `enabled`를 함께 읽는다. git 변경은 RollingSync가 단계 순서로 sync한다고
+  문서는 말하고(R7 — 이 저장소에서는 첫 앱 추가 때 실측한다),
+  **라이브 drift를 git 상태로 되돌리는 selfHeal은 돌지 않는다** — 관문 ②에서 오퍼레이터 Deployment를 scale 0으로
+  내리자 수 분 동안 `OutOfSync`로 남고 복원되지 않았다. drift 복구는 손 sync다
+  ([setup/local-k8s.md](setup/local-k8s.md) §운영 — 바꾸기·되돌리기).
   D7(온디맨드 컴퓨트는 ArgoCD 밖)이라 수동 기동·회수가 되돌려지지 않는 쪽은 오히려 마찰이 준다.
 - **재검토 조건**: ⓐ RollingSync가 생성 Application의 자동 sync를 보존하는 옵션을 제공할 때
   ⓑ 관문 ②에서 drift 미복원이 실제 장애·데이터 오류로 이어졌을 때
@@ -294,13 +299,17 @@ scripts/k8s-secrets.sh                    # ② 이후. 순서 강제 아님 —
 | --- | --- | --- |
 | ⓪ | health 판정 생존(②부터) | 일부러 실패하는 CR(없는 Secret을 참조하는 CNPG Cluster)이 **Healthy로 표시되지 않는다**. 표시되면 `resource.customizations.health`를 추가 |
 | ① | 빈 클러스터 수렴 | **Application 객체 수 == `gitops/apps/*/config.yaml` 수**이고 전부 Synced·Healthy. 소요 시간은 실측해 볼트에 둔다 |
-| ② | selfHeal | 오퍼레이터 Deployment를 수동 scale → Git 상태로 복원되는지. RollingSync 아래에서는 **결과를 그대로 기록**한다(§5 D5 개정 기록) |
+| ② | selfHeal | 오퍼레이터 Deployment를 수동 scale → Git 상태로 복원되는지. RollingSync 아래에서는 **복원되지 않는 것이 기대값**이다(§5) — 관측 뒤 손으로 원복. 전제는 표 아래 |
 | ③ | 삭제 보호(§4 미확인 판정) | 데이터 없는 `spark-operator`의 설정 파일을 브랜치에서 빼고 `-var target_revision=<브랜치>`로 apply → Application이 **남는지**(겹 0) |
 | A2 | generator 교체(cutover) | apply 전 `argocd appset generate`로 생성 결과를 라이브 spec과 대조, apply 전후 Application `metadata.uid` 동일(재생성 없음) |
 | ④ | 기능 스모크(② 단계 뒤) | Spark Connect 수동 기동 → `scripts/spark_connect_smoke.py` 통과, Flink 세션의 Iceberg 읽기 |
 
 관문 ⓪은 관문 ①의 전제다 — CR의 health를 ArgoCD가 판정할 줄 모르면 생성 즉시 Healthy로 보일 수 있어
 (미확인) ①이 "Postgres가 안 떴는데 통과"한다.
+
+관문 ②는 **그 오퍼레이터의 잡 CR(`SparkApplication`·`FlinkDeployment` 등)이 0건일 때만** 한다 — 오퍼레이터 자신은
+데이터를 갖지 않지만 대용량 데이터를 Iceberg로 정형화하는 잡을 관리하므로, 잡 중에 내리면 그 잡의 관리가 끊긴다.
+실행 직전 `kubectl get sparkapplications,flinkdeployments -A`로 확인한다.
 
 **비가역 지점**: 기존 `lakehouse` 삭제와 스택 A·B의 첫 `apply`는 실행 전
 `reviewer` 보안 체크리스트 + 사용자 승인([risk.md](risk.md) §4).

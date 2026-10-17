@@ -40,9 +40,10 @@ Application의 자동 sync를 끈다)는 [../argocd-gitops.md](../argocd-gitops.
 | Secret을 Git에 두기(sealed 등) | 🔎 기각 | 저장소가 public — Git엔 이름만, 값은 `k8s-secrets.sh`(PR2 산출물, 아직 없다)로 수동 생성 |
 | Spark Connect·Flink 세션을 ArgoCD로 | 🔎 기각 | 온디맨드 기동·회수를 selfHeal이 되돌린다 |
 
-### 데이터 보호 — 3겹 (요약)
+### 데이터 보호 — 4겹 (요약)
 
-재적재는 공짜가 아니므로 평상시 실수로 잃지 않게 세 겹을 둔다: ① ApplicationSet
+재적재는 공짜가 아니므로 평상시 실수로 잃지 않게 네 겹을 둔다: ⓪ ApplicationSet `applicationsSync: create-update`
+(설정 파일 삭제·generator 0건이 Application 삭제로 번지지 않음, R2) ① ApplicationSet
 `preserveResourcesOnDeletion`(Application 삭제 방지, R2) ② 상태 리소스의 `Prune=false,Delete=false`(R1)
 ③ CRD의 `helm.sh/resource-policy: keep`(R3·R4·R6). **Spark·Flink 오퍼레이터는 CRD 어노테이션을 넣을 values
 키가 없어 ③이 선언된 공백**이며, sync 시점 prune에는 ①이 닿지 않는다 — 수용 근거와 재검토 트리거는

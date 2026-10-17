@@ -231,12 +231,71 @@ terraform -chdir=terraform/platform output -raw argocd_url
 terraform -chdir=terraform/platform output -raw argocd_initial_admin_password_command
 ```
 
-- **통과 기준**: Application 수 = [`terraform/platform/variables.tf`](../../terraform/platform/variables.tf)의
-  `apps` 원소 수, 전부 `Synced` · `Healthy`. apply 직후엔 몇 분 걸린다.
-- `Healthy`인데 `OutOfSync`가 남으면 `argocd app diff --core <앱>`으로 필드를 확인한다
-  ([`argocd-gitops.md`](../argocd-gitops.md) §5).
+- **통과 기준**: Application 수 = `gitops/apps/*/config.yaml` 수, 전부 `Synced` · `Healthy`.
+  apply 직후엔 몇 분 걸린다 — RollingSync가 `tier` `"0"` → `"1"` → `"2"` 순으로 sync하므로 뒤 tier는 앞 tier가
+  Healthy가 된 뒤에 움직인다. 진행은 `kubectl get applicationset apps -n argocd -o yaml`의 `status.applicationStatus`.
+- `Healthy`인데 `OutOfSync`가 남으면 `scripts/argocd-core.sh app diff <앱>`으로 필드를 확인한다
+  ([`argocd-gitops.md`](../argocd-gitops.md) §5). `argocd ... --core`를 직접 부르면 전용 kubeconfig의
+  기본 네임스페이스(`default`) 때문에 `configmap "argocd-cm" not found`로 죽는다 — 래퍼가 그것을 흡수한다.
 - ⚠️ Airflow 이미지 `v0.2.0`이 레지스트리에 발행되기 전에는 `airflow` 파드가 `ImagePullBackOff`다(앱 결함이 아니다).
-- 오퍼레이터 변경은 `terraform apply`가 아니라 `gitops/charts/` 커밋 → push로 반영된다.
+
+## 운영 — 바꾸기·되돌리기
+
+올린 뒤의 변경은 **무엇을 바꾸느냐에 따라 반영 경로가 다르다**. 앱 이하는 git이, ArgoCD 자신은 Terraform이 소유한다
+([`argocd-gitops.md`](../argocd-gitops.md) §3).
+
+| 바꾸는 것 | 파일 | 반영 경로 |
+| --- | --- | --- |
+| 앱 추가 | `gitops/apps/<앱>/config.yaml` (+ umbrella면 `gitops/charts/<앱>/`) | PR 머지 → ApplicationSet이 생성 |
+| 앱 차트·값 | `gitops/charts/<앱>/` 또는 upstream 앱의 `gitops/apps/<앱>/values.yaml` | PR 머지 → RollingSync가 sync |
+| 앱 제거 | 설정 파일 삭제 | PR 머지 **+ Application 손 삭제**(`create-update`가 남긴다) |
+| ArgoCD 설정·버전 | `terraform/platform/values/argocd.yaml.tftpl`·`argocd.tf` | `terraform apply`(스택 B) |
+| ApplicationSet 템플릿 | `terraform/platform/charts/appset/` | `terraform apply`(스택 B) |
+
+앱 추가·제거의 세부(스키마·tier·upstream)는 [`argocd-gitops.md`](../argocd-gitops.md) §3 「앱 추가·제거」.
+
+### git 변경은 RollingSync가, drift는 사람이
+
+생성된 Application은 **자동 sync가 꺼져 있다**(`spec.syncPolicy.automated.enabled: false` — RollingSync가 강제한다,
+[`argocd-gitops.md`](../argocd-gitops.md) §5 「D5 개정 기록」). 그래서:
+
+- **git 변경** — RollingSync가 OutOfSync가 된 앱을 tier 순서로 sync한다고 문서(R7)는 말한다. 첫 앱 추가 때 이 저장소에서
+  실측하기 전까지는, 머지 뒤 `kubectl get applications -n argocd`로 **Synced가 됐는지 직접 본다**.
+- **라이브 drift**(손으로 바꾼 replicas·리소스) — **되돌려지지 않는다**(관문 ②에서 scale 0이 복원되지 않음을 확인).
+  되돌리려면 손 sync한다:
+
+  ```shell
+  scripts/argocd-core.sh app diff <앱>              # 무엇이 다른가(종료코드 1=차이 있음)
+  scripts/argocd-core.sh app sync <앱> --dry-run    # 무엇을 적용할지 미리 본다
+  scripts/argocd-core.sh app sync <앱>              # 적용(prune 없음 — 지우기는 --prune 를 명시할 때만)
+  ```
+
+  UI(`argocd_url`)의 **SYNC** 버튼도 같은 동작이다. 이 래퍼로는 `list`·`diff`·`sync --dry-run`까지 확인했고
+  실제 `sync`로 drift를 되돌린 실측은 아직 없다 — 처음 쓸 때 `diff`가 0으로 돌아오는지로 판정한다.
+
+### 스택 B(Terraform) 바꾸기
+
+1. **state 위치를 먼저 본다** — 로컬 백엔드라 state는 **apply를 돌린 트리**의
+   `terraform/platform/terraform.tfstate`에 있다(ignored). worktree에서 apply하려면 루트 사본을
+   **백업 → worktree로 복사 → 해시 대조**하고, 머지 뒤 worktree를
+   지우기 **전에** 루트로 되돌린다(`git worktree remove`는 ignored 파일도 지운다). 되돌린 뒤 루트에서 `plan`이
+   `No changes`인지로 연속성을 판정한다.
+2. **plan을 파일로 남기고 그 plan만 apply한다** — `plan -out=<경로>`의 요약(`N to add, N to change, N to destroy`)을
+   읽은 뒤 `apply <경로>`. 저장된 plan은 그 사이 **state가 바뀌면** 거부되지만(stale) 코드 변경은 검사하지 않으므로,
+   plan과 apply 사이에 트리를 건드리지 않는다. plan 파일은 apply 직후 지운다.
+3. **apply 뒤** — ArgoCD 파드가 재기동되면(`configs.params` 변경은 `checksum/cmd-params`로 재기동을 부른다)
+   ApplicationSet 컨트롤러가 다시 reconcile할 때까지 Application 라벨·상태가 늦게 따라온다.
+   `status.applicationStatus`가 채워진 뒤에 판정한다.
+4. 비가역이므로 실행 전 [risk.md](../risk.md) §4 게이트(reviewer 체크리스트 + 사용자 승인)를 거친다.
+
+### 되돌리기
+
+- **앱 변경** — 되돌리는 커밋(revert)을 머지한다. `scripts/argocd-core.sh app sync <앱>`은
+  **git의 현재 상태**로만 맞추므로 급해도 revert가 먼저다.
+- **스택 B** — **apply 뒤 state + 이전 코드로 다시 `apply`** 한다. apply 전 state 백업은 state가 손상됐을 때만 쓴다
+  (`helm rollback`은 state와 어긋나므로 쓰지 않는다).
+  ⚠️ ApplicationSet 템플릿을 `applicationsSync: create-update` 이전으로 되돌리면 기본값 `sync`(삭제 포함)가 돌아와,
+  그 사이 `gitops/apps/`에 추가된 앱의 Application이 지워진다(하위 리소스는 finalizer가 없어 남는다).
 
 ## 내리기
 

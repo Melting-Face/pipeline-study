@@ -61,7 +61,7 @@ resources:
 - **ArgoCD가 sync하는 앱은 `gitops/charts/<app>/` umbrella 차트 하나**다. 업스트림 차트는 `Chart.yaml`
   dependency로 감싸고 `Chart.lock`을 커밋하며(`charts/*.tgz`는 gitignore) 버전은 정확 고정한다.
   로컬 매니페스트는 `templates/`, 값은 `values.yaml`이 정본, 정적 게이트는 `scripts/gitops-charts-check.sh`.
-  **상태 보호 3겹**(`Prune=false,Delete=false`·CRD `resource-policy: keep`)은 [../argocd-gitops.md](../argocd-gitops.md) §4.
+  **상태 보호 4겹**(`create-update`부터 CRD `resource-policy: keep`까지)은 [../argocd-gitops.md](../argocd-gitops.md) §4.
 - 환경별 차이는 `values-<env>.yaml`로 분리(값 오버라이드), 템플릿은 공통. 차트 버전·appVersion을 관리한다.
 - compose profiles(옵션 기능)는 Helm values 토글(`monitoring.enabled` 등)로 옮긴다.
 
