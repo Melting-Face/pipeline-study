@@ -1,15 +1,15 @@
 # dbt 코딩 규칙
 
-어댑터: **`dbt-spark`**(현행 — 기본 타깃 `spark_connect`) ·
-**`dbt-trino`**(값 대조용 존치 — `DBT_TARGET=dev`로 전환, [../redesign.md](../redesign.md) Phase 1).
-trino는 **제거된 것이 아니다** — 엔진 간 값 차이(`dbt.datediff`·`dbt.dateadd` 등)를 잡는 유일한 대조 수단이다.
-두 어댑터를 **동시 설치**해 타깃만 바꿔가며 대조한다(Iceberg/SeaweedFS 레이크하우스는 공통).
+어댑터: **`dbt-trino`**(유일 — 기본 타깃 `dev`, k8s Trino `trino.localtest.me:8080`).
+dbt-spark는 Spark Connect·Thrift 철거와 함께 **제거**했다([../redesign.md](../redesign.md) §3 번복 기록).
+🔴 **Spark 시절 결과와의 값 대조는 하지 않았다(미대조)** — 아래 §Spark 시절과 값이 갈릴 수 있는 지점.
+`macros/cross_engine.sql`의 `spark__*` 구현은 **남긴다**(모델 SQL을 건드리지 않기 위해서다).
 프로젝트: `dagster/dockerfile.d/src/dbt_pipelines/`.
 
 ## 포매팅 / 린팅
 
 - SQL은 [`sqlfluff`](https://docs.sqlfluff.com/)로 lint·format한다. **pre-commit 훅으로 강제**된다.
-- dialect는 **`sparksql`** 이다(dbt 기본 타깃이 `spark_connect`이므로).
+- dialect는 **`trino`** 다(dbt 기본 타깃이 Trino `dev`이므로).
 - templater는 **`jinja`** 다(`dbt` 아님 — 아래 §templater 참고).
 - 들여쓰기 스페이스 4칸, `max_line_length = 100`.
 
@@ -29,7 +29,7 @@ sqlfluff 명세는 별도 `.sqlfluff` 파일 대신 **repo 루트 `pyproject.tom
 ### templater — `dbt`가 아니라 `jinja` + 스텁을 쓴다
 
 **`templater = "dbt"`는 게이트로 쓸 수 없다.** dbt templater는 모델을 **실제로 컴파일**하려고
-dbt 어댑터를 통해 Spark Connect에 접속한다. 즉 커밋이 클러스터·port-forward 가용성에 묶인다.
+dbt 어댑터를 통해 엔진(당시 Spark Connect, 지금은 Trino)에 접속한다. 즉 커밋이 클러스터 가용성에 묶인다.
 그래서 이 저장소의 SQL 22개 모델은 오랫동안 **설정만 있고 아무 검사도 받지 않는 상태**였다
 (문서는 "미포함 사유: dbt 모델 부재"라고 적고 있었으나 모델은 이미 실재했다 — 교정됨).
 
@@ -49,7 +49,7 @@ dbt 어댑터를 통해 Spark Connect에 접속한다. 즉 커밋이 클러스�
 **`macros/`에 새 dispatch 매크로를 추가하면 스텁도 함께 추가한다.** 빠뜨리면 조용히 통과하지 않고
 `TMP: Undefined jinja template variable`로 **에러를 내고 멈춘다**(의도한 결합).
 
-**스텁 출력은 선언된 dialect(`sparksql`)에 맞춘다.** 의미론은 무관하지만 **길이는 무관하지 않다** —
+**스텁 출력은 선언된 dialect(`trino`)에 맞춘다.** 의미론은 무관하지만 **길이는 무관하지 않다** —
 치환 결과의 길이·모양이 `LT05`(줄길이)·`LT02`(들여쓰기) 판정에 그대로 들어간다.
 그래서 원본 dispatch 구현을 옮기지 않고 **짧은 등가 호출**로 둔다.
 
@@ -57,11 +57,15 @@ dbt 어댑터를 통해 Spark Connect에 접속한다. 즉 커밋이 클러스�
 
 린트 대상은 **실제 컴파일 SQL이 아니라 스텁 치환 SQL**이다. 보증 범위는 **스타일·구문**
 (대소문자·들여쓰기·줄길이·참조)까지이고, **매크로 dispatch가 엔진별로 같은 값을 내는지는 검사하지 않는다.**
-그건 [test/manual-gates.md](../test/manual-gates.md) §5-1 `scripts/spark_connect_smoke.py`의 몫이다.
+엔진 간 값 대조는 린터 밖의 일이다(지금은 **미대조** — 위 머리말).
 **`sqlfluff` 통과를 값 정합의 근거로 읽지 않는다**([philosophy.md](../philosophy.md) 원칙 7).
 
-같은 이유로 **`dialect = "sparksql"` 파싱 통과도 값의 근거가 아니다** — 그건 "구문이 sparksql
-파서에 맞았다"는 뜻이지 "Spark에서 같은 값이 나온다"는 뜻이 아니다. 두 축은 갈린다.
+같은 이유로 **`dialect = "trino"` 파싱 통과도 값의 근거가 아니다** — 그건 "구문이 trino
+파서에 맞았다"는 뜻이지 "Spark 시절과 같은 값이 나온다"는 뜻이 아니다. 두 축은 갈린다.
+
+⚠️ **trino 방언에서 RF01은 ROW 필드 접근을 오탐한다.** sqlfluff는 다중 소스 SELECT
+(`from … cross join unnest(…)`)에서 `alias.field`를 테이블 참조로 검사한다(4.4.0 RF01 docstring —
+sparksql은 RF01이 기본 비활성이라 드러나지 않았다). 해당 줄에만 사유와 함께 `-- noqa: RF01`을 단다.
 
 ## 디렉토리 / 레이어링 (Medallion)
 
@@ -224,78 +228,36 @@ models:
               min_value: 0
 ```
 
-## dbt-spark 타깃 (Phase 1 이행)
+## dbt 타깃 (Trino)
 
-- **`profiles.yml`에 실재하는 타깃은 5종**이다 — `dev` · `prod` · `spark_session` · `spark_connect` · `spark_thrift`.
-  **`trino`라는 이름의 타깃은 없다**(trino로 가는 것은 `dev`·`prod`이며 **엔진명이 아니라 환경명**으로 적혀 있다).
-  기본값이 `spark_connect`라 **아무것도 지정하지 않으면 Spark Connect**로 간다.
-- 이 중 dbt-spark 계열은 셋이다: **`spark_session`**(호스트 로컬 Spark — 상시 서비스 없이 방언 검증용) /
-  **`spark_connect`**(클러스터 Spark Connect 서버 — 컴퓨트=K8s) / **`spark_thrift`**(대피로, 아래).
-  앞의 둘은 차이가 `spark.remote` 하나뿐이다.
-- ⚠️ **`spark_thrift`는 지금 쓸 수 없다** — 클라이언트 의존성 `pyhive`·`thrift`·`thrift_sasl`이
-  **미설치**라 타깃만 바꾸면 접속 시점에 죽는다(`connections.py`가 ImportError를 삼켜 `hive=None`으로 둔다).
-  **선언만 있는 대피로**로 읽는다([../architectures/spark.md](../architectures/spark.md)).
-- **Iceberg 설정은 `server_side_parameters`에 둔다.** dbt-spark는 이 값들을 **세션 생성 시
-  `builder.config()`로 적용**하므로 카탈로그·S3 설정이 정상 반영되고, `{{ env_var(...) }}`를 쓸 수 있어
-  **비밀정보를 참조로 유지**할 수 있다(하드코딩 금지 원칙 충족).
-- **S3 키는 `server_side_parameters`에도 적지 않는다** — AWS 표준 env(`AWS_ACCESS_KEY_ID`/`SECRET`)로
-  S3FileIO의 기본 자격증명 체인이 집어간다.
-- ⚠️ **`source.yml`에 `database:`를 쓰지 않는다.** dbt-spark는 relation에 database 설정을 금지해
-  `Cannot set database in spark!`로 죽는다. 카탈로그는 타깃이 정한다(trino=프로파일 `database`,
-  spark=`spark.sql.defaultCatalog`).
+- **`profiles.yml`에 실재하는 타깃은 2종**이다 — `dev`(기본) · `prod`. **`trino`라는 이름의 타깃은 없다**
+  (엔진명이 아니라 환경명으로 적혀 있다).
+- 접속 대상은 env **`TRINO_HOST`·`TRINO_PORT`**(기본 `trino.localtest.me`/`8080`)다. Dagster
+  `TrinoResource`(`common/constants.py`)도 같은 env를 읽는다 — **한 벌로 바꾼다**.
+  compose `legacy-sql` Trino는 **다른 카탈로그 DB**를 보므로 붙이려면 두 값을 함께 바꾼다.
+- **`source.yml`에 `database:`를 쓰지 않는다**(dbt-spark 시절 제약이었으나 지금도 불필요) —
+  카탈로그는 프로파일 `database: iceberg`가 정한다.
+- `dbt_project.yml`의 `+file_format: iceberg`는 **dbt-trino가 무시**한다. dbt-spark 시절의 필수 설정
+  (빠뜨리면 매 실행 DROP+CREATE·컬럼 설명 무시)이었고, Spark 경로를 되살릴 때를 위해 남긴다.
 
-### `+file_format: iceberg`는 필수다
+### `unnest_array`의 `trino__` 구현은 원소를 ROW로 감싼다
 
-`dbt_project.yml`의 `mimic_iv.tables`에 **`+file_format: iceberg` 한 줄**을 추가했다.
-dbt-spark의 기본 `file_format`은 iceberg가 아니며, **없으면 아래 셋이 동시에 무너진다.**
+Trino는 **ROW 배열을 필드 수만큼의 컬럼으로** 펼친다. 별칭 1개(`as t (col)`)로 받으면
+`MISMATCHED_COLUMN_ALIASES`로 죽는다 — `news_features_daily`의 `insights`(ROW 배열)가 그 경우였다
+(483 실측, Spark 경로에선 `explode`라 드러나지 않았다). 그래서 `unnest(transform(arr, e -> row(e)))`로
+원소를 1필드 ROW로 감싸 별칭 1개가 원소 전체를 받게 한다. 스칼라·`sequence`·빈 배열·NULL 배열에서는
+감싸기 전과 **값·타입이 같다**(483 리터럴 실측).
 
-| 빠뜨렸을 때 | 결과 |
-| --- | --- |
-| **매 실행 DROP + CREATE** | Iceberg **스냅샷 히스토리 소멸**, 테이블 UUID 변경 |
-| 같은 원인 | DROP과 CREATE 사이에 **테이블이 존재하지 않는 창**이 생긴다(`table.sql:19,27-30`) |
-| **컬럼 `description`이 통째로 무시** | `adapters.sql:365`가 `file_format in ['delta','hudi','iceberg']`일 때만 `ALTER TABLE`로 코멘트를 반영한다 |
+### Spark 시절과 값이 갈릴 수 있는 지점 (미대조)
 
-**셋째가 가장 위험하다 — 에러도 경고도 나지 않는다.** `dbt run`은 성공하고, `dbt docs`도
-생성되며, 다만 **컬럼 설명이 비어 있을 뿐**이다. 전량을 적어 넣고도 하나도 반영되지 않는 상태가
-조용히 유지된다([philosophy.md](../philosophy.md) 원칙 7 — "통과"가 *검사했다*인지 확인한다).
+이관은 **값 대조 없이** 했다. 다음은 같은 SQL이 두 엔진에서 다른 값을 내는 것으로 **알려진** 지점이다 —
+결과를 리포트에 인용하기 전에 대조한다.
 
-- ⚠️ **세는 단위는 `description` 항목 수**이지 파일 줄 수가 아니다 —
-  둘을 섞으면 값이 맞는 채로 라벨이 어긋난다.
-- **dbt-trino는 이 config를 무시**하므로 **Trino 경로에는 무해**하다 — 값 대조를 깨지 않는다.
-
-### dbt-spark 어댑터가 ANSI 모드를 강제로 끈다
-
-`dbt/adapters/spark/connections.py:189-191`이 세션 생성 시 ANSI 관련 설정을 **프로파일 값보다
-나중에 덮어쓴다.** 즉 `server_side_parameters`에 ANSI를 켜 두어도 **적용되지 않는다.**
-
-**결과 — 실패해야 할 연산이 실패하지 않는다.**
-
-| 상황 | Trino(ANSI) | Spark(ANSI off) |
-| --- | --- | --- |
-| 0으로 나누기 | 에러 | **`NULL`** |
-| 정수 오버플로 | 에러 | **wrap-around** |
-| 캐스트 실패 | 에러 | **`NULL`** |
-
-**행 수는 같고 지표만 `NULL`이 된다.** 그래서 `not_null`이 없는 한 **카운트 기반 테스트로는
-절대 안 잡힌다** — 두 엔진이 같은 행 수를 내놓으므로 대조표에서도 정상으로 보인다.
-
-- **실제 노출 지점**: `urine_output_rate.sql:97,101,105`의 `/ wd.weight` — **분모 가드가 없다.**
-  체중이 0이거나 `NULL`인 환자에서 Trino는 죽고 Spark는 조용히 `NULL`을 낸다.
-- 📌 **대응은 어댑터 설정이 아니라 SQL 쪽이다.** 어댑터가 덮어쓰므로 설정으로는 못 막는다.
-  **분모 가드(`nullif`)를 모델에 명시**하는 것이 유일하게 두 엔진에서 같은 값을 보장한다.
-
-### ⚠️ `spark_connect`는 어댑터 계약이 아니라 내부 동작에 얹혀 있다
-
-✅ 엔드투엔드로 **동작한다**. 그러나 dbt-spark가 공식 지원하는 method는
-`SparkConnectionMethod` 기준 **thrift / http / odbc / session 4개뿐**이고 **connect는 없다.**
-도는 이유는 `session.py`가 `builder.config()` → `getOrCreate()`를 타서 pyspark 빌더가
-`spark.remote`를 보고 위임하는 **내부 동작** 때문이다.
-
-- ⇒ **계약이 아니라 구현에 의존**하므로 minor 업그레이드가 **에러 없이** 깨뜨릴 수 있다.
-  그래서 `pyproject.toml`이 상한을 **`dbt-spark<1.12`·`pyspark<4.2`** 로 묶는다.
-- **상한을 올리기 직전에 `scripts/spark_connect_smoke.py`를 통과시킨다**
-  ([../test/manual-gates.md](../test/manual-gates.md) §5-1). 단 그 스모크가 무엇을 보지
-  **못하는지**는 같은 절의 「이 스모크가 보증하지 않는 것」을 함께 읽는다.
+- **ANSI 모드** — dbt-spark 어댑터가 세션의 ANSI를 강제로 꺼서, 0으로 나누기·캐스트 실패가
+  Spark에선 `NULL`, Trino에선 **에러**다. 노출 지점: `urine_output_rate.sql`의 `/ wd.weight`
+  (분모 가드 없음). **행 수는 같고 지표만 `NULL`** 이라 카운트 테스트로는 안 잡힌다.
+- **`dbt.dateadd`** — Spark 구현은 epoch 초를 경유해 **초 이하 절삭·세션 타임존 의존**이 있다(아래 §방언).
+  모델 20곳이 쓴다.
 
 ### 방언 차이는 크로스 어댑터 매크로로 흡수한다 (규칙)
 

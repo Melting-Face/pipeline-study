@@ -38,18 +38,17 @@ class MyDbtTranslator(DagsterDbtTranslator):   # ← 가급적 사용하지 않�
 (`setup_for_execution`)이 표준을 따른다.
 
 - **사례**: Iceberg 유지보수용 Spark 접속을 커스텀 `SparkConnectResource`로 만들었다가
-  **`dagster-pyspark`의 `LazyPySparkResource`로 교체**했다. Spark Connect 접속은 커스텀 코드가 아니라
-  **`spark_config={"spark.remote": "sc://..."}`** 한 줄이면 된다 — 내부 `builder.config(k, v)`가
-  이 키를 받아 `pyspark.sql.connect` 세션을 만든다(실측). 커스텀 모듈(`common/spark.py`)은 삭제했다.
+  **`dagster-pyspark`의 `LazyPySparkResource`로 교체**했다(커스텀 모듈 `common/spark.py` 삭제).
+  그 뒤 Spark Connect 철거로 유지보수가 Trino로 돌아가 `dagster-pyspark` 의존도 함께 제거했다 —
+  교훈(통합 우선·`Lazy~` 우선)은 그대로 유효하다.
 - **`Lazy~` 변형이 있으면 그쪽을 본다** — `PySparkResource`는 리소스 초기화에서 세션을 **즉시** 만들어,
   그 리소스를 쓰지 않는 run까지 백엔드 가용성에 묶는다. `LazyPySparkResource`는 `spark_session`
   **접근 시점**에 만든다.
 - 커스텀 리소스는 **통합에 없거나 의미가 다를 때만** 만든다(예: `TrinoResource` — 공식 Trino 리소스가
   없어 만든 경량 dbapi 래퍼).
-  🔴 **`TrinoResource`는 더 이상 유지보수 프로시저 실행자가 아니다** — Iceberg 유지보수는 **Spark
-  프로시저로 이관**됐고(`defs/maintenance.py`가 `dagster_pyspark`의 `LazyPySparkResource`를 쓴다),
-  이 접속은 `defs/resources.py`에 **dbt-spark 이행 중 방언 값 대조용으로만** 남는다
-  ([architectures/trino.md](../architectures/trino.md) · [operations.md](../operations.md) §Iceberg 유지보수).
+  `TrinoResource`가 **Iceberg 유지보수 프로시저 실행자**다(`defs/maintenance.py` — Spark 프로시저로 갔다가
+  Connect 철거로 되돌아왔다). 접속 대상은 k8s Trino(env `TRINO_HOST`·`TRINO_PORT`)이고 dbt 프로파일과
+  같은 env를 읽는다([architectures/trino.md](../architectures/trino.md) · [operations.md](../operations.md) §Iceberg 유지보수).
 
 ## 자산 모듈에서는 `from __future__ import annotations` 금지
 
@@ -148,7 +147,7 @@ src/dagster_project/
 │   ├── constants.py        # 공통 상수/기본값 (S3 파라미터 포함)
 │   ├── helper.py           # read_csv_gz_table(일반) · load_heavy_csv_gz_to_iceberg(대용량)
 │   ├── dbt.py              # 공유 DbtProject · build_dbt_resource (단일 dbt 프로젝트)
-│   └── trino.py            # TrinoResource (dbt-spark 이행 중 방언 값 대조용 — 유지보수는 Spark로 이관)
+│   └── trino.py            # TrinoResource (k8s Trino — Iceberg 유지보수 프로시저 실행)
 └── defs/                   # load_defs가 재귀 자동발견하는 정의 루트
     ├── resources.py        # @dg.definitions: s3 · dbt · trino · io_manager_* · 테이블 바인딩
     ├── automation.py       # dbt_all_job · dbt_all_schedule (모듈 스코프 객체)

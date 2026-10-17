@@ -10,11 +10,8 @@ Dagster 파이프라인 **밖**에서 레이크하우스를 ad-hoc 조회·탐�
 ## 실행
 
 ```shell
-kubectl scale deploy/spark-connect --replicas=1      # 평시 0이다 — 먼저 올린다
-
-# 접속 경로 ① TLS Ingress (기본) — .env의 SPARK_REMOTE·GRPC_DEFAULT_SSL_ROOTS_FILE_PATH를 쓴다
-# 접속 경로 ② port-forward (폴백) — CA 미배포 환경·컨트롤러 장애용
-kubectl port-forward svc/spark-connect 15002:15002   # 폴백을 쓸 때만, 별도 터미널
+# Trino는 ArgoCD가 상시 운영한다 — 올릴 것이 없다.
+# 접속 대상은 .env의 TRINO_HOST·TRINO_PORT(기본 trino.localtest.me:8080, Ingress·HTTP·인증 없음)
 
 cd dagster/dockerfile.d/src
 uv run --group notebook jupyter lab --port 8889 --notebook-dir ../../../notebooks
@@ -26,28 +23,40 @@ uv run --group notebook --group ml jupyter lab --port 8889 --notebook-dir ../../
 | 항목 | 값 | 이유 |
 |---|---|---|
 | 포트 | **8889** | 기본 8888은 스택 A SeaweedFS filer UI가 게시 |
-| venv | **Dagster와 공유** (`dagster/dockerfile.d/src/.venv`) | `pyspark[connect]`·`pyiceberg`·`pandas`·`pyarrow`가 이미 있고, `dagster_project.common.*`를 그대로 import해 **에셋과 같은 코드로** 검증할 수 있다 |
+| venv | **Dagster와 공유** (`dagster/dockerfile.d/src/.venv`) | `trino`·`pyiceberg`·`pandas`·`pyarrow`가 이미 있고, `dagster_project.common.*`를 그대로 import해 **에셋과 같은 코드로** 검증할 수 있다 |
 | 의존성 | `[dependency-groups] notebook` | 런타임(`[project].dependencies`)과 분리 — 이미지·daemon에는 들어가지 않는다 |
-| 모델링 의존성 | `[dependency-groups] ml` | `notebook`과도 **분리**한다 — 접속·관측만 하는 00·01에 scikit-learn이 필요 없고, ML 의존성 문제가 **접속 검증 관문**(`docs/test.md` §6의 nbconvert)까지 죽이지 않게 한다 |
+| 모델링 의존성 | `[dependency-groups] ml` | `notebook`과도 **분리**한다 — 접속만 하는 00에 scikit-learn이 필요 없고, ML 의존성 문제가 **접속 검증 관문**(`docs/test.md` §6의 nbconvert)까지 죽이지 않게 한다 |
 
 > ⚠️ **그룹 분리는 선언 축에서만 보증된다.** venv가 하나라 `--group ml` 없이 띄워도 이미
 > 설치된 scikit-learn은 import된다. 분리의 근거는 `pyproject.toml` 선언과 이미지 빌드 경로이지
 > 로컬 디스크 상태가 아니다 — "`--group ml` 없이도 import된다"를 분리 실패로 읽지 않는다.
 
-## SQL 엔진은 Spark Connect다 (Trino 아님)
+## SQL 엔진은 Trino다
 
-재설계에서 Trino는 **제거 대상**이고 ad-hoc 조회는 **Spark SQL**로 간다
-([`docs/architectures/trino.md`](../docs/architectures/trino.md) · [`docs/redesign.md`](../docs/redesign.md) §5).
-compose의 `trino`는 `--profile legacy-sql` 로만 뜬다(방언 값 대조용).
+종전 재설계에서 Trino는 제거 대상이었고 ad-hoc 조회는 Spark Connect로 갔다. **Spark Connect를 철거하면서
+이 결정이 번복됐다** — Trino가 K8s 앱(`gitops/apps/trino/`, coordinator 단독)으로 돌아와 dbt·ad-hoc 조회
+엔진을 맡는다([`docs/redesign.md`](../docs/redesign.md) §3 「Trino 제거 결정 번복」).
+카탈로그는 Spark·Flink와 **같은 CNPG Iceberg JDBC 카탈로그**(`iceberg`)다.
 
-카탈로그 설정(JDBC URI·warehouse·S3·자격증명)은 **Spark Connect 서버 측**
-(`k8s/spark/spark-connect-server.yaml`)에 있다. → 클라이언트는 **`sc://` 주소만** 알면 되고
-**비밀정보를 노트북에 두지 않는다**. pyiceberg로 직접 붙는 경로는 `.env`가 추가로 필요하다
-(스타터 노트북 §6 참고).
+카탈로그 설정(JDBC URI·warehouse·S3·자격증명)은 **Trino 서버 측**(`gitops/apps/trino/values.yaml`)에 있다.
+→ 클라이언트는 **호스트·포트만** 알면 되고 **비밀정보를 노트북에 두지 않는다**. 접속은
+`trino.dbapi.connect(host=TRINO_HOST, port=TRINO_PORT, user="notebook", catalog="iceberg", http_scheme="http")`이고,
+env 이름은 Dagster `common/constants.py`·dbt `profiles.yml`과 같다(한 벌). `user`는 인증이 아니라 쿼리 귀속 라벨이다.
+pyiceberg로 직접 붙는 경로는 `.env`가 추가로 필요하다(스타터 노트북 §6 참고).
 
-같은 이유로 **executor 설정도 클라이언트가 못 바꾼다.** 런타임 `spark.conf.set(...)`은
-`CANNOT_MODIFY_CONFIG`로 거부되고, `builder.config(...)`는 **조용히 무시**된다(경고로 강등) —
-두 경로가 다르게 실패하므로 "설정했다"를 "적용됐다"로 읽지 않는다.
+| 주의 | 내용 |
+|---|---|
+| 무인증 쿼리 API | Trino는 UI와 쿼리 제출이 **같은 포트**라 Ingress가 무인증 쿼리 API를 함께 연다(`values.yaml` 주석) — 「UI만 열었다」로 읽지 않는다 |
+| 이름이 같은 두 엔진 | compose `legacy-sql` Trino(`127.0.0.1:8081`)는 **다른 카탈로그 DB**를 본다. 둘 다 응답하므로 생존 확인만으로는 안 갈린다 — 00 §2의 `system.runtime.nodes`로 어느 쪽인지 본다 |
+| 방언 | Spark SQL과 다르다 — `approx_percentile`·배열 리터럴 `array[…]`·메타데이터 테이블 `"<table>$snapshots"`, `SHOW TABLES` 결과 컬럼은 `Table` 하나 |
+| 결과 적재 | `cursor.fetchall()`은 결과 **전량**을 클라이언트 메모리에 올린다 — 집계하거나 `LIMIT`을 건 SQL에만 쓴다(`toPandas()`와 같은 규율) |
+
+### 🔴 Trino 이관 후 노트북은 미실행이다
+
+이관 시점에 k8s Trino의 `SHOW SCHEMAS FROM iceberg`는 `information_schema`·`system`만 돌려줬다
+(사용자 네임스페이스 0개 — **카탈로그가 비어 있다**). 그래서 02·03(과 00의 §3 이후)은 **Trino로 한 번도
+실행되지 않았다.** SQL은 Trino 방언으로 고쳐 구문·함수 해석까지만 확인했다.
+**재적재 후 위→아래 1회 실행으로 재현을 확인해야 한다.** 노트북에 남은 과거 수치는 **Spark Connect** 산출이다.
 
 ### pyiceberg 직접 접속 — 엔드포인트와 S3 키는 한 쌍이다
 
@@ -64,8 +73,8 @@ compose의 `trino`는 `--profile legacy-sql` 로만 뜬다(방언 값 대조용)
 `ICEBERG_S3_*`를 비우면 공용 `AWS_*`로 폴백하므로 **compose 단독 구성은 기존대로** 동작한다.
 값은 `kubectl get secret lakehouse-creds -o jsonpath='{.data.s3-access-key}' | base64 -d` 로 얻는다.
 
-> Spark Connect 경로는 이 문제와 무관하다 — 자격증명이 서버 측에 있어 클라이언트에 비밀이 필요 없다.
-> **그래서 기본 경로는 Spark Connect다.**
+> Trino 경로는 이 문제와 무관하다 — 자격증명이 서버 측에 있어 클라이언트에 비밀이 필요 없다.
+> **그래서 기본 경로는 Trino다.**
 
 ## ⚠️ 셀 출력은 커밋되지 않는다
 
@@ -82,8 +91,7 @@ compose의 `trino`는 `--profile legacy-sql` 로만 뜬다(방언 값 대조용)
 
 | 파일 | 내용 | 그룹 |
 |---|---|---|
-| `00-lakehouse-connect.ipynb` | 접속 스타터 — 환경 로드·경로 점검 → Spark Connect → 카탈로그 탐색 → pandas → Iceberg 메타데이터 → (선택) pyiceberg 직접 접속 | `notebook` |
-| `01-spark-on-k8s.ipynb` | K8s executor 관측 — 클라이언트가 못 바꾸는 것 → **계산이 어디서 도는가**(REST API 태스크 대조) → 파티션의 두 얼굴 → 스냅샷 계보 | `notebook` |
+| `00-lakehouse-connect.ipynb` | 접속 스타터 — 환경 로드·경로 점검 → Trino → 카탈로그 탐색 → pandas → Iceberg 메타데이터 → (선택) pyiceberg 직접 접속 | `notebook` |
 | `02-water-task-candidates.ipynb` | **과제 후보 실측** — 규모·시간 범위 → 후보 3종의 표본·라벨 출처·누수 위험 → 피처 가용성 → 선정 근거표 | `notebook` |
 | `03-water-discharge-baseline.ipynb` | **베이스라인** — attrition → 수위→유량 회귀 → 관측소 단위 분할 → dummy·Ridge·HistGB → 음성 대조 → 유효 표본 검증 → 산출물 | `+ ml` |
 
@@ -102,9 +110,10 @@ compose의 `trino`는 `--profile legacy-sql` 로만 뜬다(방언 값 대조용)
 > kubectl exec catalog-postgres-1 -c postgres -- \
 >   psql -U postgres -d iceberg -c "select table_namespace, count(*) from iceberg_tables group by 1"
 > ```
-> ⚠️ **존재하지 않는 테이블을 Spark로 조회하면 `JDBC catalog is initialized without view support`라는
-> 엉뚱한 에러**가 난다. 카탈로그 설정 문제처럼 보이지만 원인은 **테이블 부재**다 —
-> 에러 메시지를 원인으로 읽지 말고 위 쿼리나 `show tables`로 실재부터 확인한다.
+> Trino는 없는 네임스페이스·테이블을 `SCHEMA_NOT_FOUND`·`TABLE_NOT_FOUND`로 **직접** 알린다
+> (Spark Connect 시절에는 테이블 부재가 `JDBC catalog is initialized without view support`라는 엉뚱한
+> 에러로 나왔다). ⚠️ 대신 **`EXPLAIN`도 테이블 해석에서 먼저 멈춘다** — 테이블이 없을 때의
+> `SCHEMA_NOT_FOUND`는 「구문 통과」까지만 뜻하고 함수 이름 오류(`FUNCTION_NOT_FOUND`)는 가려진다.
 
 ## 🔴 학습 산출물은 저장소 밖에 둔다
 
@@ -128,15 +137,8 @@ Jupyter 커널은 하네스 **밖**이라, 노트북이 저장소 안에 쓰는 
 실험 추적은 이 `metrics.json` 하나다(MLflow 등 상주 서비스를 두지 않는다).
 그래서 **다시 만들 수 있을 만큼** 적는다 — 시드·분할 방식·버전·커밋·산출 엔진.
 
-## 컴퓨트 정리
+## 정리
 
-Spark Connect는 클러스터의 **유일한 상주 컴퓨트**다. 오래 안 쓸 거면 내린다
-([`docs/conventions/k8s.md`](../docs/conventions/k8s.md)).
-
-```shell
-kubectl scale deploy/spark-connect --replicas=0
-kubectl get pods -l spark-role=executor   # 🔴 executor도 함께 사라져야 한다
-```
-
-`--master k8s://`라 **executor 파드가 driver와 함께 상주**한다. 내린 뒤에도 executor가 남았다면
-회수가 안 된 것이고, 에러도 알림도 없이 1 CPU를 계속 점유한다.
+Trino는 ArgoCD가 상시 운영하므로 **노트북이 내릴 컴퓨트가 없다** — 각 노트북 마지막 셀의 `conn.close()`로
+커넥션만 닫는다. ⚠️ 그렇다고 비용이 0은 아니다 — 상주 coordinator가 CPU 예산을 나눠 쓴다.
+배분은 [`docs/resource-sizing.md`](../docs/resource-sizing.md) §(B) 「컴포넌트 배분」이다.

@@ -20,10 +20,10 @@ Spark는 **범용 분산 데이터 처리 엔진**이다. driver가 DAG를 스�
     `SparkApplication`으로 옮겨 기존 `load_heavy_csv_gz_to_iceberg`(boto3 청크 append)를 **대체**한다.
     "대용량 CSV.gz 분산 읽기 → Iceberg write"는 Spark의 교과서적 유스케이스로, **커스텀 코드 은퇴 +
     Spark 존재이유 확보**를 동시에 달성한다([../redesign.md](../redesign.md) 급소①).
-  - **silver/gold SQL 마트를 dbt-spark로**: Trino 제거에 따라 dbt 어댑터를 **`dbt-trino`→`dbt-spark`** 로 이관한다.
-    22모델(SOFA→Sepsis-3)과 스키마테스트 자산은 보존하고, SQL 방언 차이만 교정한다([../redesign.md](../redesign.md) Phase 1).
-  - **Iceberg 유지보수를 Spark로**: Trino `optimize` 대신
-    `rewrite_data_files`·`remove_orphan_files`를 Spark 프로시저로 실행.
+  - ~~**silver/gold SQL 마트를 dbt-spark로**~~ — **번복**: Spark Connect 철거로 dbt는 다시 **dbt-trino**(k8s Trino)다
+    ([../redesign.md](../redesign.md) §3, [trino.md](trino.md)). Spark 시절 값과는 미대조.
+  - ~~**Iceberg 유지보수를 Spark로**~~ — **번복**: 같은 이유로 Trino `ALTER TABLE … EXECUTE`로 되돌렸다.
+    Spark 배치(SparkApplication) 경로는 operator 교체(미션 C) 뒤 op config `engine`의 분기로 더한다.
   - **(후속) ML/윈도우 피처** — SQL로 표현이 어려운 계층(PySpark).
   - **실시간 스트리밍은 Flink 담당** — 배치=Spark, 스트림=Flink로 역할 분리([flink.md](flink.md)).
 - **실행 방식**: 네이티브 `spark-submit`(명령형) 대신 **선언형 `SparkApplication`(CRD, `spark.apache.org/v1`)** 을 쓴다.
@@ -178,13 +178,13 @@ SDK v2를 쓰는 경로가 새로 열릴 때마다 같은 축을 다시 본다.
 에러 문구·SDK 버전 경계·미확인 축은 [../conventions/k8s/checksum.md](../conventions/k8s/checksum.md)가
 정본이다 — 여기 복제하지 않는다.
 
-### dbt-spark on Spark Connect — 계약이 아니라 구현에 얹혀 있다
+### dbt-spark on Spark Connect — 계약이 아니라 구현에 얹혀 있었다 (철거됨 — 이력)
 
 dbt-spark가 공식 지원하는 method는 **thrift / http / odbc / session 넷뿐**이고 connect는 없다.
 그런데도 도는 것은 pyspark 빌더가 `spark.remote`를 보고 위임하는 **내부 동작** 때문이다.
 
 ⇒ **minor 업그레이드가 에러 없이 깨뜨릴 수 있다.** 그래서 상한을 minor로 묶고
-**올리기 직전에 `scripts/spark_connect_smoke.py`를 통과**시킨다.
+**올리기 직전에 `scripts/spark_connect_smoke.py`를 통과**시켰다(스크립트·dbt-spark 모두 철거로 삭제).
 
 **"미지원"과 "동작 안 함"은 다른 축이다.** 필요한 것은 Thrift 배포가 아니라 **업그레이드 회귀 감시**다.
 
@@ -231,7 +231,10 @@ dbt-spark가 공식 지원하는 method는 **thrift / http / odbc / session 넷�
 
 ### 프로젝트 결정
 
-- **지금**: **Spark `rewrite_data_files`** 로 처리한다(Trino에서 이관 — Trino 제거의 선행조건①).
+- **지금(번복)**: **Trino `optimize`** 로 되돌렸다 — Spark Connect 철거로 Connect 경유 실행이 사라졌다
+  ([maintenance.py](../../dagster/dockerfile.d/src/src/dagster_project/defs/maintenance.py), op config `engine`).
+  아래는 Spark로 옮겼던 때의 결정 기록이다(Spark 경로를 되살릴 때 참고).
+- **(이력) Spark 이관 때**: **Spark `rewrite_data_files`** 로 처리했다(Trino에서 이관 — Trino 제거의 선행조건①).
   `remove_orphan_files`도 함께 Spark로 옮겨 **유지보수 엔진을 하나로** 모았다.
   유지보수 잡의 **1·3단계 op로 구현**했다
   ([maintenance.py](../../dagster/dockerfile.d/src/src/dagster_project/defs/maintenance.py)).

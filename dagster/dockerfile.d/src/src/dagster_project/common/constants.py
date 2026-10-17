@@ -58,17 +58,11 @@ S3_SECRET_ACCESS_KEY = (
 )
 AWS_REGION = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 
-# Spark Connect 접속 (Iceberg 유지보수 프로시저 실행용)
-# 카탈로그 설정·자격증명은 **서버 측**(k8s/spark/spark-connect-server.yaml)에 있어
-# 여기엔 주소만 둔다(비밀 아님). 호스트 실행이 현행이라 port-forward 주소가 기본값이다.
-#   kubectl port-forward svc/spark-connect 15002:15002
-SPARK_REMOTE = os.environ.get("SPARK_REMOTE", "sc://localhost:15002")
-
-# Trino 쿼리 엔진 접속 — 유지보수는 Spark로 이관했고(위 SPARK_REMOTE),
-# 이 접속은 dbt-spark 이행 중 **방언 값 대조**용으로만 남긴다.
-# compose `trino`는 `--profile legacy-sql`로만 뜨며 호스트 게시 포트는 8081이다.
-# 컨테이너 내부망 값이라 비밀 아님 → 기본값 제공, 필요 시 env로 재정의.
-TRINO_HOST = os.environ.get("TRINO_HOST", "trino")
+# Trino 쿼리 엔진 접속(k8s, Iceberg 유지보수 프로시저 실행용 — defs/maintenance.py).
+# 카탈로그 설정·자격증명은 **서버 측**(gitops/apps/trino/values.yaml)에 있어 여기엔
+# 주소만 둔다(비밀 아님). 호스트 실행이 현행이라 Ingress 주소가 기본값이다.
+# dbt `profiles.yml`의 `TRINO_HOST`·`TRINO_PORT`와 같은 env를 읽는다(한 벌).
+TRINO_HOST = os.environ.get("TRINO_HOST", "trino.localtest.me")
 TRINO_PORT = int(os.environ.get("TRINO_PORT", "8080"))
 TRINO_USER = os.environ.get("TRINO_USER", "dagster")
 

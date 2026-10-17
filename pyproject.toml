@@ -88,18 +88,16 @@ disallow_untyped_defs = true    # 함수에 타입 강제 (ruff ANN과 짝)
 no_implicit_optional = true
 # 전체 강화가 필요하면 strict = true
 
-# --- SQL 린터/포매터: sqlfluff (dbt-spark / Spark Connect) ---
-# dialect = "sparksql"은 2026-08-21 dbt-spark 이행 미션의 산출물이다(trino에서 전환).
-#   근거는 dbt 기본 타깃이 `spark_connect`로 바뀐 것이고(profiles.yml), 되돌릴 계획은 없다.
-#   `DBT_TARGET=dev`로 Trino 경로도 살아 있으나 **값 대조용 예외 경로**다.
-# 🔴 단 이 값은 **실행으로 검증된 적이 없다**. 아래 jinja 전환으로 `sqlfluff lint`가 처음
-#   돌게 됐고 24/24 파일이 파싱을 통과했지만, 그건 **구문이 sparksql 파서에 맞았다**는 뜻이지
-#   **같은 SQL이 Spark에서 같은 값을 낸다**는 뜻이 아니다. 후자는 여전히 미검증이다.
+# --- SQL 린터/포매터: sqlfluff (dbt-trino / k8s Trino) ---
+# dialect = "trino" — dbt 기본 타깃이 Trino `dev`이기 때문이다(profiles.yml). Spark Connect·Thrift
+#   철거로 sparksql에서 되돌렸다(sparksql은 dbt-spark 이행 때 trino에서 전환했던 값이다).
+# 🔴 dialect 일치는 **구문이 trino 파서에 맞는다**는 뜻이지 **Spark 시절과 같은 값을 낸다**는
+#   뜻이 아니다. 후자는 미대조다(docs/architectures/trino.md).
 #   ("파싱 통과"를 "dialect 검증 완료"로 읽지 않는다 — docs/philosophy.md §계측 단위)
 #
 # templater를 dbt → jinja로 바꾼 이유 (2026-08-21):
-#   dbt templater는 모델을 **실제로 컴파일**하려고 Spark Connect에 접속한다. 즉 커밋이
-#   port-forward 가용성에 묶여 pre-commit 게이트로 쓸 수 없었고, 그래서 22개 모델이
+#   dbt templater는 모델을 **실제로 컴파일**하려고 엔진(당시 Spark Connect)에 접속한다. 즉 커밋이
+#   클러스터 가용성에 묶여 pre-commit 게이트로 쓸 수 없었고, 그래서 22개 모델이
 #   **설정만 있고 아무 검사도 받지 않는 상태**로 남아 있었다. jinja templater는 오프라인·수초라
 #   게이트로 쓸 수 있다. 대신 dbt 런타임 객체(`adapter.dispatch`·`dbt.*`)를 모르므로
 #   아래 스텁으로 대체한다.
@@ -107,11 +105,11 @@ no_implicit_optional = true
 # 🔴 이 게이트가 검사하지 않는 것(계측 단위):
 #   린트 대상은 **실제 컴파일 SQL이 아니라 스텁 치환 SQL**이다. 따라서 보증 범위는
 #   **스타일·구문**(대소문자·들여쓰기·줄길이·참조)까지이고, 매크로 dispatch가 엔진별로
-#   **같은 값**을 내는지는 검사하지 않는다 — 그건 scripts/spark_connect_smoke.py 몫이다.
+#   **같은 값**을 내는지는 검사하지 않는다 — 엔진 간 값 대조는 린터 밖의 수동 관문이다.
 #   `sqlfluff` 통과를 값 정합의 근거로 읽지 않는다(docs/philosophy.md 원칙 7).
 [tool.sqlfluff.core]
 templater = "jinja"
-dialect = "sparksql"
+dialect = "trino"
 # 88 → 100. Python(ruff line-length=88)과 숫자를 맞추던 값인데, SQL은 한 줄이 길어지는 게
 # 자연스러워 LT05(줄길이) 위반의 주원인이었다. Python의 88은 그대로 둔다.
 max_line_length = 100
@@ -124,9 +122,9 @@ library_path = "sqlfluff_libs"
 # 원본은 `adapter.dispatch`를 쓰는데 그건 dbt 런타임 객체라 jinja templater가 해석하지 못한다
 # (미설정 시 `TMP: Undefined jinja template variable: 'elapsed'`로 9개 파일이 죽는다).
 #
-# 출력은 위 dialect(sparksql)에 맞춘 **Spark 형태**다 — `cross_engine.sql`의 `spark__*` 구현과
-#    같은 계열이다. (trino·sparksql 양쪽에서 파싱되는 교집합 형태도 가능하지만, dialect가 확정된
-#    이상 선언된 값과 어긋난 SQL을 린터에 먹이지 않는다. dialect를 되돌리면 여기도 함께 되돌린다.)
+# 출력은 위 dialect(trino)에 맞춘 **Trino 형태**다 — `cross_engine.sql`의 `trino__*` 구현과
+#    같은 계열이다. (선언된 dialect와 어긋난 SQL을 린터에 먹이지 않는다. dialect를 바꾸면 여기와
+#    `sqlfluff_libs/dbt.py`도 함께 바꾼다.)
 #
 # 🔴 스텁은 **파싱만 되면 되고 의미론은 무관**하다(위 §계측 단위). 단 **길이는 무관하지 않다** —
 #    치환 결과의 길이가 LT05(줄길이) 판정에 직접 들어가므로, 원본 dispatch 구현을 그대로 옮기지 않고
@@ -135,8 +133,8 @@ library_path = "sqlfluff_libs"
 # 🔴 macros/에 새 dispatch 매크로를 추가하면 여기에도 스텁을 함께 추가해야 한다.
 #    빠뜨리면 조용히 통과하지 않고 `TMP`로 시끄럽게 깨진다(의도한 결합).
 [tool.sqlfluff.templater.jinja.macros]
-elapsed = "{% macro elapsed(datepart, from_ts, to_ts) %}timestampdiff({{ datepart }}, {{ from_ts }}, {{ to_ts }}){% endmacro %}"
-unnest_array = "{% macro unnest_array(array_expr, table_alias, column_alias) %}lateral view explode({{ array_expr }}) {{ table_alias }} as {{ column_alias }}{% endmacro %}"
+elapsed = "{% macro elapsed(datepart, from_ts, to_ts) %}date_diff('{{ datepart }}', {{ from_ts }}, {{ to_ts }}){% endmacro %}"
+unnest_array = "{% macro unnest_array(array_expr, table_alias, column_alias) %}cross join unnest({{ array_expr }}) as {{ table_alias }} ({{ column_alias }}){% endmacro %}"
 
 [tool.sqlfluff.indentation]
 tab_space_size = 4
