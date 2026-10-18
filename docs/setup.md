@@ -79,7 +79,7 @@ cp .env.example .env
 | `DAGSTER_PORT` | webserver UI 포트 |
 | `AWS_*` · `ENDPOINT_URL` | S3(SeaweedFS) 자격증명·엔드포인트 |
 | `ICEBERG_CATALOG_*` | Iceberg 카탈로그 — pyiceberg(Dagster) 경로 |
-| `ICEBERG_JDBC_*` · `ICEBERG_PG_*` · `ICEBERG_S3_*` · `ICEBERG_WAREHOUSE` | 같은 카탈로그 — JDBC(Flink 세션) 경로. dbt는 더 이상 읽지 않는다(Trino 서버 측 설정) |
+| `ICEBERG_S3_*` · `ICEBERG_WAREHOUSE` | 같은 카탈로그의 웨어하우스·S3. dbt는 읽지 않는다(Trino 서버 측 설정). Flink 세션은 파드 env로 받는다 |
 | `TRINO_HOST` · `TRINO_PORT` | dbt·유지보수 ↔ k8s Trino(미설정 시 `trino.localtest.me`/`8080`) |
 | `AWS_*_CHECKSUM_*` | SeaweedFS 호환 — `when_required` 유지 |
 | `PHYSIONET_*` | MIMIC-IV·eICU 다운로드 계정(§6-1) |

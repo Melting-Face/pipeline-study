@@ -147,8 +147,8 @@ flowchart TB
     class U1,U3,U4,U5,U6 ext
 ```
 
-> ⚠️ **이 구성도는 `compose.yml`에 정의된 전체**(+ compose 밖 `seaweedfs`)이고, 기본 `up`으로 뜨는 것은 **뼈대 3개**
-> (`dagster-webserver`·`dagster-daemon`·`postgres`)뿐이다.
+> ⚠️ **이 구성도는 `compose.yml`에 정의된 전체**(+ compose 밖 `seaweedfs`)이고, 뼈대(core)는 비어 있어
+> 기본 `up`으로는 **아무것도 뜨지 않는다**(Dagster는 `--profile host-dagster`).
 > `prometheus`(`monitoring`)는 **profile opt-in**이라
 > 해당 profile을 켜야 위 포트가 열린다.
 >

@@ -23,7 +23,7 @@ Spark·Flink·SeaweedFS·CNPG와 **같은 층**에 놓여 컨트롤 플레인만
 ### 무엇이 바뀌었었나 — 우회 경로의 소멸(이력)
 
 호스트 Dagster는 클러스터에 닿기 위해 **port-forward**(카탈로그 PG 15432 —
-S3는 클러스터 밖 compose라 `localhost:8333` 직결)가 필요하다(당시의 Spark Connect TLS Ingress 경로는 철거됐다).
+S3는 클러스터 밖 스택 A 컨테이너라 `localhost:8333` 직결)가 필요하다(당시의 Spark Connect TLS Ingress 경로는 철거됐다).
 in-cluster 판본에서는 이 전부가 **서비스 DNS 직결**로 대체됐었다. 현행 실행 경로는 아래 표의 **왼쪽 열**이고,
 값(포트·호스트)의 정본은 [../operations.md](../operations.md) §1-2다 — 표는 철거 당시의 대비 기록이다.
 

@@ -117,8 +117,8 @@ in-cluster Dagster 매니페스트는 철거돼(새 클러스터에 배포하지
   - ⚠️ **이 키들은 `compose.yml`에 일부러 넣지 않았다** — 체인 2단계(compose 전파)의 **의도된 예외**다.
     컨테이너 실행은 코드 기본값이 곧 정답(`postgres:5432/iceberg_catalog`)이고, 값을 바꿔야 하는 쪽은
     **호스트 실행 + K8s 카탈로그** 조합뿐이라 `.env`만으로 충분하다. 누락으로 오인해 앵커에 추가하지 않는다.
-  - **JDBC 계열 키(`ICEBERG_JDBC_URI`·`ICEBERG_PG_USER`·`ICEBERG_PG_PASSWORD`)와 혼동 주의**:
-    같은 카탈로그를 가리키지만 전자는 **pyiceberg(파이썬)**, 후자는 **JDBC(Flink 세션)** 경로다.
+  - JDBC 계열 키(`ICEBERG_JDBC_URI`·`ICEBERG_PG_*`)는 호스트 `.env`에서 철거됐다(소비자 0).
+    Flink 세션은 같은 카탈로그를 **파드 env**(`k8s/flink/flinkdeployment-session.yaml`)로 받는다.
 - **Iceberg S3 접속 키**: `ICEBERG_S3_ENDPOINT`·`ICEBERG_S3_ACCESS_KEY`·`ICEBERG_S3_SECRET_KEY`
   (`common/constants.py`의 `S3_ENDPOINT`·`S3_ACCESS_KEY_ID`·`S3_SECRET_ACCESS_KEY`가 읽는다).
   미지정 시 공용 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`로 **폴백**한다 — 단 SeaweedFS 인증이 켜져 있어
