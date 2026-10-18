@@ -11,7 +11,8 @@
 
 **제품 이름은 가리지 않는다**(런타임 값을 가린다). 클러스터는 **kind**를 Podman 위에
 올린 것이고, 오퍼레이터 셋은 **Spark Operator · Flink Kubernetes Operator ·
-CloudNativePG**, 인증서는 **cert-manager**, 인그레스는 **ingress-nginx**,
+CloudNativePG**, 인증서는 **cert-manager**(뒤에 유일한 소비자였던 Flink 웹훅을 끄며 철거),
+인그레스는 **ingress-nginx**,
 오브젝트 스토리지는 **SeaweedFS**, 오케스트레이터는 **Dagster**다.
 테이블 형식은 **Apache Iceberg**이고 카탈로그를 PostgreSQL에 둔다.
 
