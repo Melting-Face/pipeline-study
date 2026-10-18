@@ -2,7 +2,10 @@
 > ([../redesign.md](../redesign.md) §3 「Trino 제거 결정 번복」). ArgoCD ApplicationSet의 **upstream 앱**
 > (`gitops/apps/trino/` — 공식 차트 `trinodb/charts` + 저장소 values)이고, ns `default`·coordinator 단독·
 > `trino.localtest.me`(Ingress)다. 카탈로그는 Spark·Flink와 **같은 CNPG Iceberg JDBC 카탈로그**다.
-> dbt 타깃 이관은 별도 미션이다 — 그전까지 아래 compose 서술이 현행이다.
+> **dbt 기본 타깃(`dev`)과 Iceberg 유지보수(`optimize`·`remove_orphan_files`)가 이 Trino로 왔다**
+> (env `TRINO_HOST`·`TRINO_PORT`, 기본 `trino.localtest.me:8080`). 🔴 **Spark 시절 dbt 결과와의 값 대조는
+> 하지 않았다(미대조)** — 사용자 결정으로 재적재·대조를 범위 밖에 뒀고, 대조는 Airflow로 옮기는 파이프라인부터 한다.
+> 알려진 갈림 지점은 [conventions/dbt.md](../conventions/dbt.md) §Spark 시절과 값이 갈릴 수 있는 지점.
 > **교차 엔진 실증**: Trino로 CTAS한 테이블을 Spark Connect가 같은 값으로 읽었다(행 수·합계·문자열 해시) —
 > 카탈로그 공유와 쓰기 경로가 함께 확인됐다. 체크섬 축의 남은 미확인은 [checksum.md](../conventions/k8s/checksum.md) §7 ⓚ.
 >
@@ -25,21 +28,19 @@
 > **대조용**으로 역할만 바뀌었다). ②까지 해소되면 compose 서비스·어댑터·`common/trino.py`를
 > 하나의 논리적 커밋으로 제거한다.
 >
-> **추가 변경**: **dbt 기본 타깃이 trino를 떠났다.** `profiles.yml`의 `target`이
-> `"{{ env_var('DBT_TARGET', 'spark_connect') }}"` 라서, 아무것도 지정하지 않으면 **Spark Connect로 간다.**
-> trino는 이제 *기본 경로*가 아니라 **명시적으로 불러내는 대조 경로**다.
+> **추가 변경(그 뒤 다시 바뀜)**: dbt 기본 타깃은 한때 `spark_connect`였다가, Spark Connect 철거로
+> **Trino `dev`로 돌아왔다**(위 K8s 상태). compose Trino에 붙이려면 env 두 값을 한 벌로 바꾼다:
 >
 > ```shell
-> docker compose --profile legacy-sql up -d trino   # ① 값 대조가 필요할 때만 기동
-> DBT_TARGET=dev dbt run                            # ② 타깃을 명시해 trino로 보낸다
+> docker compose --profile legacy-sql up -d trino   # compose 카탈로그 DB를 볼 때만
+> TRINO_HOST=localhost TRINO_PORT=8081 dbt run      # 다른 카탈로그 DB다 — 결과를 섞지 않는다
 > ```
 >
-> 🔴 **`trino`라는 이름의 타깃은 없다.** `profiles.yml`에 실재하는 타깃명은
-> **`dev` · `prod` · `spark_session` · `spark_connect` · `spark_thrift`** 다.
+> 🔴 **`trino`라는 이름의 타깃은 없다.** `profiles.yml`에 실재하는 타깃명은 **`dev` · `prod`** 다.
 > trino로 가는 것은 `dev`(개발)와 `prod`이며, **엔진 이름이 아니라 환경 이름으로 적혀 있다.**
 > `DBT_TARGET=trino`는 조용히 도는 대신 프로파일 조회에서 실패한다 — 대조 작업 때 가장 먼저 걸리는 함정이다.
 >
-> ad-hoc 조회는 **Spark SQL**로 간다 — 호스트 노트북 경로는 [`notebooks/README.md`](../../notebooks/README.md).
+> ad-hoc 조회도 **Trino**(k8s)로 간다 — 호스트 노트북 경로는 [`notebooks/README.md`](../../notebooks/README.md).
 
 # Trino (아키텍처 · 프로젝트 관점)
 
@@ -69,8 +70,8 @@ coordinator가 SQL을 분해해 worker들에 분산하고, 메모리 기반 파�
 
 ## 운영 메모 (현행 compose 한정)
 
-> 재설계 이행 완료 시 아래는 레거시 참조가 된다. 유지보수 프로시저(`rewrite_data_files`·`remove_orphan_files`)는
-> Trino `ALTER TABLE ... EXECUTE`에서 **Spark 프로시저**로 이관한다([spark.md](spark.md)).
+> 아래는 compose Trino 운영 메모다. 유지보수 프로시저는 Spark로 갔다가 **Trino `ALTER TABLE ... EXECUTE`로
+> 되돌아왔다**(k8s Trino 실행 — `defs/maintenance.py`).
 
 - **JVM 기반** — 힙이 메모리 최다 소비. `trino/etc/jvm.config`의 `Xmx`를 호스트 한도 내로 유지
   ([resource-sizing.md](../resource-sizing.md)의 "3파일 메모리 제약").

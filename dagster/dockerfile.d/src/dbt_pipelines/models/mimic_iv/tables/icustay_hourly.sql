@@ -30,4 +30,4 @@ select
     cast(t.hr_unnested as integer) as hr,
     {{ dbt.dateadd('hour', 't.hr_unnested', 'all_hours.endtime') }} as endtime
 from all_hours
-    {{ unnest_array('all_hours.hrs', 't', 'hr_unnested') }}
+{{ unnest_array('all_hours.hrs', 't', 'hr_unnested') }}

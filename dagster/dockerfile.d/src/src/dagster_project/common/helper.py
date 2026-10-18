@@ -311,7 +311,7 @@ def append_arrow_to_iceberg(
             재생성이라 ⓐ실행 중이면 대상이 사라지고 ⓑ재생성본은
             `parent_id = NULL`인 새 루트라 **스냅샷 계보가 끊겨**
             `IncrementalAppendScan`이 따라갈 조상을 잃는다.
-            (`scripts/iceberg_changelog_probe.py` docstring 참조 —
+            (삭제된 `scripts/iceberg_changelog_probe.py` docstring 참조, git 이력 —
             "멱등은 데이터 축이다. 계보를 매번 끊는 것은 별개다.")
         extra_metadata: 자산이 덧붙일 관측 메타데이터(행 수·분포 등).
 

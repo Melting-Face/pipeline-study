@@ -20,7 +20,7 @@ with ticker_rows as (
         assigned.effective_trade_date,
         ticker_unnest.ticker_item as ticker
     from {{ ref('news_session_assignment') }} as assigned
-        {{ unnest_array('assigned.tickers', 'ticker_unnest', 'ticker_item') }}
+    {{ unnest_array('assigned.tickers', 'ticker_unnest', 'ticker_item') }}
     where assigned.effective_trade_date is not null
 ),
 
@@ -28,10 +28,11 @@ sentiment_rows as (
     select
         assigned.article_id,
         assigned.effective_trade_date,
-        insight_item.ticker,
-        insight_item.sentiment
+        -- ROW 필드 접근이다(테이블 참조 아님). sqlfluff trino는 다중 소스 SELECT에서 이를 오탐한다
+        insight_item.ticker, -- noqa: RF01
+        insight_item.sentiment -- noqa: RF01
     from {{ ref('news_session_assignment') }} as assigned
-        {{ unnest_array('assigned.insights', 'insight_unnest', 'insight_item') }}
+    {{ unnest_array('assigned.insights', 'insight_unnest', 'insight_item') }}
     where assigned.effective_trade_date is not null
 ),
 

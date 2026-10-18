@@ -9,9 +9,9 @@ name: ci
 #
 # 설계 원칙:
 #   1. 🔴 **인프라에 붙는 명령은 넣지 않는다.** 게이트가 클러스터 가용성에 묶이면 커밋이 막힌다 —
-#      이 저장소는 sqlfluff `templater = "dbt"`가 Spark Connect에 접속하는 바람에 22개 모델이
+#      이 저장소는 sqlfluff `templater = "dbt"`가 엔진(당시 Spark Connect)에 접속하는 바람에 22개 모델이
 #      오래 무검사로 남은 전례가 있다(pyproject.toml §templater). 여기 있는 스텝은 전부
-#      **파일만 읽는다**. `dbt build`·`terraform plan`·spark_connect_smoke는 수동 관문으로 남긴다.
+#      **파일만 읽는다**. `dbt build`·`terraform plan`은 수동 관문으로 남긴다.
 #   2. 🔴 **크리덴셜은 명백히 가짜만 쓴다**(`ci-dummy`). 정의 로드는 문자열만 읽고 접속하지
 #      않으므로 진짜 값이 필요 없다. secrets를 넣는 순간 원칙 1이 깨진다.
 #   3. **규칙의 단일 출처는 저장소 설정 파일**이다(pyproject.toml·.gitlint·.pre-commit-config.yaml).

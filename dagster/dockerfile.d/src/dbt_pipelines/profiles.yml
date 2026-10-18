@@ -1,15 +1,22 @@
-# dbt-trino 프로파일: Trino를 통해 Iceberg(JDBC 카탈로그) 레이크하우스에 적재
-# database = Trino 카탈로그명(iceberg.properties의 catalog-name과 일치), schema = Trino 스키마
+# dbt-trino 프로파일: k8s Trino를 통해 Iceberg(JDBC 카탈로그) 레이크하우스에 적재
+# database = Trino 카탈로그명(gitops/apps/trino/values.yaml의 catalog-name과 일치), schema = Trino 스키마
+#
+# 접속 대상은 k8s Trino(Ingress `trino.localtest.me:8080`)다. compose `legacy-sql` Trino는
+# **다른 카탈로그 DB**(compose postgres)를 보므로 붙이려면 `TRINO_HOST=localhost TRINO_PORT=8081`처럼
+# env로 **한 벌**을 바꾼다. Dagster `TrinoResource`(common/constants.py)도 같은 env를 읽는다.
+#
+# Spark 타깃(spark_session·spark_connect·spark_thrift)은 Spark Connect·Thrift 철거와 함께 걷어냈다.
+# 🔴 Spark 시절 결과와의 **값 대조는 하지 않았다(미대조)** — docs/architectures/trino.md.
 dbt_pipelines:
   outputs:
     dev:
       type: trino
       method: none # dev 환경: 인증 없음
       user: dagster
-      host: trino
-      port: 8080
+      host: "{{ env_var('TRINO_HOST', 'trino.localtest.me') }}"
+      port: "{{ env_var('TRINO_PORT', '8080') | as_number }}"
       http_scheme: http
-      database: iceberg # Trino 카탈로그 (= iceberg.properties catalog-name)
+      database: iceberg # Trino 카탈로그 (= catalog-name)
       schema: dev # Trino 스키마 (없으면 dbt가 생성)
       threads: 4
 
@@ -17,114 +24,15 @@ dbt_pipelines:
       type: trino
       method: none
       user: dagster
-      host: trino
-      port: 8080
+      host: "{{ env_var('TRINO_HOST', 'trino.localtest.me') }}"
+      port: "{{ env_var('TRINO_PORT', '8080') | as_number }}"
       http_scheme: http
       database: iceberg
       schema: prod
       threads: 8
 
-    # --- Phase 1 이행: dbt-spark 타깃 ---
-    # 실행 엔진을 프로파일로 갈아끼운다. `method: session`은 pyspark로 SparkSession을 만들고,
-    # `server_side_parameters`는 **세션 생성 시 builder.config()로 적용**된다(어댑터 소스 확인).
-    # 덕분에 Iceberg 설정을 전부 여기에 두면서 **비밀정보는 env_var 참조**로 유지할 수 있다.
-    #
-    # spark_session : 호스트 로컬 Spark. 클러스터 상시 서비스 없이 22모델 방언 검증용.
-    #                 in-cluster 서비스(카탈로그 PG·SeaweedFS)는 port-forward가 필요하다.
-    # spark_connect : 클러스터의 Spark Connect 서버에 붙는다(컴퓨트=K8s 원칙). `spark.remote`만 다르다.
-    spark_session: &spark_session
-      type: spark
-      method: session
-      host: localhost # session 메서드에선 미사용(스키마 필수 필드)
-      schema: poc
-      threads: 1
-      server_side_parameters:
-        # 러너 이미지와 **같은 Iceberg 버전**을 쓴다(Spark 4.1 계열 · Scala 2.13 전용).
-        # 호스트 pip pyspark에는 S3A·SDK jar가 없어 iceberg-aws-bundle(SDK v2 2.44.4) **한 벌만** 실린다
-        # → 판본이 경계 2.30.0 이후라 체크섬 env 2종(.env)이 방어선이다(docs/conventions/k8s/checksum.md).
-        spark.jars.packages: "org.apache.iceberg:iceberg-spark-runtime-4.1_2.13:{{ env_var('ICEBERG_VERSION', '1.11.0') }},org.apache.iceberg:iceberg-aws-bundle:{{ env_var('ICEBERG_VERSION', '1.11.0') }},org.postgresql:postgresql:42.7.4"
-        spark.sql.extensions: "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
-        spark.sql.catalog.iceberg: "org.apache.iceberg.spark.SparkCatalog"
-        spark.sql.catalog.iceberg.catalog-impl: "org.apache.iceberg.jdbc.JdbcCatalog"
-        spark.sql.catalog.iceberg.uri: "{{ env_var('ICEBERG_JDBC_URI') }}"
-        spark.sql.catalog.iceberg.jdbc.user: "{{ env_var('ICEBERG_PG_USER') }}"
-        spark.sql.catalog.iceberg.jdbc.password: "{{ env_var('ICEBERG_PG_PASSWORD') }}"
-        spark.sql.catalog.iceberg.warehouse: "{{ env_var('ICEBERG_WAREHOUSE') }}"
-        spark.sql.catalog.iceberg.io-impl: "org.apache.iceberg.aws.s3.S3FileIO"
-        spark.sql.catalog.iceberg.s3.endpoint: "{{ env_var('ICEBERG_S3_ENDPOINT') }}"
-        spark.sql.catalog.iceberg.s3.path-style-access: "true"
-        # S3 키는 AWS 표준 env(AWS_ACCESS_KEY_ID/SECRET)로 자격증명 체인이 집어간다 → 여기 적지 않는다.
-        spark.sql.defaultCatalog: "iceberg"
-
-    spark_connect:
-      <<: *spark_session
-      # 🔴 **여기에 `spark.remote` 말고 다른 conf를 추가하지 마라.**
-      #   리모트 세션에서는 `_apply_options`가 옵션을 세션 생성 **뒤에** 적용하며 실패를 삼킨다
-      #   → static conf는 **조용히 무시**된다. pyspark 4.1.3 기준 `pyspark/sql/connect/session.py:209-233`
-      #   — `session.conf._set_all(configs=opts, silent=True)`로 서버에 일괄 전달해 **서버가** 실패를 삼킨다
-      #   (3.5는 클라이언트가 예외를 `warnings.warn()`으로 강등했다 — 방식만 바뀌고 결과는 같다).
-      #   2026-08-19 실측(3.5): `enableHiveSupport()`가 넣는 `spark.sql.catalogImplementation`이
-      #   "Cannot modify the value of a static config"로 거부됐고 경고 2건만 남았다(질의는 성공).
-      #   지금은 무해하다(테이블이 전부 Iceberg JDBC 카탈로그에 있고 Hive 카탈로그를 안 쓴다).
-      #   하지만 여기 넣은 Iceberg/S3 설정은 **적용된 것처럼 보이고 실제로는 안 먹는다.**
-      #   카탈로그 설정의 단일 출처는 **서버 측**(k8s/spark/spark-connect-server.yaml)이다.
-      #
-      # ✅ **2026-08-19 엔드투엔드 PoC 통과** — 이 타깃이 현재 Spark 경로의 **정본**이다.
-      #   debug / build(threads 1·4) / incremental `merge into` 실발행 / docs generate /
-      #   22모델 compile 전부 통과했다(상세 docs/architectures/spark.md).
-      #   🔴 단 이 경로는 **어댑터 계약이 아니라 pyspark 내부 동작에 의존**한다. 그래서
-      #   `pyproject.toml`이 `dbt-spark<1.12`·`pyspark<4.2`로 상한을 묶고,
-      #   상한을 올릴 때는 `scripts/spark_connect_smoke.py`를 먼저 통과시킨다(docs/test.md §5-1).
-      server_side_parameters:
-        spark.remote: "{{ env_var('SPARK_REMOTE', 'sc://localhost:15002') }}"
-
-    # spark_thrift : 클러스터의 Spark Thrift Server(HiveServer2)에 JDBC로 붙는다.
-    #
-    # ⏸ **선언만 해두고 현재 쓰지 않는다**(2026-08-19) — `trino`·`flink`와 같은
-    #   "중단과 삭제의 분리". 서버 매니페스트는 `k8s/spark/spark-thrift-server.yaml`에 있으나
-    #   **배포하지 않았다**. 아래 두 비용이 현재 이득보다 크기 때문이다:
-    #     ① 상주 컴퓨트 +500m/1.5Gi (Spark Connect와 별도 JVM)
-    #     ② 🔴 런타임 의존성 3종 추가 — `pyhive`·`thrift`·`thrift_sasl`이 **미설치**다.
-    #        `dbt/adapters/spark/connections.py:17-24`가 ImportError를 삼켜 `hive = None`으로
-    #        두므로, 지금 이 타깃을 쓰면 접속 시점에 `NoneType` 오류로 죽는다.
-    #        쓰려면 `dbt-spark[PyHive]`를 먼저 설치해야 한다.
-    #   2026-08-19 실측으로 `spark_connect` 경로가 **실제 동작**함을 확인했다
-    #   (리모트 세션 생성 → `defaultCatalog=iceberg` → `SHOW NAMESPACES IN iceberg` → 질의 성공).
-    #   그래서 지금은 Connect가 정본이고, 이 타깃은 **미지원 경로가 깨졌을 때의 대피로**다.
-    #
-    # 🔴 **"공식 지원"은 이쪽뿐이다 — 그러나 그것이 "이쪽을 써야 한다"는 뜻은 아니다.**
-    #   2026-08-19 엔드투엔드 PoC로 `spark_connect`가 **실제로 전 경로 동작**함을 확인했다
-    #   (build·merge·docs generate·22모델 compile). 즉 **지원 여부(=업그레이드 리스크의 축)** 와
-    #   **동작 여부(=기능 확보의 축)** 는 다른 축이고, 지금 필요한 것은 Thrift 배포가 아니라
-    #   **업그레이드 회귀 감시**다(`scripts/spark_connect_smoke.py`). 아래는 그 근거다.
-    #
-    #   dbt-spark 1.11.0이 공식 지원하는 method는
-    #   `dbt/adapters/spark/connections.py:77-81` 기준 thrift/http/odbc/session 4개뿐이고
-    #   **Connect는 없다**. 위 `spark_connect`는 어댑터 기능이 아니라, classic 빌더가
-    #   `spark.remote`를 보고 RemoteSparkSession으로 위임하는 pyspark 내부 동작에 얹은 우회다
-    #   (pyspark 4.1.3 `pyspark/sql/session.py:495-525`). 게다가 `pyspark/sql/connect/session.py:209-233`의
-    #   `_apply_options`가 설정 실패를 **삼켜**(`_set_all(silent=True)`),
-    #   `enableHiveSupport()`가 넣는 static conf(`spark.sql.catalogImplementation`) 거부가
-    #   조용히 삼켜진다. 죽지 않는 것과 지원되는 것은 다르다(docs/philosophy.md 원칙 7).
-    #
-    # 접속: `kubectl port-forward svc/spark-thrift 10000:10000`
-    # Iceberg 카탈로그 설정은 **서버 측**에 있어 여기에 비밀정보를 두지 않는다.
-    spark_thrift:
-      type: spark
-      method: thrift
-      host: "{{ env_var('SPARK_THRIFT_HOST', 'localhost') }}"
-      port: "{{ env_var('SPARK_THRIFT_PORT', '10000') | as_number }}"
-      user: dagster
-      schema: poc
-      threads: 4
-      connect_retries: 5
-      connect_timeout: 60
-      retry_all: true
-
-  # 기본 타깃은 여기 한 곳만 정본으로 둔다 — Dagster(@dbt_assets)·수동 CLI·sqlfluff가
+  # 기본 타깃은 여기 한 곳만 정본으로 둔다 — Dagster(@dbt_assets)·수동 CLI가
   # 모두 같은 답을 본다. `dbt.cli([..., "--target", ...])`로 코드에 박지 않는 이유는
   # Dagster와 수동 CLI의 진입점이 갈리기 때문이다.
-  # 값 대조가 필요하면 `DBT_TARGET=dev dbt build`처럼 환경변수로 되돌린다.
-  #   ⚠️ `trino`라는 이름의 타깃은 없다 — Trino 경로는 `dev`(개발)·`prod`다.
-  #      아래 outputs에 실재하는 이름만 쓴다: dev · prod · spark_session · spark_connect · spark_thrift
-  target: "{{ env_var('DBT_TARGET', 'spark_connect') }}"
+  #   ⚠️ `trino`라는 이름의 타깃은 없다 — 아래 outputs에 실재하는 이름만 쓴다: dev · prod
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"

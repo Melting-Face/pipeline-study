@@ -13,37 +13,13 @@ dependencies = [
   "dagster-graphql==1.12.12",
   "dagster-postgres==0.28.12",
   "dagster-dbt==0.28.12",
-  # DuckDB 대체: Trino 어댑터 (버전은 dbt-core 1.10 호환성 빌드 시 재확인 필요)
-  # Phase 1 이행 중: dbt-spark로 옮기는 동안 두 어댑터를 **동시 설치**해 타깃만 바꿔가며 대조한다.
-  # 이행 완료 시 제거한다(docs/redesign.md Phase 1).
+  # dbt 실행 엔진 어댑터 — k8s Trino(docs/architectures/trino.md).
+  # dbt-spark·pyspark·dagster-pyspark는 Spark Connect·Thrift 철거와 함께 제거했다.
   "dbt-trino>=1.8,<2.0",
-  # Spark 어댑터 — `session` extra는 pyspark를 동반해 SparkSession으로 붙는다.
-  # 2026-08-19 실측으로 **Spark Connect 서버 구동을 엔드투엔드 확인**했다(dbt debug/build/merge/
-  # docs generate/22모델 compile 전부 통과) → Thrift 서버 없이 성립한다(docs/architectures/spark.md).
-  #
-  # 🔴 **상한을 minor로 좁힌 이유**: 이 경로는 dbt-spark가 **공식 지원하지 않는다**.
-  #   `dbt/adapters/spark/connections.py`의 `SparkConnectionMethod`는 thrift/http/odbc/session
-  #   4개뿐이고 connect가 없다. 동작하는 이유는 `session.py`가 `builder.config(k, v)` →
-  #   `getOrCreate()`를 타서, pyspark classic 빌더가 `spark.remote`를 보고 RemoteSparkSession으로
-  #   위임하는 **내부 동작**에 얹히기 때문이다. 즉 계약이 아니라 구현에 의존한다 →
-  #   **minor 업그레이드가 조용히 깨뜨릴 수 있다.** 상한을 올릴 때는 반드시
-  #   `scripts/spark_connect_smoke.py`를 통과시킨 뒤 올린다(docs/test.md §5-1).
-  "dbt-spark[session]>=1.11,<1.12",
-  # pyspark는 **클러스터 러너 이미지와 같은 계열로 고정**한다(현재 Spark 4.1.3 = spark-runner 0.6.0).
-  # Spark Connect는 major·minor 간 클라이언트↔서버 호환을 보장한다는 정책 문서가 없다 → 계열을 맞춘다.
-  # `connect` extra(gRPC 클라이언트)까지 받아야 dbt-spark가 `spark.remote`로 붙는다.
-  # 상한이 `<4.2`인 이유는 위 dbt-spark와 같다 — `spark.remote` 위임은 pyspark 내부 동작이라
-  # 버전 계약이 없다. 러너 이미지(4.1.3)와의 계열 일치도 함께 지킨다.
-  "pyspark[connect]>=4.1.3,<4.2",
-  # Trino 파이썬 클라이언트 — Iceberg 유지보수 프로시저 실행(common/trino.py)에 직접 사용.
+  # Trino 파이썬 클라이언트 — Iceberg 유지보수 프로시저(common/trino.py)·노트북에 직접 사용.
   # dbt-trino 전이 의존이나, 직접 import하므로 명시 선언(explicit dependencies).
   "trino>=0.330",
   "dagster-dg-cli==1.12.12",
-  # Spark 리소스 — Iceberg 유지보수 프로시저를 Spark Connect로 실행(defs/maintenance.py).
-  # `LazyPySparkResource(spark_config={"spark.remote": ...})`로 Connect에 붙는다(2026-08-19 실측:
-  # 내부 `builder.config(k,v)`가 spark.remote를 받아 pyspark.sql.connect 세션을 만든다).
-  # 전이로 `dagster-spark`(spark-submit 래퍼)가 따라오지만 직접 쓰지 않는다 — 설정 스키마 제공용.
-  "dagster-pyspark==0.28.12",
   # S3(SeaweedFS)·Iceberg 리소스
   "dagster-aws==0.28.12",
   # dagster-iceberg(preview)가 pyiceberg[pyarrow]를 동반 설치한다.
@@ -57,8 +33,8 @@ dependencies = [
   #
   # 🔴 **상한을 붙이지 않는 것이 결정이다**(빠뜨린 것이 아니다). 이 선언의 목적은 버전
   #    통제가 아니라 **의존이 사라지지 않게** 하는 것이고, 상한은 그 목적에 기여하지 않으면서
-  #    상류(dagster-iceberg)의 업그레이드를 막는다. 위 dbt-spark·pyspark에 상한이 있는 것은
-  #    **미지원 경로에 얹혀 있기 때문**이고 거기엔 상한 인상 전 통과시킬 스모크가 있다.
+  #    상류(dagster-iceberg)의 업그레이드를 막는다. 상한은 **미지원 경로에 얹힌 의존**에만
+  #    걸고(구 dbt-spark·pyspark가 그랬다) 상한 인상 전 통과시킬 스모크와 짝을 짓는다.
   #    이 셋은 그 축이 아니다 ⇒ 상한이 필요해지면 **그때 통과시킬 검증을 함께** 만든다.
   #
   # 하한은 **현재 잠금본보다 한참 아래**로 둔다 — 쓰는 API가 전부 장기 안정 코어라
@@ -83,7 +59,7 @@ dev = [
 # 호스트 탐색용 노트북(옵션). 런타임(`[project].dependencies`)은 건드리지 않는다 —
 # 이미지·daemon에는 들어가지 않고, 필요할 때만 `--group notebook`으로 켠다.
 #
-# 이 그룹을 **런타임과 같은 venv**에 두는 이유: Spark Connect(pyspark)·pyiceberg·pandas·pyarrow가
+# 이 그룹을 **런타임과 같은 venv**에 두는 이유: Trino 클라이언트(`trino`)·pyiceberg·pyarrow가
 # 전부 여기 이미 있어 커널 하나로 레이크하우스에 붙고, `dagster_project.common.*` 적재 헬퍼를
 # 노트북에서 그대로 import해 **에셋과 같은 코드로** 검증할 수 있다.
 #   uv run --group notebook jupyter lab --port 8889
@@ -92,7 +68,7 @@ notebook = [
   "jupyterlab>=4.2,<5",
   # jupyterlab 전이 의존이나 커널을 직접 등록하므로 명시 선언
   "ipykernel>=6.29,<7",
-  # pyspark/pyiceberg 전이로 이미 설치되나 노트북에서 직접 import하므로 명시 선언
+  # Trino 결과를 DataFrame으로 받는다(`pd.DataFrame(rows, columns=...)`) — 직접 import하므로 명시 선언
   "pandas>=2.2",
   # 전이 의존으로만 설치되나 노트북에서 직접 import하므로 명시 선언
   # (`from dotenv import load_dotenv` — 상류가 이 의존을 떨구면 조용히 깨진다)
@@ -104,12 +80,11 @@ notebook = [
 #   uv run --group notebook --group ml jupyter lab --port 8889
 #
 # 🔴 **학습은 호스트에서 돈다**(Spark MLlib 아님). 편의가 아니라 예산이다 —
-#   `spark.executor.instances ≤ 1` 경계를 Spark Connect가 상시 소비하고 Dagster 상주는
-#   회수 다이얼이 듣지 않아, executor를 2로 올리면 느려지는 게 아니라 **스케줄이 실패**한다
-#   (docs/resource-sizing.md §C). Spark는 집계·피처까지만 하고 결과만 `toPandas()`로 내린다.
+#   클러스터 CPU 축이 급소라(docs/resource-sizing.md §C) 학습용 상주 컴퓨트를 두지 않는다.
+#   Trino는 집계·피처까지만 하고 결과 행만 pandas로 내린다.
 #
 # 상한을 붙이지 않는 것은 위 pyarrow·pyiceberg와 같은 처리다 — 이 저장소가 상한을 거는 기준은
-# "미지원 경로에 얹혀 있는가"이고(dbt-spark·pyspark는 그래서 상한 + 인상 전 통과시킬 스모크가 짝이다),
+# "미지원 경로에 얹혀 있는가"이고(상한은 인상 전 통과시킬 스모크와 짝이다),
 # 아래 셋은 공식 API만 쓴다. 하한도 **binding constraint가 되지 않게** 낮게 둔다
 # (쓰는 API: LogisticRegression·DummyClassifier·StratifiedGroupKFold·roc_auc_score·
 #  average_precision_score / joblib.dump·load / pyplot — 전부 장기 안정 코어).

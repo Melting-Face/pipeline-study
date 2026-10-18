@@ -97,8 +97,8 @@ lineage(스트림): **Iceberg bronze(changelog 스트리밍 읽기) → Flink(�
 | bronze 적재(일반) | Dagster IO매니저(`pa.Table`) 유지 | 소형 테이블 | 현행 경로 유지(YAGNI) |
 | **silver/gold 변환** | **dbt-trino** — 개정, 구 판정은 "dbt-spark" | `sofa`·`sepsis3`·`suspicion_of_infection` 등 22모델 | dbt 자산·스키마테스트 보존. 방언은 dispatch 매크로(`macros/cross_engine.sql`)가 흡수한다 — 컴파일 통과는 **같은 값**의 보증이 아니다 |
 | **실시간 스트리밍** | **Flink** `FlinkDeployment` | Iceberg **bronze changelog** → **실시간 SOFA/Sepsis-3 조기경보** | Flink의 존재이유. Iceberg 소스·싱크, 체크포인트는 SeaweedFS |
-| Iceberg 유지보수 | Spark `rewrite_data_files`·`remove_orphan_files` | maintenance job | Trino 제거로 컴팩션도 Spark로 이관([spark.md](architectures/spark.md)) |
-| ad-hoc 조회 | Spark SQL(Trino 대체) | 검증·탐색 | 인터랙티브 편의는 Trino보다 낮음(트레이드오프) |
+| Iceberg 유지보수 | **Trino** `ALTER TABLE … EXECUTE` — 개정, 구 판정은 "Spark 프로시저" | maintenance job | Spark Connect 철거로 Trino로 되돌림. 엔진 선택은 op config(Spark·Flink 후속) |
+| ad-hoc 조회 | **Trino** — 개정, 구 판정은 "Spark SQL" | 검증·탐색 | 노트북이 Trino 클라이언트로 붙는다 |
 
 ### 급소 ② — Trino+Spark 동시 쓰기용 카탈로그
 

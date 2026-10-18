@@ -79,8 +79,8 @@ cp .env.example .env
 | `DAGSTER_PORT` | webserver UI 포트 |
 | `AWS_*` · `ENDPOINT_URL` | S3(SeaweedFS) 자격증명·엔드포인트 |
 | `ICEBERG_CATALOG_*` | Iceberg 카탈로그 — pyiceberg(Dagster) 경로 |
-| `ICEBERG_JDBC_*` · `ICEBERG_PG_*` · `ICEBERG_S3_*` · `ICEBERG_WAREHOUSE` | 같은 카탈로그 — JDBC(dbt-spark) 경로 |
-| `SPARK_REMOTE` · `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` | dbt-spark ↔ Spark Connect |
+| `ICEBERG_JDBC_*` · `ICEBERG_PG_*` · `ICEBERG_S3_*` · `ICEBERG_WAREHOUSE` | 같은 카탈로그 — JDBC(Flink 세션) 경로. dbt는 더 이상 읽지 않는다(Trino 서버 측 설정) |
+| `TRINO_HOST` · `TRINO_PORT` | dbt·유지보수 ↔ k8s Trino(미설정 시 `trino.localtest.me`/`8080`) |
 | `AWS_*_CHECKSUM_*` | SeaweedFS 호환 — `when_required` 유지 |
 | `PHYSIONET_*` | MIMIC-IV·eICU 다운로드 계정(§6-1) |
 | `POLYGON_API_KEY` · `FRED_API_KEY` | 시장 데이터 API 키(§6-2) |
@@ -279,10 +279,6 @@ uv run --project dagster/dockerfile.d/src --with types-PyYAML --with types-reque
 # 정의 로드 — `.env` 값이 env로 있어야 한다(`common/constants.py`가 import 시점에 읽는다)
 (cd dagster/dockerfile.d/src && DAGSTER_HOME="$(mktemp -d)" uv run dg check defs)
 
-# 실인프라 ⏸
-uv run scripts/spark_connect_smoke.py       # 종료코드 0=통과 / 1=회귀 / 2=판정 불가(통과 아님)
-uv run scripts/iceberg_changelog_probe.py
-
 # 외부 접속 — 해당 원천을 처음 켜기 직전
 uv run scripts/physionet_access_probe.py
 uv run scripts/stock_source_access_probe.py --source all
@@ -365,10 +361,7 @@ kubectl port-forward svc/spark-connect 15002:15002   # 별도 터미널
 
 | 타깃 | 전제 |
 | --- | --- |
-| `spark_connect`(기본) | Spark Connect `--replicas=1` + TLS Ingress 또는 15002 port-forward. `spark.remote` 외 conf를 넣지 않는다 |
-| `spark_session` | 15432 port-forward + 스택 A(S3) + `ICEBERG_JDBC_URI`·`ICEBERG_PG_USER`·`ICEBERG_PG_PASSWORD`·`ICEBERG_WAREHOUSE`·`ICEBERG_S3_ENDPOINT` |
-| `dev` · `prod` | Trino — `podman compose --profile legacy-sql up -d trino` |
-| `spark_thrift` | 배포 안 됨. `dbt-spark[PyHive]` 선설치 필요 |
+| `dev`(기본) · `prod` | k8s Trino(`trino.localtest.me:8080`, ArgoCD 앱 `trino`). compose Trino를 보려면 `TRINO_HOST=localhost TRINO_PORT=8081` + `--profile legacy-sql` — **다른 카탈로그 DB**다 |
 
 ---
 

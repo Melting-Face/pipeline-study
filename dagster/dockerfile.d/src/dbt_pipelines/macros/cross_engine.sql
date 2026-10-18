@@ -64,7 +64,11 @@
 {%- endmacro %}
 
 {% macro trino__unnest_array(array_expr, table_alias, column_alias) -%}
-    cross join unnest({{ array_expr }}) as {{ table_alias }} ({{ column_alias }})
+    {#- 🔴 원소를 1필드 ROW로 감싼다. Trino는 ROW 배열을 **필드 수만큼의 컬럼**으로 펼쳐서
+        별칭 1개로는 `MISMATCHED_COLUMN_ALIASES`로 죽는다(483 실측 — `insights`가 ROW 배열).
+        감싸면 별칭 1개가 원소 전체(ROW)를 받아 Spark `explode`와 같은 모양이 된다.
+        스칼라·`sequence`·빈 배열·NULL 배열에서는 감싸기 전과 값·타입이 같다(483 실측). -#}
+    cross join unnest(transform({{ array_expr }}, e -> row(e))) as {{ table_alias }} ({{ column_alias }})
 {%- endmacro %}
 
 {% macro spark__unnest_array(array_expr, table_alias, column_alias) -%}

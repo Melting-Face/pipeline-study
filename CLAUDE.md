@@ -92,7 +92,7 @@
   - `constants.py` — 공통 상수/기본값(S3 파라미터 포함)
   - `helper.py` — 적재 헬퍼(`read_csv_gz_table` 일반 / `load_heavy_csv_gz_to_iceberg` 대용량)
   - `dbt.py` — 공유 dbt 설정(`DbtProject`·`build_dbt_resource`); 단일 dbt 프로젝트를 데이터셋 subproject가 공유
-  - `trino.py` — Trino 접속 리소스(`TrinoResource`); 유지보수는 Spark로 이관돼 **값 대조용으로만** 남는다
+  - `trino.py` — Trino 접속 리소스(`TrinoResource`); Iceberg 유지보수 프로시저 실행(k8s Trino)
 - **정의는 모두 `dagster_project/defs/` 하위**에 두고 `load_defs`가 재귀 자동발견한다.
   - **데이터셋별 서브프로젝트** `defs/<dataset>/`에 **정의만** 둔다.
     - `constants.py` — 데이터셋 전용 `NAMESPACE`·`GROUP_NAME`·`SOURCE_BASE`
@@ -126,13 +126,14 @@
   상세 [`docs/conventions/dbt.md`](docs/conventions/dbt.md).
 - **`@dbt_assets` 셀렉터는 `select="fqn:<dataset>"`** 를 쓴다(`project=dbt_project` 동반).
   `path:models/<dataset>`는 cwd 글롭이라 정의 로드 시 모델이 수집되지 않는다(잠복 버그).
-- **어댑터 방언은 매크로로 흡수**한다(`dbt-trino`↔`dbt-spark` 이행 대비) — 엔진 리터럴을 직접 쓰지 않는다.
+- **어댑터 방언은 매크로로 흡수**한다(`trino__`·`spark__` 공존) — 엔진 리터럴을 직접 쓰지 않는다.
   **의미론이 같으면 dbt 내장**(`{{ dbt.dateadd(...) }}`), **갈리거나 내장이 없으면 프로젝트 dispatch 매크로**
   (`macros/cross_engine.sql`의 `elapsed`·`unnest_array`, `default__`에 `raise_compiler_error`).
   **`dbt.datediff`는 쓰지 않는다** — Spark는 경과시간 `ceil`, Trino는 경계 교차라 임계값 비교에서 값이 갈린다.
   기준은 "도는 것"이 아니라 **"같은 값"**. `dbt compile`은 이를 못 잡으므로 **컴파일 통과를 이행 완료로 읽지 않는다**.
+  **dbt 엔진은 k8s Trino**(`dev` 타깃, env `TRINO_HOST`·`TRINO_PORT`)이고 Spark 시절 값과는 **미대조**다.
 - **SQL 린트 게이트는 `sqlfluff` + jinja 스텁이다**. `templater = "dbt"`는 모델을 실제로
-  컴파일하려 **Spark Connect에 접속**해 커밋이 클러스터 가용성에 묶이므로 게이트로 쓸 수 없었고, 그래서
+  컴파일하려 **엔진에 접속**해 커밋이 클러스터 가용성에 묶이므로 게이트로 쓸 수 없었고, 그래서
   22개 모델이 **설정만 있고 아무 검사도 받지 않는 상태**로 오래 남아 있었다(문서는 "모델 부재"라 적고 있었으나
   거짓이었다). `jinja`로 바꾸는 대가로 dbt 런타임 객체를 스텁으로 대체한다 — dispatch 매크로는
   `[tool.sqlfluff.templater.jinja.macros]` 인라인, `{{ dbt.* }}`는 `library_path = "sqlfluff_libs"`의
@@ -141,9 +142,9 @@
   `TMP`로 에러를 내고 멈춘다(의도한 결합). **스텁은 의미론이 아니라 파싱만 맞으면 되지만 *길이·모양*은
   판정에 직접 들어간다**(`LT05`·`LT02`) — 원본 구현을 옮기지 말고 짧은 등가 호출로 둔다.
   **이 게이트가 보증하는 것은 스타일·구문까지다** — 린트 대상이 **컴파일 SQL이 아니라 스텁 치환 SQL**이라
-  매크로가 엔진별로 같은 값을 내는지는 보지 않는다(그건 `scripts/spark_connect_smoke.py` 몫).
-  같은 이유로 **`dialect = "sparksql"`도 아직 실행 검증 전**이다 — 24/24 파일 파싱 통과는
-  "구문이 파서에 맞았다"이지 "Spark에서 같은 값이 나온다"가 아니다.
+  매크로가 엔진별로 같은 값을 내는지는 보지 않는다. **`dialect = "trino"`**(기본 타깃과 일치)의 파싱 통과도
+  "구문이 파서에 맞았다"이지 "Spark 시절과 같은 값"이 아니다. trino의 RF01은 ROW 필드 접근을 오탐해
+  그 줄에만 사유와 함께 `noqa`를 단다.
   **`library_path`는 CWD 기준**이라 `mypy`와 마찬가지로 **repo 루트에서 실행**해야 한다.
   상세 [`docs/conventions/dbt.md`](docs/conventions/dbt.md) §templater.
 - **데이터셋 원천 스키마·피처(SOFA→Sepsis-3)** 는 [`docs/dataset_schema.md`](docs/dataset_schema.md) 참고.
@@ -232,7 +233,7 @@
   로컬 레지스트리 `localhost:5001`. 기동은 `k8s-up.sh` → **`terraform apply`**(`cluster/kind`) → **`terraform apply`**
   (`platform`: ArgoCD가 `gitops/charts/`를 수렴, 설계 `docs/argocd-gitops.md`). **Dagster는 미배포**(호스트)다.
   규칙 [`docs/conventions/k8s.md`](docs/conventions/k8s.md), 예산·배분 [`docs/resource-sizing.md`](docs/resource-sizing.md).
-  클러스터에는 **Spark Operator**(배치)·**Spark Connect**(dbt-spark 접속용 상주)·**Trino**(dbt 엔진 후보 —
+  클러스터에는 **Spark Operator**(배치)·**Spark Connect**(철거 예정 — 소비자 0)·**Trino**(dbt 엔진·유지보수 —
   upstream 앱 `gitops/apps/trino/`, 제거 번복은 `docs/redesign.md` §3)가 있고,
   세 엔진이 **같은 Iceberg JDBC 카탈로그**를 공유한다.
   **Flink Operator**(기본 설치)와 세션 클러스터로 **Spark가 쓴 Iceberg 테이블을 읽는 것까지**
@@ -257,14 +258,11 @@
   레지스트리를 분할해, 이름이 다르면 같은 DB를 봐도 서로의 테이블이 안 보인다) ⓑ **SeaweedFS는 aws-chunked
   체크섬을 못 풀어** 객체가 손상된다 — `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` 유지, **Java도 해당**
   ⓒ **`io-impl`(S3FileIO)과 `spark.hadoop.fs.s3*`(S3A)는 둘 다 필요**(S3FileIO는 카탈로그가 *아는* 파일만
-  다뤄, warehouse를 직접 나열하는 `remove_orphan_files`가 Hadoop FS를 탄다).
-  **Iceberg 유지보수(컴팩션·orphan 정리)는 Spark 프로시저**로 실행하고(Trino에서 이관),
-  접속은 공식 통합 **`dagster-pyspark`의 `LazyPySparkResource`** 를 쓴다(커스텀 리소스 금지).
-  **dbt도 같은 Connect 서버로 붙는다**(`spark_connect` 타깃, PoC 통과) → **Thrift는 불필요**하며 선언만 남긴다.
-  **"미지원"과 "동작 안 함"은 다른 축이다** — dbt-spark 지원 method에 Connect가 없어 이 경로는
-  **어댑터 계약이 아니라 pyspark 내부 위임 동작에 의존**한다. 그래서 필요한 건 Thrift 배포가 아니라
-  **업그레이드 회귀 감시**이고, 상한을 minor로 묶은 뒤(`dbt-spark<1.12`·`pyspark<4.2`)
-  **상한 인상 직전에 `scripts/spark_connect_smoke.py`를 통과**시킨다([`docs/test/manual-gates.md`](docs/test/manual-gates.md) §5-1).
+  다뤄, Spark로 warehouse를 직접 나열하는 `remove_orphan_files`가 Hadoop FS를 탄다).
+  **Iceberg 유지보수(컴팩션·orphan 정리)는 Trino `ALTER TABLE … EXECUTE`** 로 실행한다(`TrinoResource` —
+  Spark Connect 철거로 되돌림). 엔진은 op config `engine`으로 고르고 Spark·Flink 경로는 후속 미션이다.
+  **Dagster·dbt·노트북은 Spark Connect를 쓰지 않는다** — dbt-spark·pyspark·`dagster-pyspark`는 제거했고,
+  Connect·Thrift 매니페스트·클러스터 리소스 철거는 별도 PR이다(수동 관문 §5-1 철거·§5-3 중단).
   **노출은 HTTP(UI·REST)와 gRPC를 Ingress**로 내고 JDBC·S3만 `port-forward`를 쓴다 — kind는 **공개 포트를
   생성 시점에만** 정할 수 있어 `extraPortMappings`를 빠뜨리면 재생성이 유일한 해법이다.
   **gRPC Ingress는 TLS가 전제**다(nginx는 HTTP/2를 TLS 리스너에서만 협상) — 발급은

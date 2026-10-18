@@ -7,15 +7,15 @@
 대용량 append 3테이블(chartevents·labevents·nurse_charting)이 우선 대상이며,
 이미 등록된 IcebergTableResource 바인딩을 단일 출처로 재사용한다.
 
-- 컴팩션·orphan 정리: pyiceberg 0.11.x 미지원 → **Spark Iceberg 프로시저**
-  (`rewrite_data_files`·`remove_orphan_files`). 재설계에서 Trino를 빼면서
-  `ALTER TABLE ... EXECUTE`(Trino)에서 옮겨왔다(docs/architectures/trino.md).
+- 컴팩션·orphan 정리: pyiceberg 0.11.x 미지원 → **Trino 프로시저**
+  (`ALTER TABLE ... EXECUTE optimize`·`remove_orphan_files`). Spark Connect 철거로
+  Spark 프로시저에서 되돌아왔다(docs/architectures/trino.md).
 - 스냅샷 만료: pyiceberg(`table.maintenance.expire_snapshots()`).
 
-`remove_orphan_files`는 warehouse를 **Hadoop FileSystem으로 나열**한다(Iceberg의
-S3FileIO로는 대체 불가 — 카탈로그가 모르는 파일을 찾는 게 목적이므로). Spark Connect
-서버에 `spark.hadoop.fs.s3*` 설정이 있어야 하며, 없으면
-`UnsupportedFileSystemException: No FileSystem for scheme "s3"`로 죽는다.
+엔진은 op config `engine`으로 고른다. 지금 값은 `trino` 하나뿐이다 —
+Spark(SparkApplication)·Flink 경로는 후속 미션에서 같은 op에 분기로 더한다
+(op·잡 이름은 바뀌지 않는다). Trino는 S3를 자체 파일시스템으로 나열하므로
+Spark 시절의 S3A(`spark.hadoop.fs.s3*`) 의존이 없다.
 
 모듈 스코프의 잡/스케줄 객체는 `load_defs`가 자동 수집한다(@dg.definitions 불필요).
 
@@ -24,61 +24,64 @@ S3FileIO로는 대체 불가 — 카탈로그가 모르는 파일을 찾는 게 
 """
 
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from dagster_iceberg.resource import IcebergTableResource
-from dagster_pyspark import LazyPySparkResource
 
 import dagster as dg
 from dagster import OpExecutionContext
 from dagster_project.common.constants import CATALOG_NAME
+from dagster_project.common.trino import TrinoResource
 
 # 스냅샷 보존기간(일). 이보다 오래된(timestamp <) 스냅샷을 만료한다.
 # 현재 스냅샷·브랜치·태그가 가리키는 스냅샷은 pyiceberg가 자동 보호한다.
 SNAPSHOT_RETENTION_DAYS = 7
 
 # orphan 파일 보존기간(일). 이보다 **오래된** 파일만 삭제한다.
-# Spark 기본값은 3일인데, 진행 중인 쓰기를 지울 위험을 줄이려 스냅샷 보존기간과 맞춘다
-# (Trino는 min-retention 기본 7일이었다 — 이관 후에도 같은 값을 유지).
+# Trino 기본값(`iceberg.remove-orphan-files.min-retention` 7d)과 같지만 **명시**한다 —
+# 엔진을 더할 때 기본값이 다르면(Spark 3일) 조용히 공격적이 되기 때문이다.
 ORPHAN_RETENTION_DAYS = SNAPSHOT_RETENTION_DAYS
 
-# 컴팩션 임계값(bytes). 이 크기 **미만** 파일이 bin-packing 대상이다.
-# Trino `optimize(file_size_threshold => '100MB')`와 같은 의미이나, Spark는
-# `min-input-files`(기본 5) 미만이면 그룹을 통째로 건너뛴다 — 파일이 몇 개뿐인
-# 테이블에서 "0건 재작성"이 나오는 건 정상이다.
-COMPACTION_MIN_FILE_SIZE_BYTES = 100 * 1024 * 1024
+# 컴팩션 임계값(MB). 이 크기 미만 파일을 병합한다(Trino 기본값과 동일).
+COMPACTION_FILE_SIZE_THRESHOLD_MB = 100
+
+
+class MaintenanceConfig(dg.Config):
+    """유지보수 실행 엔진 선택. 값을 늘릴 때 각 op에 분기를 함께 더한다."""
+
+    engine: Literal["trino"] = "trino"
 
 
 @dg.op
 def optimize_iceberg_files(
     context: OpExecutionContext,
-    spark: LazyPySparkResource,
+    config: MaintenanceConfig,
+    trino: TrinoResource,
     mimiciv_chartevents_table: IcebergTableResource,
     mimiciv_labevents_table: IcebergTableResource,
     eicu_nurse_charting_table: IcebergTableResource,
 ) -> None:
     """작은 파일을 큰 파일로 병합한다(안전 순서상 1단계, 컴팩션).
 
-    청크 append로 쌓인 small-files를 Spark `rewrite_data_files` 프로시저로
-    bin-packing한다. pyiceberg 0.11.x는 이 API를 지원하지 않는다.
-
-    프로시저의 `table` 인자는 **카탈로그를 제외한** `<schema>.<table>` 형식이다
-    (카탈로그는 `iceberg.system.` 접두로 이미 지정된다).
+    청크 append로 쌓인 small-files를 Trino `optimize` 프로시저로 bin-packing한다.
+    pyiceberg 0.11.x는 rewrite_data_files 미지원이다.
     """
     for resource in (
         mimiciv_chartevents_table,
         mimiciv_labevents_table,
         eicu_nurse_charting_table,
     ):
-        qualified = f"{resource.schema_}.{resource.table}"
-        rows = spark.spark_session.sql(
-            f"CALL {CATALOG_NAME}.system.rewrite_data_files("
-            f"table => '{qualified}', "
-            f"options => map('min-file-size-bytes', "
-            f"'{COMPACTION_MIN_FILE_SIZE_BYTES}'))"
-        ).collect()
-        # 프로시저는 재작성 통계 1행을 돌려준다(rewritten/added 파일 수·바이트).
-        stats = rows[0].asDict() if rows else {}
-        context.log.info("%s 컴팩션 완료 — %s", qualified, stats)
+        fqn = f"{CATALOG_NAME}.{resource.schema_}.{resource.table}"
+        trino.execute(
+            f"ALTER TABLE {fqn} EXECUTE optimize"
+            f"(file_size_threshold => '{COMPACTION_FILE_SIZE_THRESHOLD_MB}MB')"
+        )
+        context.log.info(
+            "%s 컴팩션 완료(engine=%s, threshold %dMB)",
+            fqn,
+            config.engine,
+            COMPACTION_FILE_SIZE_THRESHOLD_MB,
+        )
 
 
 @dg.op(ins={"start": dg.In(dg.Nothing)})
@@ -92,7 +95,7 @@ def expire_iceberg_snapshots(
 
     pyiceberg 0.11.x API:
     `table.maintenance.expire_snapshots().older_than(dt).commit()`
-    (`older_than`는 tz-aware datetime을 받는다).
+    (`older_than`는 tz-aware datetime을 받는다). 엔진 선택과 무관하다.
     """
     cutoff = datetime.now(tz=timezone.utc) - timedelta(days=SNAPSHOT_RETENTION_DAYS)
     for resource in (
@@ -117,36 +120,32 @@ def expire_iceberg_snapshots(
 @dg.op(ins={"start": dg.In(dg.Nothing)})
 def remove_iceberg_orphan_files(
     context: OpExecutionContext,
-    spark: LazyPySparkResource,
+    config: MaintenanceConfig,
+    trino: TrinoResource,
     mimiciv_chartevents_table: IcebergTableResource,
     mimiciv_labevents_table: IcebergTableResource,
     eicu_nurse_charting_table: IcebergTableResource,
 ) -> None:
-    """스냅샷이 참조하지 않는 orphan 데이터 파일을 정리한다(안전 순서상 3단계).
+    """스냅샷이 참조하지 않는 orphan 파일을 정리한다(안전 순서상 3단계).
 
-    pyiceberg 0.11.x는 remove_orphan_files 미지원이라 Spark 프로시저로 실행한다.
-    `older_than`은 **명시**한다 — Spark 기본값은 3일이라 Trino(7일)보다 공격적이다.
-
-    이 프로시저만 warehouse를 Hadoop FileSystem으로 나열한다(모듈 docstring 참고).
+    pyiceberg 0.11.x는 remove_orphan_files 미지원이라 Trino 프로시저로 실행한다.
+    `retention_threshold`를 min-retention보다 짧게 주면 프로시저가 거부한다.
     """
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=ORPHAN_RETENTION_DAYS)
     for resource in (
         mimiciv_chartevents_table,
         mimiciv_labevents_table,
         eicu_nurse_charting_table,
     ):
-        qualified = f"{resource.schema_}.{resource.table}"
-        rows = spark.spark_session.sql(
-            f"CALL {CATALOG_NAME}.system.remove_orphan_files("
-            f"table => '{qualified}', "
-            f"older_than => TIMESTAMP '{cutoff.strftime('%Y-%m-%d %H:%M:%S')}')"
-        ).collect()
-        # 삭제된 파일 경로가 행으로 돌아온다(0행 = 지울 것 없음).
+        fqn = f"{CATALOG_NAME}.{resource.schema_}.{resource.table}"
+        trino.execute(
+            f"ALTER TABLE {fqn} EXECUTE remove_orphan_files"
+            f"(retention_threshold => '{ORPHAN_RETENTION_DAYS}d')"
+        )
         context.log.info(
-            "%s orphan 파일 %d건 정리(older_than=%s UTC)",
-            qualified,
-            len(rows),
-            cutoff.isoformat(),
+            "%s orphan 파일 정리 완료(engine=%s, retention %dd)",
+            fqn,
+            config.engine,
+            ORPHAN_RETENTION_DAYS,
         )
 
 
