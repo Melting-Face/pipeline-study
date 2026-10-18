@@ -35,7 +35,7 @@ x-dagster-common: &dagster-common
     # 컨테이너에서는 항상 호스트 루프백 게시 포트로 닿는다(호스트 실행 시엔 .env의 localhost).
     - ICEBERG_S3_ENDPOINT=http://host.containers.internal:8333
     # 🔴 컨테이너 Dagster의 dbt·유지보수(Trino)는 **미지원**이다. 코드 기본값 `trino.localtest.me`는
-    # 컨테이너 안에서 자기 루프백이라 접속 거부로 실패한다(조용히 틀리지 않는다). 컨테이너는
+    # 컨테이너 안에서 자기 루프백이라 접속 실패(거부·이름 해석)로 끝난다(조용히 틀리지 않는다). 컨테이너는
     # ICEBERG_CATALOG_*를 받지 않아 compose postgres 카탈로그를 보므로, k8s Trino로 돌리면 카탈로그가
     # 어긋난다. 정본 실행처는 호스트 `dg dev`다.
     # PhysioNet credentialed 원천 접근(수집 자산). 비어 있어도 정의 로드는

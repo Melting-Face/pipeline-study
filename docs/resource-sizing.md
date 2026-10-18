@@ -120,7 +120,7 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 | | `argocd-applicationset-controller` | 50m | 64Mi | 250m | 128Mi |
 | | `argocd-redis` | 50m | 64Mi | 200m | 128Mi |
 | **Airflow**(상주, 회수 불가) | apiServer·scheduler·dagProcessor·Celery worker·redis·사이드카 3 — 값 정본은 `gitops/charts/airflow/values.yaml` requests, 합계 없음. 일회성 Job(migrate·create-user)과 K8s 태스크 파드는 상주 아님 | 정본 참조 | 정본 참조 | 정본 참조 | 정본 참조 |
-| **Trino**(상주, 회수 다이얼 없음) | coordinator 단독 — 정본·근거(req=lim 메모리)는 `gitops/apps/trino/values.yaml` | 500m | 3Gi | 1 | 3Gi |
+| **Trino**(상주, 회수 다이얼 없음) ⁸ | coordinator 단독 — 정본·근거(req=lim 메모리)는 `gitops/apps/trino/values.yaml` | 500m | 3Gi | 1 | 3Gi |
 | **온디맨드 상주** | Flink JobManager(세션 클러스터, 잡 없어도 상주) | 1000m | 2048Mi | 1 | 2Gi |
 | **STREAM(일시)** | Flink TaskManager × 1 — **잡 제출 시 온디맨드**, 종료 시 자동 회수 ⁶ | 1000m | 2048Mi | 1 | 2Gi |
 | **BATCH(일시)** | Spark driver ⁴ | 1000m | 1433Mi ⁴ | — | 1433Mi |
@@ -164,6 +164,9 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
   OOMKilled·throttling이 관측되면 그때 올린다. 실측은 [argocd-gitops.md](argocd-gitops.md) 관문 ①에서 재어 볼트에 둔다.
   ⚠️ **동시 기동 피크는 실측이 아니라 산술이다** — BATCH+STREAM+ArgoCD를 **동시에 띄운 관측 창은
   열린 적이 없다**. 재측정은 §(C-2) 순서를 따른다. **"관측했다"로 인용하지 않는다.**
+⁸ **Trino 메모리는 세 값이 결합한다** — 컨테이너 `memory` > `maxHeapSize`(`-Xmx`, memory의 **70~80% 이하** —
+  비힙 CodeCache·Metaspace 몫) > `query.maxMemoryPerNode` + `memory.heap-headroom-per-node`(기본 힙×0.3).
+  하나를 바꾸면 `gitops/apps/trino/values.yaml`에서 **셋을 함께** 검증한다(어기면 기동 실패 또는 컨테이너 OOM Kill).
 
 > ⚠️ **`BestEffort` 파드는 `describe node` 합계에 0으로 잡힌다.** 실재하며 개수는 늘어난다
 > (cert-manager · barman-cloud · kube-proxy · local-path-provisioner 계열 — 계수는 볼트 §6-3).

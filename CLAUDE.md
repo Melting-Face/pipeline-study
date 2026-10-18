@@ -321,7 +321,7 @@
   (요약/인덱스 원칙의 비용 근거).
   계측은 `uv run scripts/token_cost_report.py` — `--project`는 `=`로 붙여 쓴다(슬러그가 `-`로 시작).
   상세 [`docs/operations.md`](docs/operations.md) §토큰 비용 계측.
-- **리소스 산정**: `max_concurrent_runs`↔daemon `memory` 결합(CoW OOM).
+- **리소스 산정**: `max_concurrent_runs`↔daemon `memory` 결합(CoW OOM), Trino 힙·per-node 메모리 3중 결합.
   상세 [`docs/resource-sizing.md`](docs/resource-sizing.md).
 ### 보안 · 거버넌스
 
