@@ -351,7 +351,7 @@ terraform -chdir=terraform/platform apply
 source scripts/k8s-env.sh      # KUBECONFIG + 컨텍스트 가드
 ```
 
-오퍼레이터(cert-manager·CNPG·Spark·Flink)는 ArgoCD가 `git`에서 수렴시키므로 따로 올리지 않는다.
+오퍼레이터(CNPG·Spark·Flink)는 ArgoCD가 `git`에서 수렴시키므로 따로 올리지 않는다.
 카탈로그 DB는 ArgoCD 앱 `catalog-postgres`가, 그 Secret은 `scripts/k8s-secrets.sh`가, SeaweedFS(S3)는
 스택 A(`docker_container.seaweedfs`)가 맡는다 — 클러스터를 다시 만들면 컨테이너도 교체되지만 데이터는 호스트
 바인드(`seaweedfs/data`)라 S3 객체는 남고 카탈로그만 비어 있다.

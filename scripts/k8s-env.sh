@@ -40,7 +40,7 @@ REGISTRY_IMAGE="${REGISTRY_IMAGE:-docker.io/library/registry:2.8.3}"
 
 # --- 클러스터·플랫폼 설정의 정본은 이 파일이 아니다 ---
 # 클러스터(kind 노드·certs.d·레지스트리 네트워크 연결)는 `terraform/cluster/kind`가,
-# 오퍼레이터·ingress·cert-manager는 ArgoCD(`gitops/`)가 소유한다.
+# 오퍼레이터·ingress는 ArgoCD(`gitops/`)가 소유한다.
 # 이 스크립트 묶음이 하는 일은 podman 머신과 레지스트리 컨테이너를 준비하는 것까지다.
 
 # --- kubeconfig: 기본 ~/.kube/config 대신 클러스터 전용 파일을 쓴다 ---

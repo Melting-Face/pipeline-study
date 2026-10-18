@@ -55,8 +55,8 @@ Spark·Flink는 🚧([spark.md](spark.md)·[flink.md](flink.md)), 플랫폼 전�
 **세 줄 단서** — 표만 보면 어긋나는 지점이다.
 
 - **네임스페이스는 ArgoCD Application의 `CreateNamespace=true`가 만든다.** 이전의 셸·Terraform 계약
-  (`create_namespace = false` + 선행 스크립트)은 철거됐다. cert-manager는 차트 dependency로 옮겨졌고
-  Barman Cloud 플러그인은 옮기지 않았다(백업 배선이 꺼져 있다 —
+  (`create_namespace = false` + 선행 스크립트)은 철거됐다. cert-manager는 차트로 옮겨졌다가 B3에서 철거됐고
+  (유일한 소비자였던 Flink 웹훅을 끔) Barman Cloud 플러그인은 옮기지 않았다(백업 배선이 꺼져 있다 —
   [../argocd-gitops.md](../argocd-gitops.md) §3 「Barman 백업 플러그인은 옮기지 않는다」).
 - **오퍼레이터 밖 Spark 워크로드는 없다.** 같은 러너 이미지를 쓰던 평범한 Deployment(Spark Connect)는
   철거됐다 — Spark는 `SparkApplication`뿐이다([spark.md](spark.md)).
@@ -97,7 +97,7 @@ Spark·Flink는 🚧([spark.md](spark.md)·[flink.md](flink.md)), 플랫폼 전�
    ⇒ **다운로드가 0인데도 이미지 레이어가 필요하다.** 네트워크 문제가 아니라 **파일 배치**
    문제라 런타임 대안이 존재하지 않는다.
 3. **오퍼레이터가 "안 굽는 길"을 정책으로 닫았다.** jar 아티팩트 허용 스킴 기본값이
-   원격뿐이라 이미지 동봉 jar이 웹훅에서 거부된다. 이 저장소는 값을 뒤집어
+   원격뿐이라 이미지 동봉 jar이 거부된다(웹훅이 꺼져 있어 reconcile 시 검사). 이 저장소는 값을 뒤집어
    **로컬만 허용하고 원격을 뺐다** — 남겨두면 CR 한 줄로 **런타임 외부 jar fetch 경로**가
    열리기 때문이다(공급망). ⇒ **여기서는 굽는 것이 곧 통제다.**
 

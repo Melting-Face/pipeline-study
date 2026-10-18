@@ -216,15 +216,15 @@ resources:
   Iceberg가 없으면 무의미하므로 **Flink는 2.1 계열로 고정**한다(현재 `flink:2.1.3-java17` + Iceberg `1.11.0`).
 - **`watchNamespaces={<잡 ns>}`를 반드시 준다** — 비우면 잡 SA(`flink`)와 Role이 **오퍼레이터 ns에만** 생겨
   잡 ns에서 파드가 못 뜬다(Spark 차트의 `workloadResources.namespaces`와 같은 함정).
-  단, 지정하면 RBAC이 네임스페이스로 좁아지면서 **두 구멍**이 생긴다 → 아래 보완 매니페스트로 메운다.
-  - `gitops/charts/flink-operator/templates/flink-operator-webhook-rbac.yaml` — mutating webhook이 `flinkdeployments`를
-    **클러스터 스코프로 list**한다. 없으면 `FlinkSessionJob` 생성 자체가 403으로 거부된다.
+  단, 지정하면 RBAC이 네임스페이스로 좁아지면서 **구멍**이 생긴다 → 아래 보완 매니페스트로 메운다
+  (웹훅용 클러스터 스코프 보완은 B3에서 웹훅을 끄며 함께 철거 — 웹훅을 다시 켜면 그 403이 되살아난다).
   - `gitops/charts/flink-operator/templates/flink-workload-rbac.yaml` — JM 파드 **안에서** 잡을 제출하면
     `<name>-rest` **Service를 조회**한다. 없으면 **DDL·SHOW는 되고 쿼리 실행만** `services ... is forbidden`으로 실패.
 - **`jarURI: local://`은 application 모드 전용**이다. `FlinkSessionJob`은 **오퍼레이터가 jar를 받아** JM에
   업로드하므로 Flink FileSystem 스킴(`https://` 등)이 필요하고, `local://`은
-  `UnsupportedFileSystemSchemeException`으로 죽는다. (webhook 허용목록
-  `kubernetes.operator.user.artifacts.allowed-schemes`를 통과시켜도 **아티팩트 단계에서 별도로** 막힌다 — 층이 다르다.)
+  `UnsupportedFileSystemSchemeException`으로 죽는다. (reconcile 시 스킴 검사
+  `kubernetes.operator.user.artifacts.allowed-schemes`를 통과시켜도 **아티팩트 단계에서 별도로** 막힌다 — 층이 다르다.
+  웹훅이 꺼져 있어 스킴 위반도 admission 거부가 아니라 **CR이 생성된 뒤 에러 상태**로 드러난다.)
   이미지에 구운 jar를 쓰려면 **application 모드**(`FlinkDeployment.spec.job`)로 선언한다.
 - **Hadoop 클래스는 Flink 이미지에 없다**(Spark 이미지와 다른 지점). Iceberg의 `FlinkCatalogFactory`가
   `org.apache.hadoop.conf.Configuration`을 로드하므로 `CREATE CATALOG`에서 `ClassNotFoundException`이 난다.
@@ -401,6 +401,9 @@ resources:
   빠뜨렸다면 **클러스터 재생성**이 유일한 방법이므로 처음부터 넣어둔다(실측 후 도입).
   - 호스트 포트는 **8080/8443**을 쓴다. macOS에서 1024 미만 바인딩은 root가 필요한데
     podman의 포트 포워딩(gvproxy)은 사용자 권한으로 돈다.
+  - **443→8443 매핑은 소비자 0인 채로 유지한다.** TLS를 받는 엔드포인트가 없지만(gRPC Ingress는 B2,
+    cert-manager는 B3에서 철거) 위 이유로 포트는 생성 시점에만 바꿀 수 있어 빼는 쪽이 재생성 비용을 진다.
+    재검토 트리거: 새 TLS 엔드포인트 신설 또는 클러스터 재생성 시.
   - 클러스터는 스택 A가 소유하므로 재생성은 `terraform destroy`/`apply`(스택 A)로 한다. `k8s-down.sh`는
     아직 `kind delete cluster`를 직접 수행해 state와 어긋나고 **레지스트리까지 지워** 러너 이미지를 잃는다
     (PR2 정리 대상).

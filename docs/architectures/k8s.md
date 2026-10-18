@@ -23,7 +23,7 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
   SeaweedFS·카탈로그 Postgres를 K8s에 배포한다(**Trino 제거**). Iceberg 테이블은 Spark·Flink가 공유한다.
   **웹 UI 진입점은 ingress-nginx**로 고정 URL화한다(`*.localtest.me:8080`).
 - **구축 현황(실측)**: 클러스터 k8s **v1.36.1** 단일 노드.
-  **Spark Operator 1.0.0**(chart 1.8.0) / **Flink Operator 1.15.0**(+cert-manager) 기동,
+  **Spark Operator 1.0.0**(chart 1.8.0) / **Flink Operator 1.15.0**(웹훅 끔 — cert-manager 불필요) 기동,
   SeaweedFS·카탈로그 Postgres 운영 중
   카탈로그 Postgres는 **CloudNativePG 1.30.0**(chart 0.29.0)이 관리하는 `Cluster`로 **교체 완료**
   (operand `postgresql:18.6-standard-trixie`, PVC 5Gi, `catalog-postgres-rw` 접속).

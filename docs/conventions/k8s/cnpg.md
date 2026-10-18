@@ -52,12 +52,13 @@
   ([postgres-containers](https://github.com/cloudnative-pg/postgres-containers)). `system` 타입은 deprecated이므로
   **`standard`** 를 쓴다(백업은 in-tree가 아닌 플러그인 경로라 barman 바이너리가 이미지에 필요 없다).
 - **백업·PITR은 Barman Cloud 플러그인(CNPG-I)** 으로 한다 — in-tree barman-cloud는 **CNPG 1.31.0에서 제거 예정**.
-  전제는 CNPG ≥ 1.26 + **cert-manager**다. cert-manager는 Flink Operator 웹훅과 **공용**이라
-  `k8s-env.sh`의 `ensure_cert_manager` 헬퍼가 있으면 재사용·없으면 설치한다(멱등).
+  전제는 CNPG ≥ 1.26 + **cert-manager**다. cert-manager는 **지금 클러스터에 없다**(B3에서 철거 — 유일한 소비자였던
+  Flink 웹훅을 껐다). 백업을 켜려면 cert-manager를 gitops 앱으로 **재도입하는 것이 먼저**다
+  (CRD 보호는 [argocd-gitops.md](../../argocd-gitops.md) §4 겹 3·R4).
   **`rollout status` 완료 ≠ 웹훅 서빙 준비** — cainjector가 CA 번들을 주입하기 전에는
   cert-manager 리소스 생성이 `x509: certificate signed by unknown authority`로 거부된다
-  (실제로 **직후 플러그인 apply가 실패**했다). `ensure_cert_manager`는 **설치 여부와 무관하게**
-  self-signed `Issuer`의 `--dry-run=server`가 통과할 때까지 폴링한다("이미 설치됨"도 준비를 뜻하지 않는다).
+  (실제로 **직후 플러그인 apply가 실패**했다). 재도입 시 플러그인은 cert-manager 뒤 tier·wave에 두고,
+  준비 판정은 설치 여부가 아니라 self-signed `Issuer`의 `--dry-run=server` 통과로 한다.
   백업 대상은 클러스터 내부 **SeaweedFS(S3)** 로 두어 외부 비용을 만들지 않는다.
   🔴 **지금 이 배선은 꺼져 있다 — 백업은 돌지 않는다.** `Cluster` CR의 `spec.plugins`가
   **주석 처리**되어 플러그인을 참조하지 않으므로 base backup·WAL 아카이빙 모두 **미수행**이고

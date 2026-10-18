@@ -113,7 +113,6 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 | | Catalog Postgres(Iceberg JDBC, CNPG `Cluster` 1인스턴스) | 250m | 512Mi | 500m | 768Mi |
 | | **ingress-nginx 컨트롤러**(호스트 포트 → Ingress 진입점) ² | 100m | 90Mi | — | — |
 | **Flink Operator** ³ | 컨트롤러 파드 | 200m | 512Mi | 500m | 1Gi |
-| | 웹훅(webhook) 컨테이너 | 100m | 256Mi | 200m | 512Mi |
 | **ArgoCD**(상주) ⁷ | `argocd-application-controller` | 100m | 256Mi | 500m | 512Mi |
 | | `argocd-repo-server` | 50m | 128Mi | 500m | 512Mi |
 | | `argocd-server`(UI·API) | 50m | 128Mi | 250m | 256Mi |
@@ -132,11 +131,11 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 ² ingress-nginx는 **`limits`가 없는 유일한 워크로드**다 — 스택 B의 Helm 차트 `ingress-nginx` **4.15.1** values가
   `resources`를 덮지 않아 **차트 기본값(requests만)** 이 들어간다([conventions/k8s.md](conventions/k8s.md) §2 예외).
 ³ **Flink Operator 차트는 자원을 선언하지 않는다** — `helm show values` 실측 결과
-  **`operatorPod.resources: {}` · `operatorPod.webhook.resources: {}`** 로 **둘 다 비어 있다.**
+  **`operatorPod.resources: {}`** 로 비어 있다.
   `gitops/charts/flink-operator/values.yaml`에
-  **자원 값 8종**(`operatorPod.resources.{requests,limits}.{cpu,memory}` 4종 +
-  `operatorPod.webhook.resources.*` 4종)이 없으면 이 표의 두 행이 **처음부터 거짓**이 된다
-  (구 셸·Terraform의 `--set` 호출에서 이관됨).
+  **자원 값 4종**(`operatorPod.resources.{requests,limits}.{cpu,memory}`)이 없으면 이 표의 행이 **처음부터 거짓**이 된다
+  (구 셸·Terraform의 `--set` 호출에서 이관됨). 웹훅 컨테이너는 `webhook.create: false`로 렌더되지 않는다
+  (B3 — cert-manager 철거와 함께 끔). 다시 켜면 `operatorPod.webhook.resources`도 비어 있어 같은 함정이 되살아난다.
   이는 Spark Operator에서 이미 밟은 함정의 **거울상**이다 — 그쪽은 차트 기본값 `1000m/2048Mi`가
   **조용히 적용**됐고(과대), 이쪽은 **0으로 잡혀 BestEffort가 된다**(과소). 방향만 반대이고
   **"helm은 값을 안 줘도 에러를 내지 않는다"** 는 원인은 같다.
@@ -169,7 +168,7 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
   하나를 바꾸면 `gitops/apps/trino/values.yaml`에서 **셋을 함께** 검증한다(어기면 기동 실패 또는 컨테이너 OOM Kill).
 
 > ⚠️ **`BestEffort` 파드는 `describe node` 합계에 0으로 잡힌다.** 실재하며 개수는 늘어난다
-> (cert-manager · barman-cloud · kube-proxy · local-path-provisioner 계열 — 계수는 볼트 §6-3).
+> (barman-cloud · kube-proxy · local-path-provisioner 계열 — 계수는 볼트 §6-3).
 > **"합계에 없다 = 없다"가 아니다.** 예산을 대조할 때 함께 돌린다.
 >
 > ```shell
@@ -300,7 +299,7 @@ done
 - podman machine 기본 1 CPU / 2048 MiB → 반드시 상향 지정 [podman-machine-init — Podman docs].
 - Flink Operator 차트는 `operatorPod.resources`·`operatorPod.webhook.resources`를 **빈 맵으로 둔다**
   (`helm show values flink-operator-repo/flink-kubernetes-operator` 실측, chart 1.15.0) →
-  `--set` 미지정 시 컨트롤러·웹훅이 **`BestEffort`** 가 된다.
+  값 미지정 시 컨트롤러(웹훅을 켜면 웹훅도)가 **`BestEffort`** 가 된다.
 
 ## 조정 지점 요약
 
