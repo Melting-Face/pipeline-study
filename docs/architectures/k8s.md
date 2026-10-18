@@ -24,14 +24,14 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
   **웹 UI 진입점은 ingress-nginx**로 고정 URL화한다(`*.localtest.me:8080`).
 - **구축 현황(실측)**: 클러스터 k8s **v1.36.1** 단일 노드.
   **Spark Operator 1.0.0**(chart 1.8.0) / **Flink Operator 1.15.0**(+cert-manager) 기동,
-  **Spark Connect 서버**(dbt 접속용) 상주, SeaweedFS·카탈로그 Postgres 운영 중
+  SeaweedFS·카탈로그 Postgres 운영 중
   카탈로그 Postgres는 **CloudNativePG 1.30.0**(chart 0.29.0)이 관리하는 `Cluster`로 **교체 완료**
   (operand `postgresql:18.6-standard-trixie`, PVC 5Gi, `catalog-postgres-rw` 접속).
   Spark 잡이 새 카탈로그에 `iceberg.poc.sample`을 등록하는 것까지 확인했다.
   **ingress-nginx v1.15.1**(kind provider)로 Spark·Flink UI를 `port-forward` 없이 노출.
   Dagster 자산이 `SparkApplication`을 제출해 Iceberg에 적재하고(Phase 0 게이트 통과),
   **Flink이 같은 Iceberg 카탈로그를 조회**하는 것까지 확인.
-- **노출 경로의 분리**: **HTTP(UI·REST)와 gRPC는 Ingress**, **JDBC·S3는 `port-forward`**.
+- **노출 경로의 분리**: **HTTP(UI·REST)는 Ingress**, **JDBC·S3는 `port-forward`**(gRPC 소비자는 Connect 철거로 0).
   가르는 기준은 프로토콜 계층이다 — nginx Ingress가 실어 나를 수 있는 것은 HTTP 계열(gRPC 포함,
   단 **TLS 위 HTTP/2 전제**)이고, JDBC·S3 바이너리 경로는 그 대상이 아니다.
   kind는 **공개 포트를 클러스터 생성 시점에만** 정할 수 있어 `extraPortMappings`가 전제다

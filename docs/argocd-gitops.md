@@ -141,7 +141,8 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
 | `scripts/k8s-up.sh` | 축소 — podman 머신·레지스트리만 | ① |
 | `scripts/k8s-env.sh` | `KUBECONFIG` export + 컨텍스트 가드 추가(§6) | ① |
 | `scripts/k8s-poc-storage.sh` | 철거 — 데이터 층은 차트로, Secret은 `scripts/k8s-secrets.sh`로 | ② |
-| `k8s/spark/spark-connect-server.yaml` · `k8s/flink/*` | 그대로(수동 운영) | — |
+| `k8s/spark/spark-connect-server.yaml` | 철거(B2 — 소비자 0) | — |
+| `k8s/flink/*` | 그대로(수동 운영) | — |
 
 ## 4. 데이터 보호 — 4겹
 

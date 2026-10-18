@@ -97,27 +97,17 @@ S3A용 `software.amazon.awssdk:bundle`과 함께 실으면 **같은 패키지가
 | `compose.yml` | 공용 앵커 `x-dagster-common`의 env |
 | `.env.example` | 호스트 실행·외부 도구용 기본값 |
 | `dagster_project/common/constants.py` | `os.environ.setdefault` — 환경 누락 시 조용한 손상 방지 |
-| `k8s/spark/spark-connect-server.yaml` | `spark.executorEnv.*`(executor) + 파드 env(driver 자신) |
 | `k8s/spark/sparkapplication-poc.yaml` | `driverEnv` + `executorEnv` **양쪽** |
 | `k8s/flink/flinkdeployment-session.yaml` | `podTemplate` env — **JM·TM 양쪽** |
 | `k8s/catalog-pg-backup.yaml` | barman 사이드카 env |
 | `gitops/apps/trino/values.yaml` | 차트 `env`(coordinator 단독이라 한 곳) |
 
-**driver에만 주면 샌다** — client mode의 driver는 파드 자신이고 executor는 별도 파드다.
-로컬 모드에서는 둘이 한 몸이라 driver env 하나가 양쪽을 덮었고, client mode가 그 우연을 깬다
-([spark-connect.md](spark-connect.md)).
+**driver에만 주면 샌다** — driver와 executor는 별도 파드다.
+로컬 모드에서는 둘이 한 몸이라 driver env 하나가 양쪽을 덮었고, 철거된 Spark Connect의 client mode
+전환이 그 우연을 깬 선례다.
 
-### 🔴 미적용 1건 — `k8s/spark/spark-thrift-server.yaml`
-
-`spark-runner`(Connect와 같은 러너)를 쓰고 `io-impl=S3FileIO`를 켜는데 체크섬 env 2종이
-**없다**. 러너의 SDK가 경계 아래(§2-1)라 지금 판본에선 기본값이 이미 안전하지만,
-판본을 올리는 순간 방어선이 없는 유일한 매니페스트가 된다.
-다만 이 매니페스트는 파일 머리에서 **⏸ 선언만 하고 배포하지 않는다**고 못 박혀 있어
-**현재는 잠복**이다 — 도는 것이 없으니 손상도 없다.
-
-⇒ **빠뜨린 것이 아니라 미배포다.** 그러나 **되살리는 사람이 반드시 함께 붙인다** —
-`kubectl apply` 전에 env 2종을 추가한다. 붙이지 않고 띄우면 증상이 **기동 실패가 아니라
-쓴 객체의 조용한 손상**으로 나오므로 배포 성공을 정상으로 읽게 된다.
+미적용은 0건이다 — 체크섬 env 없이 선언만 있던 `k8s/spark/spark-thrift-server.yaml`은 배포되지 않은 채
+철거됐다(되살리면 env 2종을 함께 붙인다 — 빠지면 증상이 기동 실패가 아니라 쓴 객체의 조용한 손상이다).
 
 ## 5. 🔴 체크섬으로 **오진**하기 쉽다 — 반대 방향 선례
 

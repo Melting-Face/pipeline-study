@@ -27,7 +27,7 @@ SQLite가 OLTP에서 차지하는 자리를 OLAP에서 차지하는 설계다.
 | **런타임 의존성**(`pyproject.toml`·`uv.lock`) | 없다 — `uv run`으로도 CLI로도 불러낼 대상이 프로젝트에 없다 |
 | **스킬 등재**(`skills-lock.json`) | 없다 |
 | **워커 배선**(`analyst` 지시문 §참고 스킬) | 없다 — 승격 심사에서 **죽은 참조로 제거**됐다([../skills.md](../skills.md)) |
-| **조회 엔진 정본**([../conventions/analysis.md](../conventions/analysis.md) §6) | Spark Connect다 |
+| **조회 엔진 정본**([../conventions/analysis.md](../conventions/analysis.md) §6) | k8s Trino다 |
 | **도구 표의 서술** | 쓸 수 있는 도구로 적혀 있었다 ← **이 문서가 해소하는 드리프트** |
 
 ⚠️ 위는 **저장소 파일 기준**이다. 개인 개발 환경에 DuckDB CLI가 깔려 있는지 여부는 별개 축이고
@@ -45,7 +45,7 @@ SQLite가 OLTP에서 차지하는 자리를 OLAP에서 차지하는 설계다.
 
 - **상주 자원이 0이다.** 이 저장소의 자원 규약은 상주 컴퓨트를 가장 비싼 선택으로 본다
   ([../resource-sizing.md](../resource-sizing.md)). 인프로세스 엔진은 그 축에서 유일하게 공짜다.
-- **기동 대기가 없다.** Spark Connect는 서버가 떠 있어야 하고 executor 파드가 함께 산다.
+- **기동 대기가 없다.** Trino는 클러스터와 coordinator 파드가 떠 있어야 한다.
   파일 한 개를 세어 보려고 클러스터 상태를 확인하는 왕복이 사라진다.
 - **소형 csv·parquet에 즉시 붙는다.** 적재·카탈로그 등록 없이 파일 경로만으로 질의가 된다.
 
@@ -53,7 +53,7 @@ SQLite가 OLTP에서 차지하는 자리를 OLAP에서 차지하는 설계다.
 
 | 축 | 내용 |
 | --- | --- |
-| **조회 엔진 정본이 하나다** | 정본은 **Spark Connect**다([../conventions/analysis.md](../conventions/analysis.md) §6). 엔진이 둘이면 같은 SQL이 다른 값을 낼 여지가 생기고, 이 저장소는 이미 `dbt.datediff`에서 그 사고를 한 번 겪었다 |
+| **조회 엔진 정본이 하나다** | 정본은 **k8s Trino**다([../conventions/analysis.md](../conventions/analysis.md) §6). 엔진이 둘이면 같은 SQL이 다른 값을 낼 여지가 생기고, 이 저장소는 이미 `dbt.datediff`에서 그 사고를 한 번 겪었다 |
 | **결론 수치의 경유 경로가 정해져 있다** | 결론에 쓰는 수치는 **gold/dbt 모델을 경유**한다. 임시 엔진의 결과가 리포트에 들어가는 순간 재현 경로가 끊긴다 — 도구가 규약을 어기게 만드는 것이 아니라 **어기기 쉽게** 만드는 것이 문제다 |
 | **로컬 파일 내보내기는 보안 축이다** | 행 단위 데이터를 로컬 파일로 떨구는 경로가 열린다. 판정 정본은 [../security.md](../security.md)이고 여기에 내용을 복제하지 않는다 |
 | **먹일 것이 지금 없다** | 소형 로컬 파일 즉석 탐색이 **반복 작업으로 나타난 적이 없다**. 도구를 먼저 두고 용도를 찾는 순서를 이 저장소는 [monitoring.md](monitoring.md)에서 이미 한 번 거부했다 |

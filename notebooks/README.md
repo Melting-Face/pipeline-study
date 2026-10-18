@@ -47,7 +47,6 @@ pyiceberg로 직접 붙는 경로는 `.env`가 추가로 필요하다(스타터 
 | 주의 | 내용 |
 |---|---|
 | 무인증 쿼리 API | Trino는 UI와 쿼리 제출이 **같은 포트**라 Ingress가 무인증 쿼리 API를 함께 연다(`values.yaml` 주석) — 「UI만 열었다」로 읽지 않는다 |
-| 이름이 같은 두 엔진 | compose `legacy-sql` Trino(`127.0.0.1:8081`)는 **다른 카탈로그 DB**를 본다. 둘 다 응답하므로 생존 확인만으로는 안 갈린다 — 00 §2의 `system.runtime.nodes`로 어느 쪽인지 본다 |
 | 방언 | Spark SQL과 다르다 — `approx_percentile`·배열 리터럴 `array[…]`·메타데이터 테이블 `"<table>$snapshots"`, `SHOW TABLES` 결과 컬럼은 `Table` 하나 |
 | 결과 적재 | `cursor.fetchall()`은 결과 **전량**을 클라이언트 메모리에 올린다 — 집계하거나 `LIMIT`을 건 SQL에만 쓴다(`toPandas()`와 같은 규율) |
 

@@ -7,7 +7,7 @@
 
 - JVM처럼 스레드가 많은 워크로드가 `OutOfMemoryError: unable to create native thread`로 죽는다.
   **메모리 상한과 무관하다** — 메모리는 여유가 있는데 스레드(=태스크)를 더 못 만든다.
-- Spark Connect driver에서는 `dag-scheduler-event-loop` 스레드가 이 에러로 죽고,
+- (철거된) Spark Connect driver에서는 `dag-scheduler-event-loop` 스레드가 이 에러로 죽고,
   이후 잡이 에러 없이 **무한 대기**한다. 클라이언트(dbt)는 끝나지 않는다.
 - 판별은 컨테이너 안에서 `cat /sys/fs/cgroup/pids.max /sys/fs/cgroup/pids.peak`다.
   `peak == max`면 이 문서의 갈래다.

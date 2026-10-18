@@ -9,32 +9,10 @@
 > **교차 엔진 실증**: Trino로 CTAS한 테이블을 Spark Connect가 같은 값으로 읽었다(행 수·합계·문자열 해시) —
 > 카탈로그 공유와 쓰기 경로가 함께 확인됐다. 체크섬 축의 남은 미확인은 [checksum.md](../conventions/k8s/checksum.md) §7 ⓚ.
 >
-> 🔴 **「Trino」가 두 엔진을 가리킨다.** compose `legacy-sql` Trino는 **compose postgres의 다른 카탈로그 DB**를
-> 보고, K8s Trino는 CNPG 카탈로그를 본다 — 이름이 같아도 **같은 테이블을 보지 않는다**. 값 대조를 인용할 때
-> 어느 쪽인지 병기한다.
->
-> **이행 상태(compose)**: **상시 기동 해제** — compose `trino`가 `profiles: ["legacy-sql"]`로
-> 내려가 기본 `up`에서 빠졌다(자원 3 CPU / 6G 회수). 호스트 게시 포트도 `8080→8081`로 옮겼다
-> (8080은 kind ingress가 점유).
->
-> **"중단"과 "삭제"는 분리한다.** 제거의 선행조건은 둘이었다.
->
-> | 선행조건 | 상태 |
-> |---|---|
-> | ① **유지보수 프로시저 Spark 이관** | 없으면 기능 공백이 생긴다. 🔴 **이관 완료와 실행 검증은 다른 축**이다 |
-> | ② **22모델 방언 값 대조** | Trino가 정본이다. 기준은 *"도는 것"이 아니라 "같은 값"* 이다 |
->
-> ②가 남아 **`dbt-trino` 어댑터와 `TrinoResource`는 유지**한다(리소스는 유지보수용에서
-> **대조용**으로 역할만 바뀌었다). ②까지 해소되면 compose 서비스·어댑터·`common/trino.py`를
-> 하나의 논리적 커밋으로 제거한다.
->
-> **추가 변경(그 뒤 다시 바뀜)**: dbt 기본 타깃은 한때 `spark_connect`였다가, Spark Connect 철거로
-> **Trino `dev`로 돌아왔다**(위 K8s 상태). compose Trino에 붙이려면 env 두 값을 한 벌로 바꾼다:
->
-> ```shell
-> docker compose --profile legacy-sql up -d trino   # compose 카탈로그 DB를 볼 때만
-> TRINO_HOST=localhost TRINO_PORT=8081 dbt run      # 다른 카탈로그 DB다 — 결과를 섞지 않는다
-> ```
+> **이행 상태(compose)**: **철거했다(B2)** — compose `trino`(`legacy-sql`)와 `trino/etc/`를 지웠다.
+> 다른 카탈로그 DB(compose postgres)를 보던 두 번째 「Trino」가 사라져 이름이 다시 **하나의 엔진**(k8s)을 가리킨다.
+> 철거 전의 선행조건(유지보수 이관·22모델 값 대조)은 dbt·유지보수가 k8s Trino로 옮겨오며 대상 자체가 바뀌었고,
+> 값 대조는 위 「미대조」로 남는다. `dbt-trino` 어댑터와 `TrinoResource`는 현행 경로라 유지한다.
 >
 > 🔴 **`trino`라는 이름의 타깃은 없다.** `profiles.yml`에 실재하는 타깃명은 **`dev` · `prod`** 다.
 > trino로 가는 것은 `dev`(개발)와 `prod`이며, **엔진 이름이 아니라 환경 이름으로 적혀 있다.**
@@ -68,15 +46,15 @@ coordinator가 SQL을 분해해 worker들에 분산하고, 메모리 기반 파�
   단일 PC 자원(6/16) 절약과 엔진 수 축소가 목적이나, **성숙한 인터랙티브 SQL·`dbt-trino`를 잃는 비용**을 감수한다
   ([redesign.md](../redesign.md) §5). 배치 SQL은 dbt-spark, 대규모 rewrite/compaction은 Spark로 이관([spark.md](spark.md)).
 
-## 운영 메모 (현행 compose 한정)
+## 운영 메모 (k8s)
 
-> 아래는 compose Trino 운영 메모다. 유지보수 프로시저는 Spark로 갔다가 **Trino `ALTER TABLE ... EXECUTE`로
-> 되돌아왔다**(k8s Trino 실행 — `defs/maintenance.py`).
+> 유지보수 프로시저는 Spark로 갔다가 **Trino `ALTER TABLE ... EXECUTE`로 되돌아왔다**
+> (k8s Trino 실행 — `defs/maintenance.py`).
 
-- **JVM 기반** — 힙이 메모리 최다 소비. `trino/etc/jvm.config`의 `Xmx`를 호스트 한도 내로 유지
-  ([resource-sizing.md](../resource-sizing.md)의 "3파일 메모리 제약").
-- **버전**: 현재 `trinodb/trino:468`. Trino는 주 단위 릴리스라 **LTS(현재 477 계열)** 를 우선한다
-  (비-LTS는 다음 릴리스 후 패치 중단 — [conventions/docker.md](../conventions/docker.md) §1-3).
+- **JVM 기반** — 힙이 메모리 최다 소비. 힙·컨테이너 한도는 `gitops/apps/trino/values.yaml`이 정본이다 —
+  배분 요약은 [resource-sizing.md](../resource-sizing.md) §(B).
+- **버전**: `gitops/apps/trino/values.yaml`의 `image.tag`로 고정한다(`latest` 금지 —
+  [conventions/docker.md](../conventions/docker.md) §1-3).
 - **Iceberg 유지보수**: pyiceberg 미지원 프로시저(`remove_orphan_files`)를 Trino
   `ALTER TABLE ... EXECUTE`로 실행한다([security.md](../security.md) §4-1).
 

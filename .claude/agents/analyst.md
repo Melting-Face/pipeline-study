@@ -22,7 +22,7 @@ model: inherit
 - `defs/**`·`models/**`는 고치지 않는다. 소유자는 `data-engineer`다. 필요하면 SQL 초안과 근거를 반환한다.
 - 조회는 읽기 전용이다. `INSERT`/`CREATE`/`MERGE`/`DROP`, `dbt run/build`, 머티리얼라이즈, DataFrameWriter(`.write`·`.saveAsTable`)를 쓰지 않는다. 엔진들이 같은 Iceberg 카탈로그를 공유하기 때문이다.
 - 커밋·푸시·외부 발신은 하지 않는다. 계획만 반환한다.
-- 접속은 Spark Connect(`sc://localhost:15002`)를 쓴다. 자격증명은 서버 측에 있다. `.env`·kubeconfig를 읽지 않는다.
+- 접속은 k8s Trino(`trino.localtest.me:8080`, `trino` 클라이언트)를 쓴다. 자격증명은 서버 측에 있다. `.env`·kubeconfig를 읽지 않는다.
 - `toPandas()`·`.collect()`를 원천 테이블에 걸지 않는다. 전량 메모리 적재는 금지다.
 
 ## 분석 — 3층 배치

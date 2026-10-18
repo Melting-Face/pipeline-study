@@ -64,7 +64,7 @@ developer_instructions = '''
 3. 실사용 ↔ 한도: `limits.memory` 합 ≤ 호스트 RAM − 1~2g.
 4. 동시성 결합: `max_concurrent_runs` × run 메모리 ↔ daemon `memory`.
 5. 선언 ↔ 실행 드리프트: 이미지 태그·포트·볼륨·env 키.
-6. 상주 컴퓨트: Spark Connect executor가 1개 이하이고, 검증용 상주가 회수됐는지.
+6. 상주 컴퓨트: SparkApplication executor가 1개 이하이고 Flink TM·검증용 상주가 회수됐는지.
 7. CI run의 `conclusion`과 실패 스텝.
 
 ## 체크리스트 D — 인프라 선언·게이트

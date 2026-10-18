@@ -234,7 +234,6 @@ models:
   (엔진명이 아니라 환경명으로 적혀 있다).
 - 접속 대상은 env **`TRINO_HOST`·`TRINO_PORT`**(기본 `trino.localtest.me`/`8080`)다. Dagster
   `TrinoResource`(`common/constants.py`)도 같은 env를 읽는다 — **한 벌로 바꾼다**.
-  compose `legacy-sql` Trino는 **다른 카탈로그 DB**를 보므로 붙이려면 두 값을 함께 바꾼다.
 - **`source.yml`에 `database:`를 쓰지 않는다**(dbt-spark 시절 제약이었으나 지금도 불필요) —
   카탈로그는 프로파일 `database: iceberg`가 정한다.
 - `dbt_project.yml`의 `+file_format: iceberg`는 **dbt-trino가 무시**한다. dbt-spark 시절의 필수 설정

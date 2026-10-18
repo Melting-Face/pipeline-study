@@ -66,8 +66,8 @@ inner join {{ ref('icustay_times') }} as t using (stay_id)
 - **위→아래 1회 실행으로 재현**되어야 한다. 셀을 건너뛰거나 되돌아가야 재현되는 노트북은 고친다.
   `scripts/`의 절차형 규칙과 같은 논리다 — **실행 순서 = 읽는 순서**([`python.md`](python.md)).
 - **첫 셀은 마크다운으로 목적·입력 테이블·전제**를 적는다. 3개월 뒤의 자신이 첫 독자다.
-- **비밀정보를 노트북에 두지 않는다.** 기본 경로인 Spark Connect는 카탈로그·S3 자격증명이
-  **서버 측**에 있어 클라이언트가 `sc://localhost:15002`만 알면 된다 — **보안상 이 경로를 기본으로 쓴다.**
+- **비밀정보를 노트북에 두지 않는다.** 기본 경로인 k8s Trino는 카탈로그·S3 자격증명이
+  **서버 측**에 있어 클라이언트가 `trino.localtest.me:8080`만 알면 된다 — **보안상 이 경로를 기본으로 쓴다.**
   pyiceberg 직접 접속이 필요하면 자격증명은 반드시 `os.environ` 참조로 읽고 **값을 셀에 쓰지 않는다**
   (코딩 철학 #4).
   > **자격증명은 `ICEBERG_S3_*`로 분리한다**(확정). 호스트에서 K8s 카탈로그에 붙을 때
@@ -169,7 +169,7 @@ inner join {{ ref('icustay_times') }} as t using (stay_id)
 | 용도 | 도구 | 비고 |
 | --- | --- | --- |
 | 대화형 탐색 | **Jupyter Lab**(호스트, `--group notebook`, 포트 **8889**) | Dagster와 venv 공유 — `dagster_project.common.*` import 가능 |
-| SQL 엔진 | **Spark SQL**(Spark Connect `sc://localhost:15002`) | Trino는 재설계에서 제거 대상 — `--profile legacy-sql`로만 뜬다 |
+| SQL 엔진 | **Trino**(k8s, `trino.localtest.me:8080`) | dbt와 같은 엔진. Spark Connect는 철거됐다 |
 | 지표·마트 정의 | **dbt**(gold 모델) | 모델 규칙은 [`dbt.md`](dbt.md) |
 | 로컬 파일 즉석 분석 | **없음** — 위 SQL 엔진으로 간다 | 후보 **DuckDB**는 🔎 미채택 — 기각 사유·재검토 트리거는 [`../architectures/duckdb.md`](../architectures/duckdb.md) |
 | 모델 학습 | **scikit-learn**(호스트, `--group ml`) | **Spark MLlib이 아니다** — 아래 참조 |

@@ -118,11 +118,11 @@ in-cluster Dagster 매니페스트는 철거돼(새 클러스터에 배포하지
     컨테이너 실행은 코드 기본값이 곧 정답(`postgres:5432/iceberg_catalog`)이고, 값을 바꿔야 하는 쪽은
     **호스트 실행 + K8s 카탈로그** 조합뿐이라 `.env`만으로 충분하다. 누락으로 오인해 앵커에 추가하지 않는다.
   - **JDBC 계열 키(`ICEBERG_JDBC_URI`·`ICEBERG_PG_USER`·`ICEBERG_PG_PASSWORD`)와 혼동 주의**:
-    같은 카탈로그를 가리키지만 전자는 **pyiceberg(파이썬)**, 후자는 **dbt-spark(JVM/JDBC)** 경로다.
+    같은 카탈로그를 가리키지만 전자는 **pyiceberg(파이썬)**, 후자는 **JDBC(Flink 세션)** 경로다.
 - **Iceberg S3 접속 키**: `ICEBERG_S3_ENDPOINT`·`ICEBERG_S3_ACCESS_KEY`·`ICEBERG_S3_SECRET_KEY`
   (`common/constants.py`의 `S3_ENDPOINT`·`S3_ACCESS_KEY_ID`·`S3_SECRET_ACCESS_KEY`가 읽는다).
   미지정 시 공용 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`로 **폴백**한다 — 단 SeaweedFS 인증이 켜져 있어
-  `AWS_*`도 **같은 값**이어야 한다(compose Dagster·Trino·compute log가 읽는다). 일치를 검사하는 단계는 없다 —
+  `AWS_*`도 **같은 값**이어야 한다(compose Dagster·compute log가 읽는다). 일치를 검사하는 단계는 없다 —
   다르면 `ACCESS_DENIED`로만 드러나므로 기동 전 체크리스트로 확인한다([setup/local-k8s.md](setup/local-k8s.md) 2단계).
   키 두 개는 위 카탈로그 키와 같은 이유로 **`compose.yml`에 넣지 않는다**(의도된 예외 — 값을 바꿔야 하는 쪽은
   호스트 실행뿐이다). **엔드포인트만은 `x-dagster-common`에 리터럴로 고정**한다(`POSTGRES_HOST=postgres`와 같은
@@ -141,7 +141,7 @@ in-cluster Dagster 매니페스트는 철거돼(새 클러스터에 배포하지
   값이 없으면 최신 SDK 기본값이 객체를 손상시킨다([conventions/k8s/checksum.md](conventions/k8s/checksum.md)).
   코드 기본값이 있지만 컨테이너·외부 도구를 위해 `.env`·compose 앵커에도 명시한다.
 - **dbt·유지보수 접속 키**(`TRINO_HOST`·`TRINO_PORT`)는 dbt 프로파일과 `TrinoResource`가 **같은 값**을
-  읽는다 — 한쪽만 바꾸면 dbt와 유지보수가 서로 다른 카탈로그 DB를 본다(compose Trino는 다른 DB다).
+  읽는다 — 한쪽만 바꾸면 dbt와 유지보수가 서로 다른 카탈로그 DB를 본다.
   카탈로그 설정은 Trino 서버 측에 있어 dbt 쪽엔 비밀정보가 없다.
   - **카탈로그 PG의 서비스명에는 접미사가 붙는다** — CloudNativePG가 `<cluster>-rw`(쓰기)·`-ro`(읽기 전용)·
     `-r`(전체)를 만들고 `<cluster>` 이름의 서비스는 **만들지 않는다**. 오퍼레이터 이전 시 `catalog-postgres`를

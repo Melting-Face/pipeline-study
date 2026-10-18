@@ -58,9 +58,8 @@ Spark·Flink는 🚧([spark.md](spark.md)·[flink.md](flink.md)), 플랫폼 전�
   (`create_namespace = false` + 선행 스크립트)은 철거됐다. cert-manager는 차트 dependency로 옮겨졌고
   Barman Cloud 플러그인은 옮기지 않았다(백업 배선이 꺼져 있다 —
   [../argocd-gitops.md](../argocd-gitops.md) §3 「Barman 백업 플러그인은 옮기지 않는다」).
-- **Spark Connect는 오퍼레이터 워크로드가 아니다.** 상시 SQL 엔드포인트는 `SparkApplication`이
-  아니라 **평범한 Deployment**이고, 다만 **같은 러너 이미지**를 쓴다. 그래서 굽는 이유는
-  공유하지만 수명·회수 다이얼은 다르다([spark.md](spark.md) §Spark Connect).
+- **오퍼레이터 밖 Spark 워크로드는 없다.** 같은 러너 이미지를 쓰던 평범한 Deployment(Spark Connect)는
+  철거됐다 — Spark는 `SparkApplication`뿐이다([spark.md](spark.md)).
 - **PostgreSQL 쪽 kind는 둘이 더 있다** — 백업은 `barmancloud.cnpg.io`의 `ObjectStore`와
   `ScheduledBackup`으로 선언한다. 이것이 아래 §3-C의 "별도 컨테이너 플러그인" 축이다.
 

@@ -14,7 +14,7 @@ GitOps 전환의 데이터 층(SeaweedFS·카탈로그 Postgres·Secret)은 PR2�
 | §3 클러스터 → ArgoCD → 오퍼레이터 수렴 | ✅ |
 | §6 인프라 미접속 검증(`pre-commit`·`mypy`) | ✅ |
 | §6 `dg check defs` | ⚠️ 의존성 결함으로 실패 |
-| §2 비밀값 · §3-1 port-forward · §3-2 컴퓨트 · §4 Spark Connect · §5 Dagster · §6-1 원천 · §7 노트북 | ⏸ PR2 |
+| §2 비밀값 · §3-1 port-forward · §3-2 컴퓨트 · §5 Dagster · §6-1 원천 · §7 노트북 | ⏸ PR2 |
 
 ## 검증 환경
 
@@ -91,7 +91,6 @@ cp .env.example .env
 kubectl get secret catalog-pg-app  -o jsonpath='{.data.password}'     | base64 -d   # ICEBERG_*_PASSWORD
 kubectl get secret lakehouse-creds -o jsonpath='{.data.s3-access-key}' | base64 -d   # ICEBERG_S3_ACCESS_KEY
 kubectl get secret lakehouse-creds -o jsonpath='{.data.s3-secret-key}' | base64 -d   # ICEBERG_S3_SECRET_KEY
-kubectl get secret spark-grpc-tls  -o jsonpath='{.data.ca\.crt}'      | base64 -d > ~/.lakehouse-ca.crt
 ```
 
 환경변수를 새로 추가하는 절차는 [`operations.md`](operations.md) §1.
@@ -155,14 +154,11 @@ kubectl get applications -n argocd        # 전부 Synced · Healthy 면 수렴
 | ArgoCD UI | http://argocd.localtest.me:8080 | ✅ 상시 — 로그인은 아래 「로그인·비밀값」 |
 | Airflow UI | http://airflow.localtest.me:8080 | ✅ 상시(첫 기동 중에는 503) — Ingress `airflow-ingress`, REST `/api/v2`도 같은 호스트 |
 | Flink Web UI | http://flink.localtest.me:8080 | ⏸ 세션 클러스터가 떠 있을 때 |
-| Spark Web UI | http://spark.localtest.me:8080 | ⏸ Spark Connect `--replicas=1`일 때 |
-| Spark Connect (gRPC) | `sc://spark-grpc.localtest.me:8443/;use_ssl=true` | ⏸ `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` 필요 |
 
 ⏸ port-forward 경로:
 
 ```shell
 kubectl port-forward svc/catalog-postgres-rw 15432:5432   # Iceberg JDBC 카탈로그
-kubectl port-forward svc/spark-connect       15002:15002  # Spark Connect 폴백
 ```
 
 - Flink UI를 열면 잡 제출 REST API도 같은 포트로 열린다. Airflow도 같다 — UI 호스트로 REST API가 함께 나간다
@@ -213,17 +209,13 @@ kubectl -n airflow exec deploy/airflow-api-server -- airflow version
 쓰기 직전에 올리고 끝나면 바로 내린다.
 
 ```shell
-kubectl scale deploy/spark-connect --replicas=1          # Spark Connect(§4 최초 적용 뒤)
-kubectl scale deploy/spark-connect --replicas=0
-kubectl get pods -l spark-role=executor                  # 내린 뒤 0개여야 한다
-
 kubectl apply  -f k8s/flink/flinkdeployment-session.yaml # Flink 세션 클러스터
 kubectl delete -f k8s/flink/flinkdeployment-session.yaml
 ```
 
 - Spark·Flink 동시 기동은 허용, `spark.executor.instances` ≤ 1을 지킨다([`conventions/k8s.md`](conventions/k8s.md) §9-3).
 
-## 4. 러너 이미지와 Spark Connect
+## 4. 러너 이미지
 
 이미지 build·push는 지금도 된다(최초 1회 / 이미지 변경 시).
 
@@ -233,13 +225,6 @@ podman push --tls-verify=false localhost:5001/spark-runner:0.6.0
 
 podman build -f k8s/flink/Dockerfile.flink-runner -t localhost:5001/flink-runner:0.3.0 k8s/flink
 podman push --tls-verify=false localhost:5001/flink-runner:0.3.0
-```
-
-⏸ Spark Connect 리소스 생성(최초 1회 / 매니페스트 변경 시):
-
-```shell
-kubectl apply -f k8s/spark/spark-connect-server.yaml
-kubectl scale deploy/spark-connect --replicas=0
 ```
 
 - 태그를 올릴 때는 `k8s/spark/*.yaml`·`k8s/flink/*.yaml`의 `image:`도 함께 바꾼다.
@@ -259,14 +244,10 @@ kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 별도 터미널 (S3
 - `.env`의 `POSTGRES_PORT`로 메타 DB를 하나만 고른다 — 15432=port-forward, 5432=compose `postgres`.
   compose `--profile host-dagster`와 호스트 `dg dev`를 섞지 않는다.
 - compose는 기본 `up`으로 아무것도 띄우지 않는다. 필요한 profile만 켠다:
-  `host-dagster`(webserver·daemon·postgres) · `legacy-meta`(postgres) · `legacy-sql`(trino) ·
+  `host-dagster`(webserver·daemon·postgres) · `legacy-meta`(postgres) ·
   `monitoring`(prometheus). S3(SeaweedFS)는 compose가 아니라 스택 A가 띄우므로 **스택 A를 먼저 apply**한다 —
   compose 컨테이너는 `host.containers.internal:<게시 포트>`로 닿는다(podman 전제, Docker Desktop은
   `host.docker.internal`).
-
-```shell
-podman compose --profile legacy-sql up -d trino    # Trino 값 대조가 필요할 때만
-```
 
 ## 6. 검증
 
@@ -315,9 +296,6 @@ uv run scripts/stock_source_access_probe.py --source all
 ## 7. 노트북 (옵션) ⏸
 
 ```shell
-kubectl scale deploy/spark-connect --replicas=1
-kubectl port-forward svc/spark-connect 15002:15002   # 별도 터미널
-
 (cd dagster/dockerfile.d/src \
   && uv run --group notebook jupyter lab --port 8889 --notebook-dir ../../../notebooks)
 ```
@@ -348,7 +326,6 @@ kubectl port-forward svc/spark-connect 15002:15002   # 별도 터미널
 | `k8s-secrets.sh`가 「반쪽 Secret 쌍」으로 멈춤 | 쌍 중 남은 쪽을 지우고 다시 실행한다 | [`conventions/k8s/cnpg.md`](conventions/k8s/cnpg.md) |
 | `terraform apply`(스택 A)가 linked worktree 거부 | 루트 체크아웃에서 실행한다(state도 거기 있다) | §3 올리기 |
 | 호스트 포트를 바꿔야 함 | 스택 A destroy → 새 `-var`로 apply(생성 시점에만 정해진다) | [`argocd-gitops.md`](argocd-gitops.md) §6 |
-| 15002 port-forward 실패 | Spark Connect를 `--replicas=1`로 올린다(평시 0) | §3-2 |
 | 15432 port-forward가 접속마다 끊김 | 재기동 루프로 감싼다 | [`resource-sizing.md`](resource-sizing.md) §호스트 압박 판정 지표 |
 | `dg dev` 런이 UI에 안 남음 | `DAGSTER_HOME`을 `dagster/dockerfile.d/src`로 지정 | [`operations.md`](operations.md) |
 | S3 업로드는 성공, 객체 손상 | `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` | [`conventions/k8s/checksum.md`](conventions/k8s/checksum.md) |
@@ -361,7 +338,7 @@ kubectl port-forward svc/spark-connect 15002:15002   # 별도 터미널
 
 | 타깃 | 전제 |
 | --- | --- |
-| `dev`(기본) · `prod` | k8s Trino(`trino.localtest.me:8080`, ArgoCD 앱 `trino`). compose Trino를 보려면 `TRINO_HOST=localhost TRINO_PORT=8081` + `--profile legacy-sql` — **다른 카탈로그 DB**다 |
+| `dev`(기본) · `prod` | k8s Trino(`trino.localtest.me:8080`, ArgoCD 앱 `trino`) |
 
 ---
 
