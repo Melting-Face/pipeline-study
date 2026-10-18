@@ -377,7 +377,7 @@ in-cluster에서 이 둘이 **처음으로 갈린다**. 앞은 메타 DB(`dagste
 
 값의 정본은 호스트 실행분의 `.env`다(철거 전에는 `dagster-deploy.yaml`의 ConfigMap).
 in-cluster는 port-forward 주소 대신 서비스 DNS를 쓴다 —
-`catalog-postgres-rw:5432` · `seaweedfs:8333` · `sc://spark-connect:15002`(평문 gRPC).
+`catalog-postgres-rw:5432` · `seaweedfs:8333`(Spark Connect는 철거됐다).
 
 ### 이미지
 

@@ -276,8 +276,7 @@ jobs:
       #    겸한다"고 적었으나 **틀린 전제였다** — CI 첫 실행이 `Unable to find lockfile`로
       #    잡아냈다(로컬은 디스크에 락이 있어 끝까지 안 드러난다).
       # ⚠️ 대가: 매 실행이 새로 해석하므로 **상류 릴리스가 PR과 무관하게 빨간불을 낼 수 있다.**
-      #    이 저장소는 dagster 계열 `==` 고정 + dbt-spark/pyspark 상한으로 드리프트를 좁혀두었고,
-      #    비공식 Spark Connect 경로의 **업그레이드 회귀 감시**는 오히려 이쪽이 원하는 바다.
+      #    이 저장소는 dagster 계열 `==` 고정으로 드리프트를 좁혀두었다.
       - name: 의존성 설치
         working-directory: dagster/dockerfile.d/src
         run: uv sync --group dev

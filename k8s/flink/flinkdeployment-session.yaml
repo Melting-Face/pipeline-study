@@ -80,8 +80,8 @@ spec:
                       - name: AWS_REGION
                         value: "us-east-1"
                       # 🔴 SeaweedFS는 AWS SDK v2의 aws-chunked 프레이밍을 풀지 못해 객체가 조용히 손상된다.
-                      #   flink-runner도 Iceberg 1.11.0(S3FileIO → SDK v2)이라 spark-connect와 동일하게 필요하다.
-                      #   2026-08-21 실측 — spark-connect에서 1.11.0 배포 후 PUT 객체가 chunk 프레이밍인 채 저장됨.
+                      #   flink-runner도 Iceberg 1.11.0(S3FileIO → SDK v2)이라 (철거된) spark-connect와 동일하게 필요했다.
+                      #   2026-08-21 실측 — (철거된) spark-connect에서 1.11.0 배포 후 PUT 객체가 chunk 프레이밍인 채 저장됨.
                       - name: AWS_REQUEST_CHECKSUM_CALCULATION
                         value: "when_required"
                       - name: AWS_RESPONSE_CHECKSUM_VALIDATION

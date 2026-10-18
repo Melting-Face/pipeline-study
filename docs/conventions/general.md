@@ -236,7 +236,7 @@ git push origin v0.1.0
 
 **넘었을 때의 처방은 분할이고, 형태는 「허브 + 하위 정본」이다** — 허브에 요약과 포인터를 남기고
 상세를 하위 문서로 내린다. 선례: [`git.md`](git.md) → [`git/worktree.md`](git/worktree.md) ·
-[`k8s.md`](k8s.md) → [`k8s/cnpg.md`](k8s/cnpg.md)·[`k8s/spark-connect.md`](k8s/spark-connect.md).
+[`k8s.md`](k8s.md) → [`k8s/cnpg.md`](k8s/cnpg.md)·[`k8s/checksum.md`](k8s/checksum.md).
 ⚠️ **분할 비용은 앵커가 아니라 산문 속 §번호 참조다** — `#앵커` 링크는 `--links`가 잡지만
 *"k8s.md §9-3"* 처럼 **본문에 적힌 절 번호는 어떤 게이트도 잡지 않는다.** 절을 옮기면
 그 참조들이 조용히 낡는다. 분할 전에 `§` 참조를 먼저 센다.

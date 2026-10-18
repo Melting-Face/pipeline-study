@@ -22,15 +22,14 @@ Spark·Flink·SeaweedFS·CNPG와 **같은 층**에 놓여 컨트롤 플레인만
 
 ### 무엇이 바뀌었었나 — 우회 경로의 소멸(이력)
 
-호스트 Dagster는 클러스터에 닿기 위해 **port-forward**(Spark Connect 15002 · 카탈로그 PG 15432 —
-S3는 클러스터 밖 compose라 `localhost:8333` 직결)와 **TLS Ingress + 로컬 CA 신뢰
-주입**(`GRPC_DEFAULT_SSL_ROOTS_FILE_PATH`)이 필요하다.
+호스트 Dagster는 클러스터에 닿기 위해 **port-forward**(카탈로그 PG 15432 —
+S3는 클러스터 밖 스택 A 컨테이너라 `localhost:8333` 직결)가 필요하다(당시의 Spark Connect TLS Ingress 경로는 철거됐다).
 in-cluster 판본에서는 이 전부가 **서비스 DNS 직결**로 대체됐었다. 현행 실행 경로는 아래 표의 **왼쪽 열**이고,
 값(포트·호스트)의 정본은 [../operations.md](../operations.md) §1-2다 — 표는 철거 당시의 대비 기록이다.
 
 | 축 | 호스트 Dagster | in-cluster (철거) |
 | --- | --- | --- |
-| Spark Connect | `sc://spark-grpc.localtest.me:8443/;use_ssl=true` + CA 파일 | `sc://spark-connect:15002` (평문) |
+| Spark Connect | (철거) | `sc://spark-connect:15002` (평문) |
 | S3 | `http://localhost:8333` (스택 A 컨테이너 직결) | `http://seaweedfs:8333` (ExternalName → 클러스터 밖) |
 | 카탈로그 PG | `localhost:15432` (port-forward) | `catalog-postgres-rw:5432` |
 | 메타 PG | compose `postgres` | 같은 CNPG의 `dagster` DB |
@@ -42,7 +41,7 @@ in-cluster에서 평문 gRPC가 된 것은 **보안이 낮아진 게 아니라 �
 
 | 선택지 | 판정 | 이유 |
 | --- | --- | --- |
-| **raw 매니페스트** | ✅ 채택 | 이 저장소의 워크로드 층 패턴(Spark Connect·SeaweedFS·CNPG Cluster 모두 raw). `resources`·probe·관측 주석을 직접 통제해 예산표가 거짓이 될 여지가 없다 |
+| **raw 매니페스트** | ✅ 채택 | 이 저장소의 워크로드 층 패턴(Flink 세션·SeaweedFS·CNPG Cluster 모두 raw). `resources`·probe·관측 주석을 직접 통제해 예산표가 거짓이 될 여지가 없다 |
 | 공식 Helm 차트 `dagster/dagster` | 🔎 미채택 | 업스트림 표준이지만 전제가 어긋난다 — 아래 참조 |
 | `DefaultRunLauncher` | ✅ 채택 | run이 daemon 파드의 서브프로세스라 자원 상한이 **파드 하나로 예측 가능**하다 |
 | `K8sRunLauncher`(run당 Pod) | 🔎 후속 | 학습 가치가 크지만 일시 파드가 Spark와 CPU를 다퉈 경계를 다시 짜야 한다 |

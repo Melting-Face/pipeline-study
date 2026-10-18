@@ -149,7 +149,7 @@ ArgoCD 앱 목록(`gitops/apps/`)에 등록하지 않고 창 안에서 띄웠다
 - **② Flink가 이기는 곳 — 홉 수와 상주 수.** Flink는 Iceberg를 직접 읽고 직접 쓴다. Kafka는
   `Iceberg → producer → 토픽 → Streams → Connect → Iceberg`로 홉이 늘고 홉마다 상주가 붙으며,
   그 전부가 **CPU 축**을 먹는다 — [../conventions/k8s.md](../conventions/k8s.md) §9-3 경계 ②
-  (`spark.executor.instances` ≤ 1)가 걸린 그 축을 Spark Connect executor가 이미 상시 소비한다.
+  (`spark.executor.instances` ≤ 1)가 걸린 그 축을 상주 Trino coordinator가 이미 상시 소비한다.
 - **③ 어느 쪽도 못 바꾸는 것 — 지연.** USGS는 15분 폴링이고 PhysioNet은 정적 파일이다.
   **엔진이 무엇이든 데이터는 15분마다 온다.** 실시간성은 여기서 갈리지 않는다.
 

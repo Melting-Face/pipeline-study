@@ -7,8 +7,8 @@
 > 각 서비스 설정 파일을 함께 맞춘다. (단순함·명시적 — [philosophy.md](philosophy.md))
 
 > **문서 구성**: 아래 "Kubernetes 재설계 시나리오"는 **목표(이행) 배분**([redesign.md](redesign.md)),
-> 그 이후 섹션(Trino·Dagster·Postgres…)은 **현행 compose 배분**이다. Trino는 재설계에서 제거되므로
-> Trino 섹션은 이행 완료 시 레거시 참조가 된다.
+> 그 이후 섹션(Dagster·Postgres…)은 **현행 compose 배분**이다. compose Trino는 철거했다 —
+> 현행 Trino는 §(B)의 k8s coordinator다.
 
 ## Kubernetes 재설계 시나리오 (kind + Podman) 🚧
 
@@ -120,10 +120,8 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 | | `argocd-applicationset-controller` | 50m | 64Mi | 250m | 128Mi |
 | | `argocd-redis` | 50m | 64Mi | 200m | 128Mi |
 | **Airflow**(상주, 회수 불가) | apiServer·scheduler·dagProcessor·Celery worker·redis·사이드카 3 — 값 정본은 `gitops/charts/airflow/values.yaml` requests, 합계 없음. 일회성 Job(migrate·create-user)과 K8s 태스크 파드는 상주 아님 | 정본 참조 | 정본 참조 | 정본 참조 | 정본 참조 |
-| **Trino**(상주, 회수 다이얼 없음) | coordinator 단독 — 정본·근거(req=lim 메모리)는 `gitops/apps/trino/values.yaml` | 500m | 3Gi | 1 | 3Gi |
-| **온디맨드 상주** | **Spark Connect 서버**(dbt 접속용 · driver 겸용, 미사용 시 `--replicas=0`) | 500m | 1536Mi | 1 | 2Gi |
-| | **Spark Connect executor × 1** ⁸ — `k8s://`라 **함께 상주** | 1000m | 1408Mi | 1 | 1408Mi |
-| | Flink JobManager(세션 클러스터, 잡 없어도 상주) | 1000m | 2048Mi | 1 | 2Gi |
+| **Trino**(상주, 회수 다이얼 없음) ⁸ | coordinator 단독 — 정본·근거(req=lim 메모리)는 `gitops/apps/trino/values.yaml` | 500m | 3Gi | 1 | 3Gi |
+| **온디맨드 상주** | Flink JobManager(세션 클러스터, 잡 없어도 상주) | 1000m | 2048Mi | 1 | 2Gi |
 | **STREAM(일시)** | Flink TaskManager × 1 — **잡 제출 시 온디맨드**, 종료 시 자동 회수 ⁶ | 1000m | 2048Mi | 1 | 2Gi |
 | **BATCH(일시)** | Spark driver ⁴ | 1000m | 1433Mi ⁴ | — | 1433Mi |
 | | Spark executor × **1** ⁴ ⁵ | 1000m | 1433Mi ⁴ | — | 1433Mi |
@@ -166,16 +164,9 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
   OOMKilled·throttling이 관측되면 그때 올린다. 실측은 [argocd-gitops.md](argocd-gitops.md) 관문 ①에서 재어 볼트에 둔다.
   ⚠️ **동시 기동 피크는 실측이 아니라 산술이다** — BATCH+STREAM+ArgoCD를 **동시에 띄운 관측 창은
   열린 적이 없다**. 재측정은 §(C-2) 순서를 따른다. **"관측했다"로 인용하지 않는다.**
-⁸ **Spark Connect가 `--master k8s://`로 돌면서 executor 1개가 「일시」가 아니라 「상주」가 됐다.**
-  `spark.executor.instances`는 정적 할당이라 **서버 수명 내내** 산다 — Flink TaskManager 상주가
-  경계 ①의 전제를 깬 것과 같은 형태다. ⇒ **Connect가 떠 있는 동안 `SparkApplication` 배치 잡을
-  겹쳐 돌리지 않는다**(겹치면 executor가 2가 되어 각주 ⁵를 넘긴다 —
-  [conventions/k8s.md](conventions/k8s.md) §9-3 경계 ②).
-  ⚠️ **이 행은 선언값이라 각주 ⁴의 유도값 함정에 해당하지 않는다** —
-  `spark.executor.memoryOverhead`를 **명시**해 `1024m + 384m`가 그대로 파드 요청이 된다.
-  `spark.kubernetes.executor.limit.cores`를 함께 주지 않으면 **CPU limit이 아예 없어** 이 행의
-  `lim CPU`가 거짓이 된다. 회수는 다이얼 0번이 덮되 **`spark.kubernetes.driver.pod.name`이 걸려
-  있을 때만 참이다**([conventions/k8s/spark-connect.md](conventions/k8s/spark-connect.md)).
+⁸ **Trino 메모리는 세 값이 결합한다** — 컨테이너 `memory` > `maxHeapSize`(`-Xmx`, memory의 **70~80% 이하** —
+  비힙 CodeCache·Metaspace 몫) > `query.maxMemoryPerNode` + `memory.heap-headroom-per-node`(기본 힙×0.3).
+  하나를 바꾸면 `gitops/apps/trino/values.yaml`에서 **셋을 함께** 검증한다(어기면 기동 실패 또는 컨테이너 OOM Kill).
 
 > ⚠️ **`BestEffort` 파드는 `describe node` 합계에 0으로 잡힌다.** 실재하며 개수는 늘어난다
 > (cert-manager · barman-cloud · kube-proxy · local-path-provisioner 계열 — 계수는 볼트 §6-3).
@@ -212,10 +203,6 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 
 ### (C) 운영 다이얼 (초과 시 조절 순서)
 
-0. **★★★★★ Spark Connect 서버 스케일 0** — dbt를 돌리지 않을 때 `kubectl scale deploy/spark-connect --replicas=0`.
-   유일하게 **상주하는 컴퓨트**다. 켜둔 채 잊으면 예산을 계속 갉아먹는다.
-   **역방향도 규율이다** — 0으로 내려둔 상태에서는 `port-forward svc/spark-connect`가 붙지 않는다.
-   dbt·노트북을 쓰기 전에 `--replicas=1`로 되돌린다([README](../README.md) §2-1).
 1. **★★★★★ Flink 세션 클러스터 회수** — 검증·데모가 끝나는 **그 자리에서** `FlinkDeployment`를 삭제한다.
    JM은 **잡이 없어도 `1000m/2048Mi`를 상주 점유**하며(선언값), 이 규율이 깨져 **반나절 넘게 샌 전례**가 있다
    ([conventions/k8s.md](conventions/k8s.md) §9-3 · 전말은 볼트).
@@ -288,12 +275,11 @@ free를 일정하게 유지하므로, **"free 델타"는 *쓴 양*이 아니라 
 | --- | --- | --- |
 | **swap `used` > 0** | ✅ **유효 · 최강** | 압축으로 못 버텨 디스크로 밀린 상태 |
 | **`swapouts` 누적값** | ✅ **유효** | `used`는 회수되면 0으로 돌아가 **지나간 압박을 못 본다** |
-| port-forward **15002** 사망 | ✅ 유효 | 압박 신호로 읽는다 |
 | port-forward **15432** 사망 | ❌ **무효 — 지표로 쓰지 마라** | 아래 |
 
 **15432(`catalog-postgres-rw`)는 호스트 압박과 무관하게 죽는다** —
-**클라이언트 접속이 끝날 때마다 결정론적으로** 끊긴다. swap이 0인 상태에서도 죽고,
-같은 kubectl·같은 클러스터인데 **15002는 생존**한다(S3는 이제 클러스터 밖이라 port-forward가 없다).
+**클라이언트 접속이 끝날 때마다 결정론적으로** 끊긴다. swap이 0인 상태에서도 죽는다
+(S3는 이제 클러스터 밖이라 port-forward가 없다).
 원인은 Postgres 경로가 FIN이 아닌 **RST**로 끊고 kubectl이 그것을 **터널 전체의 치명 오류**로
 취급하는 것이다.
 
@@ -320,7 +306,6 @@ done
 
 | 서비스      | 핵심 조정 항목                                            | 위치                                              |
 | ----------- | -------------------------------------------------------- | ------------------------------------------------- |
-| `trino`     | JVM heap(`-Xmx`), `query.max-memory(-per-node)`, headroom | `trino/etc/jvm.config`, `trino/etc/config.properties` |
 | `dagster`   | `max_concurrent_runs`, op 동시성, dbt `threads`           | `dagster.yaml`, `dbt_pipelines/profiles.yml`      |
 | `postgres`  | `shared_buffers`, `work_mem`, `max_connections`           | postgres command / `postgresql.conf`             |
 | `seaweedfs` | volume 수·인덱스 메모리                                   | `compose.yml`의 `seaweedfs` command               |
@@ -328,67 +313,8 @@ done
 
 ## Docker 서비스 자원 한도 (compose)
 
-```yaml
-services:
-  trino:
-    deploy:
-      resources:
-        limits: { cpus: "2.0", memory: 2G }
-        reservations: { memory: 1G }
-```
-
 - compose v2는 비-swarm 환경에서도 `deploy.resources.limits`(cpus·memory)를 적용한다.
 - 모든 서비스 `limits.memory` 합이 호스트 RAM을 넘지 않도록 한다.
-
-## Trino
-
-> 현재 `compose.yml`은 `trino/etc/catalog/`만 마운트한다. heap·메모리를 조정하려면
-> `trino/etc/jvm.config`·`trino/etc/config.properties`를 추가하고 `trino/etc/`를 마운트한다.
-
-메모리는 JVM heap에서 출발한다.
-
-- `jvm.config`: `-Xmx<heap>` — 컨테이너 메모리의 약 **70~80%**
-- `config.properties`:
-  - `query.max-memory-per-node` — 기본 **heap × 0.3**. `per-node + heap-headroom < heap` 제약 내에서 상향 가능
-  - `query.max-memory` — 클러스터 전체 한도(기본 **20GB**; 단일 노드면 per-node 수준)
-  - `memory.heap-headroom-per-node` — Trino 미추적 할당용 버퍼, 기본 **heap × 0.3**
-
-예) 컨테이너 4G → `-Xmx3G` → 기본 per-node 0.9G.
-  상향 시 `per-node + headroom 0.9G < 3G`를 유지한다.
-
-> 큰 조인/집계가 heap을 넘으면 `EXCEEDED_LOCAL_MEMORY_LIMIT`가 난다.
-> 메모리를 늘리거나 쿼리를 분할/스필 설정을 검토한다.
-
-### 메모리 설정 3중 결합 (함께 검증)
-
-세 파일의 값이 **한 방향 제약**으로 묶여 있어, 하나만 바꾸면 기동 실패나 OOM이 난다.
-아래 부등식을 위→아래로 만족시킨다.
-
-```
-compose.yml  memory limit
-  └── jvm.config  -Xmx            (≤ limit − JVM 비힙 오버헤드)
-        └── config.properties
-              ├── memory.heap-headroom-per-node   (Trino 미추적 할당 버퍼)
-              └── query.max-memory-per-node       (≤ Xmx − headroom)
-```
-
-| 파일 | 항목 | 현재값(6G 컨테이너 예) | 제약 |
-| --- | --- | --- | --- |
-| `compose.yml` | `deploy.resources.limits.memory` | 6G | ≥ Xmx + 비힙 오버헤드 |
-| `trino/etc/jvm.config` | `-Xmx` | 예: 4~5G | < 컨테이너 limit |
-| `config.properties` | `memory.heap-headroom-per-node` | 기본 Xmx×0.3 | JVM 비쿼리 오버헤드 |
-| `config.properties` | `query.max-memory-per-node` | ≤ Xmx − headroom | 초과 시 쿼리 OOM |
-
-**JVM 비힙 오버헤드**(컨테이너 limit이 `-Xmx`보다 커야 하는 이유):
-
-```
-컨테이너 limit  >  -Xmx  +  ReservedCodeCache(~256M)  +  Metaspace(~400M) + 기타
-     6g         >   5G   +          256M               +      ~400M        ≈ 5.7G  (✓ 여유)
-```
-
-> `-Xmx`를 컨테이너 limit에 바짝 붙이면(예: 6G 컨테이너에 `-Xmx6G`) 비힙 영역이 밀려 컨테이너
-> OOM Kill이 난다. **`-Xmx`는 컨테이너 memory의 70~80%**를 넘기지 않는다.
-> 변경 시 `compose.yml`·`jvm.config`·`config.properties` 세 파일을 **함께** 검증한다.
 
 ## Dagster (동시성)
 
@@ -478,14 +404,12 @@ daemon 필요 메모리
 
 | 항목                                | 8 GB      | 16 GB     | 32 GB     |
 | ----------------------------------- | --------- | --------- | --------- |
-| trino 컨테이너 / `-Xmx`             | 2G / 1.5G | 4G / 3G   | 8G / 6G   |
-| trino `query.max-memory-per-node`   | 1GB       | 2GB       | 4GB       |
 | dagster `max_concurrent_runs`       | 2         | 4         | 8         |
 | dbt `threads` (dev)                 | 2         | 4         | 8         |
 | postgres `shared_buffers`           | 256MB     | 512MB     | 1GB       |
 
 > 표는 출발점이며 실제 데이터량·쿼리 특성에 맞춰 조정한다.
-> 변경 시 `compose.yml`·Trino 설정·`dagster.yaml`·`profiles.yml`을 함께 갱신한다.
+> 변경 시 `compose.yml`·`dagster.yaml`·`profiles.yml`을 함께 갱신한다.
 
 ## 참고
 

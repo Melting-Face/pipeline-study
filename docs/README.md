@@ -37,7 +37,7 @@
 | [Trino](architectures/trino.md) | 현행까지 채택, 재설계로 제거 |
 | [모니터링·관측](architectures/monitoring.md) | Grafana·Loki·Robusta 등을 **지금 쓰지 않는 이유** |
 | [Kafka](architectures/kafka.md) | 이벤트 스트리밍 — 미도입 유지. 근거 인덱스와 재검토 트리거 |
-| [DuckDB](architectures/duckdb.md) | 인프로세스 OLAP — 미채택. 조회 엔진 정본은 Spark Connect |
+| [DuckDB](architectures/duckdb.md) | 인프로세스 OLAP — 미채택. 조회 엔진 정본은 k8s Trino |
 
 ## 코딩 규칙 (conventions)
 
@@ -71,7 +71,7 @@
 - ↳ [주식예측 실버](dataset_schema/stock-forecast.md) — 누수 방지 3축(세션 배정·as-of·라벨 격리)과
   그 게이트·**선언된 공백**
 - [분석 컨벤션](conventions/analysis.md) — 규칙 정본
-- [`notebooks/README.md`](../notebooks/README.md) — Jupyter Lab 실행·Spark Connect 접속·셀 출력 통제
+- [`notebooks/README.md`](../notebooks/README.md) — Jupyter Lab 실행·Trino 접속·셀 출력 통제
 - 리포트는 `docs/analyses/<NN>-<slug>.md`에 쌓는다
 
 ## 외부 공개

@@ -8,7 +8,7 @@
 
 ## 1. 배경과 목표
 
-- **현행**: 단일 호스트 **Docker Compose**(dagster webserver/daemon·postgres·trino·seaweedfs·prometheus).
+- **현행**: 단일 호스트 **Docker Compose**(dagster webserver/daemon·postgres·seaweedfs·prometheus).
   Dagster가 in-process/subprocess로 실행하고, dbt-on-Trino가 모든 변환을 담당한다([overview.md](architectures/overview.md)).
 - **한계**: 단일 노드 자원 상한(Trino 메모리 제약·[resource-sizing.md](resource-sizing.md)), 스케일아웃 경로 부재.
 - **목표 지향점**: **학습/포트폴리오**. 실제 프로덕션 패턴인 **오케스트레이터(컨트롤 플레인) ↔ 원격 컴퓨트 분리**를
@@ -25,7 +25,7 @@
 │    • 배치(Spark) : SparkApplication(CRD) 제출·폴링                 │  [BATCH]
 │    • 배치(Flink) : FlinkDeployment 기동 → sql-client exec → 회수   │  [BATCH]
 │    • 스트림(Flink): 잡 수명주기 관리 — 아직 목표(미착수)           │  [STREAM]
-│    • dbt CLI(dbt-spark) → Spark Connect 대상 실행 (※ 아래 주 참조) │
+│    • dbt CLI(dbt-trino) → k8s Trino 대상 실행 (※ 아래 주 참조)     │
 │  ── 이하 컴퓨트·데이터(같은 클러스터) ──                           │
 │  Spark Operator (Helm) → SparkApplication → driver/executor       │  [BATCH]
 │  Flink Operator (Helm) → FlinkDeployment → JobManager/TaskManager │  [BATCH·STREAM]
@@ -35,7 +35,7 @@
 │      ← Iceberg JDBC 카탈로그(iceberg DB) · Dagster 메타(dagster DB) │
 │  로컬 레지스트리 (kind local-registry)                             │
 └──────────────────────────────────────────────────────────────────┘
-   Iceberg 공유:  Spark(batch write) ↔ dbt-spark(마트) ↔ Flink(batch·stream r/w)
+   Iceberg 공유:  Spark(batch write) ↔ dbt-trino(마트, k8s Trino) ↔ Flink(batch·stream r/w)
    ※ BATCH(Spark)·STREAM(Flink)은 동시 기동 허용(실측 — 경계 3개는 conventions/k8s.md §9-3)
    ※ 스트림 소스는 Redpanda → Iceberg bronze로 변경(결정·같은 날 이행). Redpanda는 미도입 유지
    ※ [STREAM] 경로는 실증됨 — Spark append → Flink 스트리밍 읽기 → Iceberg 싱크 → Spark 되읽기
@@ -47,16 +47,14 @@
       TM이 잡 수명 내내 상주해 동시 기동 허용의 전제가 깨진다([architectures/flink.md](architectures/flink.md)).
 ```
 
-> **※ dbt 경로는 "클러스터 대상 실행"이다**(전환 완료). Spark Connect 서버는 **`--master k8s://`**,
-> 즉 **client mode**로 돌고 **driver는 Deployment 파드 그 자체**이며, **executor 파드 1개가 서버 수명
-> 내내 상주**한다([architectures/spark.md](architectures/spark.md)).
-> ⇒ 그 executor가 [conventions/k8s.md](conventions/k8s.md) §9-3 **경계 ②를 상시 소비**하므로,
-> **Connect가 떠 있는 동안 `SparkApplication` 배치 잡을 겹쳐 돌리지 않는다.**
+> **※ dbt 경로는 "클러스터 대상 실행"이다** — k8s Trino(`trino.localtest.me`)에 붙는다. 구 경로였던
+> Spark Connect 서버(`--master k8s://` client mode, executor 1개 상주)는 철거했다(B2,
+> [architectures/spark.md](architectures/spark.md)).
 >
 > 🔴 **이력**: 이 문서는 한동안 이 경로를 **`--master local[2]`**(파드 한 개 안의 로컬 모드·executor 없음)로
 > 적고 **"이번 범위에서 전환하지 않는다"고 선언**했으나 그 뒤 전환됐다. **선언이 이행을 따라오지 못한
 > 사례**로 남긴다. 당시 함께 적었던 한계치(병렬도·driver 힙·`shuffle.partitions`)는 `local[2]` 시절
-> 값이므로 여기 옮기지 않는다 — 현행 값의 정본은 [architectures/spark.md](architectures/spark.md)의 표다.
+> 값이므로 여기 옮기지 않는다 — client mode 시절 값도 Connect 철거로 git 이력에만 있다.
 >
 > ⚠️ **배치 경로(`SparkApplication`)는 이와 별개로 오퍼레이터가 driver/executor를 띄운다.**
 > 그림에서 두 경로가 같은 "Spark"로 보이지만 **실행 모델이 다르다.**
@@ -148,8 +146,8 @@ dbt는 dbt-spark로 이관한다」였다(위 §2·「그 외 결정」 표의 �
 - **지키는 것**: 2엔진 통일로 얻으려던 **카탈로그 단일성**. Trino는 새 메타스토어 없이 같은 카탈로그를 읽고 쓴다.
 - **잃는 것**: 엔진이 셋이 되어 **CPU 예산을 하나 더 나눈다** — [resource-sizing.md](resource-sizing.md) §(B).
   엔진 간 **같은 값** 보증 대상도 Spark↔Trino 쌍으로 늘어난다.
-- **아직 남은 것**: compose `legacy-sql` Trino는 **다른 카탈로그 DB**(compose postgres)를 보며 22모델 값 대조의
-  정본으로 남아 있다. dbt 타깃 이관과 함께 정리한다 — 그전까지 "Trino"라는 이름이 **두 엔진**을 가리킨다.
+- **정리됨**: 다른 카탈로그 DB(compose postgres)를 보던 compose `legacy-sql` Trino는 B2에서 철거했다 —
+  "Trino"는 이제 k8s Trino 하나다.
 - **재검토 조건**: ⓐ CPU 축 실측이 Connect 철거 후에도 동시 기동 경계를 넘는다 ⓑ dbt-trino로 옮긴 모델에서
   Spark 쓰기와 **값이 갈리는** 사례가 해소되지 않는다.
 

@@ -29,7 +29,7 @@
   → **해결**: `spec.managed.roles`에 `iceberg`를 선언해 CNPG가 시크릿 변경을 롤에 재적용하게 했다.
   `bootstrap.initdb`로 만든 롤을 **선언 관리로 인수**하는 형태이며 `name`은 initdb의 `owner`와 같아야 한다.
   구 클러스터에선 `dagster` 롤도 같은 방식이었다(실측 `reconciled: ["iceberg","dagster"]` — Airflow 대체 예정이라 철거).
-  단 **이미 떠 있는 워크로드의 env는 여전히 수동**이라 Spark Connect·Flink 파드는 **재기동까지 한 벌**이다.
+  단 **이미 떠 있는 워크로드의 env는 여전히 수동**이라 Trino·Flink 파드는 **재기동까지 한 벌**이다.
 - **쌍 Secret은 한 벌로 회전하고 반쪽을 거부한다** — 「같은 비밀번호를 두 시크릿에 두지 않는다」의 예외 둘이다.
   CNPG `passwordSecret`은 Cluster 네임스페이스(`default`)에, 차트가 읽는 `connection`·`password`는 앱
   네임스페이스(`airflow`)에 있어야 해 **교차 참조가 불가능**하다. 한 랜덤 값에서 쌍으로 만든다.

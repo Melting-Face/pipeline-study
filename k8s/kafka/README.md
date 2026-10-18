@@ -42,7 +42,7 @@ Sink가 쓰는 시크릿 `lakehouse-creds`·`catalog-pg-app`이 `default`에 있
 ## 사전 조건
 
 1. 🔴 **예산 확보** — [`docs/conventions/k8s.md`](../../docs/conventions/k8s.md) §9-3 경계 ③.
-   Flink 세션을 내리고 Spark Connect를 `--replicas=0`으로 둔 뒤 **executor 파드도 사라졌는지** 본다.
+   Flink 세션을 내리고 남은 Spark executor 파드가 없는지(`kubectl get pods -l spark-role=executor` 0건) 본다.
    그다음 노드 Allocatable 대비 Σrequests(Airflow 상주분 포함)에 아래 PoC 합계가 들어가는지 계산한다.
 2. 러너 이미지 빌드·푸시(k8s.md §10 — 태그와 매니페스트를 함께 올린다).
 
@@ -85,7 +85,7 @@ kubectl wait kafkaconnector/iceberg-sink-poc -n default --for=condition=Ready --
    ```
 
 2. 커밋 주기(`iceberg.control.commit.interval-ms`)가 두 번 지날 때까지 기다린다.
-3. **회수 ①** — Connector → Connect → Kafka 순으로 내리고 오퍼레이터를 지운다(Spark를 올릴 자리를 만든다).
+3. **회수 ①** — Connector → Connect → Kafka 순으로 내리고 오퍼레이터를 지운다(예산을 비운다).
 
    ```shell
    kubectl delete -f k8s/kafka/kafka-connect.yaml
@@ -94,14 +94,13 @@ kubectl wait kafkaconnector/iceberg-sink-poc -n default --for=condition=Ready --
    kubectl get pods -n default -l strimzi.io/cluster   # 기대 0건
    ```
 
-4. Spark Connect를 올려 대조한다. **양성**과 **음성**을 같은 세션에서 본다.
+4. k8s Trino로 대조한다. **양성**과 **음성**을 같은 세션에서 본다.
 
    ```sql
    SELECT count(*) FROM iceberg.kafka_poc.events;      -- 기대: N
    SHOW TABLES IN iceberg.kafka_poc_absent;            -- 기대: namespace 없음 에러(조회 경로가 살아 있다는 대조군)
    ```
 
-   끝나면 Spark Connect를 다시 `--replicas=0`으로 내린다.
 
 ## 회수 ② (선택 — 각각 별도 승인)
 

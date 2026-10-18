@@ -306,12 +306,6 @@ resources:
 2. 🔴 **`spark.executor.instances` ≤ 1**(Flink 세션이 떠 있는 동안).
    하나를 더 붙이면 Allocatable에 여유가 사라진다.
    executor를 늘려야 하면 **Flink 세션을 먼저 내린다** — 둘 중 하나만 확장한다.
-   ⚠️ **이 경계는 이제 Spark Connect가 상시 소비한다.** Connect가 `--master k8s://`로 뜨면
-   executor 1개가 **서버 수명 내내** 붙어 있다(정적 할당). 그래서 **Connect가 떠 있는 동안
-   `SparkApplication` 배치 잡을 겹쳐 돌리지 않는다** — 겹치면 executor가 2가 되어 이 경계를 넘긴다.
-   겹쳐야 하면 **Connect를 먼저 `--replicas=0`으로 내린다.**
-   그 회수는 **`spark.kubernetes.driver.pod.name`이 걸려 있을 때만 참이다** — 없으면
-   `--replicas=0`이 driver만 내리고 executor가 남는다(§9-4).
 3. **허용은 Redpanda·Kafka까지 확장되지 않는다**(학습 PoC는 교대 기동 — [`k8s/kafka/`](../../k8s/kafka/README.md)).
    도입하면 STREAM 피크가 올라가므로 배분표와 이 경계를 **함께 재계산**하고, 그 전에는 허용 범위가 넓어지지 않는다.
 
@@ -342,7 +336,7 @@ resources:
 ⚠️ **①~③과 세는 대상이 다르다** — ①~③은 「동시에 띄워도 되는가」의 경계이고,
 ④는 「모든 시나리오에 **상시 가산**되는 워크로드」다. 그래서 위 제목은 **3개가 맞고**, 합쳐 넷으로 세지 않는다.
 
-Spark Connect는 `--replicas=0`, Flink 세션은 `delete`로 회수되지만 **오케스트레이터는 회수 대상이 아니다**
+`SparkApplication`은 잡 종료로, Flink 세션은 `delete`로 회수되지만 **오케스트레이터는 회수 대상이 아니다**
 (내리면 스케줄·센서·런큐가 함께 멈춘다). 그래서 Airflow 상주분(`gitops/charts/airflow/values.yaml`의 `requests`)은
 경계 ①~③의 **모든 시나리오에 상시 더해지는 워크로드**다. BATCH+STREAM 동시 피크에 이것이 얹힌 상태에서
 `spark.executor.instances`를 2로 올리면 **Allocatable을 넘겨 스케줄 자체가 실패**한다(Airflow 포함 피크는 미측정) — 경계
@@ -361,19 +355,6 @@ Spark Connect는 `--replicas=0`, Flink 세션은 `delete`로 회수되지만 **�
 🔴 **긴 쪽을 먼저 띄운다.** 짧게 살았다 사라지는 워크로드를 먼저 띄우면
 긴 쪽이 올라오기 전에 이미 회수돼 **동시 피크 창이 열리지 않는다.**
 그 창을 놓친 관측은 **여유가 있는 것처럼 보인다** — 유리한 방향으로 틀린다.
-
-## 9-4. Spark Connect를 client mode로 띄우는 규칙
-
-`--master k8s://`의 필수 설정·복붙 함정·회수 다이얼 검증 절차는 분량이 커서 별도 문서로 뺐다 —
-[k8s/spark-connect.md](k8s/spark-connect.md).
-
-요지 셋만 여기 둔다.
-
-- **driver는 Deployment 파드 그 자체다**(client mode). `--deploy-mode cluster`를 주면 **CrashLoop**다.
-- **체크섬 env 2종은 executor에도 보낸다** — 로컬 모드에서는 driver env 하나가 양쪽을 덮었다
-  ([k8s/checksum.md](k8s/checksum.md)).
-- **`spark.kubernetes.driver.pod.name`이 회수 다이얼의 전제다** — 없으면 `--replicas=0`이
-  driver만 내리고 executor가 남는다.
 
 ## 10. 클러스터 노출·연결 규칙
 
@@ -396,7 +377,8 @@ Spark Connect는 `--replicas=0`, Flink 세션은 `delete`로 회수되지만 **�
   ```
 
   **태그를 올렸으면 그 태그를 참조하는 매니페스트를 함께 올린다** — 한쪽만 올리면 구 이미지가 계속 돈다.
-  참조처 전수 확인은 `grep -rn 'image: localhost:5001' k8s/`이며, 현재 Spark 2곳·Flink 1곳·Kafka Connect 1곳이다.
+  참조처 전수 확인은 `grep -rn 'localhost:5001' k8s/ --include='*.yaml'`이며,
+  현재 Spark 1곳(sparkConf)·Flink 1곳·Kafka Connect 1곳이다.
 - **Iceberg의 `io-impl`(S3FileIO)만으로는 부족한 작업이 있다** — `spark.hadoop.fs.s3*`(S3A)를 **함께** 준다.
   S3FileIO는 **카탈로그가 아는 파일**만 다루므로, warehouse 디렉터리를 직접 나열해야 하는
   `remove_orphan_files`(카탈로그가 *모르는* 파일을 찾는 게 목적)는 **Hadoop FileSystem**을 탄다.
@@ -404,8 +386,8 @@ Spark Connect는 `--replicas=0`, Flink 세션은 `delete`로 회수되지만 **�
   warehouse가 `s3://`라 **`fs.s3.impl`도 S3A로 매핑**해야 하고(`fs.s3a.impl`만으론 안 잡힌다),
   jar(`hadoop-aws`·SDK v2 `bundle`)는 러너 이미지에 이미 있어 **설정만** 추가하면 된다.
   S3A도 SDK **v2**라 aws-chunked 대상이다 — 판본 고정이 방어선이다([k8s/checksum.md](k8s/checksum.md) §2-1).
-  참조: `k8s/spark/spark-connect-server.yaml`.
-- **서비스 접근**: **HTTP 계열(웹 UI·REST)은 Ingress**, **JDBC는 `port-forward`**, **gRPC는 TLS Ingress**(§gRPC).
+  참조: `k8s/spark/poc_ingest.py`(잡 env로 S3A를 채운다).
+- **서비스 접근**: **HTTP 계열(웹 UI·REST)은 Ingress**, **JDBC는 `port-forward`**.
   **S3는 클러스터 밖**이라 호스트는 `localhost:8333` 직결, 파드는 `Service seaweedfs`(ExternalName → kind 별칭
   `seaweedfs-ext`)로 나간다 — 컨테이너·별칭은 스택 A `docker_container.seaweedfs` 소유(클러스터 재생성 때 함께 교체).
   **Flink는 REST와 UI가 같은 포트(8081)** 라 UI를 Ingress로 낸 순간 **REST도 함께 나간다** — `port-forward`가
@@ -425,39 +407,6 @@ Spark Connect는 `--replicas=0`, Flink 세션은 `delete`로 회수되지만 **�
 - **Ingress 규칙**: 컨트롤러는 **ingress-nginx**(Terraform 스택 B가 helm 차트로 설치, 버전은 `terraform/platform`에 핀).
   호스트명은 **`<service>.localtest.me`** — 공개 DNS가 127.0.0.1로 응답해 `/etc/hosts` 수정이 필요 없다.
   - Flink는 오퍼레이터 네이티브 **`FlinkDeployment.spec.ingress`**(`template`·`className`)를 쓴다.
-  - Spark(Connect UI)는 일반 `Ingress` 리소스로 4040을 노출한다(`spark.localtest.me`, 평문 HTTP).
-    **gRPC(15002)는 별도 호스트 `spark-grpc.localtest.me`에 TLS로 낸다** — 아래 §gRPC.
-
-### gRPC를 Ingress로 내보내는 규칙 (실측)
-
-> 종전 규약은 *"gRPC는 Ingress로 내보내지 않는다(YAGNI)"* 였다. **CA 신뢰 축이 실측으로 닫히면서**
-> 뒤집었다 — port-forward는 매 세션 별도 터미널을 요구하고, 끊긴 상태가 **에러가 아니라 무한 대기**로
-> 보여 오진을 낳는다([../architectures/spark.md](../architectures/spark.md) §`--master k8s://`).
-
-- **TLS는 선택이 아니라 전제다.** ingress-nginx의 `backend-protocol: "GRPC"`는 HTTP/2 위에서만
-  동작하고, nginx는 HTTP/2를 **TLS 리스너에서만** 협상한다. ⇒ **평문 gRPC 경로는 이 방식으로 만들 수 없다**
-  (평문으로 내려면 새 호스트 포트가 필요한데, kind는 포트를 **생성 시점에만** 정한다 = 클러스터 재생성).
-- **호스트를 나눈다** — `backend-protocol`은 **Ingress 단위** 설정이라 같은 호스트에 HTTP(UI)와 GRPC를
-  함께 둘 수 없다. `*.localtest.me`는 전부 127.0.0.1로 응답하므로 호스트를 늘리는 비용은 0이다.
-- **인증서는 로컬 CA 체인**(`gitops/charts/cert-manager/templates/local-ca.yaml`)에서 발급한다.
-  부트스트랩 Issuer → `isCA: true` CA → 리프 순서다. **selfSigned로 리프를 만들면 `CA:FALSE`라 신뢰 앵커로 못 쓴다.**
-- **클라이언트 신뢰 주입 수단은 하나뿐이다** — `sc://` URL에는 CA를 지정하는 옵션이 **없다**.
-  gRPC 코어 환경변수 **`GRPC_DEFAULT_SSL_ROOTS_FILE_PATH`** 로만 주입된다.
-
-  ```bash
-  # CA 내보내기(공개키라 비밀 아님 — 개인키는 Secret에 남는다)
-  kubectl get secret spark-grpc-tls -n default -o jsonpath='{.data.ca\.crt}' | base64 -d > ~/.lakehouse-ca.crt
-  export SPARK_REMOTE="sc://spark-grpc.localtest.me:8443/;use_ssl=true"
-  export GRPC_DEFAULT_SSL_ROOTS_FILE_PATH=~/.lakehouse-ca.crt
-  ```
-
-- **검증 순서**(실측, 이 순서로 통과함): ① `openssl s_client -CAfile …` → `Verify return code: 0`
-  ② `curl --cacert … https://spark-grpc.localtest.me:8443/` → **`http_ver=2`·`sslverify=0`·`code=415`**
-  ③ pyspark 질의 왕복 ④ `scripts/spark_connect_smoke.py`.
-  **②의 `415`는 실패가 아니라 성공 신호다** — gRPC 백엔드가 비-gRPC 요청에 주는 정상 응답이라
-  **그 코드가 나왔다는 것 자체가 GRPC 경로가 살아 있다는 양성 증거**다. `200`을 기대하면 오판한다.
-  **`openssl s_client -alpn h2`의 `No ALPN negotiated`는 판정 근거로 쓰지 않는다** — 같은 시점
-  `curl`이 `http_ver=2`를 냈다. 도구 하나의 부정 결과로 닫지 말고 **교차 확인**한다(원칙 7).
   - 설치 대기는 `wait --for=condition=ready pod`가 아니라 **`rollout status deploy/...`** 로 한다.
     파드 생성 전이면 전자는 `no matching resources found`로 **즉시 실패**한다(실측).
   - 기동 직후 컨트롤러가 **liveness 실패로 1회 재시작**할 수 있다(노드가 다른 롤아웃으로 바쁠 때

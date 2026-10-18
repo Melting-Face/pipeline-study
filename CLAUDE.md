@@ -205,13 +205,12 @@
   Iceberg snapshot·로그 보존 정책 포함 [`docs/operations.md`](docs/operations.md).
 - **Docker/Compose 규칙**: 로깅·env YAML 앵커, 이미지 `latest` 금지, healthcheck + `depends_on`,
   전 서비스 `deploy.resources` 명시. **옵션 기능은 `profiles`로 분리**(뼈대는 profile
-  없이 항상 실행, `--profile <name>`으로 opt-in) — `monitoring`(prometheus)·`legacy-sql`(trino)·
+  없이 항상 실행, `--profile <name>`으로 opt-in) — `monitoring`(prometheus)·
   `host-dagster`·`legacy-meta`. **뼈대(core)는 이제 비었다** — 전부 opt-in이다.
-  **`profiles`는 "제거 예정"의 중간 단계로도 쓴다** — compose `trino`는 K8s로 옮겼으나(다른 카탈로그 DB) dbt 이관이
-  끝날 때까지 **값 대조의 정본**이라 정의는 남기고 **상시 기동만 끊는다**("중단"과 "삭제"의 분리:
-  자원은 즉시 회수, 롤백 비용 0).
-  **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받는다** — `postgres`가 `host-dagster`·`legacy-sql`을
-  더해 3개인 이유다(빠뜨리면 그 profile만 켤 때 의존 비활성으로 깨진다).
+  **`profiles`는 "제거 예정"의 중간 단계로도 쓴다**("중단"과 "삭제"의 분리: 자원은 즉시 회수,
+  롤백 비용 0 — compose `trino`가 그 사례였고 철거됐다).
+  **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받는다** — `postgres`가 `host-dagster`를
+  더해 2개인 이유다(빠뜨리면 그 profile만 켤 때 의존 비활성으로 깨진다).
   바꾼 뒤 **`docker compose --profile <p> config --services`로 profile별 확인**한다(기동 없이 수초).
   상세 [`docs/conventions/docker.md`](docs/conventions/docker.md).
 - **관측·모니터링**: 서비스를 추가할 때 관측 경로(healthcheck/probe·로그·메트릭)를 **무엇을 두고 무엇을
@@ -224,7 +223,7 @@
 - **호스트 노트북(옵션)**: ad-hoc 탐색은 **Jupyter Lab**을 **Dagster와 같은 venv**에서 띄운다
   (`[dependency-groups] notebook`, `uv run --group notebook jupyter lab --port 8889`).
   런타임 의존성은 건드리지 않으며 **포트 8889**를 쓴다(8888은 SeaweedFS filer UI가 점유).
-  SQL 엔진은 **Spark Connect**이고 카탈로그 설정은 **서버 측**에 있어 **비밀정보를 노트북에 두지 않는다**.
+  SQL 엔진은 **k8s Trino**이고 카탈로그 설정은 **서버 측**에 있어 **비밀정보를 노트북에 두지 않는다**.
   `.ipynb` 셀 출력은 원천 데이터를 박제하고 `gitleaks`가 잡지 못하므로 **`nbstripout` 훅**과
   `.ipynb_checkpoints/` 무시로 이중 방어한다. 상세 [`notebooks/README.md`](notebooks/README.md).
 ### 인프라 · IaC
@@ -233,7 +232,7 @@
   로컬 레지스트리 `localhost:5001`. 기동은 `k8s-up.sh` → **`terraform apply`**(`cluster/kind`) → **`terraform apply`**
   (`platform`: ArgoCD가 `gitops/charts/`를 수렴, 설계 `docs/argocd-gitops.md`). **Dagster는 미배포**(호스트)다.
   규칙 [`docs/conventions/k8s.md`](docs/conventions/k8s.md), 예산·배분 [`docs/resource-sizing.md`](docs/resource-sizing.md).
-  클러스터에는 **Spark Operator**(배치)·**Spark Connect**(철거 예정 — 소비자 0)·**Trino**(dbt 엔진·유지보수 —
+  클러스터에는 **Spark Operator**(배치)·**Trino**(dbt 엔진·유지보수 —
   upstream 앱 `gitops/apps/trino/`, 제거 번복은 `docs/redesign.md` §3)가 있고,
   세 엔진이 **같은 Iceberg JDBC 카탈로그**를 공유한다.
   **Flink Operator**(기본 설치)와 세션 클러스터로 **Spark가 쓴 Iceberg 테이블을 읽는 것까지**
@@ -250,10 +249,6 @@
   **SeaweedFS(S3)는 클러스터 밖 컨테이너, 소유는 스택 A**(`docker_container.seaweedfs`)이고 파드는
   `Service seaweedfs`(ExternalName → 별칭 `seaweedfs-ext`)로 닿는다 — 데이터는 바인드라 destroy에도 남는다.
   엔진 버전은 **최신이 아니라 Iceberg가 지원하는 짝**으로 고정한다(예: `iceberg-flink-runtime`이 2.1까지라 Flink는 2.1).
-  Spark Connect는 **`--master k8s://`(client mode)** 로 돌아 **executor 파드 1개가 함께 상주**하므로
-  미사용 시 `--replicas=0`으로 내리고 **executor가 함께 사라지는지 확인**한다
-  (`spark.kubernetes.driver.pod.name`이 그 전제 — 없으면 driver만 내려간다).
-  그래서 **Connect가 떠 있는 동안 `SparkApplication` 배치 잡을 겹쳐 돌리지 않는다**(executor 2 초과).
   **에러 없이 깨지는 셋** — ⓐ **카탈로그 이름은 전 엔진 `iceberg`로 통일**(JDBC 카탈로그는 `catalog_name`으로
   레지스트리를 분할해, 이름이 다르면 같은 DB를 봐도 서로의 테이블이 안 보인다) ⓑ **SeaweedFS는 aws-chunked
   체크섬을 못 풀어** 객체가 손상된다 — `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` 유지, **Java도 해당**
@@ -261,13 +256,9 @@
   다뤄, Spark로 warehouse를 직접 나열하는 `remove_orphan_files`가 Hadoop FS를 탄다).
   **Iceberg 유지보수(컴팩션·orphan 정리)는 Trino `ALTER TABLE … EXECUTE`** 로 실행한다(`TrinoResource` —
   Spark Connect 철거로 되돌림). 엔진은 op config `engine`으로 고르고 Spark·Flink 경로는 후속 미션이다.
-  **Dagster·dbt·노트북은 Spark Connect를 쓰지 않는다** — dbt-spark·pyspark·`dagster-pyspark`는 제거했고,
-  Connect·Thrift 매니페스트·클러스터 리소스 철거는 별도 PR이다(수동 관문 §5-1 철거·§5-3 중단).
-  **노출은 HTTP(UI·REST)와 gRPC를 Ingress**로 내고 JDBC·S3만 `port-forward`를 쓴다 — kind는 **공개 포트를
+  **Spark Connect·Thrift는 철거됐다**(dbt-spark·pyspark·`dagster-pyspark` 포함, 수동 관문 §5-1 철거·§5-3 중단).
+  **노출은 HTTP(UI·REST)를 Ingress**로 내고 JDBC·S3만 `port-forward`를 쓴다 — kind는 **공개 포트를
   생성 시점에만** 정할 수 있어 `extraPortMappings`를 빠뜨리면 재생성이 유일한 해법이다.
-  **gRPC Ingress는 TLS가 전제**다(nginx는 HTTP/2를 TLS 리스너에서만 협상) — 발급은
-  `gitops/charts/cert-manager`의 로컬 CA 체인이고, **클라이언트 신뢰 주입 수단은
-  `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` 하나뿐**이다. `backend-protocol`이 Ingress 단위라 **UI와 호스트를 나눈다**.
   **Flink는 REST와 UI가 같은 포트**라 UI를 내면 **잡 제출 API도 함께 나간다**("UI만 열었다"로 읽지 않는다).
   컴퓨트 **러너 이미지는 로컬 레지스트리에 직접 push**하고(`kind load` 불필요) **태그와 매니페스트를 함께 올린다**.
   상세·실측은 [`docs/conventions/k8s.md`](docs/conventions/k8s.md)(§8 Dagster·§9 Spark·§9-2 Flink·§9-3 동시 기동·§11 스토어)와
@@ -330,7 +321,7 @@
   (요약/인덱스 원칙의 비용 근거).
   계측은 `uv run scripts/token_cost_report.py` — `--project`는 `=`로 붙여 쓴다(슬러그가 `-`로 시작).
   상세 [`docs/operations.md`](docs/operations.md) §토큰 비용 계측.
-- **리소스 산정**: `max_concurrent_runs`↔daemon `memory` 결합(CoW OOM), Trino 3파일 메모리 제약.
+- **리소스 산정**: `max_concurrent_runs`↔daemon `memory` 결합(CoW OOM), Trino 힙·per-node 메모리 3중 결합.
   상세 [`docs/resource-sizing.md`](docs/resource-sizing.md).
 ### 보안 · 거버넌스
 

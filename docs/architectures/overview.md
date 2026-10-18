@@ -16,7 +16,7 @@
 > **Flink Operator는 설치돼 상주한다** — ArgoCD 앱(`gitops/charts/flink-operator/`)이 소유하며 부트스트랩에
 > 항상 포함된다. 상주하는 것은 **오퍼레이터까지**이고, 자원을 먹는 **세션 클러스터(JM/TM)는 띄우지
 > 않는다** — 잡을 돌릴 때 따로 세우고 끝나면 내린다([flink.md](flink.md)).
-> trino와 같은 **"중단"과 "삭제"의 분리**가 여기서는 오퍼레이터/워크로드 경계로 나타난다.
+> 철거된 compose `trino`가 쓰던 **"중단"과 "삭제"의 분리**가 여기서는 오퍼레이터/워크로드 경계로 나타난다.
 > 클러스터 UI는 `*.localtest.me:8080` 고정 URL, 데이터 접속은 `port-forward`
 > ([../conventions/k8s.md](../conventions/k8s.md) §10).
 
@@ -30,7 +30,6 @@
 | `dagster-webserver`  | `dagster/dockerfile.d/`    | — (core)                                     | Dagster UI/GraphQL. `workspace.yaml`로 코드 로케이션 로드             |
 | `dagster-daemon`     | `dagster/dockerfile.d/`    | — (core)                                     | 스케줄·센서·런큐 처리 + run 실행(`DefaultRunLauncher` 서브프로세스)   |
 | `postgres`           | `postgres:15`              | — (core)                                     | ① Dagster 메타데이터 저장소 ② Iceberg **JDBC 카탈로그** 저장소        |
-| `trino`              | `trinodb/trino:468`        | `legacy-sql`                                 | 분산 SQL 쿼리 엔진. dbt가 접속하는 대상 — **재설계로 제거 대상**      |
 | `prometheus`         | `prom/prometheus:v2.21.0`  | `monitoring`                                 | 메트릭 수집                                                           |
 
 > 🔴 **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받는다**([../conventions/docker.md](../conventions/docker.md)
@@ -53,7 +52,7 @@ flowchart LR
     end
 
     subgraph query[쿼리 엔진]
-        TR[Trino 468]
+        TR[Trino<br/>k8s coordinator]
     end
 
     subgraph lakehouse[레이크하우스]
@@ -80,7 +79,7 @@ lineage는 소비에서 끝난다. 규칙 정본은 [`../conventions/analysis.md
 flowchart LR
     ICE[(Iceberg<br/>bronze · silver)]
     GOLD[["gold 마트<br/>dbt tags=['gold']<br/>(현재 0개)"]]
-    SC[Spark Connect<br/>sc://localhost:15002]
+    SC[Trino k8s<br/>trino.localtest.me:8080]
     NB[노트북<br/>notebooks/*.ipynb]
     RPT[리포트<br/>docs/analyses/*.md]
 
@@ -101,8 +100,7 @@ flowchart LR
 | **노트북** | `notebooks/` — 호스트 Jupyter Lab(:8889) | 실행 가능성([`../test.md`](../test.md) §6) |
 | **리포트** | `docs/analyses/<NN>-<slug>.md` | 인용 수치의 재현 경로 |
 
-- **SQL 엔진은 Spark Connect**다. 위 흐름도의 Trino는 compose 현행 구성이고, 재설계에서 제거 대상이라
-  ad-hoc 조회는 Spark SQL로 간다([trino.md](trino.md) · [../redesign.md](../redesign.md) §5).
+- **SQL 엔진은 k8s Trino**다 — dbt와 ad-hoc 조회(노트북)가 같은 엔진을 쓴다([trino.md](trino.md)).
 - **노트북 → gold 승격이 정방향**이다. 같은 조회가 3회 이상 반복되거나 리포트가 인용하면
   노트북에 두지 않고 모델로 올린다(Rule of Three).
 - 점선 노드(gold·리포트)는 **아직 실물이 없다** — 규칙만 서 있고 첫 산출은 원천 데이터 적재
@@ -116,7 +114,6 @@ flowchart LR
 flowchart TB
     subgraph host[호스트 머신]
         U1([:3000 Dagster UI])
-        U2([":8081 Trino<br/>컨테이너 8080"])
         U3([:8333 S3 API])
         U4([:8888 filer UI])
         U5([:9333 master UI])
@@ -126,7 +123,6 @@ flowchart TB
     subgraph net[compose 네트워크 dagster]
         WS[dagster-webserver]
         DM[dagster-daemon]
-        TR[trino:468]
         PG[(postgres:15)]
         PM[prometheus]
     end
@@ -136,7 +132,6 @@ flowchart TB
     end
 
     U1 --- WS
-    U2 --- TR
     U3 --- SW
     U4 --- SW
     U5 --- SW
@@ -144,26 +139,22 @@ flowchart TB
 
     WS -->|depends_on healthy| PG
     DM -->|depends_on healthy| PG
-    TR -->|depends_on healthy| PG
     PM -.scrape host.containers.internal:9324.-> SW
 
     WS -. 공유 storage .- DM
-    DM -.run / dbt SQL.-> TR
-    TR -.JDBC catalog.-> PG
-    TR -.s3://warehouse<br/>host.containers.internal:8333.-> SW
 
     classDef ext fill:#eef,stroke:#88a
-    class U1,U2,U3,U4,U5,U6 ext
+    class U1,U3,U4,U5,U6 ext
 ```
 
-> ⚠️ **이 구성도는 `compose.yml`에 정의된 전체**(+ compose 밖 `seaweedfs`)이고, 기본 `up`으로 뜨는 것은 **뼈대 3개**
-> (`dagster-webserver`·`dagster-daemon`·`postgres`)뿐이다. `trino`(`legacy-sql`)·
+> ⚠️ **이 구성도는 `compose.yml`에 정의된 전체**(+ compose 밖 `seaweedfs`)이고, 뼈대(core)는 비어 있어
+> 기본 `up`으로는 **아무것도 뜨지 않는다**(Dagster는 `--profile host-dagster`).
 > `prometheus`(`monitoring`)는 **profile opt-in**이라
 > 해당 profile을 켜야 위 포트가 열린다.
 >
-> `dagster-webserver`·`dagster-daemon`·`trino`는 `postgres` 헬스체크 통과 후 기동된다.
+> `dagster-webserver`·`dagster-daemon`은 `postgres` 헬스체크 통과 후 기동된다.
 > webserver와 daemon은 같은 이미지·`dagster.yaml`을 쓰고
-> **Postgres 공유 storage**로 상태를 협조한다. `trino`는 `seaweedfs`도 의존한다.
+> **Postgres 공유 storage**로 상태를 협조한다.
 
 ## Dagster 프로세스 분리 (webserver / daemon)
 
@@ -215,16 +206,13 @@ sequenceDiagram
 
 ### Iceberg 카탈로그 (Trino)
 
-`trino/etc/catalog/iceberg.properties`에서 정의한다.
+k8s Trino의 `gitops/apps/trino/values.yaml`(`catalogs.iceberg`)에서 정의한다.
 
-- **카탈로그 타입**: JDBC (`iceberg.catalog.type=jdbc`)
-- **카탈로그 저장소**: Postgres `iceberg_catalog` DB 재사용
-- **데이터 웨어하우스 경로**: `s3://warehouse` (SeaweedFS)
-- **파일시스템**: `fs.native-s3.enabled=true`, endpoint `http://host.containers.internal:8333`(스택 A 컨테이너의
-  루프백 게시 포트), path-style 접근
+- **카탈로그 타입**: JDBC (`iceberg.catalog.type=jdbc`, `catalog-name=iceberg`)
+- **카탈로그 저장소**: CNPG `catalog-postgres-rw`의 `iceberg` DB
+- **데이터 웨어하우스 경로**: `s3://warehouse` (SeaweedFS, `Service seaweedfs` 경유), path-style 접근
 
-> 비밀정보(액세스 키 등)는 properties에 직접 쓰지 않고 `${ENV:...}`로 치환한다.
-> 카탈로그 디렉토리는 컨테이너에 **읽기전용(`:ro`)** 으로 마운트한다.
+> 비밀정보(액세스 키 등)는 값에 직접 쓰지 않고 Secret 참조 env를 `${ENV:...}`로 치환한다.
 
 ### dbt → Trino 접속 (profiles)
 
@@ -235,7 +223,7 @@ sequenceDiagram
 | `dev` (기본) | `dev`  | 4       | 인증 없음(`method: none`) |
 | `prod`       | `prod` | 8       | 인증 없음                 |
 
-- `database: iceberg` → Trino 카탈로그명(= `iceberg.properties`의 `catalog-name`)과 일치해야 한다.
+- `database: iceberg` → Trino 카탈로그명(= `values.yaml` 카탈로그의 `catalog-name`)과 일치해야 한다.
 - `schema` → Trino 스키마. 없으면 dbt가 생성한다.
 
 ## bronze 적재 (S3 csv.gz → Iceberg)
@@ -401,7 +389,7 @@ Terraform(스택 A·B)과 ArgoCD가 **선언을 나눠 소유**한다.
 > 메타 DB·S3에 port-forward가 전제이고(메타 DB는 새 클러스터에 없다 — [../operations.md](../operations.md) §1-2),
 > **메타 DB를 한 곳으로 고정해 compose와 섞지 않는다**
 > (같은 서비스의 이중 존재 — [../conventions/monitoring.md](../conventions/monitoring.md) §3-④).
-> compose의 `dagster-*`·`postgres`·`trino`·`seaweedfs`·`prometheus`는 **전부 profile opt-in**이라
+> compose의 `dagster-*`·`postgres`·`prometheus`는 **전부 profile opt-in**이라
 > 기본 `up`으로는 **아무것도 뜨지 않는다**(예: `podman compose --profile host-dagster up -d`).
 
 dbt 모델 추가는 스캐폴딩이 필요 없다 — `models/<dataset>/`에 `.sql`을 넣으면 데이터셋 subproject의
@@ -412,7 +400,6 @@ dbt 모델 추가는 스캐폴딩이 필요 없다 — `models/<dataset>/`에 `.
 | 포트 | 서비스                          | profile                                    |
 | ---- | ------------------------------- | ------------------------------------------ |
 | 3000 | Dagster UI (호스트 `dg dev` 전용) | `host-dagster` — **정본은 Ingress 8080**   |
-| 8081 | Trino (컨테이너 8080 → 호스트 8081) | `legacy-sql`                           |
 | 8333 | SeaweedFS S3 API                | — 스택 A(compose 밖)                       |
 | 8888 | SeaweedFS filer UI              | — 스택 A(compose 밖)                       |
 | 9333 | SeaweedFS master UI             | — 스택 A(compose 밖)                       |
@@ -420,8 +407,7 @@ dbt 모델 추가는 스캐폴딩이 필요 없다 — `models/<dataset>/`에 `.
 | 9000 | Prometheus (컨테이너 9090 매핑) | `monitoring`                               |
 
 > 🔴 **호스트 8080은 kind ingress-nginx가 점유**한다(스택 A `terraform/cluster/kind`의 호스트 포트 매핑).
-> 그래서 Trino 게시 포트를 8081로 옮겼다 — 컨테이너 내부 포트는 8080 그대로라
-> `dbt_pipelines/profiles.yml`(`host: trino`, `port: 8080`)은 영향받지 않는다([trino.md](trino.md)).
+> k8s Trino도 그 Ingress(`trino.localtest.me:8080`)로 닿는다([trino.md](trino.md)).
 > 클러스터 UI(`*.localtest.me:8080`)와 노트북 Jupyter Lab(:8889)은 compose 밖이다.
 
 ## 참고

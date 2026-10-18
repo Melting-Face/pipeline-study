@@ -61,7 +61,7 @@ image: trinodb/trino:latest
 
 # Good — 현재 레포
 image: postgres:15
-image: trinodb/trino:468
+image: prom/prometheus:v2.21.0
 ```
 
 ```dockerfile
@@ -71,7 +71,7 @@ FROM trinodb/trino:${TRINO_VERSION}
 ```
 
 - Trino처럼 주 단위 릴리즈를 하는 이미지는 **LTS 버전**을 우선한다(비-LTS는 다음 릴리즈 후 패치 중단).
-  현재 Trino LTS는 `477` 계열. 이 레포는 `trino:468`을 쓰므로, 업그레이드 시 LTS로 올리는 것을 권장한다.
+  compose Trino는 철거됐고, k8s Trino 태그는 `gitops/apps/trino/values.yaml`이 고정한다.
 - **SeaweedFS(`chrislusf/seaweedfs:4.36`)는 낮추지 않는다.** `./seaweedfs/data`는 **4.x가 쓴 온디스크
   상태**이고(`.mini_kek_passphrase`·`.mini_sse_kek`·`mini.options`·`admin/` = 4.x 산물) 이것이 오브젝트
   스토리지 **정본**이라, 더 낮은 버전이 인플레이스로 여는 것이 위험하다. 종전에는 K8s 사본(`3.80`)과의
@@ -99,10 +99,9 @@ services:
       interval: 10s
       timeout: 8s
       retries: 5
-  trino:
+  dagster-daemon:
     depends_on:
       postgres: { condition: service_healthy }   # DB가 준비된 뒤 기동
-      seaweedfs: { condition: service_started }
 ```
 
 ### 1-5. 모든 서비스에 `deploy.resources` 명시
@@ -124,7 +123,8 @@ services:
 ```
 
 - **배분 원칙·서비스별 수치·daemon 메모리 계산식**은 [resource-sizing.md](../resource-sizing.md)에서 단일 관리한다.
-- 원칙 요약: `limits.memory` 합 ≤ 호스트 RAM − OS 여유(1~2g). Trino(JVM MPP)가 메모리 최다 소비.
+- 원칙 요약: `limits.memory` 합 ≤ 호스트 RAM − OS 여유(1~2g).
+  메모리 최다 소비는 `dagster-daemon`(run 서브프로세스 fork)이다.
 - `max_concurrent_runs`(`dagster.yaml`)와 daemon `memory`는 **강하게 결합** — 한쪽만 바꾸면
   OOM 또는 낭비. 반드시 함께 조정한다([resource-sizing.md](../resource-sizing.md)).
 
@@ -141,7 +141,7 @@ services:
 ```
 
 - **뼈대(core)**: `dagster-webserver`·`dagster-daemon`·`postgres` — profile 없음.
-- **옵션**: `prometheus`(`monitoring`) · `trino`(`legacy-sql`).
+- **옵션**: `prometheus`(`monitoring`).
 - **compose 밖**: 오브젝트 스토리지 정본 `seaweedfs`는 Terraform 스택 A(`docker_container.seaweedfs`)가 소유한다.
   compose 서비스는 `host.containers.internal:<게시 포트>`로 닿고(podman 전제 — Docker Desktop은
   `host.docker.internal`), compose `depends_on`으로 표현할 수 없어 **스택 A를 먼저 apply하는 것은 운영자 몫**이다.
@@ -152,11 +152,9 @@ docker compose --profile monitoring up -d   # 뼈대 + 모니터링
 COMPOSE_PROFILES=monitoring docker compose up -d   # 프로필 고정
 ```
 
-> **`profiles`는 "제거 예정"의 중간 단계로도 쓴다.** `trino`는 재설계에서 제거 대상이지만
-> 22모델 방언 교정이 끝날 때까지 **값 대조의 정본**이라 정의는 남긴다
-> ([../architectures/trino.md](../architectures/trino.md)). 상시 기동만 끊어 자원(3 CPU / 6G)을
-> 회수하고 대조할 때만 올린다 — **"중단"과 "삭제"를 분리**하면 자원은 즉시 회수되면서
-> 롤백 비용이 0으로 유지된다.
+> **`profiles`는 "제거 예정"의 중간 단계로도 쓴다** — **"중단"과 "삭제"를 분리**하면 자원은 즉시
+> 회수되면서 롤백 비용이 0으로 유지된다. compose `trino`(`legacy-sql`)가 그 사례였고 철거됐다
+> ([../architectures/trino.md](../architectures/trino.md)).
 > `seaweedfs`는 이 처리에서 **되돌아왔다가 compose를 떠났다** — 정본을 K8s로 옮겨 중단했었고, 클러스터 밖
 > 외부 스토리지로 compose에서 다시 정본이 된 뒤, 지금은 Terraform 스택 A가 컨테이너를 소유한다
 > ([../architectures/storage.md](../architectures/storage.md)). 그래서 profile `storage`는 없다.
@@ -166,8 +164,8 @@ COMPOSE_PROFILES=monitoring docker compose up -d   # 프로필 고정
 > YAML 앵커가 파일 스코프라 기능 파일에서 공용 앵커를 못 써 이 레포에선 profiles를 택했다.
 >
 > 🔴 **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받아야 한다.** 빠뜨리면 의존하는 쪽의
-> profile만 켰을 때 **의존 비활성으로 깨진다**. 현행 사례는 `postgres`다 — `dagster-*`(`host-dagster`)와
-> `trino`(`legacy-sql`)가 의존하므로 자기 profile `legacy-meta`에 둘을 더해 profile이 3개다.
+> profile만 켰을 때 **의존 비활성으로 깨진다**. 현행 사례는 `postgres`다 — `dagster-*`(`host-dagster`)가
+> 의존하므로 자기 profile `legacy-meta`에 그것을 더해 profile이 2개다(철거된 `trino`의 `legacy-sql`까지 3개였다).
 > (옛 compose `seaweedfs`도 `trino`·`prometheus`의 의존으로 3개였으나 스택 A로 옮겨 사례에서 빠졌다.)
 > 바꾼 뒤에는 **profile별로 `docker compose --profile <p> config --services`를 돌려 확인**한다
 > — 이 검증은 기동 없이 수초면 끝난다.
