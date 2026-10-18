@@ -54,7 +54,7 @@
 | [Argo CD — Sync Options](https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/) — ServerSideApply·SkipDryRun·Prune=false·Delete=false (R1) | ✅ 채택(GitOps) | [architectures/argocd.md](architectures/argocd.md) · [argocd-gitops.md](argocd-gitops.md) |
 | [Argo CD — ApplicationSet 리소스 변경 통제](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Controlling-Resource-Modification/) — preserveResourcesOnDeletion (R2) | ✅ 채택(GitOps) | [architectures/argocd.md](architectures/argocd.md) |
 | [Argo CD — Helm](https://argo-cd.readthedocs.io/en/stable/user-guide/helm/) — `helm.sh/resource-policy: keep` 지원 (R3) | ✅ 채택(GitOps) | [architectures/argocd.md](architectures/argocd.md) |
-| [cert-manager Helm values](https://raw.githubusercontent.com/cert-manager/cert-manager/master/deploy/charts/cert-manager/values.yaml) — `crds.enabled`·`crds.keep` (R4) | ✅ 채택(GitOps) | [architectures/argocd.md](architectures/argocd.md) |
+| [cert-manager Helm values](https://raw.githubusercontent.com/cert-manager/cert-manager/master/deploy/charts/cert-manager/values.yaml) — `crds.enabled`·`crds.keep` (R4) | 🔎 철거(재도입 시 근거) | [architectures/argocd.md](architectures/argocd.md) |
 | [ASF Release Distribution Policy](https://infra.apache.org/release-distribution.html) — 구버전 링크 삭제·archive 보관 (R5) | ✅ 채택(GitOps) | [architectures/argocd.md](architectures/argocd.md) |
 | [CloudNativePG charts](https://github.com/cloudnative-pg/charts) — CRD 템플릿의 keep (R6) | ✅ 채택(GitOps) | [architectures/argocd.md](architectures/argocd.md) |
 | [kind — Rootless(pids_limit 절)](https://kind.sigs.k8s.io/docs/user/rootless/) — podman `pids_limit` 상향 + 클러스터 재생성 | ✅ 채택(로컬 K8s) | [conventions/k8s/pids.md](conventions/k8s/pids.md) |

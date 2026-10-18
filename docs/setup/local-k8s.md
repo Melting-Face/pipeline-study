@@ -221,8 +221,7 @@ terraform -chdir=terraform/platform apply
 
 ```shell
 kubectl get applications -n argocd                # 전부 Synced · Healthy
-kubectl get pods -n cert-manager                  # 앱마다 자기 네임스페이스에 파드가 뜬다
-kubectl get pods -n cnpg-system
+kubectl get pods -n cnpg-system                   # 앱마다 자기 네임스페이스에 파드가 뜬다
 kubectl get clusters.postgresql.cnpg.io -n default  # catalog-postgres  (Secret 3단계가 있어야 진행)
 kubectl get svc seaweedfs -n default              # ExternalName → seaweedfs-ext (2단계 스택 A의 별칭)
 kubectl get pods -n airflow                       # 이미지 v0.2.0 발행 전에는 ImagePullBackOff

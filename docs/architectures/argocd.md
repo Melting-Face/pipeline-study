@@ -23,7 +23,8 @@ Secret 생성(`k8s-secrets.sh` — **PR2 산출물, 아직 없다**) 뒤, 사람
 앱 목록은 **ApplicationSet git files generator**가 `gitops/apps/*/config.yaml`에서 읽고(앱 추가 = 커밋 하나),
 앱 사이 순서는 **RollingSync**가 설정 파일의 `tier`(`"0"` 오퍼레이터 → `"1"` 데이터 층 → `"2"` 워크로드)로,
 같은 tier 안은 **재시도 수렴**으로, 앱 안 순서는 **sync-wave**로 보장한다.
-같은 앱 안에서 웹훅이 준비돼야 받아들여지는 리소스(로컬 CA)는 `sync-wave: "1"`로 뒤에 둔다.
+같은 앱 안에서 웹훅이 준비돼야 받아들여지는 리소스는 `sync-wave: "1"`로 뒤에 둔다(지금 해당 앱은 없다 — 유일한 사례였던
+cert-manager 로컬 CA는 B3에서 철거).
 처음에는 `argocd-study`와 같은 List generator + 재시도였다 — 바꾼 이유와 수용한 대가(RollingSync가 생성
 Application의 자동 sync를 끈다)는 [../argocd-gitops.md](../argocd-gitops.md) §5 「D5 개정 기록」.
 
@@ -45,7 +46,7 @@ Application의 자동 sync를 끈다)는 [../argocd-gitops.md](../argocd-gitops.
 재적재는 공짜가 아니므로 평상시 실수로 잃지 않게 네 겹을 둔다: ⓪ ApplicationSet `applicationsSync: create-update`
 (설정 파일 삭제·generator 0건이 Application 삭제로 번지지 않음, R2) ① ApplicationSet
 `preserveResourcesOnDeletion`(Application 삭제 방지, R2) ② 상태 리소스의 `Prune=false,Delete=false`(R1)
-③ CRD의 `helm.sh/resource-policy: keep`(R3·R4·R6). **Spark·Flink 오퍼레이터는 CRD 어노테이션을 넣을 values
+③ CRD의 `helm.sh/resource-policy: keep`(R3·R6). **Spark·Flink 오퍼레이터는 CRD 어노테이션을 넣을 values
 키가 없어 ③이 선언된 공백**이며, sync 시점 prune에는 ①이 닿지 않는다 — 수용 근거와 재검토 트리거는
 [../argocd-gitops.md](../argocd-gitops.md) §4·§9에 있다.
 
@@ -66,6 +67,6 @@ Application의 자동 sync를 끈다)는 [../argocd-gitops.md](../argocd-gitops.
 
 외부 1차 출처(A등급, stable 문서)는 [../references.md](../references.md)에 단일 관리한다 —
 R1 Sync Options · R2 ApplicationSet Controlling Resource Modification · R3 Argo CD Helm ·
-R4 cert-manager 차트 values · R5 ASF Release Distribution Policy · R6 CloudNativePG charts.
+R4 cert-manager 차트 values(철거된 앱 — 재도입 시 근거) · R5 ASF Release Distribution Policy · R6 CloudNativePG charts.
 각 출처가 어느 결정을 받치는지는 [../argocd-gitops.md](../argocd-gitops.md) §참고 출처가 정본이다.
 자매 저장소 `argocd-study`의 소유권 표·appset 템플릿·repo-server probe 교정을 재사용했다.

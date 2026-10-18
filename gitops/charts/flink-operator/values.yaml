@@ -6,10 +6,10 @@ flink-kubernetes-operator:
         resources:
             requests: {cpu: 200m, memory: 512Mi}
             limits: {cpu: 500m, memory: 1Gi}
-        webhook:
-            resources:
-                requests: {cpu: 100m, memory: 256Mi}
-                limits: {cpu: 200m, memory: 512Mi}
+    # admission webhook을 끈다 — 웹훅의 TLS 인증서를 위해서만 cert-manager가 필요했고(B3에서 철거),
+    # 스킴 검사(allowed-schemes)는 웹훅 없이도 reconcile 시 validator가 집행한다.
+    webhook:
+        create: false
     # Flink Kubernetes Operator Helm values (프로젝트 오버라이드)
     #
     # 차트 기본 `defaultConfiguration.flink-conf.yaml`은 **문자열 블록**이라 값 병합이 되지 않는다
@@ -29,7 +29,7 @@ flink-kubernetes-operator:
 
             # --- 프로젝트 오버라이드 ---
             # jar 아티팩트 스킴 허용 목록. 기본값은 [https]뿐이라 `local://`(이미지 동봉 jar)이
-            # validating webhook에서 거부된다.
+            # 거부된다 — 웹훅이 꺼져 있어 admission이 아니라 reconcile 시 ValidationError(에러 상태)로.
             # 런타임에 외부 https에서 jar를 끌어오는 것보다 **이미지에 굽는 편이 공급망상 안전**하고
             # 버전 고정(conventions/docker.md)과도 맞으므로 local을 허용한다.
             # 🔴 그래서 https는 **뺀다**— 위 주석대로면 https는 남길 이유가 없고,

@@ -127,18 +127,18 @@ if out_a="$(helm template appset "${CHART_DIR}" --set "repoUrl=${REPO_URL}" 2>&1
     patch_chart="${WORKDIR}/patch-chart"
 
     cat > "${WORKDIR}/umbrella.yaml" <<'VALUES'
-name: cert-manager
-namespace: cert-manager
+name: cnpg-operator
+namespace: cnpg-system
 tier: "0"
 source:
   type: umbrella
-  path: gitops/charts/cert-manager
+  path: gitops/charts/cnpg-operator
 path:
-  path: gitops/apps/cert-manager
+  path: gitops/apps/cnpg-operator
 VALUES
     if out_u="$(helm template p "${patch_chart}" -f "${WORKDIR}/umbrella.yaml" 2>&1)"; then
         expect_eq "(f) umbrella → source(path·repoURL·main)" "${out_u}" \
-            'd["spec"]["source"]' "{\"path\": \"gitops/charts/cert-manager\", \"repoURL\": \"${REPO_URL}\", \"targetRevision\": \"main\"}"
+            'd["spec"]["source"]' "{\"path\": \"gitops/charts/cnpg-operator\", \"repoURL\": \"${REPO_URL}\", \"targetRevision\": \"main\"}"
         expect_eq "(f) umbrella → sources 없음" "${out_u}" '"sources" in d["spec"]' 'false'
     else
         fail "(f) umbrella 픽스처 평가 실패: ${out_u}"

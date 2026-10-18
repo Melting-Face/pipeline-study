@@ -53,10 +53,9 @@ terraform/platform/          스택 B — ingress-nginx · argo-cd · appset(두
   values/argocd.yaml.tftpl
 gitops/apps/<app>/config.yaml  앱 목록의 정본 — name·namespace·tier·source (아래 §앱 추가·제거)
 gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrella 차트 하나
-  cert-manager/              ①  jetstack 차트 dependency + 로컬 CA(local-ca.yaml, sync-wave 1)
   cnpg-operator/             ①  cloudnative-pg 차트
   spark-operator/            ①  spark-kubernetes-operator 차트 + 워크로드 정리 RBAC
-  flink-operator/            ①  flink-kubernetes-operator 차트 + 웹훅·워크로드 RBAC + operator-values
+  flink-operator/            ①  flink-kubernetes-operator 차트(webhook 끔) + 워크로드 RBAC + operator-values
   storage-external/          ②  직접 작성(ExternalName Service — 클러스터 밖 SeaweedFS)
   catalog-postgres/          ②  CNPG Cluster CR
   airflow/                   ③  Airflow umbrella 차트(PR3-B) — 메타 DB는 CNPG 별도 롤·DB, 이미지는 images/airflow/
@@ -137,6 +136,7 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
 | --- | --- | --- |
 | `terraform/lakehouse-platform/` | 철거 — 오퍼레이터는 ArgoCD로, Dagster는 미배포 | ① |
 | `scripts/k8s-operators.sh` | 철거 — cert-manager·네임스페이스가 차트·`CreateNamespace`로 | ① |
+| `gitops/charts/cert-manager/` · `gitops/apps/cert-manager/` | 철거(B3 — 유일한 소비자였던 Flink 웹훅을 끔). 재도입 조건은 [conventions/k8s/cnpg.md](conventions/k8s/cnpg.md)(Barman 플러그인) | — |
 | `k8s/dagster/*` · `scripts/k8s-dagster.sh` | **삭제**(git 이력으로 복원 가능). 이미지·코드(`dagster/dockerfile.d`)는 호스트 Dagster용으로 유지 | ① |
 | `scripts/k8s-up.sh` | 축소 — podman 머신·레지스트리만 | ① |
 | `scripts/k8s-env.sh` | `KUBECONFIG` export + 컨텍스트 가드 추가(§6) | ① |
@@ -154,10 +154,9 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
 | 0. 앱 목록 | 설정 파일 오삭제·generator 0건이 Application 삭제로 번짐 | ApplicationSet `syncPolicy.applicationsSync: create-update`(생성·갱신만, 삭제 안 함) | R2 |
 | 1. 앱 삭제 | Application 삭제 시 하위 리소스 연쇄 삭제 | ApplicationSet `syncPolicy.preserveResourcesOnDeletion: true` | R2 |
 | 2. 상태 리소스 | prune·삭제로 CNPG Cluster·SeaweedFS 소실 | 해당 리소스에 `argocd.argoproj.io/sync-options: Prune=false,Delete=false` | R1 |
-| 3. CRD | CRD 삭제 → 그 CRD의 CR이 GC로 연쇄 삭제 | `helm.sh/resource-policy: keep` — ArgoCD가 `Delete=false`와 동등하게 지원 | R3·R4·R6 |
+| 3. CRD | CRD 삭제 → 그 CRD의 CR이 GC로 연쇄 삭제 | `helm.sh/resource-policy: keep` — ArgoCD가 `Delete=false`와 동등하게 지원 | R3·R6 |
 
 - 겹 3의 차트별 상태: **CNPG**는 CRD 템플릿에 keep이 고정 부착돼 있다(R6).
-  **cert-manager**는 `crds.enabled`(기본 false)를 **true로 켜야** CRD가 설치되고, `crds.keep`은 기본 true다(R4).
   **Spark·Flink** 오퍼레이터 차트는 CRD를 `crds/` 디렉터리로 싣고 어노테이션을 넣을 values 키가 없어,
   이 둘은 겹 3이 **선언된 공백**이다. 근거: 이 둘의 CR(`SparkApplication`·`FlinkDeployment` 등)은 ArgoCD 밖의
   온디맨드 컴퓨트(D7)이고 상태·데이터가 아니다(데이터는 Iceberg에 있다). 남는 방어는 겹 1뿐인데,
@@ -207,9 +206,10 @@ syncPolicy:
   검증은 **최종 상태**(전부 Synced·Healthy)로 판정하고, 소요 시간은 임계값 없이 실측만 남긴다(§7 관문 ①).
   기준선이 없는 값에 임계를 먼저 박지 않는다.
 - **앱 안 — sync-wave**: 같은 앱 안에서 웹훅이 준비돼야 받아들여지는 리소스는 wave로 뒤에 둔다.
-  `cert-manager` 앱의 로컬 CA(Issuer·Certificate)는 `argocd.argoproj.io/sync-wave: "1"` —
-  wave 0(cert-manager 본체)이 Healthy가 된 뒤 적용된다. 재시도에만 기대는 것보다 확정적이다.
-  Flink 웹훅 RBAC 등 같은 형태가 더 있는지는 구현 시 `helm template`으로 판단한다.
+  해당 리소스에 `argocd.argoproj.io/sync-wave: "1"`을 달면 wave 0(웹훅 본체)이 Healthy가 된 뒤 적용된다 —
+  재시도에만 기대는 것보다 확정적이다. 지금 wave를 쓰는 앱은 **없다**(유일한 사례였던 cert-manager 로컬 CA는
+  B3에서 철거). 새 앱이 같은 형태인지는 추가 시 `helm template`으로 판단하고, 쓰면 `tests/expect.yaml`의
+  `kinds_with_wave`로 고정한다.
 - **기각한 대안**: app-of-apps + **앱 간** sync-wave(순서는 확정적이나
   `argocd-study`가 걷어낸 루트 Application 구조로 돌아간다).
 - syncPolicy는 **블록 스타일**로 쓴다 — flow 스타일은 영구 drift를 낸다(`argocd-study` appset 템플릿 주석).
@@ -380,7 +380,8 @@ PR마다 함께 갱신할 단일 출처: [setup.md](setup.md) §3·[setup/local-
   https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Controlling-Resource-Modification/
 - **R3** Argo CD, *Helm* (user guide) — Helm 주석 지원 표, `helm.sh/resource-policy: keep`.
   https://argo-cd.readthedocs.io/en/stable/user-guide/helm/
-- **R4** cert-manager, Helm chart `values.yaml` — `crds.enabled`·`crds.keep`.
+- **R4** cert-manager, Helm chart `values.yaml` — `crds.enabled`·`crds.keep`. cert-manager는 B3에서 철거돼
+  현행 서술의 근거가 아니다 — 재도입 시 겹 3 판단의 근거로 남긴다.
   https://raw.githubusercontent.com/cert-manager/cert-manager/master/deploy/charts/cert-manager/values.yaml
 - **R5** Apache Software Foundation, *Release Distribution Policy*. https://infra.apache.org/release-distribution.html
 - **R6** CloudNativePG charts, `charts/cloudnative-pg/templates/crds/crds.yaml`·`values.yaml`(`crds.create`).

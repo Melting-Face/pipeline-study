@@ -1,8 +1,14 @@
 # 렌더 결과에 대한 기대 — scripts/gitops-charts-check.sh (c)
-# webhook RBAC 가 flink-operator/flink-operator SA 를 참조한다. 릴리스 이름(=Application 이름)이
-# 바뀌면 SA 이름이 바뀌어 RBAC 가 조용히 빗나간다.
-service_accounts: [flink-operator]
+# workload RBAC(templates/flink-workload-rbac.yaml)가 default/flink SA 를 이름으로 참조한다.
+# 서브차트 jobServiceAccount.name 이 바뀌면 RBAC 가 조용히 빗나간다.
+service_accounts: [flink]
 min_crds: 4
+# 웹훅은 끈다(values.yaml webhook.create: false) — 다시 켜지면 cert-manager 없이 Certificate·Issuer 가 렌더돼 sync 가 깨진다.
+absent:
+    - MutatingWebhookConfiguration/flink-operator-flink-operator-webhook-configuration
+    - ValidatingWebhookConfiguration/flink-operator-flink-operator-webhook-configuration
+    - Certificate/flink-operator-serving-cert
+    - Issuer/flink-operator-selfsigned-issuer
 # CRD 가 crds/ 에 있고 어노테이션을 넣을 values 키가 없어 keep 을 못 단다(docs/argocd-gitops.md §4 겹 3 선언된 공백).
 crd_keep_exempt:
     - flinkbluegreendeployments.flink.apache.org

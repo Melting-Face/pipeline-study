@@ -9,7 +9,6 @@
       "entries": {
         "external": { "label": "호스트" },
         "cloud": { "label": "진입 · 레지스트리" },
-        "security": { "label": "TLS 발급" },
         "backend": { "label": "컴퓨트" },
         "frontend": { "label": "오케스트레이터" },
         "database": { "label": "스토어 (셸 소유)" }
@@ -25,7 +24,7 @@
       {
         "id": "exposure",
         "label": "노출 경로",
-        "focus": ["podman", "ingress", "certmgr", "dagster"],
+        "focus": ["podman", "ingress", "dagster"],
         "note": "고정 진입점은 kind 8080/8443 둘뿐이다."
       },
       {
@@ -49,7 +48,6 @@
     { "id": "registry", "type": "cloud", "label": "kind-registry", "sublabel": "127.0.0.1:5001", "row": 2, "col": 1 },
     { "id": "podman", "type": "external", "label": "podman machine", "sublabel": "rootful", "tag": "8 vCPU / 26GB", "row": 1, "col": 0 },
     { "id": "ingress", "type": "cloud", "label": "ingress-nginx", "sublabel": "v1.15.1", "tag": "hostPort 80/443", "row": 1, "col": 1 },
-    { "id": "certmgr", "type": "security", "label": "cert-manager", "sublabel": "lakehouse-ca", "tag": "ECDSA-256", "row": 0, "col": 1 },
     { "id": "dagster", "type": "frontend", "label": "Dagster", "sublabel": "webserver + daemon", "tag": "Terraform", "row": 1, "col": 2 },
     { "id": "flinksession", "type": "backend", "label": "Flink 세션 JM", "sublabel": "SQL ConfigMap", "tag": "워크로드", "row": 2, "col": 2 },
     { "id": "seaweedfs", "type": "database", "label": "SeaweedFS", "sublabel": "S3 :8333", "tag": "PVC 20Gi", "row": 0, "col": 3 },
@@ -59,12 +57,7 @@
     {
       "kind": "region",
       "label": "kind 클러스터 lakehouse",
-      "wraps": ["registry", "ingress", "certmgr", "dagster", "flinksession", "seaweedfs", "catalogpg"]
-    },
-    {
-      "kind": "security-group",
-      "label": "TLS 종단 · lakehouse-ca",
-      "wraps": ["ingress", "certmgr"]
+      "wraps": ["registry", "ingress", "dagster", "flinksession", "seaweedfs", "catalogpg"]
     }
   ],
   "connections": [
@@ -88,7 +81,7 @@
       "dot": "amber",
       "title": "노출과 소유권",
       "items": [
-        "gRPC 노출 경로(Spark Connect)는 철거됐다 — Ingress로 나가는 것은 HTTP뿐이고 cert-manager TLS의 소비자는 0이다",
+        "gRPC 노출 경로(Spark Connect)는 철거됐다 — Ingress로 나가는 것은 HTTP뿐이다. TLS 소비자가 0이 돼 cert-manager도 철거했다(B3)",
         "소유권 4축: Terraform(helm 3 + manifest 18) / 셸(스테이트풀 — destroy 시 PVC 소실) / 온디맨드 / 워크로드. kubectl apply로 TF 소유 리소스를 덮으면 필드 소유권이 kubectl-patch로 넘어가 plan은 잡고 apply는 실패한다"
       ]
     },
