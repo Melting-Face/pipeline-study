@@ -1,9 +1,8 @@
 # dbt-trino 프로파일: k8s Trino를 통해 Iceberg(JDBC 카탈로그) 레이크하우스에 적재
 # database = Trino 카탈로그명(gitops/apps/trino/values.yaml의 catalog-name과 일치), schema = Trino 스키마
 #
-# 접속 대상은 k8s Trino(Ingress `trino.localtest.me:8080`)다. compose `legacy-sql` Trino는
-# **다른 카탈로그 DB**(compose postgres)를 보므로 붙이려면 `TRINO_HOST=localhost TRINO_PORT=8081`처럼
-# env로 **한 벌**을 바꾼다. Dagster `TrinoResource`(common/constants.py)도 같은 env를 읽는다.
+# 접속 대상은 k8s Trino(Ingress `trino.localtest.me:8080`)다. 바꿀 때는 `TRINO_HOST`·`TRINO_PORT`를
+# env로 **한 벌**로 바꾼다. Dagster `TrinoResource`(common/constants.py)도 같은 env를 읽는다.
 #
 # Spark 타깃(spark_session·spark_connect·spark_thrift)은 Spark Connect·Thrift 철거와 함께 걷어냈다.
 # 🔴 Spark 시절 결과와의 **값 대조는 하지 않았다(미대조)** — docs/architectures/trino.md.
