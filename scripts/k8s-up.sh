@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 로컬 K8s 선행 조건 기동: podman machine + 로컬 레지스트리 컨테이너
-# kind 클러스터·certs.d·레지스트리 네트워크 연결은 terraform/cluster/kind가 소유한다.
+# 로컬 K8s 선행 조건 기동: podman machine + 로컬 레지스트리 컨테이너 (+ 중지된 S3·kind 노드 재시작)
+# kind 클러스터·certs.d·레지스트리 네트워크 연결은 terraform/cluster/kind가 소유한다(생성은 그쪽, 여기는 켜기만).
 # 사용: ./scripts/k8s-up.sh
 # 자원 override 예: MACHINE_MEMORY_MIB=24576 ./scripts/k8s-up.sh
 set -euo pipefail
@@ -121,5 +121,26 @@ else
         --name "${REGISTRY_NAME}" "${REGISTRY_IMAGE}"
 fi
 
+# 3) S3·kind 노드 컨테이너 — 생성·교체는 스택 A(terraform/cluster/kind)가 소유한다. 여기서는 **켜기만** 한다.
+# 🔴 VM이 재부팅되면 둘 다 Exited로 남는다(#244). restart 정책이 `no`이고, `always`인 레지스트리도
+#    VM의 podman-restart.service가 꺼져 있어 스스로 살아나지 않았다. 그래서 정책이 아니라 이 단계가 수단이다.
+#    부재는 만들지 않는다 — 여기서 만들면 state 밖 컨테이너가 생긴다. 이름 `seaweedfs`는 main.tf와 같다.
+MISSING=0
+for CONTAINER in seaweedfs "${NODE_CONTAINER}"; do
+    if [ "$(podman inspect -f '{{.State.Running}}' "${CONTAINER}" 2>/dev/null || echo absent)" = "true" ]; then
+        log "실행중: ${CONTAINER}"
+    elif podman container exists "${CONTAINER}"; then
+        log "재시작: ${CONTAINER} (중지 상태 — VM 재부팅 등)"
+        podman start "${CONTAINER}"
+    else
+        log "없음: ${CONTAINER} — 스택 A apply가 만든다"
+        MISSING=1
+    fi
+done
+
 log "완료: podman machine + 레지스트리(127.0.0.1:${REGISTRY_PORT}) 준비됨"
-log "다음: terraform -chdir=terraform/cluster/kind apply (클러스터), 이후 platform 스택"
+if [ "${MISSING}" -eq 1 ]; then
+    log "다음: terraform -chdir=terraform/cluster/kind apply (클러스터), 이후 platform 스택"
+else
+    log "다음: 파드 수렴 확인 — kubectl get pods -A (노드를 방금 켰다면 수 분)"
+fi

@@ -53,12 +53,16 @@ podman run -d --restart=always \
 - **생기는 것**: Linux VM 하나(컨테이너가 실제로 도는 곳)와 호스트 `127.0.0.1:5001`의 이미지 레지스트리.
   숫자는 [`scripts/k8s-env.sh`](../../scripts/k8s-env.sh)의 기본값이다.
 - **확인**: `podman machine list`에서 `Currently running` · `podman ps --filter name=kind-registry`에서 `Up`.
-- **단축**: `scripts/k8s-up.sh`. 스크립트는 분기 두 개를 더한다.
+- **단축**: `scripts/k8s-up.sh`. 스크립트는 분기 세 개를 더한다.
   - VM: 기존 머신이 있으면 새로 만들지 않고 그 머신을 쓴다. 실행 중이면 그대로, 중지된 머신이 하나뿐이면
     켜서 쓰고, 중지된 머신이 여럿이면 고르지 않고 멈춘다(먼저 `podman machine start <이름>`).
     재사용할 머신이 rootless면 켜기 전에 멈춘다. 머신이 하나도 없을 때만 `dagster-k8s`를 만든다.
     전용 머신을 강제하려면 `MANAGE_MACHINE=true`. 분기 테스트는 `bash scripts/tests/k8s-up-machine.sh`.
   - 레지스트리: 상태가 셋이다 — 실행 중이면 그대로, 중지면 `podman start kind-registry`, 없을 때만 `podman run`.
+  - S3(`seaweedfs`)·kind 노드(`lakehouse-control-plane`): 중지면 `podman start`(S3 먼저), 없으면 만들지 않고
+    스택 A apply를 안내한다(생성은 2단계 소유). VM이 재부팅되면 이 둘이 Exited로 남아 API가
+    `connection refused`가 된다. restart 정책으로는 살아나지 않으므로(VM의 `podman-restart.service`가 꺼져 있다)
+    **재부팅 뒤에도 `k8s-up.sh`를 다시 돌린다**. 파드 수렴에는 수 분이 걸린다.
 
 ### 2단계 — ③ 클러스터 · S3 (Terraform 스택 A)
 
