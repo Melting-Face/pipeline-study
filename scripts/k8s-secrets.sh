@@ -50,7 +50,7 @@ if [ "${CR_OWNER}" != "${PG_USER}" ]; then
     exit 1
 fi
 
-require_cli kubectl openssl
+require_cli kubectl openssl jq
 require_cluster_context
 
 # Secret 하나를 **없을 때만** 만든다(get || create — docs/argocd-gitops.md §8).
@@ -179,10 +179,41 @@ ensure_random_secret airflow airflow-admin password rand_hex
 # 🔴 키는 1)의 default/lakehouse-creds 와 **한 벌**(같은 S3_ACCESS_KEY/SECRET_KEY)이다. Secret 은 ns 를 넘어
 #    참조할 수 없어 사본이 생긴다 — 회전 시 두 Secret 을 함께 지우고 이 스크립트를 다시 돌린다.
 #    JSON 은 jq 로 만든다(키에 따옴표·백슬래시가 섞여도 깨지지 않게). 엔드포인트는 ExternalName 의 FQDN.
-command -v jq >/dev/null || { echo "jq 가 필요하다(airflow-conn-seaweedfs JSON 생성)" >&2; exit 1; }
-ensure_secret airflow airflow-conn-seaweedfs \
-    --from-literal=connection="$(jq -cn --arg k "${S3_ACCESS_KEY}" --arg s "${S3_SECRET_KEY}" \
+#    env 주입이라 Secret 을 바꿔도 Airflow 워크로드를 재기동해야 반영된다.
+#
+# 🔴 두 사본의 **값 일치**를 검사한다 — get-or-create 는 존재만 보므로, 한쪽이 옛 값으로 남으면
+#    Secret 은 있고 파드도 뜨는데 S3 쓰기에서만 ACCESS_DENIED 가 나는 부분 성공이 된다.
+#    기준은 지금 쓰는 S3_ACCESS_KEY/SECRET_KEY 다. 값은 출력하지 않고 같음/다름만 판정한다.
+secret_field() {  # secret_field <ns> <name> <key> — 없으면 빈 문자열
+    kubectl -n "$1" get secret "$2" -o "jsonpath={.data.$3}" 2>/dev/null | base64 -d 2>/dev/null || true
+}
+s3_mismatch() {  # s3_mismatch <설명> — 회전 안내 후 중단
+    printf 'S3 키 사본 불일치: %s 가 현재 S3_ACCESS_KEY/SECRET_KEY 와 다르다\n' "$1" >&2
+    printf '한 벌로 회전한다 — 옛 사본을 지우고 다시 실행한 뒤 해당 워크로드를 재기동한다\n' >&2
+    exit 1
+}
+LH_AK="$(secret_field default lakehouse-creds s3-access-key)"
+LH_SK="$(secret_field default lakehouse-creds s3-secret-key)"
+if [ "${LH_AK}" != "${S3_ACCESS_KEY}" ] || [ "${LH_SK}" != "${S3_SECRET_KEY}" ]; then
+    s3_mismatch default/lakehouse-creds
+fi
+unset LH_AK LH_SK
+if kubectl -n airflow get secret airflow-conn-seaweedfs >/dev/null 2>&1; then
+    CONN_EXISTING="$(secret_field airflow airflow-conn-seaweedfs connection)"
+    if [ "$(printf '%s' "${CONN_EXISTING}" | jq -r .login)" != "${S3_ACCESS_KEY}" ] \
+        || [ "$(printf '%s' "${CONN_EXISTING}" | jq -r .password)" != "${S3_SECRET_KEY}" ]; then
+        s3_mismatch airflow/airflow-conn-seaweedfs
+    fi
+    unset CONN_EXISTING
+    log "Secret 있음(건드리지 않음, 키 일치): airflow/airflow-conn-seaweedfs"
+else
+    # 명령 치환은 단독 대입으로 받는다 — 인자 안이면 실패해도 set -e 가 안 걸려 빈 값 Secret 이 남는다(rand_hex 주석)
+    CONN_JSON="$(jq -cn --arg k "${S3_ACCESS_KEY}" --arg s "${S3_SECRET_KEY}" \
         '{conn_type: "aws", login: $k, password: $s,
           extra: {endpoint_url: "http://seaweedfs.default.svc:8333", region_name: "us-east-1"}}')"
+    nonempty airflow-conn-seaweedfs "${CONN_JSON}"
+    ensure_secret airflow airflow-conn-seaweedfs --from-literal=connection="${CONN_JSON}"
+    unset CONN_JSON
+fi
 
 log "완료. 카탈로그 Cluster는 ArgoCD(catalog-postgres)가, S3는 클러스터 밖 스택 A(terraform/cluster/kind)가 맡는다"
