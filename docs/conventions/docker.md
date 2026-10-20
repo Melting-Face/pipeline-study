@@ -208,8 +208,15 @@ Spark·Flink 러너 이미지는 이 경로가 아니라 로컬 레지스트리 
 - **태그는 불변이다** — 덮어쓰지 않는다. 롤백은 **values 태그만** 이전 값으로 되돌리는 PR이다
   (이미지 내용 변경을 섞으면 PR 검사에 걸린다). 잘못 발행한 태그는 다음 패치 버전으로 전진한다.
 - **발행 전 검증**: `bash images/airflow/tests/dag-import.test.sh`(arm64 빌드 → DagBag 파싱 —
-  import 오류 0건·DAG `hello`·태스크별 executor·태스크 의존, executor 목록은 values에서 읽는다).
+  import 오류 0건·DAG별 태스크·executor·의존, `github_trending`은 cron·해석 tz·Asset outlet까지 —
+  executor 목록은 values에서 읽는다). **DAG를 추가하면 판정 셀도 함께 추가**한다(오류 0건만으로는 모양을 못 본다).
   로컬은 podman, CI는 `CONTAINER_CLI=docker`로 같은 스크립트를 돈다. DB 없이 파싱만 하므로 클러스터가 필요 없다.
+- **DAG의 외부 연결은 이미지가 아니라 차트 env로 주입한다** — `values.yaml`의 `secret:`(→ `AIRFLOW_CONN_<ID>`)·`env:`가
+  모든 Airflow 컨테이너와 K8s 태스크 파드 템플릿에 들어간다. Secret 값은 `scripts/k8s-secrets.sh`가 만든다.
+  🔴 `secretKeyRef`는 필수 참조라 **Secret이 sync보다 먼저** 있어야 한다(없으면 파드가 `CreateContainerConfigError`).
+  S3 연결 `seaweedfs_s3`(Secret `airflow-conn-seaweedfs`)의 키는 `default/lakehouse-creds`와 **한 벌**이다 —
+  Secret은 네임스페이스를 넘어 참조할 수 없어 사본이 생기므로 **회전 시 둘을 함께** 바꾼다.
+  공식 base 이미지에 amazon provider·`requests`가 이미 있어 `Dockerfile`에 pip 설치를 두지 않는다.
 - **발행은 곧 공개다** — 이 패키지는 public 저장소에 연결돼 **처음 생길 때부터 public**이었다(실측).
   「private으로 올리고 확인한 뒤 공개」하는 단계가 없으므로, 공개 전 게이트는 **발행 전**에 있다:
   위 로컬 검증과 `images/airflow/` 변경의 PR 리뷰. 빌드 컨텍스트에 비밀·데이터가 들어갈 경로를 만들지 않는다

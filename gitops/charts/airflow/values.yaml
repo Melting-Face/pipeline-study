@@ -8,7 +8,7 @@ airflow:
     images:
         airflow:
             repository: ghcr.io/melting-face/pipeline-study-airflow
-            tag: "v0.2.0"  # bump-image-tag
+            tag: "v0.3.0"  # bump-image-tag
 
     # --- 1. Executor (A2) ---
     # 순서가 의미다 — 첫 자리(Celery)가 기본, 태스크 단위 `executor="KubernetesExecutor"` 로 라우팅한다.
@@ -31,6 +31,20 @@ airflow:
         # 키 connection — redis://:<pw>@airflow-redis:6379/0. 🔴 redis.passwordSecretName 과 **함께** 줘야
         # templates/secrets/redis-secrets.yaml 의 randAlphaNum + pre-install 훅 Secret 이 렌더되지 않는다
         brokerUrlSecretName: airflow-broker-url
+
+    # --- 2-1. DAG 가 쓰는 외부 연결 — 모든 Airflow 컨테이너(worker·k8s 태스크 파드 포함) env ---
+    # S3(SeaweedFS) Connection `seaweedfs_s3` — 값(키 포함 JSON)은 scripts/k8s-secrets.sh 가 만든다.
+    # 🔴 S3 키는 default/lakehouse-creds 와 한 벌이다 — 회전 시 두 Secret 을 함께 갱신한다(교차 ns 참조 불가).
+    secret:
+        - envName: AIRFLOW_CONN_SEAWEEDFS_S3
+          secretName: airflow-conn-seaweedfs
+          secretKey: connection
+    # SeaweedFS 는 aws-chunked 체크섬을 못 풀어 객체가 손상된다 — boto3 기본(when_supported)을 끈다
+    env:
+        - name: AWS_REQUEST_CHECKSUM_CALCULATION
+          value: when_required
+        - name: AWS_RESPONSE_CHECKSUM_VALIDATION
+          value: when_required
 
     # --- 3. 메타 DB 풀 (설계 §3) ---
     # max_connections 를 카탈로그(iceberg)와 공유하므로 프로세스마다 SQLAlchemy 풀을 작게 묶는다.

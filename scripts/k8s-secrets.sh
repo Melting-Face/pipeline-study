@@ -175,4 +175,14 @@ ensure_random_secret airflow airflow-jwt-secret jwt-secret rand_hex
 ensure_random_secret airflow airflow-api-secret api-secret-key rand_hex
 ensure_random_secret airflow airflow-admin password rand_hex
 
+# DAG 용 S3(SeaweedFS) Connection — values.yaml `secret:` 가 env AIRFLOW_CONN_SEAWEEDFS_S3 로 주입한다.
+# 🔴 키는 1)의 default/lakehouse-creds 와 **한 벌**(같은 S3_ACCESS_KEY/SECRET_KEY)이다. Secret 은 ns 를 넘어
+#    참조할 수 없어 사본이 생긴다 — 회전 시 두 Secret 을 함께 지우고 이 스크립트를 다시 돌린다.
+#    JSON 은 jq 로 만든다(키에 따옴표·백슬래시가 섞여도 깨지지 않게). 엔드포인트는 ExternalName 의 FQDN.
+command -v jq >/dev/null || { echo "jq 가 필요하다(airflow-conn-seaweedfs JSON 생성)" >&2; exit 1; }
+ensure_secret airflow airflow-conn-seaweedfs \
+    --from-literal=connection="$(jq -cn --arg k "${S3_ACCESS_KEY}" --arg s "${S3_SECRET_KEY}" \
+        '{conn_type: "aws", login: $k, password: $s,
+          extra: {endpoint_url: "http://seaweedfs.default.svc:8333", region_name: "us-east-1"}}')"
+
 log "완료. 카탈로그 Cluster는 ArgoCD(catalog-postgres)가, S3는 클러스터 밖 스택 A(terraform/cluster/kind)가 맡는다"

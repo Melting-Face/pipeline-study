@@ -2,7 +2,7 @@
 # images/airflow/tests/dag-import.test.sh
 #
 # 커스텀 Airflow 이미지를 빌드하고, 이미지 안에서 DAG가 "import 오류 0건"이며
-# DAG id `hello`가 존재하는지 본다. 클러스터·레지스트리를 건드리지 않는다.
+# DAG(`hello`·`github_trending`)가 기대한 모양인지 본다. 클러스터·레지스트리를 건드리지 않는다.
 #
 # 🔴 왜 `airflow dags list`가 아니라 DagBag 직접 호출인가:
 #   Airflow 3의 `dags list`/`list-import-errors`는 메타데이터 DB(초기화 필요)를
@@ -45,11 +45,18 @@ import json
 from airflow.models.dagbag import DagBag
 
 bag = DagBag(dag_folder="/opt/airflow/dags", include_examples=False)
-hello = bag.dags.get("hello")
-tasks = {t.task_id: t.executor for t in hello.tasks} if hello else {}
-downstream = {t.task_id: sorted(t.downstream_task_ids) for t in hello.tasks} if hello else {}
-print(json.dumps({"errors": bag.import_errors, "dag_ids": sorted(bag.dag_ids), "tasks": tasks,
-                  "downstream": downstream}))
+dags = {
+    dag_id: {
+        "tasks": {t.task_id: t.executor for t in d.tasks},
+        "downstream": {t.task_id: sorted(t.downstream_task_ids) for t in d.tasks},
+        "outlets": {t.task_id: sorted(a.uri for a in t.outlets) for t in d.tasks},
+        # Task SDK timetable 에는 summary 가 없다. cron 의 해석 tz 는 DAG 가 아니라 timetable 의 것이다
+        "cron": getattr(d.timetable, "expression", None),
+        "cron_tz": str(getattr(d.timetable, "timezone", None)),
+    }
+    for dag_id, d in bag.dags.items()
+}
+print(json.dumps({"errors": bag.import_errors, "dag_ids": sorted(bag.dag_ids), "dags": dags}))
 '
 
 # values 의 executor 목록을 주입한다. 없으면 태스크의 executor="KubernetesExecutor"가
@@ -77,7 +84,7 @@ else
 fi
 
 # 미지정 태스크는 null(→ 배포 기본 Celery), k8s 태스크만 명시 executor를 가진다.
-if echo "${result}" | jq -e '.tasks == {"say_hello": null, "say_hello_k8s": "KubernetesExecutor"}' >/dev/null; then
+if echo "${result}" | jq -e '.dags.hello.tasks == {"say_hello": null, "say_hello_k8s": "KubernetesExecutor"}' >/dev/null; then
     echo "PASS [executors] say_hello=기본(Celery), say_hello_k8s=KubernetesExecutor"
 else
     echo "FAIL [executors] 태스크별 executor가 기대와 다르다"
@@ -85,10 +92,50 @@ else
 fi
 
 # 기본(Celery) 경로가 끝난 뒤 K8s 경로가 돈다 — 의존이 빠지면 두 경로가 병렬로 돌아도 테스트가 통과했었다
-if echo "${result}" | jq -e '.downstream == {"say_hello": ["say_hello_k8s"], "say_hello_k8s": []}' >/dev/null; then
+if echo "${result}" | jq -e '.dags.hello.downstream == {"say_hello": ["say_hello_k8s"], "say_hello_k8s": []}' >/dev/null; then
     echo "PASS [dependency] say_hello >> say_hello_k8s"
 else
     echo "FAIL [dependency] 태스크 의존이 기대와 다르다"
+    rc=1
+fi
+
+# --- github_trending ---------------------------------------------------------
+if echo "${result}" | jq -e '.dag_ids | index("github_trending")' >/dev/null; then
+    echo "PASS [gt-dag-id] DAG id 'github_trending' 존재"
+else
+    echo "FAIL [gt-dag-id] DAG id 'github_trending'가 없다"
+    rc=1
+fi
+
+# 두 태스크 모두 기본(Celery) — executor 를 지정하지 않는다
+if echo "${result}" | jq -e '.dags.github_trending.tasks == {"fetch_trending": null, "write_raw": null}' >/dev/null; then
+    echo "PASS [gt-tasks] fetch_trending·write_raw, 기본 executor"
+else
+    echo "FAIL [gt-tasks] 태스크 집합·executor가 기대와 다르다"
+    rc=1
+fi
+
+# 수집이 끝나야 저장한다
+if echo "${result}" | jq -e '.dags.github_trending.downstream == {"fetch_trending": ["write_raw"], "write_raw": []}' >/dev/null; then
+    echo "PASS [gt-dependency] fetch_trending >> write_raw"
+else
+    echo "FAIL [gt-dependency] 태스크 의존이 기대와 다르다"
+    rc=1
+fi
+
+# 매일 09:00 이고 해석 기준이 KST 여야 한다 — cron 만 맞고 tz 가 UTC 면 18:00 KST 에 돈다
+if echo "${result}" | jq -e '.dags.github_trending.cron == "0 9 * * *" and .dags.github_trending.cron_tz == "Asia/Seoul"' >/dev/null; then
+    echo "PASS [gt-schedule] 0 9 * * * (Asia/Seoul)"
+else
+    echo "FAIL [gt-schedule] 스케줄·타임존이 기대와 다르다"
+    rc=1
+fi
+
+# 저장 태스크만 Asset 을 낸다(하류 DAG 의 트리거 대상)
+if echo "${result}" | jq -e '.dags.github_trending.outlets.write_raw == ["s3://warehouse/raw/github_trending"]' >/dev/null; then
+    echo "PASS [gt-outlet] write_raw → s3://warehouse/raw/github_trending"
+else
+    echo "FAIL [gt-outlet] write_raw 의 Asset outlet이 기대와 다르다"
     rc=1
 fi
 
