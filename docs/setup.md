@@ -154,6 +154,8 @@ kubectl get applications -n argocd        # 전부 Synced · Healthy 면 수렴
 | ArgoCD UI | http://argocd.localtest.me:8080 | ✅ 상시 — 로그인은 아래 「로그인·비밀값」 |
 | Airflow UI | http://airflow.localtest.me:8080 | ✅ 상시(첫 기동 중에는 503) — Ingress `airflow-ingress`, REST `/api/v2`도 같은 호스트 |
 | Flink Web UI | http://flink.localtest.me:8080 | ⏸ 세션 클러스터가 떠 있을 때 |
+| Trino UI | http://trino.localtest.me:8080 | ✅ 상시(coordinator) — UI와 쿼리 프로토콜이 같은 호스트 |
+| Dagster UI | http://localhost:3000 | ⏸ 호스트에서 `dg dev`를 띄웠을 때 — 클러스터 밖, 명령은 §5 |
 
 ⏸ port-forward 경로:
 
