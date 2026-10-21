@@ -1,0 +1,148 @@
+# 서브차트(prometheus-community/prometheus 29.37.0) 값 — 업스트림 키는 `prometheus:` 아래에 둔다.
+#
+# 관측 경로 선언(docs/conventions/monitoring.md §1):
+#   - probe  : 차트 기본 — server readiness `GET /-/ready`·liveness `GET /-/healthy`,
+#              configmap-reload readiness·liveness `GET /healthz`(포트 metrics 8080)
+#   - 로그   : stdout(`kubectl -n monitoring logs deploy/prometheus-server -c prometheus-server`)
+#   - 메트릭 : 자기 자신(job `prometheus`) — 이 차트가 클러스터의 수집기다
+#   - 알림   : 관측 등급 — Alertmanager 를 두지 않아 규칙이 발화해도 **어디에도 전달되지 않는다**.
+#              UI `/alerts` 에서 보는 사람이 있을 때만 의미가 있다(등급 어휘는 docs/conventions/data-quality.md)
+#
+# 수집 대상(scrapeConfigs 맵 — 키가 job_name 이 된다). 차트 기본 job 은 남길 것만 남기고 enabled: false 로 끈다.
+#   prometheus                — 자기 자신(localhost:9090)
+#   kubernetes-nodes-cadvisor — 노드 kubelet 10250 직접(컨테이너 CPU·메모리). clusterrole 의 nodes/metrics 로 닿는다
+#   seaweedfs                 — 클러스터 밖 컨테이너(스택 A), kind 네트워크 별칭 seaweedfs-ext:9324
+#   spark-operator            — operator 파드 metrics-port(19090), 경로 /prometheus(/metrics 는 404)
+#   cnpg                      — catalog-postgres 인스턴스 파드 metrics(9187), 경로 /metrics
+# 안 긁는 것: trino(/metrics 가 무인증 쿼리 포트와 같아 후속), airflow statsd(꺼 둠), flink-operator(slf4j 로그 리포터)
+prometheus:
+  # --- 서브차트 4종: 기본 on → 전부 끈다(server 단독). tests/expect.yaml 의 absent 가 회귀를 잡는다 ---
+  alertmanager:
+    enabled: false
+  kube-state-metrics:
+    enabled: false
+  prometheus-node-exporter:
+    enabled: false
+  prometheus-pushgateway:
+    enabled: false
+
+  configmapReload:
+    prometheus:
+      # 초기값 — 실측 전. 근거: 사이드카는 파일 감시 + reload POST 뿐이라 상주 사용량이 작다
+      resources:
+        requests: {cpu: 10m, memory: 32Mi}
+        limits: {cpu: 50m, memory: 64Mi}
+
+  server:
+    image:
+      # 차트 기본(appVersion)과 같은 값이지만 latest 금지 규약대로 명시 고정
+      tag: v3.15.0
+    # 🔴 web.enable-lifecycle 은 차트 기본값이며 **유지한다**. 차트 deploy.yaml 에 config checksum 어노테이션이 없어
+    # values 변경이 파드 재기동을 부르지 않는다 — configmap-reload 사이드카가 이 API(/-/reload)로 반영하는 것이
+    # 유일한 경로다. 끄면 머지된 scrape·규칙 변경이 반영되지 않은 채 정상으로 보인다.
+    # ⚠️ 대가: 아래 Ingress 로 /-/reload·/-/quit 도 **함께 나간다**(UI 만 연 것으로 읽지 않는다).
+    # ingress-nginx 는 127.0.0.1 바인딩이라 로컬 세션 전제에서만 수용한다 — 바인딩을 넓히면 재검토.
+    extraFlags:
+      - web.enable-lifecycle
+    # --- 저장: PVC 없이 emptyDir — 파드 재기동·재스케줄 시 시계열이 **전부 소멸한다**(선언된 공백) ---
+    # 장기 보관이 목적이 아니라 지금 상태를 보는 용도다. 보존은 시간·크기 중 먼저 닿는 쪽으로 자른다.
+    persistentVolume:
+      enabled: false
+    emptyDir:
+      # retentionSize 보다 넉넉히 — WAL·head 블록은 retentionSize 계산 밖이라 그 위에 얹힌다
+      sizeLimit: 2Gi
+    retention: "2d"
+    retentionSize: "1GB"
+    # 초기값 — 실측 전. 대상 5개 job·scrape 1m(차트 기본)이라 시계열 수가 작다.
+    # 근거·배분 정본은 docs/resource-sizing.md §(B)(행 추가는 문서 갱신과 한 벌)
+    resources:
+      requests: {cpu: 100m, memory: 384Mi}
+      limits: {cpu: 500m, memory: 1Gi}
+    # 노출: HTTP UI 는 Ingress(docs/conventions/k8s.md §10). TLS 없음
+    ingress:
+      enabled: true
+      ingressClassName: nginx
+      hosts:
+        - prometheus.localtest.me
+
+  # --- 알림 규칙: 관측 등급(Alertmanager 없음 → UI /alerts 에서만 보인다) ---
+  serverFiles:
+    alerting_rules.yml:
+      groups:
+        - name: targets
+          rules:
+            - alert: TargetDown
+              expr: up == 0
+              for: 5m
+              labels:
+                severity: warning
+              annotations:
+                summary: "scrape 대상 {{ $labels.job }}/{{ $labels.instance }} 이 5분 넘게 응답하지 않는다"
+                description: "job {{ $labels.job }} 의 {{ $labels.instance }} 에서 up == 0 이 5분 이상 지속됐다."
+
+  scrapeConfigs:
+    # --- 차트 기본 job: 남길 것 ---
+    # prometheus·kubernetes-nodes-cadvisor 는 차트 기본 그대로 둔다(키를 적지 않으면 기본값이 병합된다)
+    # --- 차트 기본 job: 끄는 것 ---
+    # api-server·nodes: 이 PoC 의 질문(워크로드 자원·스토어 상태)에 답하지 않는다
+    kubernetes-api-servers:
+      enabled: false
+    kubernetes-nodes:
+      enabled: false
+    # 어노테이션(prometheus.io/scrape) 기반 탐색: 어노테이션을 단 워크로드가 없어 대상 0 — 명시 job 으로 대신한다
+    kubernetes-service-endpoints:
+      enabled: false
+    kubernetes-service-endpoints-slow:
+      enabled: false
+    kubernetes-services:
+      enabled: false
+    kubernetes-pods:
+      enabled: false
+    kubernetes-pods-slow:
+      enabled: false
+    # pushgateway 서브차트를 껐다
+    prometheus-pushgateway:
+      enabled: false
+
+    # --- 추가 job ---
+    # SeaweedFS(스택 A docker_container.seaweedfs, -metricsPort=9324). 클러스터 Service 가 아니라
+    # kind 네트워크 별칭이다 — 별칭 단일 출처는 gitops/charts/storage-external/values.yaml(스택 A aliases 와 한 벌)
+    seaweedfs:
+      static_configs:
+        - targets:
+            - seaweedfs-ext:9324
+    # Spark Kubernetes Operator(chart 1.8.0) — 경로가 /metrics 가 아니라 /prometheus 다(/metrics 는 404)
+    spark-operator:
+      metrics_path: /prometheus
+      kubernetes_sd_configs:
+        - role: pod
+          namespaces:
+            names: [spark-operator]
+      relabel_configs:
+        - source_labels:
+            - __meta_kubernetes_pod_label_app_kubernetes_io_name
+            - __meta_kubernetes_pod_container_port_name
+          action: keep
+          regex: spark-kubernetes-operator;metrics-port
+        - source_labels: [__meta_kubernetes_namespace]
+          target_label: namespace
+        - source_labels: [__meta_kubernetes_pod_name]
+          target_label: pod
+    # CloudNativePG 인스턴스 파드의 내장 exporter — cnpg.io/cluster 라벨이 있는 파드의 metrics 포트만
+    cnpg:
+      kubernetes_sd_configs:
+        - role: pod
+          namespaces:
+            names: [default]
+      relabel_configs:
+        - source_labels:
+            - __meta_kubernetes_pod_labelpresent_cnpg_io_cluster
+            - __meta_kubernetes_pod_container_port_name
+          action: keep
+          regex: true;metrics
+        - source_labels: [__meta_kubernetes_pod_label_cnpg_io_cluster]
+          target_label: cnpg_cluster
+        - source_labels: [__meta_kubernetes_namespace]
+          target_label: namespace
+        - source_labels: [__meta_kubernetes_pod_name]
+          target_label: pod

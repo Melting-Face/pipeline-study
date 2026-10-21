@@ -120,7 +120,7 @@ export KUBECONFIG=~/.kube/lakehouse.config   # 스택 A가 쓴 클러스터 전�
   ```
 
 - **생기는 것(S3)**: S3 API `http://localhost:8333`(루프백만), 데이터 디렉터리 `seaweedfs/data`, 버킷 3개.
-  compose 컨테이너(Trino·Prometheus·`host-dagster`)는 `host.containers.internal:<게시 포트>`로 닿는다 —
+  compose 컨테이너(`host-dagster`)는 `host.containers.internal:<게시 포트>`로 닿는다 —
   compose 의존으로 표현할 수 없어 **스택 A를 먼저 apply하는 것은 운영자 몫**이다. 이 이름은 podman 전제다
   (Docker Desktop은 `host.docker.internal`).
 - `kubectl`에 옵션을 붙이는 대신 `KUBECONFIG`를 export한다(zsh는 `$K` 형태의 명령 변수를 쪼개지 않는다).

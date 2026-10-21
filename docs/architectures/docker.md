@@ -8,11 +8,12 @@ Docker는 **OS 수준 가상화(컨테이너)** 로 앱과 의존성을 이미�
 
 ## 이 프로젝트에서의 위치 — ✅ 채택
 
-- **역할**: 전 스택(dagster×2·postgres·trino·seaweedfs)을 `compose.yml` 하나로 기동. podman-compose와도 호환.
+- **역할**: 호스트 쪽 보조 서비스(`host-dagster`의 dagster×2·postgres)를 `compose.yml` 하나로
+  기동(전부 opt-in). podman-compose와도 호환.
 - **채택 이유**: 단일 호스트 학습·개발엔 compose가 가장 단순(YAGNI). 다중 노드·오토스케일이 불필요하다.
 - **구성 규칙**(상세 [conventions/docker.md](../conventions/docker.md)): 로깅·env YAML 앵커(DRY),
   이미지 태그 고정(`latest` 금지), healthcheck+`depends_on`, 전 서비스 `deploy.resources`,
-  **옵션 기능은 `profiles`**(monitoring).
+  **옵션 기능은 `profiles`**(host-dagster·legacy-meta).
 - **K8s 대비**: compose=단일 호스트·단순 / K8s=다중 노드·자가치유·오토스케일·롤링업데이트.
   이행 기준은 [k8s.md](k8s.md).
 

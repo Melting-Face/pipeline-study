@@ -58,6 +58,11 @@ x-dagster-common: &dagster-common
       condition: service_healthy
 
 services:
+  # SeaweedFS(오브젝트 스토리지 정본)는 이 compose에 없다 — 스택 A `docker_container.seaweedfs`
+  # (terraform apply)가 소유한다. 컨테이너 이름 `seaweedfs`, 포트는 127.0.0.1에만 게시된다.
+  # compose 서비스는 `host.containers.internal:<게시 포트>`로 닿는다(S3 8333).
+  # 메트릭 9324는 in-cluster Prometheus(gitops/charts/prometheus)가 kind 네트워크 별칭 `seaweedfs-ext`로 긁는다.
+
   # UI/GraphQL 전용. workspace.yaml로 코드 로케이션을 명시 로드한다.
   #
   # in-cluster Dagster(k8s/dagster/)는 ArgoCD 전환으로 철거돼 호스트 경로가 유일한 실행처다.
@@ -138,30 +143,3 @@ services:
         reservations:
           cpus: "0.5"
           memory: 1G
-  # SeaweedFS(오브젝트 스토리지 정본)는 이 compose에 없다 — 스택 A `docker_container.seaweedfs`
-  # (terraform apply)가 소유한다. 컨테이너 이름 `seaweedfs`, 포트는 127.0.0.1에만 게시된다.
-  # compose 서비스는 `host.containers.internal:<게시 포트>`로 닿는다(S3 8333·메트릭 9324).
-  # 모니터링(옵션): `--profile monitoring` 으로만 기동. 뼈대(core)는 profile 없음 → 항상 실행.
-  prometheus:
-    <<: *docker-logging
-    container_name: prometheus
-    profiles: ["monitoring"]
-    image: prom/prometheus:v2.21.0
-    # 호스트에서 메트릭·UI를 볼 때를 위해 노출하되, 루프백 바인딩으로 LAN 도달은 막는다
-    # (docs/security.md — 최소 노출). 수집한 메트릭에 내부 구성이 드러나고 lifecycle API가
-    # 함께 열려 있어, 호스트 밖으로 낼 이유가 없다.
-    ports:
-      - "127.0.0.1:9000:9090"
-    volumes:
-      - ./prometheus:/etc/prometheus
-    command: "--web.enable-lifecycle --config.file=/etc/prometheus/prometheus.yml"
-    # 수집 대상 seaweedfs는 스택 A `docker_container.seaweedfs`(terraform apply) — compose 의존 없음.
-    # TSDB: 시계열 수·보존기간에 따라 메모리 증가, CPU는 낮음
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 1G
-        reservations:
-          cpus: "0.25"
-          memory: 512M

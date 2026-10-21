@@ -11,20 +11,41 @@
 즉 관측이 성립하려면 **① 타깃(무엇을 볼지) ② 수집기(긁는 주체) ③ 규칙·라우팅(무엇을 알릴지)**
 셋이 이어져야 하고, 하나만 있어도 나머지가 없으면 데이터는 생기지 않는다.
 
-## 이 프로젝트에서의 위치 — 🔎 미채택 (선언 잔존 · 규칙 0건)
+## 이 프로젝트에서의 위치 — ✅ 채택 (클러스터 안 · server 단독 · 알림은 관측 등급)
 
-**상태 마커 근거**: `compose.yml`에 Prometheus **정의가 있다**. 그래서 ✅(채택)로 읽히기 쉽다.
-`--profile monitoring`으로 띄우면 `host.containers.internal:9324`로 스택 A의 `seaweedfs`(`-metricsPort=9324`)를
-긁는다 — 그 컨테이너는 compose가 띄우지 않으므로 스택 A가 먼저 apply돼 있어야 응답이 온다.
-**수집기가 죽어 있는 상태가 아니다.**
+**수집기는 정본 쪽(kind 클러스터)에 하나만 있다.** ArgoCD 앱 `prometheus`(namespace `monitoring`,
+umbrella 차트 [`gitops/charts/prometheus/`](../../gitops/charts/prometheus/values.yaml))가
+`prometheus-community/prometheus` 차트를 **server 단독**으로 띄운다 — Alertmanager·kube-state-metrics·
+node-exporter·pushgateway는 끄고, 그 부재를 `tests/expect.yaml`의 `absent`가 CI에서 단언한다.
 
-**수집 대상과 정본은 다시 일치한다.** 한동안 오브젝트 스토리지 정본이 K8s StatefulSet이었고 그쪽엔
-메트릭 포트가 없어, 수집기가 **살아 있는 채로 정본이 아닌 compose 사본을 보던** 시기가 있었다(아래 §운영 메모).
-정본이 클러스터 밖 컨테이너 `seaweedfs`(지금은 Terraform 스택 A 소유)로 돌아와 그 갈림은 해소됐다 — 수집기는
-`host.containers.internal:9324`로 그 컨테이너를 본다. 다만 **해소된 것은 대상 정합 하나**다.
-알림 규칙(`rule_files`)은 0건이고 상시 기동도 아니어서, 켜도 **아무것도 알리지 않는다**.
-그래서 표기는 **🔎 미채택 + "선언은 남아 있고 규칙이 없다"** 다
-([../conventions/monitoring.md](../conventions/monitoring.md) §2 — 수집기가 만들어내는 거짓 신호).
+**compose Prometheus는 철거했다.** 그쪽은 정본 워크로드(클러스터)를 보지 않고 SeaweedFS 하나만 긁었으며
+규칙이 0건이었다 — [../conventions/monitoring.md](../conventions/monitoring.md) §2의 「타깃 없는 수집기」였다.
+수집기를 클러스터로 옮기면서 compose 사본을 남기면 같은 수집기가 두 환경에 이중으로 존재하게 돼
+§3-④(정본 이중 존재)가 재발하므로, 옮기는 변경과 철거를 한 번에 했다.
+
+**무엇을 긁는가**(job 정의 정본은 values의 `scrapeConfigs`, 머리 주석에 사유 병기):
+
+| job | 대상 | 비고 |
+| --- | --- | --- |
+| `prometheus` | 자기 자신 | |
+| `kubernetes-nodes-cadvisor` | 노드 kubelet `/metrics/cadvisor` | 컨테이너 CPU·메모리 — metrics-server 부재(`kubectl top` 불가)의 대체 경로 |
+| `seaweedfs` | `seaweedfs-ext:9324` | 클러스터 밖 컨테이너(스택 A). kind 네트워크 별칭으로 닿는다 |
+| `spark-operator` | operator 파드 `:19090/prometheus` | 경로가 `/metrics`가 아니다(`/metrics`는 404) |
+| `cnpg` | catalog-postgres 인스턴스 파드 `:9187/metrics` | |
+
+**안 긁는 것**(선언): Trino(`/metrics`가 무인증 쿼리 포트와 같다) · Airflow(statsd 꺼 둠) ·
+Flink 오퍼레이터(slf4j 로그 리포터). 셋 다 후속이다.
+
+**알림은 관측 등급이다.** 규칙은 `TargetDown`(`up == 0`이 5분) 1건이고 Alertmanager가 없어
+발화해도 **어디에도 전달되지 않는다** — UI `/alerts`를 보는 사람이 있을 때만 의미가 있다.
+⚠️ 이것을 「알림이 있다」로 읽지 않는다([../conventions/data-quality.md](../conventions/data-quality.md) —
+읽는 사람이 없는 `warn`은 관측이 아니라 무시).
+
+**저장은 휘발이다.** `emptyDir` + 짧은 보존이라 파드가 재기동하면 시계열이 사라진다 — dev 환경에서
+수용한 대가이고, 장기 추세를 근거로 쓰려면 이 전제를 먼저 바꿔야 한다.
+
+⚠️ **배포 후 생존 확인은 이 문서가 아니라 관측 기록에 남긴다**(§3 ①~④ — 타깃 목록·`up`·정본 여부).
+차트가 렌더·린트를 통과한 것은 「배선됐다」이지 「긁고 있다」가 아니다.
 
 ### 현행 사실
 
@@ -35,19 +56,20 @@
 여기 두지 않는 이유는 **그 표가 가장 빨리 낡는 종류**이기 때문이다. healthcheck 하나를 붙이거나
 probe 하나를 지우면 값이 바뀌는데, 규칙 문서에 박아 두면 아무도 손대지 않아도 거짓이 된다.
 
-### 대안 비교 — 왜 지금 쓰지 않는가
+### 대안 비교 — 나머지를 왜 지금 쓰지 않는가
 
-⚠️ 아래는 **현재 미채택인 이유**를 적은 것이지 도입 계획이 아니다. 상시 컴포넌트를 하나 올리는 것은
+⚠️ 아래는 **Prometheus server 외 후보가 미채택인 이유**를 적은 것이지 도입 계획이 아니다.
+상시 컴포넌트를 하나 올리는 것은
 컴퓨트 예산을 직접 깎는 선택이고, 예산의 단위·배분은 [../resource-sizing.md](../resource-sizing.md)가
 정본이다(수치는 여기 옮기지 않는다).
 
 | 후보 | 무엇을 주나 | 현재 안 쓰는 이유 |
 | --- | --- | --- |
 | **Grafana** | 대시보드·시각화 | 🔴 **볼 만한 데이터가 없다** — 비어서가 아니라 **채워지는 것이 이 스택의 실제 상태가 아니어서**다. 이 상태로 붙이면 초록 화면이 관측을 대신한다 |
-| **kube-prometheus-stack** | Operator·Prometheus·Alertmanager·Grafana 일괄 | 상주 컴포넌트가 한 번에 여럿 붙어 **가장 비싼 선택**이고 회수 규율과 충돌한다 |
-| **metrics-server** | `kubectl top` 수준의 사용량 | 🔴 **kind에 없다** — 그래서 자원 실측이 `/proc`·cgroup 병행으로 굳어 있다 |
-| **Alertmanager** | 알림 묶음·중복 제거·라우팅 | **알릴 규칙이 없다**(`rule_files` 0건). 발화원 없이 라우터만 두면 §2의 거짓 신호가 하나 더 늘어난다. 단일 사용자 학습 환경이라 수신 채널·당직 개념도 없다 |
-| **exporter 계열**(node·postgres 등) | 서비스별 `/metrics` | 수집기는 살아 있으나 **정본 워크로드를 스크레이프하도록 배선돼 있지 않다**. 그 상태에서 exporter부터 붙이면 **내보내는 쪽만 늘고 읽는 쪽이 없다**(순서가 거꾸로다) |
+| **kube-prometheus-stack** | Operator·Prometheus·Alertmanager·Grafana 일괄 | 상주 컴포넌트가 한 번에 여럿 붙어 **가장 비싼 선택**이고 회수 규율과 충돌한다. CRD가 대량으로 들어와 CI의 CRD 보존 검사 면제도 늘어난다 — 그래서 Operator 없는 단독 차트를 택했다 |
+| **metrics-server** | `kubectl top` 수준의 사용량 | 🔴 **kind에 없다** — 컨테이너 사용량은 이제 cAdvisor job으로 질의할 수 있다. 기존 `/proc`·cgroup 판독과 **같은 값을 내는지는 아직 대조하지 않았다**(단위 대조 전 대체로 읽지 않는다) |
+| **Alertmanager** | 알림 묶음·중복 제거·라우팅 | 규칙은 생겼지만(`TargetDown`) **받을 사람이 없다** — 단일 사용자 학습 환경이라 수신 채널·당직 개념이 없다. 채널 없이 라우터만 두면 §2의 거짓 신호가 하나 더 늘어난다 |
+| **exporter 계열**(node·postgres 등) | 서비스별 `/metrics` | 이미 내보내는 것(SeaweedFS·Spark Operator·CNPG)부터 붙였다. **새 exporter를 더하는 것**은 그 데이터를 읽을 질문이 생긴 뒤다 — 내보내는 쪽만 늘고 읽는 쪽이 없으면 순서가 거꾸로다 |
 | **Loki** | 로그 집계·LogQL 질의 | §2를 통과하는 유일한 후보이나 **monolithic이 가볍지 않다** — 아래 §Loki |
 | **Robusta** | 알림 보강·자동 조사·K8s 이벤트 | 자원이 아니라 **데이터 거버넌스**에서 먼저 걸린다 — 아래 §Robusta |
 
@@ -62,7 +84,7 @@ Chunks cache · Results cache). 끄는 옵션은 그 문서에 없다.
 
 #### Robusta — 걸리는 순서가 자원보다 앞이다
 
-`rule_files`가 0건이라 **보강할 알림 자체가 없어** §2에 걸린다. 그런데 그보다 앞에
+규칙이 `TargetDown` 1건이고 그것도 받을 채널이 없어 **보강할 알림이 사실상 없다** — §2에 걸린다. 그런데 그보다 앞에
 **데이터 반출 축**이 있다(아래 §운영 메모). 자원만 보면 오히려 준비가 나은 편이다 —
 차트가 컴포넌트별 `resources.requests`를 채워 두어 BestEffort 함정이 없다.
 
@@ -72,15 +94,15 @@ Chunks cache · Results cache). 끄는 옵션은 그 문서에 없다.
 §2가 금지하는 것은 *타깃 없는 수집기*이므로, 첫 질문은 "얼마나 드는가"가 아니라
 **"그 수집기가 먹을 것이 지금 흐르고 있는가"** 다.
 
-| | Loki | Prometheus(현행) | Robusta |
+| | Loki | Prometheus(클러스터 안, 채택) | Robusta |
 | --- | --- | --- | --- |
 | 무엇을 먹나 | 로그 | 메트릭 | Prometheus **알림** |
-| 그 먹이가 지금 있나 | ✅ 있다 | △ 정본 SeaweedFS 1개만 낸다 | ❌ `rule_files` 0건 |
-| 붙이면 즉시 보이는 것 | Flink 오퍼레이터 메트릭(현재 로그에만 있어 질의 불가)·Dagster 스텝 로그 | 없음 | 없음 |
-| 자원 선언 | ❌ 전부 `{}` | 선언됨 | ✅ 채워져 있음 |
+| 그 먹이가 지금 있나 | ✅ 있다 | ✅ 이미 노출 중인 엔드포인트만 붙였다 | △ 규칙 1건·수신 채널 없음 |
+| 붙이면 즉시 보이는 것 | Flink 오퍼레이터 메트릭(현재 로그에만 있어 질의 불가)·Dagster 스텝 로그 | 컨테이너 사용량(cAdvisor)·S3·Spark Operator·카탈로그 DB | 없음 |
+| 자원 선언 | ❌ 전부 `{}` | ✅ server·사이드카 모두 선언(초기값) | ✅ 채워져 있음 |
 
-⇒ **권고 순서는 ① Prometheus 정리 ② Loki ③ Robusta 보류**다.
-①이 먼저인 이유는 그것이 *도구 추가*가 아니라 **규칙 없는 수집기 정리**여서다(위 §이 프로젝트에서의 위치).
+⇒ **권고 순서는 ① Prometheus 정리 ② Loki ③ Robusta 보류**였고 ①을 마쳤다 —
+compose 수집기를 철거하고 클러스터 안으로 옮겼다(위 §이 프로젝트에서의 위치). 다음 후보는 ② Loki다.
 
 ⚠️ **자원 선언 유무는 비용의 부속이 아니라 판정의 선결 조건이다.** 차트가 `resources`를 비워 두면
 파드가 **BestEffort로 떠 `Σrequests` 합계에 0으로 잡히고**, 그러면 어떤 스택을 올려도
@@ -119,10 +141,15 @@ Robusta의 기존 Prometheus 연동 모드 파드 차분 · `grafana/loki`와 `g
   ([../conventions/docker.md](../conventions/docker.md) §1-3), 그것이 *관리되는 고정*인지
   *한 번 적고 잊은 것*인지는 태그만 봐서 알 수 없다.
   ⇒ 판별 기준은 **갱신 이력**이다. 메이저 계열이 통째로 뒤처져 있으면 방치로 읽는다.
-  현재 격차는 `$OBSIDIAN_VAULT/status/observations.md` §Prometheus 버전 격차.
-- **Prometheus 자신에 healthcheck가 없다.** 수집기가 죽어도 compose는 정상으로 보고한다 —
-  "메트릭이 0"과 "수집기가 죽었다"를 구분할 수단이 그 서비스 자체에 없다
-  ([../conventions/monitoring.md](../conventions/monitoring.md) §3).
+  철거된 compose Prometheus가 그 사례였다(메이저 계열이 통째로 뒤처진 태그) — 격차 기록은
+  `$OBSIDIAN_VAULT/status/observations.md` §Prometheus 버전 격차.
+- **철거 전 compose Prometheus에는 healthcheck가 없었다** — "메트릭이 0"과 "수집기가 죽었다"를
+  구분할 수단이 그 서비스 자체에 없었다. 클러스터 쪽은 차트 기본 probe(`/-/ready`·`/-/healthy`)가 있고
+  자기 자신을 `prometheus` job으로 긁는다. 다만 **수집기 자신이 죽으면 `TargetDown`도 함께 죽는다** —
+  자기 감시는 생존 확인을 대신하지 못한다([../conventions/monitoring.md](../conventions/monitoring.md) §3).
+- **설정 반영 경로**: 차트에 config checksum 어노테이션이 없어 configmap-reload 사이드카가
+  `/-/reload`를 호출하는 것이 유일한 반영 경로다. 그래서 `web.enable-lifecycle`을 유지하고, 그 대가로
+  Ingress에 reload·quit API가 함께 나간다([../conventions/k8s.md](../conventions/k8s.md) §서비스 접근).
 - **kind에는 metrics-server가 없다.** 클러스터 자원 관측은 `kubectl top`이 아니라
   파드 내부 `/proc`·cgroup 판독으로 하고 있으며, 실측 절차와 수치는
   [../resource-sizing.md](../resource-sizing.md)가 정본이다.

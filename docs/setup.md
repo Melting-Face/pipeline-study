@@ -246,8 +246,8 @@ kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 별도 터미널 (S3
 - `.env`의 `POSTGRES_PORT`로 메타 DB를 하나만 고른다 — 15432=port-forward, 5432=compose `postgres`.
   compose `--profile host-dagster`와 호스트 `dg dev`를 섞지 않는다.
 - compose는 기본 `up`으로 아무것도 띄우지 않는다. 필요한 profile만 켠다:
-  `host-dagster`(webserver·daemon·postgres) · `legacy-meta`(postgres) ·
-  `monitoring`(prometheus). S3(SeaweedFS)는 compose가 아니라 스택 A가 띄우므로 **스택 A를 먼저 apply**한다 —
+  `host-dagster`(webserver·daemon·postgres) · `legacy-meta`(postgres).
+  S3(SeaweedFS)는 compose가 아니라 스택 A가 띄우므로 **스택 A를 먼저 apply**한다 —
   compose 컨테이너는 `host.containers.internal:<게시 포트>`로 닿는다(podman 전제, Docker Desktop은
   `host.docker.internal`).
 

@@ -1,0 +1,13 @@
+# 렌더 결과에 대한 기대 — scripts/gitops-charts-check.sh (c)
+# server 단독 — 서브차트 4종은 업스트림 기본 on 이라 values 키 하나가 빠지면 조용히 다시 뜬다.
+# 이름은 릴리스 prometheus 기준 렌더에서 확인한 값(서브차트를 --set 으로 켜고 뽑았다).
+absent:
+  - StatefulSet/prometheus-alertmanager
+  - Deployment/prometheus-kube-state-metrics
+  - DaemonSet/prometheus-prometheus-node-exporter
+  - Deployment/prometheus-prometheus-pushgateway
+  # 저장은 emptyDir(values persistentVolume.enabled: false) — PVC 가 다시 생기면 재기동 소실 선언이 거짓이 된다
+  - PersistentVolumeClaim/prometheus-server
+fields:
+  - {ref: Ingress/prometheus-server, path: [spec, ingressClassName], value: nginx}
+  - {ref: Ingress/prometheus-server, path: [spec, rules, 0, host], value: prometheus.localtest.me}

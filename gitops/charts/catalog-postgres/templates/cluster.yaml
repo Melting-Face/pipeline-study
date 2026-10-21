@@ -7,6 +7,7 @@
 # 오퍼레이터: ArgoCD 앱 gitops/charts/cnpg-operator / 이 CR: ArgoCD 앱 gitops/charts/catalog-postgres
 # 크리덴셜 시크릿(catalog-pg-app)은 ArgoCD 밖 — scripts/k8s-secrets.sh 가 만든다(Secret이 먼저 있어야 한다).
 # 서비스 이름은 CNPG가 만든다 → **catalog-postgres-rw**(쓰기)·`-ro`(읽기 전용)·`-r`(전체).
+# 메트릭: 인스턴스 파드의 내장 exporter(포트 metrics 9187)를 in-cluster Prometheus 가 긁는다(job cnpg).
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:

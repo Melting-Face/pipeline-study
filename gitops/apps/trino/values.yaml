@@ -3,7 +3,7 @@
 # 관측 경로 선언(docs/conventions/monitoring.md §1):
 #   - probe  : 차트 기본 — liveness `GET /v1/info`, readiness·startup `health-check` exec
 #   - 로그   : stdout(`kubectl logs deploy/trino-coordinator`)
-#   - 메트릭 : 안 둔다 — 클러스터에 수집기가 없다(계측 대상 없는 수집기 금지와 같은 축)
+#   - 메트릭 : 안 긁는다 — 수집기(gitops/charts/prometheus)는 있으나 /metrics 가 무인증 쿼리 HTTP 포트와 같아 후속
 
 image:
   # 차트 기본(appVersion)과 같은 값이지만 latest 금지 규약대로 명시 고정

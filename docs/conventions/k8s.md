@@ -393,6 +393,8 @@ resources:
   **Flink는 REST와 UI가 같은 포트(8081)** 라 UI를 Ingress로 낸 순간 **REST도 함께 나간다** — `port-forward`가
   필요 없고(실측: `curl http://flink.localtest.me:8080/overview` → JSON) **무인증 잡 제출·취소 면**이 열린다.
   **Trino(`trino.localtest.me`)도 UI와 쿼리 프로토콜이 한 포트**라 무인증 쿼리 제출이 함께 열린다.
+  **Prometheus(`prometheus.localtest.me`)도 같다** — 설정 reload 사이드카 때문에 `web.enable-lifecycle`을
+  유지해 `/-/reload`·`/-/quit`가 함께 나간다(근거는 `gitops/charts/prometheus/values.yaml` 주석).
   kind가 `127.0.0.1`로만 바인딩해 위험은 낮지만 **"UI만 열었다"로 읽지 않는다**(노출 범위는 그 포트의 API가 정한다).
 - **kind는 공개 포트를 클러스터 생성 시점에만 정할 수 있다.** 노드가 컨테이너라 사후에 포트를 추가할 수 없어,
   스택 A(`terraform/cluster/kind`)의 **`extraPortMappings`가 없으면

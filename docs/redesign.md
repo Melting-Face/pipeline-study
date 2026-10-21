@@ -8,7 +8,8 @@
 
 ## 1. 배경과 목표
 
-- **현행**: 단일 호스트 **Docker Compose**(dagster webserver/daemon·postgres·seaweedfs·prometheus).
+- **당시 현행**(이 문서 작성 시점의 스냅숏): 단일 호스트 **Docker Compose**
+  (dagster webserver/daemon·postgres·seaweedfs·prometheus).
   Dagster가 in-process/subprocess로 실행하고, dbt-on-Trino가 모든 변환을 담당한다([overview.md](architectures/overview.md)).
 - **한계**: 단일 노드 자원 상한(Trino 메모리 제약·[resource-sizing.md](resource-sizing.md)), 스케일아웃 경로 부재.
 - **목표 지향점**: **학습/포트폴리오**. 실제 프로덕션 패턴인 **오케스트레이터(컨트롤 플레인) ↔ 원격 컴퓨트 분리**를

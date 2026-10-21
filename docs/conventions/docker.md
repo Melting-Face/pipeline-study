@@ -61,7 +61,6 @@ image: trinodb/trino:latest
 
 # Good — 현재 레포
 image: postgres:15
-image: prom/prometheus:v2.21.0
 ```
 
 ```dockerfile
@@ -135,21 +134,21 @@ services:
 
 ```yaml
 services:
-  postgres: {}                   # 뼈대: profile 없음 → 항상 실행
-  prometheus:
-    profiles: ["monitoring"]     # 옵션: --profile monitoring 일 때만 기동
+  some-core: {}                  # 뼈대: profile 없음 → 항상 실행(형식 예시 — 현행 뼈대는 비었다)
+  dagster-webserver:
+    profiles: ["host-dagster"]   # 옵션: --profile host-dagster 일 때만 기동
 ```
 
-- **뼈대(core)**: `dagster-webserver`·`dagster-daemon`·`postgres` — profile 없음.
-- **옵션**: `prometheus`(`monitoring`).
+- **뼈대(core)**: **비었다** — 현행 compose 서비스는 전부 opt-in이다.
+- **옵션**: `host-dagster`(`dagster-webserver`·`dagster-daemon`·`postgres`) · `legacy-meta`(`postgres`).
 - **compose 밖**: 오브젝트 스토리지 정본 `seaweedfs`는 Terraform 스택 A(`docker_container.seaweedfs`)가 소유한다.
   compose 서비스는 `host.containers.internal:<게시 포트>`로 닿고(podman 전제 — Docker Desktop은
   `host.docker.internal`), compose `depends_on`으로 표현할 수 없어 **스택 A를 먼저 apply하는 것은 운영자 몫**이다.
 
 ```bash
-docker compose up -d                        # 뼈대만
-docker compose --profile monitoring up -d   # 뼈대 + 모니터링
-COMPOSE_PROFILES=monitoring docker compose up -d   # 프로필 고정
+docker compose up -d                          # 뼈대만(현행은 아무것도 안 뜬다)
+docker compose --profile host-dagster up -d   # 뼈대 + 호스트 Dagster
+COMPOSE_PROFILES=host-dagster docker compose up -d   # 프로필 고정
 ```
 
 > **`profiles`는 "제거 예정"의 중간 단계로도 쓴다** — **"중단"과 "삭제"를 분리**하면 자원은 즉시
@@ -158,6 +157,9 @@ COMPOSE_PROFILES=monitoring docker compose up -d   # 프로필 고정
 > `seaweedfs`는 이 처리에서 **되돌아왔다가 compose를 떠났다** — 정본을 K8s로 옮겨 중단했었고, 클러스터 밖
 > 외부 스토리지로 compose에서 다시 정본이 된 뒤, 지금은 Terraform 스택 A가 컨테이너를 소유한다
 > ([../architectures/storage.md](../architectures/storage.md)). 그래서 profile `storage`는 없다.
+> compose `prometheus`(`monitoring`)는 이 중간 단계를 거치지 않고 **바로 철거**됐다 — 정본 워크로드를 보지 않는
+> 수집기는 opt-in이어도 거짓 신호라서다([monitoring.md](monitoring.md) §2). 수집기는 클러스터 안으로 옮겼다
+> ([../architectures/monitoring.md](../architectures/monitoring.md)).
 
 > `profiles`를 붙인 서비스를 **의존**(`depends_on`)하는 뼈대 서비스가 없어야 한다(있으면 기본 기동이 깨진다).
 > 옵션↔옵션 의존은 같은 프로필을 공유하거나 함께 활성화한다. 대안인 다중 파일 `-f` override는
@@ -166,7 +168,8 @@ COMPOSE_PROFILES=monitoring docker compose up -d   # 프로필 고정
 > 🔴 **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받아야 한다.** 빠뜨리면 의존하는 쪽의
 > profile만 켰을 때 **의존 비활성으로 깨진다**. 현행 사례는 `postgres`다 — `dagster-*`(`host-dagster`)가
 > 의존하므로 자기 profile `legacy-meta`에 그것을 더해 profile이 2개다(철거된 `trino`의 `legacy-sql`까지 3개였다).
-> (옛 compose `seaweedfs`도 `trino`·`prometheus`의 의존으로 3개였으나 스택 A로 옮겨 사례에서 빠졌다.)
+> (옛 compose `seaweedfs`도 `trino`·`prometheus`의 의존으로 3개였으나 스택 A로 옮겨 사례에서 빠졌다 —
+> 의존하던 둘도 지금은 철거됐다.)
 > 바꾼 뒤에는 **profile별로 `docker compose --profile <p> config --services`를 돌려 확인**한다
 > — 이 검증은 기동 없이 수초면 끝난다.
 
