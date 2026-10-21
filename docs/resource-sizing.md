@@ -120,6 +120,8 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 | | `argocd-redis` | 50m | 64Mi | 200m | 128Mi |
 | **Airflow**(상주, 회수 불가) | apiServer·scheduler·dagProcessor·Celery worker·redis·사이드카 3 — 값 정본은 `gitops/charts/airflow/values.yaml` requests, 합계 없음. 일회성 Job(migrate·create-user)과 K8s 태스크 파드는 상주 아님 | 정본 참조 | 정본 참조 | 정본 참조 | 정본 참조 |
 | **Trino**(상주, 회수 다이얼 없음) ⁸ | coordinator 단독 — 정본·근거(req=lim 메모리)는 `gitops/apps/trino/values.yaml` | 500m | 3Gi | 1 | 3Gi |
+| **Prometheus**(상주, 회수 다이얼 없음) | server — 값 정본은 `gitops/charts/prometheus/values.yaml`. **초기값(사용량 미실측)** | 100m | 384Mi | 500m | 1Gi |
+| | configmap-reload 사이드카(같은 파드) | 10m | 32Mi | 50m | 64Mi |
 | **온디맨드 상주** | Flink JobManager(세션 클러스터, 잡 없어도 상주) | 1000m | 2048Mi | 1 | 2Gi |
 | **STREAM(일시)** | Flink TaskManager × 1 — **잡 제출 시 온디맨드**, 종료 시 자동 회수 ⁶ | 1000m | 2048Mi | 1 | 2Gi |
 | **BATCH(일시)** | Spark driver ⁴ | 1000m | 1433Mi ⁴ | — | 1433Mi |

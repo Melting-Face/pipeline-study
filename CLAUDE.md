@@ -205,8 +205,8 @@
   Iceberg snapshot·로그 보존 정책 포함 [`docs/operations.md`](docs/operations.md).
 - **Docker/Compose 규칙**: 로깅·env YAML 앵커, 이미지 `latest` 금지, healthcheck + `depends_on`,
   전 서비스 `deploy.resources` 명시. **옵션 기능은 `profiles`로 분리**(뼈대는 profile
-  없이 항상 실행, `--profile <name>`으로 opt-in) — `monitoring`(prometheus)·
-  `host-dagster`·`legacy-meta`. **뼈대(core)는 이제 비었다** — 전부 opt-in이다.
+  없이 항상 실행, `--profile <name>`으로 opt-in) — `host-dagster`·`legacy-meta`.
+  **뼈대(core)는 이제 비었다** — 전부 opt-in이다.
   **`profiles`는 "제거 예정"의 중간 단계로도 쓴다**("중단"과 "삭제"의 분리: 자원은 즉시 회수,
   롤백 비용 0 — compose `trino`가 그 사례였고 철거됐다).
   **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받는다** — `postgres`가 `host-dagster`를

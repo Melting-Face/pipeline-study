@@ -30,8 +30,8 @@
 - 관측 수단을 **빼는** 변경도 같은 의무를 진다(왜 뺐는지 남긴다).
 
 **근거**: 부재를 나중에 볼 때 그것이 *결정*인지 *누락*인지 **복원할 수 없다**.
-현행 compose는 서비스 6개 중 healthcheck가 2개뿐인데, 나머지 4개가 어느 쪽인지 지금 아무도 모른다
-(실태는 [../architectures/monitoring.md](../architectures/monitoring.md)). 선언이 없으면
+이 규칙을 세울 때 compose 서비스 다수에 healthcheck가 없었고, 그것이 어느 쪽인지 아무도 답하지 못했다
+(현행 실태는 [../architectures/monitoring.md](../architectures/monitoring.md)). 선언이 없으면
 "의도적으로 안 둔 것"과 "빠뜨린 것"이 같은 모양으로 남고, 그 둘은 대응이 정반대다.
 
 ## 2. 계측 대상 없이 수집기를 두지 않는다

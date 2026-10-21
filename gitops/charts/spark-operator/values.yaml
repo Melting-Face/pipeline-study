@@ -1,4 +1,5 @@
 # 서브차트(spark-kubernetes-operator) 값 — 업스트림 키는 `spark-kubernetes-operator:` 아래에 둔다.
+# 메트릭: operator 파드 metrics-port(19090) 경로 /prometheus 를 in-cluster Prometheus 가 긁는다(job spark-operator)
 spark-kubernetes-operator:
     operatorDeployment:
         operatorPod:

@@ -27,10 +27,12 @@
 
 | 서비스               | 이미지 / 위치              | profile                                      | 역할                                                                  |
 | -------------------- | -------------------------- | -------------------------------------------- | --------------------------------------------------------------------- |
-| `dagster-webserver`  | `dagster/dockerfile.d/`    | — (core)                                     | Dagster UI/GraphQL. `workspace.yaml`로 코드 로케이션 로드             |
-| `dagster-daemon`     | `dagster/dockerfile.d/`    | — (core)                                     | 스케줄·센서·런큐 처리 + run 실행(`DefaultRunLauncher` 서브프로세스)   |
-| `postgres`           | `postgres:15`              | — (core)                                     | ① Dagster 메타데이터 저장소 ② Iceberg **JDBC 카탈로그** 저장소        |
-| `prometheus`         | `prom/prometheus:v2.21.0`  | `monitoring`                                 | 메트릭 수집                                                           |
+| `dagster-webserver`  | `dagster/dockerfile.d/`    | `host-dagster`                               | Dagster UI/GraphQL. `workspace.yaml`로 코드 로케이션 로드             |
+| `dagster-daemon`     | `dagster/dockerfile.d/`    | `host-dagster`                               | 스케줄·센서·런큐 처리 + run 실행(`DefaultRunLauncher` 서브프로세스)   |
+| `postgres`           | `postgres:15`              | `legacy-meta`·`host-dagster`                 | ① Dagster 메타데이터 저장소 ② Iceberg **JDBC 카탈로그** 저장소        |
+
+> 메트릭 수집기(Prometheus)는 compose에 없다 — 클러스터 안 `monitoring` 네임스페이스로 옮겼다
+> ([monitoring.md](monitoring.md)).
 
 > 🔴 **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받는다**([../conventions/docker.md](../conventions/docker.md)
 > §profiles). 바꾼 뒤에는
@@ -117,14 +119,12 @@ flowchart TB
         U3([:8333 S3 API])
         U4([:8888 filer UI])
         U5([:9333 master UI])
-        U6([:9000 Prometheus])
     end
 
     subgraph net[compose 네트워크 dagster]
         WS[dagster-webserver]
         DM[dagster-daemon]
         PG[(postgres:15)]
-        PM[prometheus]
     end
 
     subgraph tfa["compose 밖 — Terraform 스택 A"]
@@ -135,22 +135,20 @@ flowchart TB
     U3 --- SW
     U4 --- SW
     U5 --- SW
-    U6 --- PM
 
     WS -->|depends_on healthy| PG
     DM -->|depends_on healthy| PG
-    PM -.scrape host.containers.internal:9324.-> SW
 
     WS -. 공유 storage .- DM
 
     classDef ext fill:#eef,stroke:#88a
-    class U1,U3,U4,U5,U6 ext
+    class U1,U3,U4,U5 ext
 ```
 
 > ⚠️ **이 구성도는 `compose.yml`에 정의된 전체**(+ compose 밖 `seaweedfs`)이고, 뼈대(core)는 비어 있어
 > 기본 `up`으로는 **아무것도 뜨지 않는다**(Dagster는 `--profile host-dagster`).
-> `prometheus`(`monitoring`)는 **profile opt-in**이라
-> 해당 profile을 켜야 위 포트가 열린다.
+> SeaweedFS 메트릭(9324)은 클러스터 안 Prometheus가 kind 네트워크 별칭 `seaweedfs-ext`로 긁는다
+> ([monitoring.md](monitoring.md)).
 >
 > `dagster-webserver`·`dagster-daemon`은 `postgres` 헬스체크 통과 후 기동된다.
 > webserver와 daemon은 같은 이미지·`dagster.yaml`을 쓰고
@@ -389,7 +387,7 @@ Terraform(스택 A·B)과 ArgoCD가 **선언을 나눠 소유**한다.
 > 메타 DB·S3에 port-forward가 전제이고(메타 DB는 새 클러스터에 없다 — [../operations.md](../operations.md) §1-2),
 > **메타 DB를 한 곳으로 고정해 compose와 섞지 않는다**
 > (같은 서비스의 이중 존재 — [../conventions/monitoring.md](../conventions/monitoring.md) §3-④).
-> compose의 `dagster-*`·`postgres`·`prometheus`는 **전부 profile opt-in**이라
+> compose의 `dagster-*`·`postgres`는 **전부 profile opt-in**이라
 > 기본 `up`으로는 **아무것도 뜨지 않는다**(예: `podman compose --profile host-dagster up -d`).
 
 dbt 모델 추가는 스캐폴딩이 필요 없다 — `models/<dataset>/`에 `.sql`을 넣으면 데이터셋 subproject의
@@ -403,8 +401,7 @@ dbt 모델 추가는 스캐폴딩이 필요 없다 — `models/<dataset>/`에 `.
 | 8333 | SeaweedFS S3 API                | — 스택 A(compose 밖)                       |
 | 8888 | SeaweedFS filer UI              | — 스택 A(compose 밖)                       |
 | 9333 | SeaweedFS master UI             | — 스택 A(compose 밖)                       |
-| 9324 | SeaweedFS 메트릭                | — 스택 A(compose 밖)                       |
-| 9000 | Prometheus (컨테이너 9090 매핑) | `monitoring`                               |
+| 9324 | SeaweedFS 메트릭                | — 스택 A(compose 밖) · 소비자는 in-cluster Prometheus |
 
 > 🔴 **호스트 8080은 kind ingress-nginx가 점유**한다(스택 A `terraform/cluster/kind`의 호스트 포트 매핑).
 > k8s Trino도 그 Ingress(`trino.localtest.me:8080`)로 닿는다([trino.md](trino.md)).

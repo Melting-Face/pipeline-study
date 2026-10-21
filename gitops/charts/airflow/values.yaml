@@ -64,7 +64,7 @@ airflow:
     # triggerer: hello DAG 에 deferrable 태스크가 없다(A7·YAGNI). 재활성 조건: deferrable operator 를 쓰는 첫 DAG
     triggerer:
         enabled: false
-    # statsd: 긁어갈 수집기가 없다(계측 대상 없는 수집기를 두지 않는다)
+    # statsd: 끈다 — 수집기(gitops/charts/prometheus)는 있으나 statsd-exporter 를 켜고 scrape job 을 더하는 것은 후속
     statsd:
         enabled: false
     flower:

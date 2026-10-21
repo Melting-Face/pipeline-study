@@ -61,7 +61,7 @@
 | [containers.conf(5)](https://raw.githubusercontent.com/containers/common/main/docs/containers.conf.5.md) — `pids_limit`(0=무제한)·드롭인 경로 | ✅ 채택(로컬 K8s) | [conventions/k8s/pids.md](conventions/k8s/pids.md) |
 | [systemd-system.conf(5)](https://raw.githubusercontent.com/systemd/systemd/main/man/systemd-system.conf.xml) — `DefaultTasksMax` = pid_max·threads-max·root cgroup pids.max 최솟값의 15% | ✅ 채택(로컬 K8s) | [conventions/k8s/pids.md](conventions/k8s/pids.md) |
 | [Helm](https://helm.sh/docs/) | 🔎 K8s 패키징 | [conventions/k8s.md](conventions/k8s.md) |
-| [Prometheus](https://prometheus.io/docs/introduction/overview/) | 🔎 미채택 | [architectures/monitoring.md](architectures/monitoring.md) · [conventions/monitoring.md](conventions/monitoring.md) |
+| [Prometheus](https://prometheus.io/docs/introduction/overview/) | ✅ 채택(클러스터 안 server 단독) | [architectures/monitoring.md](architectures/monitoring.md) · [conventions/monitoring.md](conventions/monitoring.md) |
 | [Apache Kafka](https://kafka.apache.org/) | 🔎 미도입 유지 | [architectures/kafka.md](architectures/kafka.md) · [architectures/flink.md](architectures/flink.md) |
 | [DuckDB](https://duckdb.org/docs/) | 🔎 미채택 | [architectures/duckdb.md](architectures/duckdb.md) · [conventions/analysis.md](conventions/analysis.md) |
 | [Spark Kubernetes Operator](https://apache.github.io/spark-kubernetes-operator/) | ✅ 채택(오퍼레이터) | [architectures/operators.md](architectures/operators.md) · [conventions/k8s.md](conventions/k8s.md) |

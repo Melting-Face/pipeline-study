@@ -16,6 +16,8 @@ flink-kubernetes-operator:
     # (하나만 --set 하면 블록 전체가 대체돼 차트 기본 오버라이드가 사라진다).
     # 그래서 차트 기본 내용을 그대로 옮겨 적고 프로젝트 키를 **아래에 덧붙인다**.
     # 차트 업그레이드 시 `helm show values ... | sed -n '/flink-conf.yaml/,/log4j-operator/p'`로 대조한다.
+    # 메트릭: 아래 slf4j 리포터(로그)로만 낸다 — in-cluster Prometheus 로 긁는 것(PrometheusReporter)은 후속.
+    # (주석을 블록 안에 두지 않는다 — 블록은 문자열이라 주석도 ConfigMap 내용이 된다)
     defaultConfiguration:
         create: true
         append: true
