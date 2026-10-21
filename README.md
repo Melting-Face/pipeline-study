@@ -39,7 +39,7 @@
 지금은 오퍼레이터까지만 뜬다 — 범위는 [환경 세팅 §지금 되는 범위](docs/setup.md#지금-되는-범위).
 Dagster는 클러스터에 배포하지 않고 호스트에서 돌린다.
 
-웹 UI(ArgoCD·Airflow·Trino·Flink·Dagster) 주소와 로그인 방법은
+웹 UI(ArgoCD·Airflow·Trino·Flink·Prometheus·Dagster) 주소와 로그인 방법은
 [환경 세팅 §3-1 접근 경로](docs/setup.md#3-1-접근-경로)에 모아 두었다.
 
 > 이 프로젝트의 로컬 컨테이너 런타임은 `podman`이다. 문서에 남아 있는
