@@ -253,6 +253,14 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 **Σrequests이지 실사용량이 아니다.** 분모도 **노드 Allocatable이지 VM 총량이 아니다** —
 둘을 섞으면 예산이 어긋난다.
 
+**메모리는 축이 둘이다 — 비교하기 전에 이름을 맞춘다.** cgroup `memory.current`는 **페이지 캐시를
+포함한 usage**(`container_memory_usage_bytes`와 같은 축)이고, **working set**은
+`memory.current − memory.stat의 inactive_file`(`container_memory_working_set_bytes`, kubelet 축출 판정이
+보는 값)이다. 둘 다 바이트라 **단위는 맞는데 축이 어긋난다** — 과거 `memory.current` 판독값을
+in-cluster Prometheus의 working set과 나란히 놓으면 **사용량이 줄어든 것처럼** 보인다.
+수집은 이제 in-cluster Prometheus의 cAdvisor job이 받친다([architectures/monitoring.md](architectures/monitoring.md));
+cgroup 직접 판독은 그 값을 대조할 때만 쓴다.
+
 ⚠️ **피크는 한 번에 잡히지 않는다.** 워크로드가 뜨는 창이 짧으면 관측이 그 창을 놓치고,
 **놓친 관측은 유리한 결론처럼 보인다**(여유가 있는 것으로 읽힌다).
 워크로드를 더 얹기 전에는 **피크 창에서 다시 뜬다.**
