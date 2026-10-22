@@ -67,9 +67,11 @@
 
 ## 데이터셋 · 분석
 
-- [데이터셋 스키마·피처](dataset_schema.md) — 원천 스키마 정본(의료·환율·수문·시장·거시)과 SOFA→Sepsis-3 매핑
+- [데이터셋 스키마·피처](dataset_schema.md) — 원천 스키마 정본(의료·환율·수문·시장·거시·GitHub)과 SOFA→Sepsis-3 매핑
 - ↳ [주식예측 실버](dataset_schema/stock-forecast.md) — 누수 방지 3축(세션 배정·as-of·라벨 격리)과
   그 게이트·**선언된 공백**
+- ↳ [GitHub 트렌드](dataset_schema/github-trending.md) — Airflow가 남기는 raw JSON 레이아웃·필드,
+  「트렌드」 근사의 한계와 차분 소비
 - [분석 컨벤션](conventions/analysis.md) — 규칙 정본
 - [`notebooks/README.md`](../notebooks/README.md) — Jupyter Lab 실행·Trino 접속·셀 출력 통제
 - 리포트는 `docs/analyses/<NN>-<slug>.md`에 쌓는다
@@ -93,6 +95,7 @@
 | [리소스 산정](resource-sizing.md) | 호스트 자원에 따른 서비스 옵션 조정 |
 | [리스크 관리 규약](risk.md) | 분류 4축·등급의 **가역성 축**·비가역 작업 한 벌·**사후 인시던트 대응** |
 | [보안·데이터 거버넌스 **정책**](security.md) | ISMS-P·의료데이터 규제 매핑, 통제 방침과 보증 범위 |
+| ↳ [그 밖의 데이터셋 판정](security/datasets.md) | §0-1 — 데이터셋별 개인정보·재배포 판정과 재검토 트리거 |
 | [Agent Skills](skills.md) | 설치된 스킬별 **용도 안내**(카테고리별 표) |
 | ↳ [스킬 통제 규칙](skills/governance.md) | 출처 등급·설치 절차·워커 배선·C등급 단서 |
 | ↳ 인벤토리 실측 | **볼트로 이관** — `$OBSIDIAN_VAULT/status/skills-inventory.md`(스냅샷·비공개) |

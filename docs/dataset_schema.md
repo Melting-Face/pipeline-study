@@ -8,7 +8,9 @@ Dagster `defs/<dataset>` 서브프로젝트가 S3의 `csv.gz`를 읽어 적재�
 여기 기술한 컬럼·itemid는 모두 `source.yml`·실버 `.sql`·`schema.yml`에서 **직접 확인된 것만** 담았다.
 데이터셋을 추가할 때는 이 문서에 `## <dataset> 원천 테이블` 절을 덧붙인다 — 다른 문서를 고칠 일이 아니다.
 
-원천이 파일이 아니라 공개 API인 데이터셋도 있다(**Frankfurter 환율** — 아래). ⚠️ `usgs_water`는
+원천이 파일이 아니라 공개 API인 데이터셋도 있다(**Frankfurter 환율** — 아래). **GitHub 트렌드**는
+적재 주체가 Airflow이고 Iceberg가 아니라 **raw JSON에서 멈춘다**(테이블이 아니라 파일 레이아웃을 적는다).
+⚠️ `usgs_water`는
 적재돼 있으나 이 문서에 절이 **없다**(선언된 공백).
 
 > 저장은 UTC, 표시·스케줄은 KST. 저장/조인 흐름·컨테이너 구성은 [architectures/overview.md](architectures/overview.md),
@@ -389,6 +391,15 @@ Iceberg 네임스페이스 `fred_calendar`. ⚠️ **크리덴셜을 쿼리 파�
 따져야 하는 별개의 축이 생긴다.
 ⚠️ 응답 필드 구성이 **요청 파라미터에 달려 있다**(유효 시점을 고정하지 않으면 한 필드가 오지 않는다).
 그래서 프로브는 자산과 **같은 요청 형태**로 묻는다 — 다른 요청을 보내는 프로브의 통과는 자산을 대표하지 않는다.
+
+---
+
+## GitHub 트렌드 원천 (raw JSON — Airflow)
+
+S3 경로 `s3://warehouse/raw/github_trending/dt=<YYYY-MM-DD>/repos.json`. **Airflow DAG**
+`github_trending`이 GitHub Search API로 수집하며 **Iceberg 테이블·`source.yml`·dbt 모델이 없다**(raw에서 멈춘다).
+「트렌드」는 github.com/trending 이 아니라 *최근 생성 저장소의 누적 별 순위*라는 **근사**다.
+레이아웃·필드·소비 시 함정은 [`dataset_schema/github-trending.md`](dataset_schema/github-trending.md)가 정본이다.
 
 ---
 
