@@ -23,7 +23,7 @@ Hive식 `dt=` 접두어는 나중에 외부 테이블·bronze로 올릴 때 파�
 | `dt` | string | 파티션 날짜(KST). 경로의 `dt=`와 같은 값 |
 | `query` | string | 실제로 보낸 검색 쿼리. 재현·감사용 |
 | `collected_at` | string(UTC ISO8601) | 수집 처리시간 |
-| `total_count` | integer | 원천이 보고한 **전체 매치 수**. 저장된 `items` 수가 아니다 |
+| `total_count` | integer | 원천이 보고한 **매치 수**. 저장된 `items` 수가 아니다(아래 탐색 상한 참고) |
 | `incomplete_results` | boolean | 검색이 시간 제한을 넘겨 **그때까지 찾은 것만** 돌려줬는지 |
 | `items` | array | 저장소 목록(아래). 원천의 정렬 순서 그대로 |
 
@@ -51,6 +51,9 @@ Hive식 `dt=` 접두어는 나중에 외부 테이블·bronze로 올릴 때 파�
   날짜를 합칠 때 `full_name` 기준 중복을 전제한다.
 - **상위 `PER_PAGE`건에서 잘린다.** 페이지네이션을 하지 않는다(원천의 페이지당 상한이 `PER_PAGE`와 같아
   1회 호출로 끝낸다). `total_count`와 `items` 길이의 차이가 잘린 양이다.
+  ⚠️ 원천은 **질의가 훑는 저장소 수**와 **검색당 반환 결과 수**에 각각 상한을 둔다(원천 문서 *Search scope
+  limits*·*About search*). 그래서 `total_count`를 GitHub 전체의 매치 수로 단정하지 않는다 — 두 상한과
+  `total_count`의 관계는 원천 문서가 말하지 않는다(`미확인`).
 - **`incomplete_results`는 기록만 한다.** `true`여도 실패시키지 않는다(관측 —
   [conventions/data-quality.md](../conventions/data-quality.md)). 그날 순위의 신뢰도를 따질 때 먼저 본다.
 
