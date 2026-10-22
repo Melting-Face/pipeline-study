@@ -155,6 +155,7 @@ kubectl get applications -n argocd        # 전부 Synced · Healthy 면 수렴
 | Airflow UI | http://airflow.localtest.me:8080 | ✅ 상시(첫 기동 중에는 503) — Ingress `airflow-ingress`, REST `/api/v2`도 같은 호스트 |
 | Flink Web UI | http://flink.localtest.me:8080 | ⏸ 세션 클러스터가 떠 있을 때 |
 | Trino UI | http://trino.localtest.me:8080 | ✅ 상시(coordinator) — UI와 쿼리 프로토콜이 같은 호스트 |
+| Prometheus UI | http://prometheus.localtest.me:8080 | ✅ 상시(`monitoring` 네임스페이스) — 인증 없음, 관리 API `/-/reload`·`/-/quit`도 같은 호스트 |
 | Dagster UI | http://localhost:3000 | ⏸ 호스트에서 `dg dev`를 띄웠을 때 — 클러스터 밖, 명령은 §5 |
 
 ⏸ port-forward 경로:
@@ -164,7 +165,8 @@ kubectl port-forward svc/catalog-postgres-rw 15432:5432   # Iceberg JDBC 카탈�
 ```
 
 - Flink UI를 열면 잡 제출 REST API도 같은 포트로 열린다. Airflow도 같다 — UI 호스트로 REST API가 함께 나간다
-  (FAB 로그인 인증). 모든 주소는 `127.0.0.1`에만 바인딩된다(kind 포트 매핑).
+  (FAB 로그인 인증). Prometheus도 lifecycle API가 UI와 함께 나간다(무인증).
+  모든 주소는 `127.0.0.1`에만 바인딩된다(kind 포트 매핑).
 - S3는 클러스터 밖(compose)이라 port-forward 없이 `http://localhost:8333`으로 직결한다.
 
 #### 로그인·비밀값
@@ -210,11 +212,20 @@ kubectl -n airflow exec deploy/airflow-api-server -- airflow version
 
 쓰기 직전에 올리고 끝나면 바로 내린다.
 
+Flink 세션 클러스터는 선행물 둘이 먼저 있어야 뜬다 — **러너 이미지**(§4 build·push)와 **ConfigMap 5종**.
+ConfigMap이 하나라도 없으면 파드가 `CreateContainerConfigError`로 멈춘다(매니페스트가 5종을 모두 마운트).
+
 ```shell
-kubectl apply  -f k8s/flink/flinkdeployment-session.yaml # Flink 세션 클러스터
-kubectl delete -f k8s/flink/flinkdeployment-session.yaml
+F=k8s/flink
+kubectl apply -n default -f $F/iceberg-catalog-init.yaml -f $F/iceberg-batch-job.yaml \
+  -f $F/iceberg-stream-job.yaml -f $F/iceberg-datagen-job.yaml -f $F/usgs-water-stream-job.yaml
+kubectl apply  -f $F/flinkdeployment-session.yaml   # Flink 세션 클러스터 → http://flink.localtest.me:8080
+kubectl delete -f $F/flinkdeployment-session.yaml   # 회수(ConfigMap은 같은 -f 목록으로 delete)
 ```
 
+- ConfigMap은 **파일을 나열한다** — `iceberg-*.yaml`은 usgs를, `*-job.yaml`은 catalog-init을 놓치고 둘 다
+  4개라 개수만 세면 맞아 보인다. 종수 정본은 `defs/flink/constants.py`의 `REQUIRED_CONFIGMAPS`다.
+- 기동 확인은 `curl http://flink.localtest.me:8080/overview`(JSON). 회수 뒤 404로 돌아오면 Ingress까지 정리된 것이다.
 - Spark·Flink 동시 기동은 허용, `spark.executor.instances` ≤ 1을 지킨다([`conventions/k8s.md`](conventions/k8s.md) §9-3).
 
 ## 4. 러너 이미지
