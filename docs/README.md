@@ -70,6 +70,7 @@
 - [데이터셋 스키마·피처](dataset_schema.md) — 원천 스키마 정본(의료·환율·수문·시장·거시·GitHub)과 SOFA→Sepsis-3 매핑
 - ↳ [주식예측 실버](dataset_schema/stock-forecast.md) — 누수 방지 3축(세션 배정·as-of·라벨 격리)과
   그 게이트·**선언된 공백**
+- ↳ [USGS 수문](dataset_schema/usgs-water.md) — append 전용 bronze 2테이블·의도된 중복과 dedup 키, Flink 파생
 - ↳ [GitHub 트렌드](dataset_schema/github-trending.md) — Airflow가 남기는 raw JSON 레이아웃·필드,
   「트렌드」 근사의 한계와 차분 소비
 - [분석 컨벤션](conventions/analysis.md) — 규칙 정본
