@@ -10,8 +10,7 @@ Dagster `defs/<dataset>` 서브프로젝트가 S3의 `csv.gz`를 읽어 적재�
 
 원천이 파일이 아니라 공개 API인 데이터셋도 있다(**Frankfurter 환율** — 아래). **GitHub 트렌드**는
 적재 주체가 Airflow이고 Iceberg가 아니라 **raw JSON에서 멈춘다**(테이블이 아니라 파일 레이아웃을 적는다).
-⚠️ `usgs_water`는
-적재돼 있으나 이 문서에 절이 **없다**(선언된 공백).
+**USGS 수문**은 하류가 dbt가 아니라 **Flink 스트리밍**이라 bronze가 전부 `append`이고 중복이 의도적으로 쌓인다.
 
 > 저장은 UTC, 표시·스케줄은 KST. 저장/조인 흐름·컨테이너 구성은 [architectures/overview.md](architectures/overview.md),
 > source/ref·메달리온 태깅 규칙은 [conventions/dbt.md](conventions/dbt.md) 참고.
@@ -271,6 +270,16 @@ cited as the source."* 로 **must**를 쓴다(요청이 아니다). 값을 외�
 **적재 모드**는 `replace_partition_in_iceberg`(파티션 범위만 교체)다. `append`는 재실행마다 행이
 늘고, `replace`는 `drop_table`이라 스냅샷 계보를 끊는다. 파티션 시작일·타임존의 근거는
 `defs/frankfurter_fx/constants.py` 주석에 있다(둘 다 조용히 어긋나는 축이다).
+
+---
+
+## USGS 수문 원천 테이블
+
+Iceberg 네임스페이스 `usgs_water` — 순간값 `water_iv_raw`(15분)·관측소 메타 `water_sites`(일 1회), 둘 다 `append`.
+🔴 **같은 관측점·같은 관측소가 여러 행인 것이 정상이다**(재조회 창 겹침·차원 재적재) — 최신 판은 키별
+`ingested_at` 최대값으로 고르고, 행 수를 관측점 수로 읽지 않는다. 하류는 dbt가 아니라 Flink PoC(`iv_stream_echo`·
+`iv_joined`)이며 분석 입력이 아니다. 스키마·적재 모드 근거·함정은
+[`dataset_schema/usgs-water.md`](dataset_schema/usgs-water.md)가 정본이다.
 
 ---
 
