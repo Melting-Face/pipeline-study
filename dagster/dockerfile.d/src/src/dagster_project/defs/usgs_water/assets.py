@@ -1,11 +1,12 @@
 """USGS 수문(NWIS) bronze 적재 에셋 (공개 HTTP API → Iceberg).
 
-두 자산의 원천 형식과 적재 모드가 다르다.
+두 자산은 원천 형식이 다르고, 적재 모드는 **둘 다 append**다.
 - water_iv_raw : 순간값(IV) **JSON** → **append**. Flink 스트리밍 소스가 될
   테이블이라 overwrite를 쓰면 안 된다(Iceberg Flink 소스는
   IncrementalAppendScan 기반이고, 실패 모드가 에러가 아니라 조용한 누락이다).
-- water_sites  : 관측소 메타 **RDB**(탭 구분) → **replace**. 조인 차원이고
-  스트리밍 소스가 아니라 갱신 방식에 제약이 없다.
+- water_sites  : 관측소 메타 **RDB**(탭 구분) → **append**. 스트리밍 소스는
+  아니지만 조인 상대로 잡이 읽으므로 replace(drop_table)를 쓰지 않는다
+  (근거는 `water_sites` docstring).
   Site Service는 `format=json`에 HTTP 400을 준다(2026-09-05 실측).
 
 🔴 IV는 매 실행이 LOOKBACK 창을 **다시** 긁는다. 최신만 받으면 관측점이 한
