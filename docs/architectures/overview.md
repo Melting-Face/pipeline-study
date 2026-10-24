@@ -6,12 +6,13 @@
 적재하는** 로컬 레이크하우스 학습 프로젝트다.
 
 > ⚠️ **이 문서의 compose 서술은 이제 대부분 폐기 전 판본이다.** 재설계로 컴퓨트·스토리지가
-> **로컬 Kubernetes로 이전**했고, 클러스터 선언은 ArgoCD GitOps로 옮겨 가는 중이다
+> **로컬 Kubernetes로 이전**했고, 클러스터 선언은 ArgoCD GitOps가 소유한다
 > (Dagster는 새 클러스터에 배포하지 않고 호스트에서 돈다). 목표 토폴로지는
 > [../redesign.md](../redesign.md), 클러스터 규칙은 [../conventions/k8s.md](../conventions/k8s.md),
 > Dagster 배치 결정은 [dagster.md](dagster.md).
-> **실제로 도는 구성**: kind 클러스터 하나 — ArgoCD ·
-> Spark Operator · SeaweedFS · 카탈로그/메타 Postgres(CNPG) · Flink Operator · ingress-nginx.
+> **실제로 도는 구성**: kind 클러스터 하나 —
+> ArgoCD · ingress-nginx · Spark Operator · Flink Operator · 카탈로그 Postgres(CNPG) · Trino · Airflow · Prometheus.
+> SeaweedFS는 클러스터 밖(스택 A 컨테이너), Dagster는 호스트에서 돈다.
 > **compose는 기본 `up`으로 아무것도 띄우지 않는다**(전부 profile opt-in이 됐다).
 > **Flink Operator는 설치돼 상주한다** — ArgoCD 앱(`gitops/charts/flink-operator/`)이 소유하며 부트스트랩에
 > 항상 포함된다. 상주하는 것은 **오퍼레이터까지**이고, 자원을 먹는 **세션 클러스터(JM/TM)는 띄우지
@@ -22,14 +23,14 @@
 
 ## 구성 요소
 
-**뼈대(core)는 profile이 없어 항상 뜨고, 나머지는 `--profile <name>`으로 opt-in**한다
+**뼈대(core)는 비어 있다 — 모든 서비스가 `--profile <name>`으로 opt-in**한다
 (규칙 [../conventions/docker.md](../conventions/docker.md) §profiles).
 
 | 서비스               | 이미지 / 위치              | profile                                      | 역할                                                                  |
 | -------------------- | -------------------------- | -------------------------------------------- | --------------------------------------------------------------------- |
 | `dagster-webserver`  | `dagster/dockerfile.d/`    | `host-dagster`                               | Dagster UI/GraphQL. `workspace.yaml`로 코드 로케이션 로드             |
 | `dagster-daemon`     | `dagster/dockerfile.d/`    | `host-dagster`                               | 스케줄·센서·런큐 처리 + run 실행(`DefaultRunLauncher` 서브프로세스)   |
-| `postgres`           | `postgres:15`              | `legacy-meta`·`host-dagster`                 | ① Dagster 메타데이터 저장소 ② Iceberg **JDBC 카탈로그** 저장소        |
+| `postgres`           | `postgres:15`              | `legacy-meta`·`host-dagster`                 | Dagster 메타데이터 저장소(호스트 Dagster 전용). Iceberg 카탈로그는 CNPG |
 
 > 메트릭 수집기(Prometheus)는 compose에 없다 — 클러스터 안 `monitoring` 네임스페이스로 옮겼다
 > ([monitoring.md](monitoring.md)).
@@ -229,7 +230,7 @@ k8s Trino의 `gitops/apps/trino/values.yaml`(`catalogs.iceberg`)에서 정의한
 S3 `raw/`에 놓인 `csv.gz` 원본을 **메타스토어 없이** Iceberg(JDBC 카탈로그) 테이블로 올린다.
 거기까지 파일을 가져오는 **원천 획득**은 아래 §원천 획득이 맡는다(예전에는 사람 손이었다).
 **공통 로직은 `dagster_project/common/`** 에 두고, **에셋은 데이터셋별 서브프로젝트**
-(`defs/mimic_iv/`, `defs/eicu/`)에서 **각각 명시적으로 정의**한다(팩토리 미사용).
+(`defs/mimic_iv/`, `defs/eicu/` 등)에서 **각각 명시적으로 정의**한다(팩토리 미사용).
 
 S3/Iceberg 연결은 **Dagster 리소스**(`dagster-aws`·`dagster-iceberg`)로 관리한다.
 
@@ -240,6 +241,9 @@ S3/Iceberg 연결은 **Dagster 리소스**(`dagster-aws`·`dagster-iceberg`)로 
 | `constants.py`  | 카탈로그명·warehouse·S3 엔드포인트·기본값(chunk/namespace/group)                              |
 | `helper.py`     | `read_csv_gz_table()`(일반: 통째 읽어 pa.Table) · `load_heavy_csv_gz_to_iceberg()`(대용량: 청크 append) |
 | `dbt.py`        | 공유 `DbtProject`·`build_dbt_resource` (단일 dbt 프로젝트를 데이터셋 subproject가 공유) |
+| `trino.py`      | `TrinoResource` — k8s Trino 접속, Iceberg 유지보수 프로시저 실행 |
+| `fetch.py`      | 외부 원천 파일 → S3 `raw/` 수집 헬퍼(원천 획득 단계) |
+| `physionet.py` · `polygon.py` · `fred.py` | 원천 접속 리소스(인증·URL 조립) |
 
 ### 서브프로젝트 (`defs/<dataset>/`) — 데이터셋별, **정의만**(load_defs가 자동발견)
 
@@ -256,6 +260,7 @@ S3/Iceberg 연결은 **Dagster 리소스**(`dagster-aws`·`dagster-iceberg`)로 
 > `defs/frankfurter_fx/`(1테이블 — **일자 파티션**). 이 둘은 `dbt_assets.py`를 두지 않는다(bronze에서 멈춘다).
 > 원천을 가로지르는 dbt 소유 서브프로젝트: `defs/stock_forecast/`(Polygon·FRED),
 > `defs/us_equity_krw/`(Polygon 시세 × Frankfurter 환율 → 원화 종가). `@asset` 없이 `dbt_assets.py`만 둔다.
+> 그 밖에 시장 원천 `defs/polygon_market/`·`defs/fred_calendar/`, 엔진 실행 자산 `defs/flink/`·`defs/poc/`가 있다.
 > 공유 리소스는 `defs/resources.py`(`@dg.definitions`), 잡·스케줄은 `defs/automation.py`에 두고,
 > 최상위 `definitions.py`의 `load_defs(dagster_project.defs)`가 모두 **단일 `Definitions`** 로 합친다.
 
@@ -399,7 +404,7 @@ dbt 모델 추가는 스캐폴딩이 필요 없다 — `models/<dataset>/`에 `.
 
 | 포트 | 서비스                          | profile                                    |
 | ---- | ------------------------------- | ------------------------------------------ |
-| 3000 | Dagster UI (호스트 `dg dev` 전용) | `host-dagster` — **정본은 Ingress 8080**   |
+| 3000 | Dagster UI (호스트 `dg dev` 전용) | `host-dagster` — 호스트 실행 전용          |
 | 8333 | SeaweedFS S3 API                | — 스택 A(compose 밖)                       |
 | 8888 | SeaweedFS filer UI              | — 스택 A(compose 밖)                       |
 | 9333 | SeaweedFS master UI             | — 스택 A(compose 밖)                       |

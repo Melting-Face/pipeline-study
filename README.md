@@ -35,8 +35,8 @@
 회수까지의 명령이 모두 거기 있다(클러스터 기동 명령은 [§3](docs/setup.md#3-로컬-kubernetes)).
 
 클러스터는 **Terraform 스택 A**, ingress-nginx·ArgoCD는 **스택 B**가 만들고, 오퍼레이터 이하는
-**ArgoCD가 `gitops/charts/`에서 수렴**시킨다(`git push`로 바뀐다). 데이터 층(스토리지·카탈로그)은 아직 이전 전이라
-지금은 오퍼레이터까지만 뜬다 — 범위는 [환경 세팅 §지금 되는 범위](docs/setup.md#지금-되는-범위).
+**ArgoCD가 `gitops/charts/`에서 수렴**시킨다(`git push`로 바뀐다). 데이터 층(카탈로그 CNPG·Trino)도
+ArgoCD 앱이고, S3(SeaweedFS)만 스택 A의 컨테이너다 — 절별 전제는 [환경 세팅 §지금 되는 범위](docs/setup.md#지금-되는-범위).
 Dagster는 클러스터에 배포하지 않고 호스트에서 돌린다.
 
 웹 UI(ArgoCD·Airflow·Trino·Flink·Prometheus·Dagster) 주소와 로그인 방법은
@@ -78,7 +78,7 @@ uv run --group notebook jupyter lab --port 8889 --notebook-dir ../../../notebook
 pre-commit run --all-files
 
 cd dagster/dockerfile.d/src
-uv run dg check defs
+DAGSTER_HOME="$(mktemp -d)" uv run --env-file ../../../.env dg check defs   # .env 필요
 uv run pytest
 ```
 

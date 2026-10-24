@@ -43,17 +43,17 @@ dg.EnvVar("KEY") / os.environ["KEY"]  (코드에서 참조)
 2. `compose.yml`에서 그 값을 **사용하는 서비스**에 `- KEY=${KEY}`가 있는지 확인하고 없으면 추가한다.
    - 공용 앵커 **`x-dagster-common`**(`&dagster-common`)을 상속하는 서비스(webserver·daemon)는
      **앵커에 한 번만** 추가하면 둘 다 전파된다.
-   - 앵커를 상속하지 않는 서비스(`trino`·`seaweedfs` 등)는 해당 서비스의 `environment:`에 직접 추가한다.
+   - 앵커를 상속하지 않는 서비스(`postgres`)는 해당 서비스의 `environment:`에 직접 추가한다.
+     compose에는 `dagster-webserver`·`dagster-daemon`·`postgres` 셋뿐이다(SeaweedFS·Trino는 compose 밖).
 3. **에셋 실행 컨테이너**에 전파되는지 확인한다. 이 레포는 `DefaultRunLauncher`라 run이
    **daemon in-process 서브프로세스**로 돌아 daemon 서비스 env로 커버된다. 향후
    `DockerRunLauncher` 등 별도 컨테이너로 바꾸면 그 컨테이너 env에도 추가해야 한다.
 4. 코드에서 `dg.EnvVar("KEY")`(필수) 또는 `os.environ.get("KEY", ...)`(선택)로 참조한다.
 
-> 예) `AWS_*`·`ENDPOINT_URL`은 `x-dagster-common` 앵커에 있어 webserver·daemon에 전파되고,
-> `trino` 서비스는 앵커를 안 쓰므로 `environment:`에 `AWS_*`를 **별도로** 나열한다(현재 구현).
+> 예) `AWS_*`·`ENDPOINT_URL`은 `x-dagster-common` 앵커에 있어 webserver·daemon에 전파된다.
 
-> 예) `PHYSIONET_USERNAME`/`PHYSIONET_PASSWORD`(원천 획득)는 compose에서는 앵커에 한 번 넣지만
-> **in-cluster에서는 daemon `env:`에만** 넣는다(전용 Secret `physionet-creds`, `optional: true`).
+> 예) `PHYSIONET_USERNAME`/`PHYSIONET_PASSWORD`(원천 획득)는 compose에서는 앵커에 한 번 넣는다.
+> in-cluster daemon `env:`(전용 Secret `physionet-creds`)는 in-cluster Dagster와 함께 철거됐다.
 > ⚠️ **의도된 비대칭**이다 — `DefaultRunLauncher`라 자산은 daemon에서만 실행되고 webserver는
 > 정의만 띄운다(값이 `dg.EnvVar`라 run 시점에 해석된다). `K8sRunLauncher`로 바꾸면 run 파드에 추가한다.
 > Secret이 없으면 **수집 자산만** 실패하고 적재 자산은 기존 S3 객체로 계속 돈다.
@@ -101,7 +101,8 @@ compose `postgres`를 쓰고, 호스트 `dg dev`는 `.env`의 `POSTGRES_HOST`·`
 
 ⚠️ **호스트 경로의 `POSTGRES_PORT`가 급소다.** 5432면 compose DB를, 15432면 CNPG DB를 본다 —
 둘 다 이름이 `dagster`라 **접속은 어느 쪽이든 성공하고 run 이력만 조용히 갈린다.**
-어느 쪽을 정본으로 삼을지는 PR2 결정 전까지 **한 곳으로 고정해 섞지 않는 것**이 규칙이다.
+새 클러스터에는 메타 DB를 두지 않는다(Airflow 대체가 결정됐다 — [argocd-gitops.md](argocd-gitops.md) D6).
+그동안 **한 곳으로 고정해 섞지 않는 것**이 규칙이다.
 
 in-cluster Dagster 매니페스트는 철거돼(새 클러스터에 배포하지 않는다) 값의 정본은 호스트 `.env`다.
 
@@ -328,7 +329,7 @@ kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 별도 터미널
 # 1) 기준선: 테이블 목록과 행 수를 파일로 남긴다
 # 2) 카탈로그 논리 백업
 kubectl exec catalog-postgres-1 -c postgres -- pg_dump -U iceberg iceberg > <저장소 밖 경로>/catalog.sql
-# 3) SeaweedFS(클러스터 밖): compose를 멈추고 ./seaweedfs/data 를 통째 복사하거나 S3 API(localhost:8333)로 동기
+# 3) SeaweedFS(클러스터 밖, 스택 A 컨테이너): 컨테이너를 멈추고 ./seaweedfs/data 를 통째 복사하거나 S3 API(localhost:8333)로 동기
 ```
 
 ⚠️ **기준선에는 "이 값이 무엇을 세는가"를 함께 적는다** — *테이블 수*인지 *파일 수*인지,
@@ -344,7 +345,7 @@ kubectl exec catalog-postgres-1 -c postgres -- pg_dump -U iceberg iceberg > <저
 ### 4-4. 재생성과 복구
 
 ```shell
-./scripts/k8s-down.sh          # ⚠️ 현재는 kind + 레지스트리 컨테이너를 직접 삭제한다(PR2에서 스택 A destroy로 정리 예정)
+./scripts/k8s-down.sh          # ⚠️ 현재는 kind + 레지스트리 컨테이너를 직접 삭제한다(스택 A destroy로의 정리는 미착수)
 ./scripts/k8s-up.sh            # podman 머신 · 레지스트리
 terraform -chdir=terraform/cluster/kind apply   # TF_VAR_* 3개 필요(setup/local-k8s.md 2단계) · 루트 체크아웃에서만
 terraform -chdir=terraform/platform apply

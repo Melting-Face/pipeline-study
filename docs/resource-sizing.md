@@ -108,7 +108,7 @@ Allocatable이 커져 **메모리 %만** 내려간다. **CPU %는 CPU 분모가 
 | --- | --- | --- | --- | --- | --- |
 | **상주(baseline)** | kube-system(kind CP·CNI·coredns·local-path) ¹ | 실측 ¹ | 실측 ¹ | — | — |
 | | Spark Operator(Apache, **JVM**) | 250m | 512Mi | 500m | 1Gi |
-| | SeaweedFS — **클러스터 밖** compose(같은 VM, `deploy.resources` lim 1 CPU/1G) — 노드 `Σrequests`에 안 잡힌다 | — | — | — | — |
+| | SeaweedFS — **클러스터 밖** 스택 A 컨테이너(같은 VM, TF `docker_container` 1 CPU/1G) — 노드 `Σrequests`에 안 잡힌다 | — | — | — | — |
 | | **CloudNativePG 오퍼레이터**(컨트롤러) | 100m | 200Mi | 250m | 384Mi |
 | | Catalog Postgres(Iceberg JDBC, CNPG `Cluster` 1인스턴스) | 250m | 512Mi | 500m | 768Mi |
 | | **ingress-nginx 컨트롤러**(호스트 포트 → Ingress 진입점) ² | 100m | 90Mi | — | — |
@@ -317,7 +317,7 @@ done
 | ----------- | -------------------------------------------------------- | ------------------------------------------------- |
 | `dagster`   | `max_concurrent_runs`, op 동시성, dbt `threads`           | `dagster.yaml`, `dbt_pipelines/profiles.yml`      |
 | `postgres`  | `shared_buffers`, `work_mem`, `max_connections`           | postgres command / `postgresql.conf`             |
-| `seaweedfs` | volume 수·인덱스 메모리                                   | `compose.yml`의 `seaweedfs` command               |
+| `seaweedfs` | volume 수·인덱스 메모리                                   | `terraform/cluster/kind/main.tf`의 `docker_container.seaweedfs` command |
 | 공통        | CPU·메모리 한도                                           | `compose.yml` `deploy.resources.limits/reservations` |
 
 ## Docker 서비스 자원 한도 (compose)
@@ -398,7 +398,8 @@ daemon 필요 메모리
 - 동시 run·pyiceberg 연결이 늘면 `max_connections`를 상향한다.
 - 카탈로그 쪽은 **테이블 메타만** 담아 데이터가 작다 → `shared_buffers 128MB`로 충분하다.
   접속자는 Dagster(pyiceberg)·Spark·Flink·dbt 4종이라 연결 수가 먼저 병목이 된다.
-- **메타 PG는 새 클러스터에 없다** — 구 클러스터의 CNPG `dagster` DB 선언은 철거됐고(롤만 남음) PR2가 정한다.
+- **메타 PG는 새 클러스터에 없다** — 구 클러스터의 CNPG `dagster` DB 선언은 철거됐고(롤만 남음)
+  Airflow 대체가 결정됐다 — [argocd-gitops.md](argocd-gitops.md) D6.
   그동안 compose 실행은 compose `postgres`를 쓴다(단일 서술 [operations.md](operations.md) §1-2).
   지금 이 클러스터의 연결 수는 카탈로그 접속자(pyiceberg·Spark·Flink·dbt)만 센다.
   메타 축이 돌아오면 `max_connections`에 함께 센다.
