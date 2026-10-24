@@ -67,7 +67,7 @@ services:
   #
   # in-cluster Dagster(k8s/dagster/)는 ArgoCD 전환으로 철거돼 호스트 경로가 유일한 실행처다.
   #   상시 기동에서는 빠지고 `--profile host-dagster`로만 뜬다(opt-in).
-  # ⚠️ 이걸 in-cluster와 **동시에 띄우지 마라.** 같은 서비스가 두 환경에 살아 있으면
+  # ⚠️ in-cluster 판본을 되살리더라도 이것과 **동시에 띄우지 마라.** 같은 서비스가 두 환경에 살아 있으면
   #   관측 확인(①타깃 ②up ③로그)을 전부 통과하면서 레거시가 정본 대신 답한다
   #   (docs/conventions/monitoring.md §3-④ — 이 저장소에서 이미 2회 발생).
   dagster-webserver:
@@ -107,8 +107,8 @@ services:
           cpus: "1.0"
           memory: 1536M
   # 🔴 Dagster 메타 DB — 구 `lakehouse` 클러스터에서는 CNPG `dagster` DB였고 그 선언
-  #   (k8s/dagster/dagster-meta-db.yaml)은 철거됐다(롤만 남음). 새 클러스터에는 메타 DB가 없고
-  #   위치는 PR2가 정한다. 그동안 `--profile host-dagster`는 이 컨테이너를 쓴다(앵커 POSTGRES_HOST=postgres).
+  #   (k8s/dagster/dagster-meta-db.yaml)은 철거됐다(롤만 남음). 새 클러스터에는 메타 DB를 두지 않는다
+  #   (Airflow 대체 결정 — docs/argocd-gitops.md D6). 그동안 `--profile host-dagster`는 이 컨테이너를 쓴다(앵커 POSTGRES_HOST=postgres).
   #   호스트 `dg dev`는 .env의 POSTGRES_HOST/PORT를 따른다 — 예시 기본값(15432)은 구 클러스터 CNPG의
   #   port-forward라, 이 컨테이너와 섞어 쓰면 **run 이력이 두 벌로 갈린다**. 단일 서술: docs/operations.md §1-2
   # profiles가 둘인 이유: 의존받는 서비스는 **의존하는 쪽의 profile을 전부 물려받는다**

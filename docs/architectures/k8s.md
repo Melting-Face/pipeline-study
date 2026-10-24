@@ -20,7 +20,8 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
 - **핵심 컴포넌트**: **Spark Operator**(배치)·**Flink Operator**(스트림)로
   `SparkApplication`·`FlinkDeployment`(CRD)를 실행하고,
   **CloudNativePG**(카탈로그 Postgres)로 `Cluster`(CRD) 관리,
-  SeaweedFS·카탈로그 Postgres를 K8s에 배포한다(**Trino 제거**). Iceberg 테이블은 Spark·Flink가 공유한다.
+  카탈로그 Postgres(CNPG)·Trino를 K8s에 배포한다(SeaweedFS는 클러스터 밖 스택 A 컨테이너).
+  Iceberg 테이블은 Spark·Flink·Trino가 공유한다.
   **웹 UI 진입점은 ingress-nginx**로 고정 URL화한다(`*.localtest.me:8080`).
 - **구축 현황(실측)**: 클러스터 k8s **v1.36.1** 단일 노드.
   **Spark Operator 1.0.0**(chart 1.8.0) / **Flink Operator 1.15.0**(웹훅 끔 — cert-manager 불필요) 기동,
@@ -55,7 +56,7 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
 ## 운영 메모 (이행)
 
 - 패키징은 **Helm 차트**(값 분리·환경별 오버라이드). 이미지 태그 고정(`latest` 금지).
-- 오브젝트 스토리지(SeaweedFS)는 **클러스터 밖 compose**이고 `ExternalName` Service로 닿는다.
+- 오브젝트 스토리지(SeaweedFS)는 **클러스터 밖 스택 A 컨테이너**이고 `ExternalName` Service로 닿는다.
 - **카탈로그 Postgres는 CloudNativePG(CNPG) 오퍼레이터**가 관리한다(`postgresql.cnpg.io/v1` `Cluster`).
   직접 `StatefulSet`을 쓰지 않는 이유: PVC·failover·백업(PITR)·파라미터 튜닝이 **CR 한 장**에 들어오고,
   Spark·Flink 오퍼레이터와 **같은 선언형 패러다임**으로 통일된다. 서비스는 오퍼레이터가 만드는

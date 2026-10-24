@@ -75,7 +75,8 @@
 
 - Dagster 에셋은 함수와 데코레이터로 명시적으로 정의한다. 불필요한 클래스·팩토리
   동적 생성을 피한다.
-- 공통 로직은 `dagster_project/common/`, 정의는 `dagster_project/defs/`에 둔다.
+- 공통 로직은 `dagster_project/common/`, 정의는 `dagster_project/defs/`에 둔다
+  (실경로 접두 `dagster/dockerfile.d/src/src/`).
 - 일반 파일은 `pa.Table` + Iceberg IO manager, 대용량 파일은 스트리밍 청크 append
   경로를 사용한다.
 - dbt 적재분은 `source()`와 `meta.dagster.asset_key`로 lineage를 연결한다.
