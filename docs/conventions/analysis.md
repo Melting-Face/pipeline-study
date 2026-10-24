@@ -96,6 +96,10 @@ inner join {{ ref('icustay_times') }} as t using (stay_id)
 - 🔴 **분할 단위는 행이 아니라 개체다.** 임상 데이터는 1환자가 여러 stay를 갖는다 —
   stay 단위로 나누면 같은 환자가 train/test에 걸쳐 모델이 **그 환자를 외우고**, 지표만 좋아진다.
   `StratifiedGroupKFold(groups=subject_id)`를 쓰고, **분할 후 겹치는 개체가 0인지 검산**한다.
+  - **시계열·시장 데이터에서 누수를 만드는 공유 요인은 시간이다** — 같은 날의 종목은 시장 움직임을
+    함께 겪는다. 그래서 **날짜로 자르고**(walk-forward), 경계에 **embargo(≥ 라벨 horizon)** 를 두고,
+    라벨 날짜가 평가 구간에 닿는 학습 행을 **purge**한다. 풀링 지표와 **일별 횡단면 지표**를 함께 읽어
+    시장 방향과 종목 선택을 가른다(선례 `notebooks/04-stock-direction-baseline.ipynb`).
 - 🔴 **지표는 기준선과 함께 읽는다. 더미 모델을 항상 같이 돌린다** — 기준선이 없으면
   "좋다"를 판정할 눈금이 없다(`DummyClassifier` / `DummyRegressor`).
   - **분류**: 불균형에서 accuracy를 쓰지 않는다. 주지표는 **PR-AUC**이고 **유병률을 병기**한다
