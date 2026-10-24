@@ -10,7 +10,13 @@ from datetime import datetime, timezone
 
 import pytest
 from lakehouse.fx import FX_SCHEMA, rates_json_to_arrow
-from lakehouse.iceberg import S3Conf, ensure_table, make_catalog, replace_partition
+from lakehouse.iceberg import (
+    S3Conf,
+    catalog_uri,
+    ensure_table,
+    make_catalog,
+    replace_partition,
+)
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.expressions import EqualTo
 
@@ -121,3 +127,19 @@ def test_make_catalog_properties(monkeypatch):
     assert captured["warehouse"] == "s3://warehouse"
     assert captured["s3.path-style-access"] == "true"
     assert captured["s3.endpoint"] == "http://s3:8333"
+
+
+def test_catalog_uri_quotes_password():
+    # 비밀번호의 @ : / 가 그대로 들어가면 URI가 다른 호스트로 해석된다
+    uri = catalog_uri(
+        "iceberg", "p@ss:w/rd", "catalog-postgres-rw.default.svc", 5432, "iceberg"
+    )
+    assert uri == (
+        "postgresql+psycopg2://iceberg:p%40ss%3Aw%2Frd"
+        "@catalog-postgres-rw.default.svc:5432/iceberg"
+    )
+
+
+def test_catalog_uri_rejects_empty_password():
+    with pytest.raises(ValueError, match="iceberg_catalog"):
+        catalog_uri("iceberg", "", "h", 5432, "iceberg")

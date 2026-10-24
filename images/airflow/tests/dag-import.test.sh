@@ -54,8 +54,13 @@ dags = {
         "downstream": {t.task_id: sorted(t.downstream_task_ids) for t in d.tasks},
         "outlets": {t.task_id: sorted(a.uri for a in t.outlets) for t in d.tasks},
         # Task SDK timetable 에는 summary 가 없다. cron 의 해석 tz 는 DAG 가 아니라 timetable 의 것이다
-        "cron": getattr(d.timetable, "expression", None),
-        "cron_tz": str(getattr(d.timetable, "timezone", None)),
+        "cron": getattr(d.timetable, "expression", None) or getattr(d.timetable, "_expression", None),
+        "cron_tz": str(getattr(d.timetable, "timezone", None) or getattr(d.timetable, "_timezone", None)),
+        "timetable": type(d.timetable).__name__,
+        "paused": d.is_paused_upon_creation,
+        "catchup": d.catchup,
+        "max_active_runs": d.max_active_runs,
+        "tis": {t.task_id: t.max_active_tis_per_dag for t in d.tasks},
     }
     for dag_id, d in bag.dags.items()
 }
@@ -139,6 +144,24 @@ if echo "${result}" | jq -e '.dags.github_trending.outlets.write_raw == ["s3://w
     echo "PASS [gt-outlet] write_raw → s3://warehouse/raw/github_trending"
 else
     echo "FAIL [gt-outlet] write_raw 의 Asset outlet이 기대와 다르다"
+    rc=1
+fi
+
+# --- fx_rates_daily (환율 bronze) ------------------------------------------------------
+# 🔴 cron 은 UTC 01:00, 데이터 구간 timetable 이어야 파티션 키(data_interval_start)가 「전일 UTC 하루」다
+if echo "${result}" | jq -e '.dags.fx_rates_daily | .tasks == {"load_fx_rates": null}
+        and .cron == "0 1 * * *" and .cron_tz == "UTC" and .timetable == "CronDataIntervalTimetable"
+        and .paused == true and .catchup == false' >/dev/null; then
+    echo "PASS [fx-dag] fx_rates_daily: 태스크 1·0 1 * * * UTC·데이터 구간·일시정지·catchup 없음"
+else
+    echo "FAIL [fx-dag] fx_rates_daily 모양이 기대와 다르다"
+    rc=1
+fi
+
+if echo "${result}" | jq -e '.dags.fx_rates_daily.outlets.load_fx_rates == ["iceberg://frankfurter_fx/fx_rates_daily"]' >/dev/null; then
+    echo "PASS [fx-outlet] load_fx_rates → iceberg://frankfurter_fx/fx_rates_daily"
+else
+    echo "FAIL [fx-outlet] load_fx_rates 의 Asset outlet이 기대와 다르다"
     rc=1
 fi
 

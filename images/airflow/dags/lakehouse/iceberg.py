@@ -8,6 +8,7 @@ Dagster `common/helper.py`의 `ensure_table`·`replace_partition_in_iceberg` 이
 import contextlib
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 import pyarrow as pa
 from pyiceberg.catalog import Catalog, load_catalog
@@ -41,6 +42,17 @@ class S3Conf:
                 f"S3 접속값이 비었다: {empty} — Connection `seaweedfs_s3`를 확인하라"
             )
             raise ValueError(message)
+
+
+def catalog_uri(login: str, password: str, host: str, port: int, database: str) -> str:
+    """Connection 값으로 SQL 카탈로그 URI를 만든다. 비밀번호의 `@:/`는 인코딩한다."""
+    if not (login and password and host and database):
+        message = "카탈로그 접속값이 비었다 — Connection `iceberg_catalog`를 확인하라"
+        raise ValueError(message)
+    return (
+        f"postgresql+psycopg2://{quote(login, safe='')}:{quote(password, safe='')}"
+        f"@{host}:{port}/{database}"
+    )
 
 
 def make_catalog(catalog_uri: str, s3: S3Conf) -> Catalog:
