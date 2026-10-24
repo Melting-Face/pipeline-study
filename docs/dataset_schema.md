@@ -409,6 +409,7 @@ S3 경로 `s3://warehouse/raw/github_trending/dt=<YYYY-MM-DD>/repos.json`. **Air
 `github_trending`이 GitHub Search API로 수집하며 **Iceberg 테이블·`source.yml`·dbt 모델이 없다**(raw에서 멈춘다).
 「트렌드」는 github.com/trending 이 아니라 *최근 생성 저장소의 누적 별 순위*라는 **근사**다.
 레이아웃·필드·소비 시 함정은 [`dataset_schema/github-trending.md`](dataset_schema/github-trending.md)가 정본이다.
+bronze 적재는 설계만 있고 구현 전이다 — [`dataset_schema/github-trending-bronze.md`](dataset_schema/github-trending-bronze.md).
 
 ---
 
