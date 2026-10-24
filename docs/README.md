@@ -72,7 +72,7 @@
   그 게이트·**선언된 공백**
 - ↳ [USGS 수문](dataset_schema/usgs-water.md) — append 전용 bronze 2테이블·의도된 중복과 dedup 키, Flink 파생
 - ↳ [GitHub 트렌드](dataset_schema/github-trending.md) — Airflow가 남기는 raw JSON 레이아웃·필드,
-  「트렌드」 근사의 한계와 차분 소비
+  「트렌드」 근사의 한계와 차분 소비. bronze 적재는 [설계](dataset_schema/github-trending-bronze.md)만 있고 구현 전이다
 - [분석 컨벤션](conventions/analysis.md) — 규칙 정본
 - [`notebooks/README.md`](../notebooks/README.md) — Jupyter Lab 실행·Trino 접속·셀 출력 통제
 - 리포트는 `docs/analyses/<NN>-<slug>.md`에 쌓는다

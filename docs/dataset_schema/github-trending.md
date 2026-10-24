@@ -68,9 +68,11 @@ Hive식 `dt=` 접두어는 나중에 외부 테이블·bronze로 올릴 때 파�
 
 ## 공백
 
-bronze(Iceberg) 테이블·`source.yml`·dbt 모델이 **없고**, 위 Asset을 받는 하류 DAG도 없다 —
-raw 착지에서 멈춘 상태다(**건너뛴 것이지 빠뜨린 것이 아니다**). 이 데이터를 분석에 쓰려면 bronze 적재를
-먼저 둔다(임시 SQL 결과를 리포트에 옮기지 않는다 — [conventions/analysis.md](../conventions/analysis.md)).
+**설계는 있고 구현은 미완이다.** bronze(Iceberg) 테이블·`source.yml`·dbt 모델은 **없고**, raw 착지에서
+멈춘 상태다(**건너뛴 것이지 빠뜨린 것이 아니다**). 적재 주체(Airflow 태스크 + pyiceberg)·스키마·덮어쓰기 모드·
+dbt 연결·검증 계획은 [bronze 적재 설계](github-trending-bronze.md)가 갖는다 — 같은 DAG에 `load_bronze`를 이으므로
+위 Asset을 받는 별도 하류 DAG는 두지 않는다. 이 데이터를 분석에 쓰려면 그 구현이 먼저다
+(임시 SQL 결과를 리포트에 옮기지 않는다 — [conventions/analysis.md](../conventions/analysis.md)).
 거버넌스 판정은 [security/datasets.md](../security/datasets.md)(security §0-1) — **저장소 단위 값은 공개물에 담지 않는다.**
 
 ## 참고
