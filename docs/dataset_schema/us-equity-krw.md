@@ -47,6 +47,8 @@ ECB 고시는 유럽 오후, 미국 종가는 뉴욕 16:00이다. **같은 날 �
 
 ## 운영
 
+- 🔴 **이관 중**: 정기 실행은 Airflow DAG(`fx_rates_daily`·`equity_ohlcv_daily`·`us_equity_krw_dbt`)로 옮긴다
+  ([`airflow.md`](../conventions/airflow.md)). 컷오버 전까지 아래 Dagster 잡·스케줄은 기본 `STOPPED`인 채 남는다.
 - 잡 `us_equity_krw_job`은 이 그룹 + 상류 `equity_prices_daily`를 고른다 — 그 silver는 스케줄이 없어,
   빼면 낡은 달러 종가 위에서 매일 빌드되고 아무 테스트도 울지 않는다.
 - 스케줄은 19:00 KST·기본 `STOPPED`. 환율(10:00 KST)·시세(18:00 KST) 적재보다 뒤다.
