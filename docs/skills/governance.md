@@ -110,6 +110,8 @@ find -L .claude/skills -type f \( -name '*.sh' -o -name '*.py' -o -name '*.js' -
 | 대상 | 단서 | 강제 수단 |
 | --- | --- | --- |
 | `brainstorming` | 분리안 — `scripts/`(브라우저 동반 서버) 실행 금지 | `permissions.deny`의 `Bash(*brainstorming/scripts*)` |
+| `systematic-debugging` | 분리안 — `find-polluter.sh`(테스트 반복 실행)·`condition-based-waiting-example.ts` 실행 금지 | `permissions.deny`의 `Bash(*find-polluter*)`·`Bash(*condition-based-waiting-example*)` |
+| `writing-skills` | 분리안 — `render-graphs.js`(외부 `dot` 호출) 실행 금지 | `permissions.deny`의 `Bash(*render-graphs*)` |
 | 위 두 조건이 없는 C등급 + 실행 파일 스킬 | **도입 금지 대상이다.** 설치돼 있다면 제거하거나 분리안 조건을 갖춘다 | 현황은 Issue #154 |
 | 실행 파일이 없는 C등급 스킬 | 마크다운 절차만 참조한다. 실행 파일 유무는 §출처 등급의 스니펫으로 센다 | 해당 없음 |
 | obra/superpowers 전반 | 「설계 문서를 커밋하라」, `docs/superpowers/` 산출 경로 | 따르지 않는다. 커밋은 사용자 요청 시에만 한다 |
@@ -117,7 +119,18 @@ find -L .claude/skills -type f \( -name '*.sh' -o -name '*.py' -o -name '*.js' -
 
 `Bash(*brainstorming/scripts*)` 규칙에는 부수 효과가 있다.
 이 문자열이 들어간 **모든** Bash 명령이 막히고, 문서 grep도 예외가 아니다.
-`Read`·`Grep` 도구는 영향을 받지 않는다.
+`Read`·`Grep` 도구는 영향을 받지 않는다. 아래 파일명 규칙들도 같다.
+
+`systematic-debugging`·`writing-skills`는 경로가 아니라 **파일명**으로 막는다.
+본문이 `bash ./find-polluter.sh`·`node ./render-graphs.js`처럼 스킬 디렉터리 안에서 **상대경로**로
+부르라고 지시하므로, 스킬 경로를 담은 규칙은 이 호출을 놓친다.
+파일명 규칙이 막는 것은 명령 문자열에 그 이름이 드러난 실행까지다.
+이름을 바꿔 복사하거나 셸 확장으로 조합한 실행, `Read`로 연 내용을 heredoc·새 파일로 옮겨 쓴 실행은
+잡지 못한다(선언된 공백). 이 deny는 **Claude 런타임 한정**이다 — Codex는 `.agents/skills`를 직접 탐색하고
+`.codex/`에 대응 규칙이 없다(`brainstorming`도 같다).
+
+두 스킬의 조건 1(사용자 개별 결정)은 이 행을 추가한 PR에서 사용자가 「유지 + 분리안」을 고른 것이다.
+결정의 기록은 그 PR 본문이 정본이다.
 
 ## 워크플로 발신 공백 (G-1)
 
