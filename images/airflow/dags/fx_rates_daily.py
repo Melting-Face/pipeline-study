@@ -45,8 +45,9 @@ def fx_rates_daily() -> None:
             make_catalog,
             replace_partition,
         )
+        from lakehouse.partition import partition_key
 
-        rate_date = data_interval_start.in_timezone("UTC").date().isoformat()
+        rate_date = partition_key(data_interval_start)
         payload = request_json(f"{RATES_BASE}/{rate_date}", params={})
         arrow = rates_json_to_arrow(payload, rate_date, datetime.now(tz=timezone.utc))
 

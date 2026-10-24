@@ -49,13 +49,14 @@ def equity_ohlcv_daily() -> None:
             make_catalog,
             replace_partition,
         )
+        from lakehouse.partition import partition_key
         from lakehouse.polygon import (
             OHLCV_SCHEMA,
             fetch_grouped_daily,
             grouped_to_arrow,
         )
 
-        trade_date = data_interval_start.in_timezone("UTC").date().isoformat()
+        trade_date = partition_key(data_interval_start)
         try:
             payload = fetch_grouped_daily(
                 Connection.get("polygon_api").password or "", trade_date

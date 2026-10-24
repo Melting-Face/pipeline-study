@@ -61,6 +61,8 @@ dags = {
         "catchup": d.catchup,
         "max_active_runs": d.max_active_runs,
         "tis": {t.task_id: t.max_active_tis_per_dag for t in d.tasks},
+        # Cosmos dbt 태스크가 실행 때 dbt deps 를 다시 받는지(None = Cosmos 태스크 아님)
+        "install_deps": {t.task_id: getattr(t, "install_deps", None) for t in d.tasks},
         # Asset 스케줄이면 조건의 종류(AssetAll=AND·AssetAny=OR)와 대상 URI
         "asset_cond": type(getattr(d.timetable, "asset_condition", None)).__name__,
         "asset_uris": sorted(
@@ -208,6 +210,16 @@ if echo "${result}" | jq -e '.dags.us_equity_krw_dbt.tasks | keys as $k
     echo "PASS [krw-models] Cosmos 그룹 = 모델 3개(다른 stock_forecast 모델 없음)"
 else
     echo "FAIL [krw-models] Cosmos 그룹의 모델 집합이 기대와 다르다"
+    rc=1
+fi
+
+# 🔴 이미지에 구운 dbt_packages 를 쓴다 — Cosmos 기본값(install_dbt_deps=True)은 태스크마다 dbt deps 로
+#    hub.getdbt.com 에 나가 런타임이 외부에 묶인다(최종 리뷰 I2)
+if echo "${result}" | jq -e '.dags.us_equity_krw_dbt.install_deps | to_entries
+        | map(select(.key | startswith("dbt."))) | length > 0 and all(.value == false)' >/dev/null; then
+    echo "PASS [krw-no-deps] Cosmos dbt 태스크가 실행 시 dbt deps 를 받지 않는다"
+else
+    echo "FAIL [krw-no-deps] Cosmos dbt 태스크의 install_deps 가 false 가 아니다"
     rc=1
 fi
 

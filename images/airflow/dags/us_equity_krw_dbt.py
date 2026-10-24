@@ -49,8 +49,13 @@ def us_equity_krw_dbt() -> None:
     """원화 종가 dbt DAG."""
     models = DbtTaskGroup(
         group_id="dbt",
+        # 🔴 install_dbt_deps=False — Cosmos 기본값은 태스크마다 dbt deps로
+        #    hub.getdbt.com에 나간다. 끄면 이미지에 구운 dbt_packages를
+        #    심볼릭 링크로 쓴다(cosmos create_symlinks, 최종 리뷰 I2).
         project_config=ProjectConfig(
-            DBT_DIR, manifest_path=f"{DBT_DIR}/target/manifest.json"
+            DBT_DIR,
+            manifest_path=f"{DBT_DIR}/target/manifest.json",
+            install_dbt_deps=False,
         ),
         profile_config=ProfileConfig(
             profile_name="dbt_pipelines",
