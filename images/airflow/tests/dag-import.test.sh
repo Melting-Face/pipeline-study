@@ -34,7 +34,10 @@ fi
 EXECUTORS="$(printf '%s' "${executor_lines}" | sed -E 's/^ +executor: "([^"]+)"$/\1/')"
 
 echo "== 빌드: ${IMAGE} (linux/arm64, ${CLI}) =="
-if ! "${CLI}" build --platform linux/arm64 -t "${IMAGE}" "${CONTEXT_DIR}"; then
+# dbt 프로젝트는 이 컨텍스트 밖에 있어 **이름 붙은 추가 컨텍스트**로 넘긴다(컨텍스트를 저장소 루트로
+# 넓히면 .env 등이 컨텍스트에 실린다). CI build-push-action 의 build-contexts 와 같은 이름 `dbt`.
+DBT_CONTEXT="${REPO_ROOT}/dagster/dockerfile.d/src/dbt_pipelines"
+if ! "${CLI}" build --platform linux/arm64 --build-context dbt="${DBT_CONTEXT}" -t "${IMAGE}" "${CONTEXT_DIR}"; then
     echo "FAIL [build] 이미지 빌드 실패 — Dockerfile 확인"
     exit 1
 fi
@@ -136,6 +139,43 @@ if echo "${result}" | jq -e '.dags.github_trending.outlets.write_raw == ["s3://w
     echo "PASS [gt-outlet] write_raw → s3://warehouse/raw/github_trending"
 else
     echo "FAIL [gt-outlet] write_raw 의 Asset outlet이 기대와 다르다"
+    rc=1
+fi
+
+# --- 이미지 내용(원화 종가 이관 — pyiceberg·cosmos·dbt venv·dbt 프로젝트) -------------
+# 🔴 lint CI 초록은 빌드 보증이 아니다 — 이미지 안에서 실제로 import·실행해 본다.
+if "${CLI}" run --rm "${IMAGE}" python -c "import pyiceberg, cosmos, trino, holidays, lakehouse.iceberg" >/dev/null 2>&1; then
+    echo "PASS [img-imports] pyiceberg·cosmos·trino·holidays·lakehouse import"
+else
+    echo "FAIL [img-imports] 이미지 안 import 실패"
+    rc=1
+fi
+
+# 🔴 이미지 entrypoint 는 bash·python 이 아닌 첫 인자를 airflow 하위 명령으로 해석한다 — bash -c 로 감싼다
+# 출력은 변수로 먼저 받는다 — `| grep -q` 는 첫 일치에서 끊어 앞 명령이 SIGPIPE 를 받고, pipefail 이
+# 그것을 실패로 읽는다(값이 맞는데 FAIL 이 났다, 실측)
+DBT_VERSION_OUT="$("${CLI}" run --rm "${IMAGE}" bash -c "/opt/dbt-venv/bin/dbt --version" 2>&1 || true)"
+if printf '%s\n' "${DBT_VERSION_OUT}" | grep -E "trino: +1\.10\.6" >/dev/null; then
+    echo "PASS [img-dbt] /opt/dbt-venv 의 dbt-trino 1.10.6"
+else
+    echo "FAIL [img-dbt] dbt venv 또는 dbt-trino 버전이 기대와 다르다"
+    rc=1
+fi
+
+if "${CLI}" run --rm "${IMAGE}" bash -c "test -s /opt/airflow/dbt/dbt_pipelines/target/manifest.json"; then
+    echo "PASS [img-manifest] dbt manifest 가 이미지에 구워져 있다"
+else
+    echo "FAIL [img-manifest] /opt/airflow/dbt/dbt_pipelines/target/manifest.json 이 없다"
+    rc=1
+fi
+
+# DAG 파일이 공용 패키지를 import 할 수 있는가 — Dockerfile 의 PYTHONPATH 가 받친다(없으면 FAIL, 실측)
+PROBE="${SCRIPT_DIR}/probe_lakehouse_import.py"
+if "${CLI}" run --rm -v "${PROBE}:/tmp/probe.py:ro" "${IMAGE}" python /tmp/probe.py 2>/dev/null \
+    | tail -n 1 | jq -e '.ok and .errors == 0' >/dev/null; then
+    echo "PASS [img-dag-import-lib] DAG 파일에서 import lakehouse 가능"
+else
+    echo "FAIL [img-dag-import-lib] DAG 파일에서 lakehouse import 실패(PYTHONPATH 확인)"
     rc=1
 fi
 
