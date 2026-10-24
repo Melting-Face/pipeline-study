@@ -84,7 +84,7 @@
 - 비밀값은 환경변수 참조로만 주입하고 코드·문서·응답에 값을 노출하지 않는다.
 - 같은 로직의 추출은 세 번째 반복부터 검토한다(Rule of Three).
 - 상세 규칙은 `docs/conventions/dagster.md`, `dbt.md`, `python.md`,
-  `timezone.md`, `docker.md`, `k8s.md`, `terraform.md`를 따른다.
+  `timezone.md`, `docker.md`, `k8s.md`, `terraform.md`, `airflow.md`(Dagster→Airflow 이관)를 따른다.
 
 ## 데이터 분석과 거버넌스
 
