@@ -61,6 +61,11 @@ dags = {
         "catchup": d.catchup,
         "max_active_runs": d.max_active_runs,
         "tis": {t.task_id: t.max_active_tis_per_dag for t in d.tasks},
+        # Asset 스케줄이면 조건의 종류(AssetAll=AND·AssetAny=OR)와 대상 URI
+        "asset_cond": type(getattr(d.timetable, "asset_condition", None)).__name__,
+        "asset_uris": sorted(
+            a.uri for a in getattr(getattr(d.timetable, "asset_condition", None), "objects", [])
+        ),
     }
     for dag_id, d in bag.dags.items()
 }
@@ -181,6 +186,35 @@ if echo "${result}" | jq -e '.dags.equity_ohlcv_daily.outlets.load_equity_ohlcv 
     echo "PASS [ohlcv-outlet] load_equity_ohlcv → iceberg://polygon_market/equity_ohlcv_daily"
 else
     echo "FAIL [ohlcv-outlet] load_equity_ohlcv 의 Asset outlet이 기대와 다르다"
+    rc=1
+fi
+
+# --- us_equity_krw_dbt (원화 종가 dbt) ---------------------------------------------------
+# 🔴 두 bronze Asset 의 AND — 한쪽만 갱신된 날(환율은 주말에도 갱신)에 낡은 입력으로 빌드하지 않는다
+if echo "${result}" | jq -e '.dags.us_equity_krw_dbt | .asset_cond == "AssetAll"
+        and .asset_uris == ["iceberg://frankfurter_fx/fx_rates_daily", "iceberg://polygon_market/equity_ohlcv_daily"]
+        and .paused == true' >/dev/null; then
+    echo "PASS [krw-schedule] us_equity_krw_dbt: 환율 AND 시세 Asset 스케줄·일시정지"
+else
+    echo "FAIL [krw-schedule] us_equity_krw_dbt 스케줄이 기대와 다르다"
+    rc=1
+fi
+
+# Cosmos 그룹은 모델 3개만 — stock_forecast 의 다른 모델(피처·라벨·뉴스)이 끌려오면 실패
+if echo "${result}" | jq -e '.dags.us_equity_krw_dbt.tasks | keys as $k
+        | (["equity_prices_daily", "fx_usdkrw_daily", "us_equity_krw__close_daily"]
+           | all(. as $m | $k | any(contains($m))))
+        and ($k | any(test("feature_store|labels_forward|news_|macro_")) | not)' >/dev/null; then
+    echo "PASS [krw-models] Cosmos 그룹 = 모델 3개(다른 stock_forecast 모델 없음)"
+else
+    echo "FAIL [krw-models] Cosmos 그룹의 모델 집합이 기대와 다르다"
+    rc=1
+fi
+
+if echo "${result}" | jq -e '.dags.us_equity_krw_dbt.outlets.record_latest_trade_date == ["iceberg://us_equity_krw/us_equity_krw__close_daily"]' >/dev/null; then
+    echo "PASS [krw-outlet] record_latest_trade_date → iceberg://us_equity_krw/us_equity_krw__close_daily"
+else
+    echo "FAIL [krw-outlet] record_latest_trade_date 의 Asset outlet이 기대와 다르다"
     rc=1
 fi
 

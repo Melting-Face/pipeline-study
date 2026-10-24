@@ -15,8 +15,9 @@ from typing import Any
 
 import pendulum
 from airflow.sdk import Asset, Connection, CronDataIntervalTimetable, dag, task
+from lakehouse.assets import EQUITY_OHLCV_URI
 
-OHLCV_ASSET = Asset("iceberg://polygon_market/equity_ohlcv_daily")
+OHLCV_ASSET = Asset(EQUITY_OHLCV_URI)
 IDENTIFIER = "polygon_market.equity_ohlcv_daily"
 # 분당 5회 상한 — 호출 하나가 끝난 뒤 이만큼 쉰다(재시도가 붙어도 간격을 지킨다)
 MIN_CALL_INTERVAL_S = 12.5

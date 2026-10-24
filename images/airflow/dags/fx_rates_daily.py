@@ -12,8 +12,9 @@ from typing import Any
 
 import pendulum
 from airflow.sdk import Asset, Connection, CronDataIntervalTimetable, dag, task
+from lakehouse.assets import FX_RATES_URI
 
-FX_ASSET = Asset("iceberg://frankfurter_fx/fx_rates_daily")
+FX_ASSET = Asset(FX_RATES_URI)
 IDENTIFIER = "frankfurter_fx.fx_rates_daily"
 
 
