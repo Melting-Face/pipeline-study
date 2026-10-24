@@ -140,7 +140,7 @@ fetch_trending ──▶ write_raw(outlet RAW_ASSET) ──▶ load_bronze
   (env `AIRFLOW_CONN_ICEBERG_CATALOG`, conn_type `postgres`).
   태스크는 그 필드로 `postgresql+psycopg2://…@catalog-postgres-rw.default.svc:5432/iceberg`를 조립한다.
   조립한 URI는 로그에 남기지 않는다.
-- **권한 부여 방식이 열린 결정이다**(아래 「사용자 결정 필요」 D1).
+- **권한 부여 방식은 CNPG 롤 멤버십으로 정했다** — 아래 「사용자 결정」 D1 (a).
   ⚠️ 어느 방식이든 카탈로그 행(`iceberg_tables`)에 대한 DML은 테이블 단위로 쪼개지지 않는다. 그래서 R2의 이득은
   **권한 축소가 아니라 크리덴셜 분리**(독립 회전·접속 주체 식별)다. S3 키도 버킷 전체 권한이라 그 축은 원래 같다.
 - `secretKeyRef`는 필수 참조다 — Secret 없이 `values.yaml`의 `secret:`을 늘리면 **모든 Airflow 파드가**
@@ -181,7 +181,7 @@ fetch_trending ──▶ write_raw(outlet RAW_ASSET) ──▶ load_bronze
 - dbt 모델 소유: `defs/github_trending/dbt_assets.py`의
   `@dbt_assets(select="fqn:github_trending", project=dbt_project)`.
   `dbt_project.yml`에서 `+schema: github_trending`과 **group 재정의**를 함께 둔다 — 기본 group `dbt_ingest`면
-  `dbt_all_job`이 이 모델을 끌고 간다(`dbt_project.yml:44-52`의 선례). 실행 트리거는 열린 결정이다(D2).
+  `dbt_all_job`이 이 모델을 끌고 간다(`dbt_project.yml:44-52`의 선례). 실행 트리거는 수동 머티리얼라이즈로 시작한다(D2).
 
 ## 6. 차분 모델 — 파티션 간 별 증가량
 
@@ -276,15 +276,18 @@ left join snapshots as prev
   `github_trending` 네임스페이스 하나다. 음성 대조로 클러스터에 깨진 상태(append 중복·손상 객체)를 만들지 않는다.
 - 테이블 삭제·카탈로그 행 정리가 필요해지면 비가역 게이트(`docs/risk.md` §4)를 따른다.
 
-## 사용자 결정 필요
+## 사용자 결정
 
-- **D1 — 전용 롤의 권한 부여 방식**
+두 항목 모두 **결정됐다** — D1은 (a), D2는 (c)로 시작해 (a). 선택지와 근거는 아래에 남긴다.
+
+- **D1 — 전용 롤의 권한 부여 방식** — **결정: (a)**.
+  멤버십 필드가 CRD에 없으면 구현 PR에서 (b)로 내려가고 이 절을 고친다
   - (a) CNPG 롤 멤버십으로 `iceberg` 권한을 상속한다. 선언형이라 Git이 단일 출처다. 권한은 `iceberg`와 같고
     크리덴셜만 분리된다. CNPG `managed.roles`의 멤버십 필드 지원은 `미확인`(구현 때 CRD로 확인).
   - (b) 카탈로그 테이블 2종에 DML만 `GRANT`한다. DDL이 막혀 조금 좁지만 명령형 단계라 선언 밖에 남는다.
   - (c) R1로 물러나 `iceberg` 롤 크리덴셜 사본을 쓴다.
   - **권고 (a)** — 선언 관리와 회전 독립을 얻고, (b)가 더 좁히는 범위는 위 ⚠️처럼 크지 않다.
-- **D2 — dbt 모델 실행 트리거**
+- **D2 — dbt 모델 실행 트리거** — **결정: (c)로 시작해 (a)로**. 재검토 조건은 하류 소비자가 생기는 것이다
   - (a) Dagster 일일 스케줄(KST, Airflow 09:00 수집 뒤 여유를 둔 시각)을 `automation.py`에 둔다. 시각 결합이라
     Airflow가 늦으면 전날 데이터로 빌드된다. 기존 `dbt_all_schedule`처럼 STOPPED로 시작한다(`automation.py:41-52`).
   - (b) Dagster 센서가 카탈로그의 최신 스냅샷을 폴링한다. 결합은 없지만 구현이 는다.
