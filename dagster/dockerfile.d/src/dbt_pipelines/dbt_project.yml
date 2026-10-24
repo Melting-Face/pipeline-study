@@ -54,7 +54,9 @@ models:
         +materialized: table
         # 이유는 아래 mimic_iv.tables의 on_table_exists 주석과 같다
         +on_table_exists: replace
-        +file_format: iceberg
+        # 🔴 `+file_format: iceberg`를 두지 않는다 — dbt-trino는 이것을 무시하지 않고
+        # `WITH (format = 'iceberg')`로 내보내 Iceberg 커넥터가 INVALID_TABLE_PROPERTY로
+        # 거부한다(ORC·PARQUET·AVRO만 유효, 실측). 테이블 형식은 카탈로그가 이미 Iceberg다.
     # 미국 주식 원화 종가. 🔴 group 재정의 이유는 위 stock_forecast와 같다 —
     # 전역 `dbt_ingest`로 두면 `dbt_all_job`이 매시각 끌고 간다(전용 일 1회 잡이 소유).
     us_equity_krw:
@@ -65,7 +67,7 @@ models:
       tables:
         +materialized: table
         +on_table_exists: replace
-        +file_format: iceberg
+        # file_format을 두지 않는 이유는 위 stock_forecast 주석과 같다
     mimic_iv:
       +schema: mimiciv
       # 실버 모델은 물리 테이블로 구체화한다(dbt 기본값 view 재정의).
