@@ -9,11 +9,11 @@
 
 | 문서 | 상태 | 내용 |
 | --- | --- | --- |
-| [overview.md](overview.md) | 🚧 | 현행 스택 스냅샷·데이터 흐름(Dagster·dbt·Iceberg·SeaweedFS) — **재설계 이행 중**이라 Trino 경로는 제거 대상이고, 스냅샷은 관측 시점과 함께 읽는다 |
+| [overview.md](overview.md) | 🚧 | 현행 스택 스냅샷·데이터 흐름(Dagster·dbt·Iceberg·SeaweedFS) — Trino는 dbt 엔진으로 유지(제거 번복), 스냅샷은 관측 시점과 함께 읽는다 |
 | [docker.md](docker.md) | ✅ | 컨테이너·compose 배포(채택) |
 | [argocd.md](argocd.md) | ✅ | GitOps 컨트롤러 — **`git push`로 클러스터가 수렴**. ApplicationSet(git files) + RollingSync를 고른 이유와 기각한 대안, 데이터 보호 4겹 |
 | [dagster.md](dagster.md) | ✅ | 오케스트레이터 — 배치 결정 기록(in-cluster 배포는 ArgoCD 전환으로 철거, 현행은 호스트 실행). raw 매니페스트 · `DefaultRunLauncher` 유지 이유와 대안 비교 |
-| [spark.md](spark.md) | 🚧 | 배치 엔진 — 대용량 인제스트 · dbt-spark 마트 · Iceberg 유지보수. 버전은 **최신이 아니라 Iceberg가 지원하는 짝**으로 고른다 |
+| [spark.md](spark.md) | 🚧 | 배치 엔진 — 대용량 인제스트 · Iceberg 쓰기(dbt 엔진은 Trino). 버전은 **최신이 아니라 Iceberg가 지원하는 짝**으로 고른다 |
 | [flink.md](flink.md) | 🚧 | 스트림 엔진 — 실시간 조기경보. Iceberg bronze 스트리밍 읽기를 소스로 쓴다 |
 | [k8s.md](k8s.md) | 🚧 | 컨테이너 오케스트레이션 — 컴퓨트·데이터 서비스 이전(이행중) |
 | [operators.md](operators.md) | ✅ | 오퍼레이터 패턴 3종(Spark·Flink·PostgreSQL) — **왜 셋 중 둘만 전용 이미지를 굽는가**. 판단축은 오퍼레이터가 아니라 런타임의 확장 적재 방식이다 |
