@@ -44,7 +44,13 @@ RATES_BASE = "https://api.frankfurter.dev/v1"
 # ⚠️ 고정이라는 것은 **범위가 30일로 유지되지 않는다**는 뜻이기도 하다 —
 # 집합은 하루에 하나씩 늘어난다. "최근 30일"은 착수 시점의 폭이지 불변식이 아니다.
 # (마지막 파티션은 **완결된 UTC 하루**라 오늘이 아니라 어제까지다.)
-PARTITION_START_DATE = "2026-08-09"
+#
+# 🔴 시작일은 `polygon_market`의 `PARTITION_START_DATE`와 **같게 둔다** — 소비자
+# `us_equity_krw`의 원화 종가가 거래일마다 as-of 환율을 요구하고, 환율이 더 늦게
+# 시작하면 그 앞 거래일은 `usd_krw` not_null이 실패한다(의도된 차단). 앞당기는 것은
+# 파티션 집합을 왼쪽으로 늘릴 뿐 이미 적재한 파티션을 건드리지 않는다. 늘어난 범위는
+# 백필해야 채워진다(파티션당 1요청).
+PARTITION_START_DATE = "2024-10-09"
 
 # 파티션 타임존 — 🔴 **UTC이고, 이것이 스케줄 타임존까지 정한다.**
 # `build_schedule_from_partitioned_job`은 시간 파티션 잡에 `execution_timezone`을

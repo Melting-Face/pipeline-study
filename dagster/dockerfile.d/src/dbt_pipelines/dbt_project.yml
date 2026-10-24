@@ -55,6 +55,17 @@ models:
         # 이유는 아래 mimic_iv.tables의 on_table_exists 주석과 같다
         +on_table_exists: replace
         +file_format: iceberg
+    # 미국 주식 원화 종가. 🔴 group 재정의 이유는 위 stock_forecast와 같다 —
+    # 전역 `dbt_ingest`로 두면 `dbt_all_job`이 매시각 끌고 간다(전용 일 1회 잡이 소유).
+    us_equity_krw:
+      +schema: us_equity_krw
+      +meta:
+        dagster:
+          group: us_equity_krw
+      tables:
+        +materialized: table
+        +on_table_exists: replace
+        +file_format: iceberg
     mimic_iv:
       +schema: mimiciv
       # 실버 모델은 물리 테이블로 구체화한다(dbt 기본값 view 재정의).

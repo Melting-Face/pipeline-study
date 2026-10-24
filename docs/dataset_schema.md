@@ -227,8 +227,9 @@ ICU stay 단위 인구통계·재원 정보. eICU의 중심 테이블. **`*time2
 ## Frankfurter 환율 원천 테이블
 
 Iceberg 네임스페이스 `frankfurter_fx`. 앞의 둘과 성격이 다르다 — 원천이 S3 파일이 아니라 **공개 HTTP API**이고,
-**이 저장소의 첫 일자 파티션 자산**이다. dbt 모델을 두지 않으므로 `source.yml`·`dbt_project.yml` 항목이
-없다(**건너뛴 것이지 빠뜨린 것이 아니다** — [conventions/dagster.md](conventions/dagster.md) 체크리스트 참조).
+**이 저장소의 첫 일자 파티션 자산**이다. 이 서브프로젝트 자체는 dbt 모델을 두지 않고(bronze에서 멈춘다),
+소비자 `us_equity_krw`가 `source.yml`로 받는다 — 원화 종가 규칙은
+[`dataset_schema/us-equity-krw.md`](dataset_schema/us-equity-krw.md).
 
 원천은 **Frankfurter**(환율을 무인증·무쿼터로 제공하는 공개 API)다. 처음 대상이던 상용 API는 **무료 플랜이
 과거 일자 조회를 막아** 원천을 바꿨다 — 일자 파티션은 과거 조회가 전제라 그 제약이 설계를 무효화했다.

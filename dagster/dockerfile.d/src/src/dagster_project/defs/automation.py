@@ -13,6 +13,7 @@
 - FRED 경제지표 잡·스케줄 **2쌍** — 🔴 **선언 방식이 서로 다르다.** 릴리스 일정은
   일자 파티션이라 파생시키지만, 관측치는 **정적 파티션(시리즈)** 이라 파생 함수를
   쓸 수 없고 시리즈마다 `RunRequest`를 내는 스케줄을 직접 쓴다.
+- 미국 주식 원화 종가 dbt 잡·스케줄 1쌍 — 일 1회, 두 원천 스케줄보다 뒤(아래).
 """
 
 from collections.abc import Iterator
@@ -26,6 +27,10 @@ from dagster_project.defs.fred_calendar.constants import SERIES_IDS
 from dagster_project.defs.polygon_market.constants import (
     SCHEDULE_HOUR_UTC as POLYGON_SCHEDULE_HOUR_UTC,
 )
+from dagster_project.defs.us_equity_krw.constants import (
+    GROUP_NAME as US_EQUITY_KRW_GROUP,
+)
+from dagster_project.defs.us_equity_krw.constants import SCHEDULE_CRON_KST
 
 dbt_all_job = dg.define_asset_job(
     "dbt_all_job",
@@ -205,5 +210,31 @@ fred_release_dates_schedule = dg.build_schedule_from_partitioned_job(
     fred_release_dates_job,
     name="fred_release_dates_schedule",
     hour_of_day=FRED_SCHEDULE_HOUR_UTC,
+    default_status=dg.DefaultScheduleStatus.STOPPED,
+)
+
+# ── 미국 주식 원화 종가(dbt) ──────────────────────────────────────────────
+# 🔴 **상류 silver `equity_prices_daily`를 함께 선택한다.** 그 모델은 `stock_forecast`
+# 그룹 소유이고 그 그룹에는 스케줄이 없다 — 그룹만 고르면 원화 종가가
+# **며칠 전 달러 종가 위에서 매일 새로 빌드**되고, 날짜 컬럼이 맞아 보여
+# 아무 테스트도 울지 않는다. `stock_forecast` 그룹 전체를 고르지 않는 이유는
+# 피처·뉴스 모델까지 매일 끌고 가기 때문이다.
+#
+# 원천 bronze(`fx_rates_daily`·`equity_ohlcv_daily`)는 고르지 않는다 — 각자의
+# 파티션 스케줄이 소유한다. 그래서 이 잡이 도는 시각이 두 스케줄보다 뒤여야
+# 한다(constants 주석).
+us_equity_krw_job = dg.define_asset_job(
+    "us_equity_krw_job",
+    selection=dg.AssetSelection.groups(US_EQUITY_KRW_GROUP)
+    | dg.AssetSelection.assets(dg.AssetKey(["stock_forecast", "equity_prices_daily"])),
+)
+
+us_equity_krw_schedule = dg.ScheduleDefinition(
+    name="us_equity_krw_schedule",
+    job=us_equity_krw_job,
+    cron_schedule=SCHEDULE_CRON_KST,
+    execution_timezone="Asia/Seoul",
+    # 켜기 전 전제: 시세·환율 bronze가 2024-10-09부터 백필돼 있어야 한다 — 아니면
+    # `usd_krw` not_null이 백필 범위 밖 거래일마다 실패한다(의도된 차단).
     default_status=dg.DefaultScheduleStatus.STOPPED,
 )
