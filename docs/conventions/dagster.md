@@ -160,7 +160,7 @@ src/dagster_project/
     │   ├── assets.py       # 명시적 @asset (bronze 적재)
     │   └── dbt_assets.py   # @dbt_assets(select="fqn:mimic_iv", project=dbt_project)
     ├── eicu/               # mimic_iv와 같은 4파일
-    └── usgs_water/ · frankfurter_fx/ · polygon_market/ · fred_calendar/ · stock_forecast/ · flink/ · poc/
+    └── usgs_water/ · frankfurter_fx/ · polygon_market/ · fred_calendar/ · stock_forecast/ · us_equity_krw/ · flink/ · poc/
 ```
 
 - **정의는 모두 `defs/` 하위**에 두고 `load_defs`가 재귀 자동발견해 단일 `Definitions`로 합친다.
