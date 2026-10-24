@@ -165,6 +165,25 @@ else
     rc=1
 fi
 
+# --- equity_ohlcv_daily (Polygon 시세 bronze) -------------------------------------------
+# 🔴 무료 한도(분당 5회) — run 1개·태스크 동시 1개로 순간 요청을 1로 묶는다(Pool 대신, 계획 조정)
+if echo "${result}" | jq -e '.dags.equity_ohlcv_daily | .tasks == {"load_equity_ohlcv": null}
+        and .cron == "0 9 * * *" and .cron_tz == "UTC" and .timetable == "CronDataIntervalTimetable"
+        and .paused == true and .catchup == false and .max_active_runs == 1
+        and .tis.load_equity_ohlcv == 1' >/dev/null; then
+    echo "PASS [ohlcv-dag] equity_ohlcv_daily: 0 9 * * * UTC·일시정지·run 1·태스크 동시 1"
+else
+    echo "FAIL [ohlcv-dag] equity_ohlcv_daily 모양이 기대와 다르다"
+    rc=1
+fi
+
+if echo "${result}" | jq -e '.dags.equity_ohlcv_daily.outlets.load_equity_ohlcv == ["iceberg://polygon_market/equity_ohlcv_daily"]' >/dev/null; then
+    echo "PASS [ohlcv-outlet] load_equity_ohlcv → iceberg://polygon_market/equity_ohlcv_daily"
+else
+    echo "FAIL [ohlcv-outlet] load_equity_ohlcv 의 Asset outlet이 기대와 다르다"
+    rc=1
+fi
+
 # --- 이미지 내용(원화 종가 이관 — pyiceberg·cosmos·dbt venv·dbt 프로젝트) -------------
 # 🔴 lint CI 초록은 빌드 보증이 아니다 — 이미지 안에서 실제로 import·실행해 본다.
 if "${CLI}" run --rm "${IMAGE}" python -c "import pyiceberg, cosmos, trino, holidays, lakehouse.iceberg" >/dev/null 2>&1; then
