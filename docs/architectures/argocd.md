@@ -13,7 +13,7 @@ applicationset-controller(Application 일괄 생성) · redis(캐시) 다섯이�
 ## 이 프로젝트에서의 위치 — ✅ 채택
 
 **성공 기준은 「`git push`만으로 클러스터가 수렴한다」** 이다. 빈 클러스터에서 `terraform apply` 2회와
-Secret 생성(`k8s-secrets.sh` — **PR2 산출물, 아직 없다**) 뒤, 사람의 `kubectl apply` 없이
+Secret 생성(`scripts/k8s-secrets.sh`) 뒤, 사람의 `kubectl apply` 없이
 전 Application이 Synced·Healthy가 되어야 한다.
 이전에는 셸·Terraform·수동 `kubectl`이 번갈아 클러스터를 세웠고(순서가 곧 전제), 오퍼레이터를 바꿀 때마다
 `apply`가 필요했다. 설계 전문은 [../argocd-gitops.md](../argocd-gitops.md), 스택 분할은 [terraform.md](terraform.md).
@@ -38,7 +38,7 @@ Application의 자동 sync를 끈다)는 [../argocd-gitops.md](../argocd-gitops.
 | Terraform `helm_release`로 오퍼레이터 유지 | 철거 | 빈 클러스터는 CRD 해석 때문에 2단 apply, 변경마다 `apply` |
 | AppProject 분리 | 🔎 보류 | 사용자·저장소가 하나라 격리 대상이 없다. `sourceRepos` 제한은 Airflow 단계에서 재판단 |
 | Sync Windows·Notifications·SSO·RBAC | 🔎 기각 | 로컬 단일 사용자. 읽는 사람 없는 알림은 관측이 아니다 |
-| Secret을 Git에 두기(sealed 등) | 🔎 기각 | 저장소가 public — Git엔 이름만, 값은 `k8s-secrets.sh`(PR2 산출물, 아직 없다)로 수동 생성 |
+| Secret을 Git에 두기(sealed 등) | 🔎 기각 | 저장소가 public — Git엔 이름만, 값은 `scripts/k8s-secrets.sh`로 수동 생성 |
 | Spark Connect·Flink 세션을 ArgoCD로 | 🔎 기각 | 온디맨드 기동·회수를 selfHeal이 되돌린다 |
 
 ### 데이터 보호 — 4겹 (요약)

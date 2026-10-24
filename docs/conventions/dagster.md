@@ -147,19 +147,20 @@ src/dagster_project/
 │   ├── constants.py        # 공통 상수/기본값 (S3 파라미터 포함)
 │   ├── helper.py           # read_csv_gz_table(일반) · load_heavy_csv_gz_to_iceberg(대용량)
 │   ├── dbt.py              # 공유 DbtProject · build_dbt_resource (단일 dbt 프로젝트)
-│   └── trino.py            # TrinoResource (k8s Trino — Iceberg 유지보수 프로시저 실행)
+│   ├── trino.py            # TrinoResource (k8s Trino — Iceberg 유지보수 프로시저 실행)
+│   ├── fetch.py            # 외부 원천 파일 → S3 raw/ 수집 헬퍼 (원천 획득 단계)
+│   └── physionet.py · polygon.py · fred.py   # 원천 접속 리소스 (인증·URL 조립)
 └── defs/                   # load_defs가 재귀 자동발견하는 정의 루트
     ├── resources.py        # @dg.definitions: s3 · dbt · trino · io_manager_* · 테이블 바인딩
-    ├── automation.py       # dbt_all_job · dbt_all_schedule (모듈 스코프 객체)
+    ├── automation.py       # dbt_all_job · 데이터셋별 잡·스케줄 (모듈 스코프 객체)
     ├── maintenance.py      # iceberg_maintenance_job: 컴팩션→스냅샷 만료→orphan 정리 3단계(주간 스케줄, 순서 강제)
     ├── mimic_iv/           # 데이터셋 서브프로젝트 (정의만)
     │   ├── constants.py    # NAMESPACE · GROUP_NAME · SOURCE_BASE
+    │   ├── raw_assets.py   # 명시적 @asset (원천 획득: PhysioNet → S3 raw/)
     │   ├── assets.py       # 명시적 @asset (bronze 적재)
     │   └── dbt_assets.py   # @dbt_assets(select="fqn:mimic_iv", project=dbt_project)
-    └── eicu/
-        ├── constants.py
-        ├── assets.py
-        └── dbt_assets.py   # @dbt_assets(select="fqn:eicu", project=dbt_project)
+    ├── eicu/               # mimic_iv와 같은 4파일
+    └── usgs_water/ · frankfurter_fx/ · polygon_market/ · fred_calendar/ · stock_forecast/ · flink/ · poc/
 ```
 
 - **정의는 모두 `defs/` 하위**에 두고 `load_defs`가 재귀 자동발견해 단일 `Definitions`로 합친다.

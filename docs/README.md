@@ -23,7 +23,7 @@
 | 문서 | 내용 |
 | --- | --- |
 | [재설계 로드맵](redesign.md) | K8s로의 이행. 목표 토폴로지·급소·PDCA |
-| [ArgoCD GitOps 전환](argocd-gitops.md) | 설계(리뷰 대기). Terraform A·B + ApplicationSet, 오퍼레이터→데이터→Airflow 단계 |
+| [ArgoCD GitOps 전환](argocd-gitops.md) | 설계·구현됨. Terraform A·B + ApplicationSet, 오퍼레이터→데이터→Airflow 단계 |
 | [전체 아키텍처](architectures/overview.md) | Dagster · dbt · Iceberg · SeaweedFS 스택과 bronze 적재 템플릿 |
 | [ArgoCD](architectures/argocd.md) | GitOps — `git push`로 클러스터 수렴. 채택 근거와 기각한 대안 |
 | [Dagster](architectures/dagster.md) | 오케스트레이터 — 배치 결정 기록(in-cluster는 철거, 현행은 호스트) |
@@ -34,7 +34,7 @@
 | [오브젝트 스토리지](architectures/storage.md) | 현행 SeaweedFS — 교체 검토의 동기는 **정확성 축 하나**, 판정 수단은 실측 프로브 |
 | [Terraform](architectures/terraform.md) | IaC — 스택 A·B(ArgoCD까지), 폭발반경 기준 스택 분할 |
 | [OCI + Terraform + k3s](architectures/oci.md) | 클라우드 이행 경로 |
-| [Trino](architectures/trino.md) | 현행까지 채택, 재설계로 제거 |
+| [Trino](architectures/trino.md) | dbt 엔진·Iceberg 유지보수 — 채택(재설계의 제거 결정 번복) |
 | [모니터링·관측](architectures/monitoring.md) | Grafana·Loki·Robusta 등을 **지금 쓰지 않는 이유** |
 | [Kafka](architectures/kafka.md) | 이벤트 스트리밍 — 미도입 유지. 근거 인덱스와 재검토 트리거 |
 | [DuckDB](architectures/duckdb.md) | 인프로세스 OLAP — 미채택. 조회 엔진 정본은 k8s Trino |
@@ -48,7 +48,7 @@
 | [공통](conventions/general.md) | 언어·들여쓰기·커밋 메시지·릴리스·pre-commit·**문서 작성 규약** |
 | [Git 워크플로](conventions/git.md) | 브랜치·커밋 단위·**worktree 의무화**(루트는 읽기 전용) |
 | [Python](conventions/python.md) | ruff·타입 힌트·예외·의존성·스크립트 절차형 |
-| [Dagster](conventions/dagster.md) | 함수형 에셋 정의·메타데이터·잡·스케줄 · **K8s in-cluster 배포** |
+| [Dagster](conventions/dagster.md) | 함수형 에셋 정의·메타데이터·잡·스케줄 · 호스트 실행 |
 | [dbt](conventions/dbt.md) | 레이어링·네이밍·테스트·sqlfluff·**방언 흡수** |
 | [데이터 품질](conventions/data-quality.md) | 품질 6차원·실패 시 **차단/경고/관측** 3등급·보증 범위 |
 | [분석](conventions/analysis.md) | gold / 노트북 / 리포트 **3층 분리**와 배치 기준 |

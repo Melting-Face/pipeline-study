@@ -180,8 +180,8 @@ ICU 측정 항목 사전. `itemid`로 chartevents·inputevents·outputevents와 
 
 ## eICU 원천 테이블
 
-Iceberg 네임스페이스 `eicu`. `source.yml`에 3개 테이블이 선언돼 있다. **현재 실버 dbt 모델은
-MIMIC-IV만 존재하며 eICU는 bronze 적재까지만** 되어 있어 아래는 참조용으로 간략히 둔다.
+Iceberg 네임스페이스 `eicu`. `source.yml`에 3개 테이블이 선언돼 있다. **eICU에는 실버 dbt 모델이
+없고 bronze 적재까지만** 되어 있어 아래는 참조용으로 간략히 둔다.
 `nurse_charting`은 대용량이라 청크 append 경로로 적재한다.
 
 ### eicu.patient
