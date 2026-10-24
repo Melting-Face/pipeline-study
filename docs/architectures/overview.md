@@ -254,6 +254,8 @@ S3/Iceberg 연결은 **Dagster 리소스**(`dagster-aws`·`dagster-iceberg`)로 
 > `defs/eicu/`(3테이블 — patient·diagnosis=일반, nurse_charting=대용량).
 > 공개 API 원천: `defs/usgs_water/`(2테이블 — 순간값·관측소 메타),
 > `defs/frankfurter_fx/`(1테이블 — **일자 파티션**). 이 둘은 `dbt_assets.py`를 두지 않는다(bronze에서 멈춘다).
+> 원천을 가로지르는 dbt 소유 서브프로젝트: `defs/stock_forecast/`(Polygon·FRED),
+> `defs/us_equity_krw/`(Polygon 시세 × Frankfurter 환율 → 원화 종가). `@asset` 없이 `dbt_assets.py`만 둔다.
 > 공유 리소스는 `defs/resources.py`(`@dg.definitions`), 잡·스케줄은 `defs/automation.py`에 두고,
 > 최상위 `definitions.py`의 `load_defs(dagster_project.defs)`가 모두 **단일 `Definitions`** 로 합친다.
 

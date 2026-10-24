@@ -1,0 +1,61 @@
+version: 2
+
+models:
+  - name: fx_usdkrw_daily
+    description: >-
+      1행 = 원천 고시일. EUR 기준 USD·KRW 환율을 나눈 교차 USD/KRW(1달러당 원).
+      날짜는 요청일이 아니라 원천이 답한 날짜(source_date)다.
+    columns:
+      - name: fx_date
+        data_tests:
+          - unique
+          - not_null
+      - name: usd_krw
+        data_tests:
+          - not_null
+          # 🔴 단위 사고 감시선이다(시장 판단이 아니다). 교차를 거꾸로 나누면 ~0.0007,
+          # EUR/KRW를 그대로 쓰면 ~1,500대라 하한·상한으로 가르지 못하는 쪽이 있다 —
+          # 거꾸로 나눈 경우만 확실히 잡는다. 값 일치는 Frankfurter `base=USD` 응답과의
+          # 대조가 맡는다(docs/dataset_schema/us-equity-krw.md §검증).
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 500
+                max_value: 3000
+                inclusive: true
+
+  - name: us_equity_krw__close_daily
+    description: >-
+      1행 = (ticker, trade_date). 달러 종가 × as-of USD/KRW(거래일 당일 또는 이전의
+      가장 최근 ECB 고시) = 원화 종가. 환율 출처 ECB — 외부 산출물에 인용할 때
+      출처 표기 의무가 있고, 원화 종가는 Polygon 파생이라 재배포 금지다(docs/security/datasets.md).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ticker, trade_date]
+    columns:
+      - name: ticker
+        data_tests:
+          - not_null
+      - name: trade_date
+        data_tests:
+          - not_null
+      - name: usd_krw
+        description: "적용한 환율. null이면 그 거래일 이전 고시가 없다(환율 백필 범위 밖)."
+        data_tests:
+          - not_null
+      - name: close_krw
+        data_tests:
+          - not_null
+      - name: fx_lag_days
+        description: >-
+          trade_date - fx_date(달력일). 0이 보통이고 ECB 휴일·미국 개장일에 1~4가 된다
+          (부활절 월요일 = 목요일 고시 → 4).
+        data_tests:
+          # 🔴 상한 5는 휴일 조합의 최대(4)에 1일 여유다. 넘으면 휴일이 아니라
+          # **환율 적재가 멈춘 것**이고 원화 종가가 낡은 환율로 계속 나온다 —
+          # 경고가 아니라 차단이다(읽는 사람 없는 warn은 무시와 같다).
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 5
+                inclusive: true
