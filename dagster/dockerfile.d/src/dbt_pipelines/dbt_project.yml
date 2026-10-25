@@ -57,13 +57,12 @@ models:
         # 🔴 `+file_format: iceberg`를 두지 않는다 — dbt-trino는 이것을 무시하지 않고
         # `WITH (format = 'iceberg')`로 내보내 Iceberg 커넥터가 INVALID_TABLE_PROPERTY로
         # 거부한다(ORC·PARQUET·AVRO만 유효, 실측). 테이블 형식은 카탈로그가 이미 Iceberg다.
-    # 미국 주식 원화 종가. 🔴 group 재정의 이유는 위 stock_forecast와 같다 —
-    # 전역 `dbt_ingest`로 두면 `dbt_all_job`이 매시각 끌고 간다(전용 일 1회 잡이 소유).
+    # 미국 주식 원화 종가. 빌드 소유자는 Airflow DAG us_equity_krw_dbt(Cosmos)다.
+    # `+meta.dagster.group`을 두지 않는다 — 이 디렉터리를 select하는 `@dbt_assets`가
+    # 없어 Dagster 자산이 아니므로 그룹이 가리킬 대상이 없다. 전역 `dbt_ingest`가
+    # 상속되지만 `dbt_all_job`은 정의된 자산만 고르므로 끌려가지 않는다.
     us_equity_krw:
       +schema: us_equity_krw
-      +meta:
-        dagster:
-          group: us_equity_krw
       tables:
         +materialized: table
         +on_table_exists: replace

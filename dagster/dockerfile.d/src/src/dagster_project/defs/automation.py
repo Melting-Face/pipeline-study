@@ -6,20 +6,20 @@
 - USGS 수문 적재 잡·스케줄 **2쌍** — 순간값(15분)과 관측소 메타(일 1회)는
   주기가 자릿수로 달라 한 잡으로 묶지 않는다. 그룹 전체를 선택하면 차원
   테이블이 15분마다 재적재된다.
-- Frankfurter 환율 잡·스케줄 1쌍 — **파티션 잡이라 스케줄을 직접 쓰지 않고
-  파티션 정의에서 파생**시킨다(아래).
-- Polygon 시장 데이터 잡·스케줄 **2쌍**(시세·뉴스) — 같은 원천·같은 주기라도
-  요청 예산이 달라 분리한다(아래 주석). 둘 다 파티션 잡이다.
+- Polygon 뉴스 잡·스케줄 1쌍 — 파티션 잡이라 스케줄을 직접 쓰지 않고 파티션
+  정의에서 파생시킨다(아래).
 - FRED 경제지표 잡·스케줄 **2쌍** — 🔴 **선언 방식이 서로 다르다.** 릴리스 일정은
   일자 파티션이라 파생시키지만, 관측치는 **정적 파티션(시리즈)** 이라 파생 함수를
   쓸 수 없고 시리즈마다 `RunRequest`를 내는 스케줄을 직접 쓴다.
-- 미국 주식 원화 종가 dbt 잡·스케줄 1쌍 — 일 1회, 두 원천 스케줄보다 뒤(아래).
+
+환율(`fx_rates_daily`)·시세(`equity_ohlcv_daily`) 적재와 원화 종가 dbt 빌드는
+**Airflow가 소유**한다(`docs/conventions/airflow.md`) — 여기에 잡·스케줄이 없는 것은
+누락이 아니라 이관 결과다.
 """
 
 from collections.abc import Iterator
 
 import dagster as dg
-from dagster_project.defs.frankfurter_fx.constants import SCHEDULE_HOUR_UTC
 from dagster_project.defs.fred_calendar.constants import (
     SCHEDULE_HOUR_UTC as FRED_SCHEDULE_HOUR_UTC,
 )
@@ -27,10 +27,6 @@ from dagster_project.defs.fred_calendar.constants import SERIES_IDS
 from dagster_project.defs.polygon_market.constants import (
     SCHEDULE_HOUR_UTC as POLYGON_SCHEDULE_HOUR_UTC,
 )
-from dagster_project.defs.us_equity_krw.constants import (
-    GROUP_NAME as US_EQUITY_KRW_GROUP,
-)
-from dagster_project.defs.us_equity_krw.constants import SCHEDULE_CRON_KST
 
 dbt_all_job = dg.define_asset_job(
     "dbt_all_job",
@@ -94,7 +90,7 @@ usgs_water_sites_schedule = dg.ScheduleDefinition(
     default_status=dg.DefaultScheduleStatus.STOPPED,
 )
 
-# ── Frankfurter 환율(Frankfurter) 적재 ───────────────────────────────────────
+# ── Polygon(Massive) 뉴스 적재 ───────────────────────────────────────────────
 # 🔴 위 셋과 **선언 방식이 다르다.** 파티션 자산의 스케줄은 cron도 타임존도
 # 직접 주지 못한다 — `build_schedule_from_partitioned_job`에
 # `cron_schedule`/`execution_timezone`을 넘기면 시간 파티션 잡에서는
@@ -103,48 +99,15 @@ usgs_water_sites_schedule = dg.ScheduleDefinition(
 #
 # 그래서 이 파일의 다른 스케줄과 달리 `execution_timezone="Asia/Seoul"`이
 # 없는데, 규약을 어긴 것이 아니라 **만족 지점이 옮겨간 것**이다:
-# 타임존은 `frankfurter_fx/constants.py`의 `PARTITION_TIMEZONE`이 명시한다.
-# (파생 결과 실측: cron `"0 1 * * *"` · tz `"UTC"`)
+# 타임존은 `polygon_market/constants.py`의 `PARTITION_TIMEZONE`이 명시한다.
 #
 # `partitions_def=`는 `define_asset_job`에 넘기지 않는다 — 선택된 자산에서
 # 추론되므로 중복이고, Dagster가 폐기 예고한 인자다.
-frankfurter_fx_rates_job = dg.define_asset_job(
-    "frankfurter_fx_rates_job",
-    selection=dg.AssetSelection.assets("fx_rates_daily"),
-)
-
-frankfurter_fx_rates_schedule = dg.build_schedule_from_partitioned_job(
-    frankfurter_fx_rates_job,
-    name="frankfurter_fx_rates_schedule",
-    hour_of_day=SCHEDULE_HOUR_UTC,
-    # 외부 API를 주기 호출하므로 기본 정지. 켜는 시점은 사람이 정한다.
-    default_status=dg.DefaultScheduleStatus.STOPPED,
-)
-
-# ── Polygon(Massive) 시장 데이터 적재 ────────────────────────────────────────
-# 선언 방식은 위 Frankfurter와 같다(파티션 잡 → 스케줄 파생, 타임존은
-# `polygon_market/constants.py`의 `PARTITION_TIMEZONE`이 명시).
 #
-# 🔴 **잡을 둘로 나눈다.** 시세와 뉴스는 같은 원천·같은 주기·같은 파티션인데도
-# 한 잡으로 묶지 않는다 — 뉴스는 페이징이 걸려 요청 수가 하루치마다 다르고,
-# 한쪽이 상한 초과로 실패할 때 다른 쪽까지 되돌리면 **멀쩡한 시세를 다시 받아야
-# 한다**(요청 예산이 곧 비용이다). 같은 이유로 `usgs_water`도 두 쌍이다.
-#
-# ⚠️ **무료 플랜은 분당 호출 수가 제한된다.** 백필은 파티션당 1요청(뉴스는 N요청)
+# ⚠️ **무료 플랜은 분당 호출 수가 제한된다.** 뉴스는 파티션당 N요청(페이징)
 # 이므로 **동시 실행 수가 곧 순간 요청 수**다 — 대량 백필 전에
-# `max_concurrent_runs`를 함께 본다(docs/resource-sizing.md).
-polygon_equity_ohlcv_job = dg.define_asset_job(
-    "polygon_equity_ohlcv_job",
-    selection=dg.AssetSelection.assets("equity_ohlcv_daily"),
-)
-
-polygon_equity_ohlcv_schedule = dg.build_schedule_from_partitioned_job(
-    polygon_equity_ohlcv_job,
-    name="polygon_equity_ohlcv_schedule",
-    hour_of_day=POLYGON_SCHEDULE_HOUR_UTC,
-    default_status=dg.DefaultScheduleStatus.STOPPED,
-)
-
+# `max_concurrent_runs`를 함께 본다(docs/resource-sizing.md). 같은 키를 쓰는
+# 시세 수집(Airflow)과 분당 예산을 나눠 쓴다.
 polygon_news_job = dg.define_asset_job(
     "polygon_news_job",
     selection=dg.AssetSelection.assets("news_articles"),
@@ -210,31 +173,5 @@ fred_release_dates_schedule = dg.build_schedule_from_partitioned_job(
     fred_release_dates_job,
     name="fred_release_dates_schedule",
     hour_of_day=FRED_SCHEDULE_HOUR_UTC,
-    default_status=dg.DefaultScheduleStatus.STOPPED,
-)
-
-# ── 미국 주식 원화 종가(dbt) ──────────────────────────────────────────────
-# 🔴 **상류 silver `equity_prices_daily`를 함께 선택한다.** 그 모델은 `stock_forecast`
-# 그룹 소유이고 그 그룹에는 스케줄이 없다 — 그룹만 고르면 원화 종가가
-# **며칠 전 달러 종가 위에서 매일 새로 빌드**되고, 날짜 컬럼이 맞아 보여
-# 아무 테스트도 울지 않는다. `stock_forecast` 그룹 전체를 고르지 않는 이유는
-# 피처·뉴스 모델까지 매일 끌고 가기 때문이다.
-#
-# 원천 bronze(`fx_rates_daily`·`equity_ohlcv_daily`)는 고르지 않는다 — 각자의
-# 파티션 스케줄이 소유한다. 그래서 이 잡이 도는 시각이 두 스케줄보다 뒤여야
-# 한다(constants 주석).
-us_equity_krw_job = dg.define_asset_job(
-    "us_equity_krw_job",
-    selection=dg.AssetSelection.groups(US_EQUITY_KRW_GROUP)
-    | dg.AssetSelection.assets(dg.AssetKey(["stock_forecast", "equity_prices_daily"])),
-)
-
-us_equity_krw_schedule = dg.ScheduleDefinition(
-    name="us_equity_krw_schedule",
-    job=us_equity_krw_job,
-    cron_schedule=SCHEDULE_CRON_KST,
-    execution_timezone="Asia/Seoul",
-    # 켜기 전 전제: 시세·환율 bronze가 2024-10-09부터 백필돼 있어야 한다 — 아니면
-    # `usd_krw` not_null이 백필 범위 밖 거래일마다 실패한다(의도된 차단).
     default_status=dg.DefaultScheduleStatus.STOPPED,
 )

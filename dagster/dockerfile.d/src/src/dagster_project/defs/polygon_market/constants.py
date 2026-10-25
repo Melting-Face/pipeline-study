@@ -23,11 +23,9 @@ GROUP_NAME = "polygon_market"
 # (호스트·타임아웃·재시도).
 # 여기에는 **경로와 파티션 계약**만 둔다.
 
-# 🔴 grouped daily는 **1회 호출로 그날 거래된 전 미국 티커**를 준다(실측 12,626개).
-# 일자 파티션과 1:1로 맞아 파티션당 요청이 1건이고, 그날의 유니버스가 응답 그 자체라
-# **별도 유니버스 자산 없이 생존 편향이 구조적으로 해소**된다
-# (티커별로 호출하는 방식과 갈리는 지점이다).
-GROUPED_DAILY_PATH = "/v2/aggs/grouped/locale/us/market/stocks"
+# 시세(grouped daily → `equity_ohlcv_daily`) 경로는 적재가 Airflow로 이관돼 여기 없다
+# (`images/airflow/dags/lakehouse/polygon.py`). 이 데이터셋에 남은 Dagster 자산은
+# 뉴스다.
 
 # 뉴스는 `published_utc`로 **날짜 구간 질의**가 된다. 그래서 RSS와 달리 롤링 윈도우
 # 유실이 없고 **append가 아니라 일자 파티션 교체**로 갈 수 있다(멱등·백필 가능).

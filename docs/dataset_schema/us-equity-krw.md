@@ -7,8 +7,10 @@ Frankfurter·Polygon 절이 갖고, 이 문서는 **둘을 조인해 원화 종�
 
 ## 구조
 
-`stock_forecast`와 같은 이유로 **원천 디렉터리와 1:1이 아니다** — 두 원천을 가로지르므로 소유자를
-`defs/us_equity_krw/`라는 별도 서브프로젝트에 두고 거기에는 `@asset`이 없다(dbt 소유권만).
+`stock_forecast`와 같은 이유로 **원천 디렉터리와 1:1이 아니다** — 두 원천을 가로지른다.
+모델은 `models/us_equity_krw/`에 있고 **빌드 소유자는 Airflow DAG `us_equity_krw_dbt`**(Cosmos)다.
+상류 silver `equity_prices_daily`·`trading_calendar`도 같은 DAG가 빌드하고, Dagster `stock_forecast`는
+두 모델을 `exclude`해 외부 상류로 읽는다.
 
 | 모델 | 그레인 | 역할 |
 |------|--------|------|
@@ -47,12 +49,13 @@ ECB 고시는 유럽 오후, 미국 종가는 뉴욕 16:00이다. **같은 날 �
 
 ## 운영
 
-- 🔴 **이관 중**: 정기 실행은 Airflow DAG(`fx_rates_daily`·`equity_ohlcv_daily`·`us_equity_krw_dbt`)로 옮긴다
-  ([`airflow.md`](../conventions/airflow.md)). 컷오버 전까지 아래 Dagster 잡·스케줄은 기본 `STOPPED`인 채 남는다.
-- 잡 `us_equity_krw_job`은 이 그룹 + 상류 `equity_prices_daily`를 고른다 — 그 silver는 스케줄이 없어,
-  빼면 낡은 달러 종가 위에서 매일 빌드되고 아무 테스트도 울지 않는다.
-- 스케줄은 19:00 KST·기본 `STOPPED`. 환율(10:00 KST)·시세(18:00 KST) 적재보다 뒤다.
-- 환율 파티션 시작일은 `polygon_market`과 같다. 켜기 전 **두 bronze를 그 시작일부터 백필**한다.
+- **정기 실행은 Airflow가 소유한다**(이관 완료, [`airflow.md`](../conventions/airflow.md)) — 환율
+  `fx_rates_daily`(01:00 UTC)·시세 `equity_ohlcv_daily`(09:00 UTC) 적재 DAG와, 두 Asset이 **모두** 갱신되면
+  도는 dbt DAG `us_equity_krw_dbt`. Dagster에는 이 파이프라인의 자산·잡·스케줄이 없다.
+- dbt DAG는 원화 종가 모델과 함께 상류 `equity_prices_daily`·`trading_calendar`를 빌드한다 — 상류 silver를
+  빼면 낡은 달러 종가·달력 위에서 매일 빌드되고 아무 테스트도 울지 않는다.
+- 스케줄이 Asset AND라 시각 순서를 cron으로 맞출 필요가 없다(환율은 주말에도 갱신돼 OR이면 낡은 시세 위에서 돈다).
+- 두 적재 DAG의 파티션 시작일은 같다. 켜기 전 **두 bronze를 그 시작일부터 백필**한다.
 
 ## 검증
 

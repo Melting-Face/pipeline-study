@@ -369,7 +369,7 @@ def replace_partition_in_iceberg(
     did not match any records`를 낸다. 지울 행이 아직 없어서 나는 것이므로
     결함이 아니다 — 로그에서 보고 오진하지 않도록 적어둔다.
 
-    검증: `tests/test_frankfurter_fx_partition_load.py`가 SQLite 카탈로그 +
+    검증: `tests/test_replace_partition_load.py`가 SQLite 카탈로그 +
     임시 warehouse로 멱등·파티션 격리·계보 단일 루트를 실제로 확인한다
     (**음성 대조 포함** — append면 행이 두 배가 되는 것을 함께 본다).
 
@@ -377,7 +377,7 @@ def replace_partition_in_iceberg(
         context: 에셋 실행 컨텍스트.
         iceberg_table: 대상 테이블 바인딩 리소스.
         arrow: 이 파티션에 넣을 Arrow 테이블. 스키마는 호출부가 명시한다.
-        partition_column: 파티션을 가르는 컬럼명(예: `"rate_date"`).
+        partition_column: 파티션을 가르는 컬럼명(예: `"published_date"`).
         partition_value: 이번 파티션의 값(= Dagster partition_key).
         extra_metadata: 자산이 덧붙일 관측 메타데이터.
 
