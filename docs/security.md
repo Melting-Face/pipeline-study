@@ -305,9 +305,14 @@ git에 들어가지 않는다. 바뀐 것은 *데이터가 어떻게 들어오�
 
 서비스별 계정을 **분리**하고 필요한 권한만 부여한다.
 
-**Dagster(in-cluster)** — Dagster OSS에는 **인증 계층이 없다.** UI와 `/graphql`이 같은 포트로 나가고
-거기에 **런 실행·종료·삭제·자산 wipe·스케줄 on/off** 뮤테이션이 포함된다. Ingress 하나로 UI만 여는 것은
+**Dagster** — Dagster OSS에는 **인증 계층이 없다.** UI와 `/graphql`이 같은 포트로 나가고
+거기에 **런 실행·종료·삭제·자산 wipe·스케줄 on/off** 뮤테이션이 포함된다. UI만 여는 것은
 불가능하다 — 노출 범위는 포트가 아니라 그 포트가 제공하는 API가 정한다(Flink와 같은 축).
+
+**현행은 호스트 실행이다.** compose `dagster-webserver`는 `127.0.0.1:${DAGSTER_PORT}`로만 게시하고,
+컨테이너 안 `-h 0.0.0.0`은 이 루프백 게시 뒤에 있다. 이것이 현행 경로의 실효 통제다.
+아래 표는 **철거된 in-cluster 판본의 통제 기록**이다(되살릴 때의 기준선 —
+[argocd-gitops.md](argocd-gitops.md) D6).
 
 | 통제 | 상태 |
 | --- | --- |
@@ -315,7 +320,7 @@ git에 들어가지 않는다. 바뀐 것은 *데이터가 어떻게 들어오�
 | webserver `automountServiceAccountToken: false` | ✅ — UI가 탈취돼도 파드에 k8s 토큰이 없다(기능 손실 0) |
 | daemon `Role`을 ns 한정 4 verb로 제한 | ✅ — `sparkapplications`·`pods`·`pods/log`뿐 |
 | `dagster-webserver --read-only` | ❌ **쓸 수 있는데 안 쓴다** — UI가 주 조작 수단이라 무력화된다 |
-| `NetworkPolicy` · TLS Ingress | ❌ 저장소 전체가 미도입 — Dagster만 예외로 둘 근거가 없다 |
+| `NetworkPolicy` · TLS Ingress | ❌ 저장소 전체가 미도입(현행도 동일) — Dagster만 예외로 둘 근거가 없다 |
 
 ⚠️ **이 판정은 「로컬 단독 실행」 전제 위에 선다.** [architectures/oci.md](architectures/oci.md)의
 클라우드 스택을 재개해 **인터넷에 면한 노드**가 생기면 이 절을 **먼저 다시 읽는다** —

@@ -54,9 +54,10 @@ dg.EnvVar("KEY") / os.environ["KEY"]  (코드에서 참조)
 
 > 예) `PHYSIONET_USERNAME`/`PHYSIONET_PASSWORD`(원천 획득)는 compose에서는 앵커에 한 번 넣는다.
 > in-cluster daemon `env:`(전용 Secret `physionet-creds`)는 in-cluster Dagster와 함께 철거됐다.
-> ⚠️ **의도된 비대칭**이다 — `DefaultRunLauncher`라 자산은 daemon에서만 실행되고 webserver는
-> 정의만 띄운다(값이 `dg.EnvVar`라 run 시점에 해석된다). `K8sRunLauncher`로 바꾸면 run 파드에 추가한다.
-> Secret이 없으면 **수집 자산만** 실패하고 적재 자산은 기존 S3 객체로 계속 돈다.
+> in-cluster 시절 daemon에만 넣은 것은 **의도된 비대칭**이었다 — `DefaultRunLauncher`라 자산은 daemon에서만
+> 실행되고 webserver는 정의만 띄운다(값이 `dg.EnvVar`라 run 시점에 해석된다). 이 원리는 지금도 같아,
+> run을 별도 파드·컨테이너로 내보내는 launcher로 바꾸면 그쪽 env에 추가한다.
+> 값이 비면 **수집 자산만** 실패하고 적재 자산은 기존 S3 객체로 계속 돈다.
 
 ### 1-1-2. 원천 재수신 강제 (PhysioNet)
 
@@ -86,23 +87,23 @@ aws --endpoint-url http://localhost:8333 \
 **메타 Postgres의 현행 사실(단일 서술)** — 구 `lakehouse` 클러스터에서는 CNPG `catalog-postgres`의
 `dagster` DB가 메타 DB였다. 그 선언(`Database` CR, `k8s/dagster/dagster-meta-db.yaml`)은 철거됐고
 롤·Secret도 철거됐다. **새 클러스터에는 메타 DB가 없다** — Dagster를 Airflow로 대체하기로 해 옮기지 않는다
-([argocd-gitops.md](argocd-gitops.md) D6). 그동안 compose 실행(`--profile host-dagster`)은
+([argocd-gitops.md](argocd-gitops.md) D6). Airflow 이관이 끝날 때까지 compose 실행(`--profile host-dagster`)은
 compose `postgres`를 쓰고, 호스트 `dg dev`는 `.env`의 `POSTGRES_HOST`·`POSTGRES_PORT`가 가리키는 곳을 쓴다
-(예시 기본값 15432는 **구 클러스터** CNPG의 port-forward다 — 구 클러스터가 내려가면 함께 사라진다).
+(예시 기본값 5432 — compose `postgres`가 `127.0.0.1:5432`로 게시된다. 15432는 카탈로그 CNPG의
+port-forward라 `dagster` DB가 없다).
 실행 위치에 따라 같은 키의 값이 갈린다(in-cluster 열은 철거 전 기록).
 
 | 키 | compose 컨테이너 | 호스트(`dg dev`) | in-cluster |
 | --- | --- | --- | --- |
-| `POSTGRES_HOST` | `postgres` — `compose.yml`이 리터럴 고정 | `localhost`(port-forward) | `catalog-postgres-rw` |
-| `POSTGRES_PORT` | `5432` | **`15432`** — port-forward 포트 | `5432` |
-| `POSTGRES_DB` | `dagster`(compose DB) | `dagster`(CNPG DB) | `dagster`(CNPG DB) |
+| `POSTGRES_HOST` | `postgres` — `compose.yml`이 리터럴 고정 | `localhost`(compose 게시) | `catalog-postgres-rw` |
+| `POSTGRES_PORT` | `${POSTGRES_PORT}` — 컨테이너가 `postgres:<값>`에 붙으므로 **5432여야 한다** | **`5432`** — compose 게시 포트 | `5432` |
+| `POSTGRES_DB` | `dagster`(compose DB) | `dagster`(compose DB) | `dagster`(CNPG DB, 철거) |
 | `ICEBERG_S3_ENDPOINT` | `http://host.containers.internal:8333` — `compose.yml`이 리터럴 고정 | `http://localhost:8333`(직결) | `http://seaweedfs:8333`(ExternalName) |
 | `TRINO_HOST` · `TRINO_PORT` | (미설정 — 기본 `trino.localtest.me`/`8080`) | 같음(Ingress) | `trino`/`8080`(Service) |
 
-⚠️ **호스트 경로의 `POSTGRES_PORT`가 급소다.** 5432면 compose DB를, 15432면 CNPG DB를 본다 —
-둘 다 이름이 `dagster`라 **접속은 어느 쪽이든 성공하고 run 이력만 조용히 갈린다.**
-새 클러스터에는 메타 DB를 두지 않는다(Airflow 대체가 결정됐다 — [argocd-gitops.md](argocd-gitops.md) D6).
-그동안 **한 곳으로 고정해 섞지 않는 것**이 규칙이다.
+⚠️ **`POSTGRES_PORT`가 급소다.** 구 클러스터 시절에는 5432(compose DB)와 15432(CNPG DB)가 둘 다
+`dagster`라 **접속은 어느 쪽이든 성공하고 run 이력만 조용히 갈렸다.** 새 클러스터의 15432에는
+`dagster` DB가 없으니 **5432 하나로 고정**한다. 기존 `.env`가 15432라면 직접 고친다(예시만 바뀌었다).
 
 in-cluster Dagster 매니페스트는 철거돼(새 클러스터에 배포하지 않는다) 값의 정본은 호스트 `.env`다.
 
@@ -301,11 +302,12 @@ kind 클러스터를 다시 만드는 절차다. **재생성은 PVC를 통째로
 ### 4-2. 무엇이 소멸하고 비용이 얼마인가
 
 PVC는 kind **노드 컨테이너 안**(local-path)에 있으므로 노드가 지워지면 함께 사라진다.
+S3(SeaweedFS)는 PVC가 아니다 — 클러스터 밖 스택 A 컨테이너이고 데이터는 호스트 바인드(`seaweedfs/data`)다.
 
 | 대상 | 담긴 것 | 소멸 시 |
 | --- | --- | --- |
 | `catalog-postgres-1` | Iceberg JDBC 테이블 메타 | ❌ 테이블 정의 소실 — 재적재해야 복구 |
-| `data-seaweedfs-0` | 원천 csv.gz + Iceberg parquet | ⚠️ parquet 재생성은 전 파이프라인 재실행 |
+| SeaweedFS `seaweedfs/data`(호스트 바인드, PVC 아님) | 원천 csv.gz + Iceberg parquet | ✅ 클러스터 삭제로는 남는다 — 단 카탈로그가 비면 객체가 고아가 된다 |
 | 로컬 레지스트리 | 러너 이미지 | ✅ 재빌드·재push |
 | Flink 체크포인트 | 스트리밍 상태 | ✅ PoC라 무의미 |
 

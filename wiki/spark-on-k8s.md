@@ -34,7 +34,7 @@ client mode를 고르면 세 가지가 따라온다.
 파드 목록에 그냥 `Running`으로 보인다. 에러도, 재시작도, 알림도 없다.
 
 ```shell
-kubectl scale deploy/spark-connect --replicas=0
+kubectl scale deploy/spark-connect --replicas=0   # 당시 명령 — 이 배포는 철거됐다
 kubectl get pods -l spark-role=executor   # 여기가 비어야 회수가 끝난 것이다
 ```
 

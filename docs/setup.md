@@ -258,7 +258,7 @@ kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 별도 터미널 —
 ```
 
 - `.env`의 `POSTGRES_PORT`는 5432(compose `postgres`)로 둔다 — 15432(port-forward)는 카탈로그 CNPG라
-  `dagster` DB가 없다. `.env.example`의 기본값 15432는 구 클러스터 기준이다.
+  `dagster` DB가 없다.
   compose `--profile host-dagster`와 호스트 `dg dev`를 섞지 않는다.
 - compose는 기본 `up`으로 아무것도 띄우지 않는다. 필요한 profile만 켠다:
   `host-dagster`(webserver·daemon·postgres) · `legacy-meta`(postgres).
