@@ -39,6 +39,10 @@ now = datetime.now()
 
 ### 2. 스케줄은 `execution_timezone="Asia/Seoul"`를 **명시**
 
+> **예외** — 파티션 키가 그대로 원천 API의 날짜 파라미터로 나가는 일자 파티션은 **UTC**로 둔다
+> (Dagster `frankfurter_fx`·`polygon_market`, Airflow `CronDataIntervalTimetable(..., timezone="UTC")`).
+> KST 하루와 원천 달력일이 9시간 어긋나고 그 어긋남은 기록되지 않는다.
+
 `execution_timezone`을 지정하지 않으면 스케줄이 **daemon 컨테이너의 시스템 타임존**으로
 cron을 해석한다(UTC 이미지면 9시간 어긋남). 반드시 명시한다.
 
