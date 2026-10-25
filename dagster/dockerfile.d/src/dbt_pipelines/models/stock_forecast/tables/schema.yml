@@ -234,3 +234,39 @@ models:
               arguments:
                 to: ref('trading_calendar')
                 field: trade_date
+
+  # gold 학습 테이블. 🔴 group은 silver와 같은 `stock_forecast_silver`다 —
+  # `fqn:stock_forecast` 셀렉터가 그대로 소유한다. gold 전용 그룹은 소비자가
+  # 리포트 1개뿐이라 두지 않는다(YAGNI). 소비자가 늘면 그때 나눈다.
+  - name: stock_forecast__direction_training_h1
+    description: >-
+      1행 = (ticker, trade_date). 익일(h=1) 등락 방향 분류 학습 테이블 —
+      feature_store_daily ⨝ labels_forward_return(horizon 1, 완결 라벨만),
+      유동성 하한(종가·20일 평균 거래량)으로 유니버스를 줄인다.
+      🔴 label_ 접두 컬럼은 피처가 아니다.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ticker, trade_date]
+    columns:
+      - name: ticker
+        data_tests:
+          - not_null
+      - name: trade_date
+        data_tests:
+          - not_null
+      - name: label_trade_date
+        description: "라벨이 가리키는 다음 거래일. 시간 분할의 purge 기준이다."
+        data_tests:
+          - not_null
+      - name: label_forward_return
+        data_tests:
+          - not_null
+      - name: label_up
+        description: "label_forward_return > 0. 수익률 0은 false(하락과 같은 칸)다."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
