@@ -109,8 +109,8 @@ services:
   # 🔴 Dagster 메타 DB — 구 `lakehouse` 클러스터에서는 CNPG `dagster` DB였고 그 선언
   #   (k8s/dagster/dagster-meta-db.yaml)은 철거됐다(롤만 남음). 새 클러스터에는 메타 DB를 두지 않는다
   #   (Airflow 대체 결정 — docs/argocd-gitops.md D6). 그동안 `--profile host-dagster`는 이 컨테이너를 쓴다(앵커 POSTGRES_HOST=postgres).
-  #   호스트 `dg dev`는 .env의 POSTGRES_HOST/PORT를 따른다 — 예시 기본값(15432)은 구 클러스터 CNPG의
-  #   port-forward라, 이 컨테이너와 섞어 쓰면 **run 이력이 두 벌로 갈린다**. 단일 서술: docs/operations.md §1-2
+  #   호스트 `dg dev`도 .env의 POSTGRES_HOST/PORT로 이 컨테이너(127.0.0.1:5432 게시)에 붙는다 — 15432는
+  #   카탈로그 CNPG port-forward라 dagster DB가 없다. 단일 서술: docs/operations.md §1-2
   # profiles가 둘인 이유: 의존받는 서비스는 **의존하는 쪽의 profile을 전부 물려받는다**
   #   (dagster-* = host-dagster). legacy-meta는 이 컨테이너 단독 기동용.
   postgres:

@@ -103,7 +103,7 @@
   - `defs/resources.py` — 공유 리소스(S3·dbt·IO 매니저·테이블 바인딩)를 `@dg.definitions`로 제공.
     Iceberg 카탈로그 설정(`IcebergCatalogConfig`)은 별도 빌더 없이 **각 리소스에 인라인**해
     한 파일에서 전체를 파악한다(적은 파일로 파악).
-  - `defs/automation.py` — 잡·스케줄(모듈 스코프 객체라 자동 수집)
+  - `defs/automation.py`·`maintenance.py` — 잡·스케줄(모듈 스코프라 자동 수집)
 - **wiring은 최상위 `definitions.py` 한 곳**에서 `defs = load_defs(dagster_project.defs)`로
   자동발견 결과를 **단일 `Definitions`**로 합친다(중간 definitions 레이어 없음, 모듈 스코프 `Definitions` 1개).
 
