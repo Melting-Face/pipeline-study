@@ -76,7 +76,7 @@ kubectl get applications -n argocd        # 전부 Synced · Healthy 면 수렴
 
 클러스터는 **Terraform 스택 A**, ingress-nginx·ArgoCD는 **스택 B**가 만들고, 오퍼레이터 이하는
 **ArgoCD가 `gitops/charts/`에서 수렴**시킨다(`git push`로 바뀐다). 데이터 층(카탈로그 CNPG·Trino)도
-ArgoCD 앱이고, S3(SeaweedFS)만 스택 A의 컨테이너다 — 절별 전제는 [환경 세팅 §지금 되는 범위](docs/setup.md#지금-되는-범위).
+ArgoCD 앱이고, S3(SeaweedFS)만 스택 A의 컨테이너다 — 절별 전제는 [환경 세팅 「절별 전제」](docs/setup.md#절별-전제).
 Dagster는 클러스터에 배포하지 않고 호스트에서 돌린다.
 
 웹 UI(ArgoCD·Airflow·Trino·Flink·Prometheus·Dagster) 주소와 로그인 방법은
