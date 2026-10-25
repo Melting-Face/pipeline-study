@@ -21,7 +21,8 @@ from cosmos import (
     ProjectConfig,
     RenderConfig,
 )
-from cosmos.constants import LoadMode
+from cosmos.constants import LoadMode, TestIndirectSelection
+from cosmos.operators.local import DbtTestLocalOperator
 from lakehouse.assets import EQUITY_OHLCV_URI, FX_RATES_URI, US_EQUITY_KRW_URI
 
 FX_ASSET = Asset(FX_RATES_URI)
@@ -40,6 +41,13 @@ DBT_SELECT = [
     "equity_prices_daily",
     "trading_calendar",
 ]
+# 두 모델에 걸친 테스트만 고르는 교집합 셀렉터(dbt ls 실측: relationships 시세→달력 1건)
+CROSS_MODEL_TESTS = "equity_prices_daily,trading_calendar"
+PROFILE = ProfileConfig(
+    profile_name="dbt_pipelines",
+    target_name="dev",
+    profiles_yml_filepath=f"{DBT_DIR}/profiles.yml",
+)
 
 
 @dag(
@@ -66,12 +74,14 @@ def us_equity_krw_dbt() -> None:
             manifest_path=f"{DBT_DIR}/target/manifest.json",
             install_dbt_deps=False,
         ),
-        profile_config=ProfileConfig(
-            profile_name="dbt_pipelines",
-            target_name="dev",
-            profiles_yml_filepath=f"{DBT_DIR}/profiles.yml",
+        profile_config=PROFILE,
+        # 🔴 cautious — eager(dbt 기본)면 달력을 참조하는 다른 모델(Airflow 밖)의
+        #    테스트까지 골라 TABLE_NOT_FOUND로 실패한다(배포 후 실행 실측).
+        #    cautious는 부모가 모두 선택된 테스트만 돌린다.
+        execution_config=ExecutionConfig(
+            dbt_executable_path=DBT_EXECUTABLE,
+            test_indirect_selection=TestIndirectSelection.CAUTIOUS,
         ),
-        execution_config=ExecutionConfig(dbt_executable_path=DBT_EXECUTABLE),
         render_config=RenderConfig(
             load_method=LoadMode.DBT_MANIFEST, select=DBT_SELECT
         ),
@@ -99,11 +109,24 @@ def us_equity_krw_dbt() -> None:
         outlet_events[KRW_ASSET].extra = extra
         return extra
 
-    # 🔴 시세 relationships 테스트가 달력을 읽는다. Cosmos는 테스트의 참조를
-    #    의존으로 추론하지 않아(달력은 ref가 없는 독립 줄기) 명시로 잇는다.
-    #    없으면 낡은 달력을 보고 실패한다.
+    # 🔴 두 모델에 걸친 테스트는 전용 태스크가 돌린다. cautious는 부모가 모두
+    #    선택된 테스트만 고르는데 Cosmos는 모델마다 `--select <모델>`이라 이 테스트가
+    #    어느 태스크에도 안 잡힌다(dbt ls 실측 0건). 낡은 달력을 잡은 테스트라
+    #    빠지면 조용한 커버리지 손실이다.
+    cross_model_tests = DbtTestLocalOperator(
+        task_id="dbt_cross_model_tests",
+        project_dir=DBT_DIR,
+        profile_config=PROFILE,
+        dbt_executable_path=DBT_EXECUTABLE,
+        select=[CROSS_MODEL_TESTS],
+        install_deps=False,
+    )
     dbt_tasks = {t.task_id: t for t in models.iter_tasks()}
-    dbt_tasks["dbt.trading_calendar.run"] >> dbt_tasks["dbt.equity_prices_daily.test"]
+    [
+        dbt_tasks["dbt.trading_calendar.run"],
+        dbt_tasks["dbt.equity_prices_daily.run"],
+    ] >> cross_model_tests
+    cross_model_tests >> dbt_tasks["dbt.us_equity_krw__close_daily.run"]
 
     models >> record_latest_trade_date()
 

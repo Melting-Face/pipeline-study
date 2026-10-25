@@ -64,6 +64,8 @@ dags = {
         "tis": {t.task_id: t.max_active_tis_per_dag for t in d.tasks},
         # Cosmos dbt 태스크가 실행 때 dbt deps 를 다시 받는지(None = Cosmos 태스크 아님)
         "install_deps": {t.task_id: getattr(t, "install_deps", None) for t in d.tasks},
+        # Cosmos 테스트 태스크의 dbt indirect selection 모드(None = 미지정 = dbt 기본 eager)
+        "indirect": {t.task_id: getattr(t, "indirect_selection", None) for t in d.tasks},
         # Asset 스케줄이면 조건의 종류(AssetAll=AND·AssetAny=OR)와 대상 URI
         "asset_cond": type(getattr(d.timetable, "asset_condition", None)).__name__,
         "asset_uris": sorted(
@@ -216,14 +218,27 @@ else
     rc=1
 fi
 
-# 🔴 달력 run → 시세 테스트 — relationships 테스트가 trading_calendar 를 읽는데 Cosmos 는 테스트의 참조를
-#    의존으로 추론하지 않는다(trading_calendar 는 ref 가 없어 독립 줄기로 렌더된다). 명시 연결이 없으면
-#    실행 순서에 따라 낡은 달력을 보고 실패한다
-if echo "${result}" | jq -e '.dags.us_equity_krw_dbt.downstream["dbt.trading_calendar.run"]
-        | index("dbt.equity_prices_daily.test")' >/dev/null; then
-    echo "PASS [krw-calendar-first] trading_calendar.run >> equity_prices_daily.test"
+# 🔴 두 모델에 걸친 테스트(relationships 시세→달력)는 전용 태스크가 돌린다 — cautious 는 부모가 **모두**
+#    선택된 테스트만 고르는데 Cosmos 는 모델마다 `--select <모델>` 이라 이 테스트가 어느 태스크에도 안
+#    잡힌다(dbt ls 실측 0건). 두 모델 run 뒤·원화 종가 run 앞에 둔다(낡은 달력 255,207행 FAIL 을 잡은 테스트)
+if echo "${result}" | jq -e '.dags.us_equity_krw_dbt as $d
+        | ($d.downstream["dbt.trading_calendar.run"] | index("dbt_cross_model_tests"))
+        and ($d.downstream["dbt.equity_prices_daily.run"] | index("dbt_cross_model_tests"))
+        and ($d.downstream["dbt_cross_model_tests"] | index("dbt.us_equity_krw__close_daily.run"))
+        and $d.install_deps["dbt_cross_model_tests"] == false' >/dev/null; then
+    echo "PASS [krw-cross-tests] [달력·시세 run] >> dbt_cross_model_tests >> 원화 종가 run"
 else
-    echo "FAIL [krw-calendar-first] 달력 run 이 시세 테스트보다 앞서지 않는다"
+    echo "FAIL [krw-cross-tests] 모델 간 테스트 태스크 배선이 기대와 다르다"
+    rc=1
+fi
+
+# 🔴 테스트는 cautious — eager(dbt 기본)면 `--select trading_calendar` 가 달력을 참조하는 **다른 모델의**
+#    테스트(뉴스·라벨·거시 등, Airflow 밖)까지 골라 TABLE_NOT_FOUND 로 실패한다(배포 후 실행 실측 10건)
+if echo "${result}" | jq -e '.dags.us_equity_krw_dbt.indirect | to_entries
+        | map(select(.key | endswith(".test"))) | length > 0 and all(.value == "cautious")' >/dev/null; then
+    echo "PASS [krw-cautious] Cosmos 테스트 태스크 indirect selection = cautious"
+else
+    echo "FAIL [krw-cautious] Cosmos 테스트 태스크가 cautious 가 아니다"
     rc=1
 fi
 
