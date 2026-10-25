@@ -84,6 +84,11 @@
   **모듈 스코프 `@asset`이 조용히 누락**된다. 리소스 등록은 `resources.py`처럼 자산 없는 모듈에 두고,
   정의 추가 후 `dg check defs`로 자산 수를 확인한다. 상세 [`docs/conventions/dagster.md`](docs/conventions/dagster.md).
 
+### Airflow 이관은 Dagster 구조를 1:1로 옮긴다
+
+- bronze 테이블 1개 = Asset 1개 = DAG 1개, 로직은 `images/airflow/dags/lakehouse/`(Airflow 비의존)·DAG는 배선.
+  Dagster에 남는 쪽과 **두 벌 공존**은 패리티 테스트로 막는다. 상세 [`docs/conventions/airflow.md`](docs/conventions/airflow.md).
+
 ## 프로젝트 구조 컨벤션
 
 ### 공통 라이브러리(`common/`) + 자동발견 정의(`defs/`)

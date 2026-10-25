@@ -1,0 +1,10 @@
+# Airflow 이미지 추가 의존성 — 정확히 고정한다(latest·범위 금지, docker.md §3).
+# apache-airflow==3.2.2 와 함께 해석해 공식 이미지의 Airflow 가 바뀌지 않게 한다(Dockerfile).
+# 🔴 pyiceberg 는 Dagster 쪽과 같은 판이다 — 같은 테이블에 같은 커밋 방식으로 쓴다(설계 F2).
+pyiceberg[sql-postgres,pyarrow]==0.11.1
+# dbt 를 태스크로 렌더(설계 F4). dbt 자체는 별도 venv(/opt/dbt-venv)에 있다.
+astronomer-cosmos==1.15.1
+# dbt DAG 의 최신 거래일 조회(설계 F8)
+trino==0.340.0
+# 거래일 0행 판정(NYSE 휴장일)
+holidays==0.107
