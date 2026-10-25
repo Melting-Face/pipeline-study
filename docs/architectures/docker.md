@@ -1,12 +1,21 @@
 # Docker · Compose (아키텍처 · 프로젝트 관점)
 
+## 이 프로젝트에서의 역할
+
+호스트 보조 서비스 — `compose.yml`의 `profiles`로 전부 opt-in 기동한다.
+
+## 어떻게 도나
+
+- `compose.yml` 하나에 profile `host-dagster`(dagster×2·postgres)와 `legacy-meta`가 있다.
+- 뼈대(core)는 비어 있어 `--profile <name>`으로 켤 때만 뜬다. 런타임은 `podman compose`다.
+
 ## 개요
 
 Docker는 **OS 수준 가상화(컨테이너)** 로 앱과 의존성을 이미지로 패키징해 어디서나 재현 가능하게
 실행한다. Compose는 다중 컨테이너를 **단일 선언 파일(`compose.yml`)** 로 정의·오케스트레이션한다
 (단일 호스트 범위).
 
-## 이 프로젝트에서의 위치 — ✅ 채택
+## 왜 이걸 골랐나 — ✅ 채택
 
 - **역할**: 호스트 쪽 보조 서비스(`host-dagster`의 dagster×2·postgres)를 `compose.yml` 하나로
   기동(전부 opt-in). podman-compose와도 호환.

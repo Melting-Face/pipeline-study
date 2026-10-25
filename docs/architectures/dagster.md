@@ -1,5 +1,23 @@
 # Dagster (아키텍처 · 프로젝트 관점)
 
+## 이 프로젝트에서의 역할
+
+호스트에서 도는 오케스트레이터 — 적재 자산과 dbt 자산을 정의·실행한다.
+클러스터에는 배포하지 않는다. 클러스터 안 오케스트레이션은 Airflow가 맡는다.
+
+## 어떻게 도나
+
+- 정의는 `dagster/dockerfile.d/src/src/dagster_project/`에 있다.
+  `definitions.py`가 `defs/`를 `load_defs`로 자동발견해 하나의 `Definitions`로 묶는다.
+- 데이터셋마다 `defs/<dataset>/`(적재 `assets.py`, dbt 모델은 `dbt_assets.py`)를 두고,
+  공유 리소스는 `defs/resources.py`, 공통 로직은 `common/`에 둔다.
+- 다른 스택과의 연결(경로는 위 디렉터리 기준):
+  - dbt → k8s Trino: `common/dbt.py`
+  - Spark: `defs/poc/resources.py`의 `SparkOperatorResource`가 `SparkApplication`을 제출·폴링한다
+  - Flink: `defs/flink/resources.py`의 `FlinkSessionResource`
+  - Iceberg 유지보수: `defs/maintenance.py`가 `common/trino.py`의 `TrinoResource`로 Trino에 맡긴다
+- 띄우는 법은 [환경 세팅 §5](../setup.md#5-dagster-호스트-실행).
+
 ## 개요
 
 Dagster는 **자산(asset) 중심 오케스트레이터**다. "어떤 태스크를 어떤 순서로"가 아니라
@@ -9,7 +27,7 @@ Dagster는 **자산(asset) 중심 오케스트레이터**다. "어떤 태스크�
 
 - 이 저장소 고정 버전: **dagster 1.12.12 / dagster-* 0.28.12**
 
-## 이 프로젝트에서의 위치 — 호스트 실행 (in-cluster 판본은 철거된 이력)
+## 왜 이걸 골랐나 — 호스트 실행 (in-cluster 판본은 철거된 이력)
 
 > ⚠️ **현행은 호스트 Dagster**(`host-dagster` profile)이고 **Airflow로 대체 예정**이다.
 > in-cluster 판본은 ArgoCD 전환으로 철거됐다([../argocd-gitops.md](../argocd-gitops.md) D6 — `k8s/dagster/` 삭제).
@@ -116,6 +134,11 @@ pyspark 4.1로 오르며 그 numpy 상한은 **풀렸다**. 다만 3.13 베이�
 `POSTGRES_*`(메타)와 `ICEBERG_CATALOG_*`(카탈로그)는 in-cluster 판본에서 처음으로 갈렸다.
 `common/constants.py`가 후자 미지정 시 전자로 **폴백**하므로 빠뜨리면 **접속은 되고 접근에서 거부**된다.
 규칙 정본은 [conventions/dagster.md](../conventions/dagster.md) §K8s in-cluster 배포.
+
+## 교훈
+
+- [Dagster 오케스트레이션 — 에러 없이 사라진 에셋들](../../wiki/dagster-orchestration.md)
+- [Dagster 파티션 — 날짜를 키로 삼을 때 어긋나는 것들](../../wiki/dagster-partitions.md)
 
 ## 참고
 

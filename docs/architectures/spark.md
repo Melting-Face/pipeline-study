@@ -1,5 +1,18 @@
 # Apache Spark (아키텍처 · 프로젝트 관점)
 
+## 이 프로젝트에서의 역할
+
+대용량 배치 엔진 — Spark Operator가 `SparkApplication`을 실행한다.
+
+## 어떻게 도나
+
+- 오퍼레이터: ArgoCD 앱 `gitops/charts/spark-operator/`.
+- 러너 이미지 `k8s/spark/Dockerfile.spark-runner`, PoC 매니페스트
+  `k8s/spark/sparkapplication-poc.yaml`·`k8s/spark/poc_ingest.py`.
+- 트리거: Dagster `dagster/dockerfile.d/src/src/dagster_project/defs/poc/resources.py`의 `SparkOperatorResource`가
+  CR을 제출하고 폴링한다.
+- 쓰는 곳: Iceberg 카탈로그 `iceberg` + S3(SeaweedFS). dbt 엔진은 Spark가 아니라 Trino다.
+
 ## 개요
 
 Spark는 **범용 분산 데이터 처리 엔진**이다. driver가 DAG를 스케줄링하고 여러 executor가 파티션을
@@ -9,7 +22,7 @@ Spark는 **범용 분산 데이터 처리 엔진**이다. driver가 DAG를 스�
 - 최신 안정: **Spark 4.2.0**(2026-07). Arrow 최적화 Python UDF 기본화, CDC(`CHANGES`), 지오공간·
   벡터/AI 함수, Real-Time Mode 등.
 
-## 이 프로젝트에서의 위치 — 🚧 채택·이행중(PoC 게이트)
+## 왜 이걸 골랐나 — 🚧 채택·이행중(PoC 게이트)
 
 - **채택 방향**: 재설계로 **K8s의 Apache Spark Operator**([apache/spark-kubernetes-operator](https://github.com/apache/spark-kubernetes-operator),
   GA 1.0.0 2026-07-26) <!-- date-ok --> 를 컴퓨트로 도입한다(Kubeflow spark-operator에서 갈아탔다). 확장성 확보와 함께,
@@ -191,6 +204,10 @@ dbt-spark 지원 method에 connect가 없어 그 경로는 어댑터 계약이 �
 - **안전 순서**: **compact(`rewrite_data_files`) → expire snapshots → remove orphan files**(현행 잡이
   op 의존성으로 강제). 컴팩션이 새 파일·스냅샷을 만든 뒤 만료가 옛 작은 파일 참조를 풀고,
   orphan 정리가 잔여를 제거한다.
+
+## 교훈
+
+- [Spark를 K8s 위로 옮기며 — 파드가 뜬 것과 계산이 거기서 도는 것은 다르다](../../wiki/spark-on-k8s.md)
 
 ## 참고
 

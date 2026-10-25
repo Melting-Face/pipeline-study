@@ -9,6 +9,17 @@
 [spark.md](spark.md)·[flink.md](flink.md)·[k8s.md](k8s.md)가 갖는다.
 **여기에 복제하지 않는다** — 복제하면 양쪽이 각자 낡는다.
 
+## 이 프로젝트에서의 역할
+
+Spark·Flink·CNPG 오퍼레이터 — CR 한 장으로 엔진과 카탈로그 DB를 선언한다.
+
+## 어떻게 도나
+
+- Spark: `gitops/charts/spark-operator/` + 러너 이미지 `k8s/spark/Dockerfile.spark-runner`.
+- Flink: `gitops/charts/flink-operator/` + 러너 이미지 `k8s/flink/Dockerfile.flink-runner`.
+- CNPG: `gitops/charts/cnpg-operator/` + 카탈로그 `Cluster` CR
+  `gitops/charts/catalog-postgres/templates/cluster.yaml`(전용 이미지 없음).
+
 ## 개요
 
 오퍼레이터는 **CRD(사용자 정의 리소스) + 조정 루프**다. 사람이 절차를 실행하는 대신
@@ -19,7 +30,7 @@
 **잡 런타임 이미지**다. 그래서 *"오퍼레이터를 쓰면 이미지를 구워야 하는가"* 라는 물음은
 성립하지 않는다 — 오퍼레이터 패턴의 속성이 아니기 때문이다.
 
-## 이 프로젝트에서의 위치 — ✅ 채택
+## 왜 이걸 골랐나 — ✅ 채택
 
 **패턴 자체는 채택 확정**이다. 다만 **개별 엔진의 이행 상태는 각 문서가 갖는다** —
 Spark·Flink는 🚧([spark.md](spark.md)·[flink.md](flink.md)), 플랫폼 전체는
@@ -234,6 +245,10 @@ Terraform으로 옮겨갈 때 한쪽 산문만 갱신돼, 두 파일이 **서로
   유일한 관문이다. 수용한 리스크이므로 근거와 함께 트리거를 여기 남긴다.
 - **오퍼레이터 값 파일·허용 스킴을 손댈 때** — §3-B의 3은 공급망 통제라 자원·성능 축의
   변경과 같은 무게로 다루지 않는다.
+
+## 교훈
+
+- [오퍼레이터를 둘 것인가 — 맡기면 무엇이 내 손을 떠나는가](../../wiki/k8s-operators.md)
 
 ## 참고
 

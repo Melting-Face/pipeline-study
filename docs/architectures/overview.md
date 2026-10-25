@@ -1,48 +1,90 @@
 # 아키텍처 / 데이터 흐름
 
-## 개요
-
 `pipeline-study`는 **Dagster로 오케스트레이션하고, Iceberg 테이블 포맷을 SeaweedFS(S3 호환) 위에
 적재하는** 로컬 레이크하우스 학습 프로젝트다.
 
-> ⚠️ **이 문서의 compose 서술은 이제 대부분 폐기 전 판본이다.** 재설계로 컴퓨트·스토리지가
-> **로컬 Kubernetes로 이전**했고, 클러스터 선언은 ArgoCD GitOps가 소유한다
-> (Dagster는 새 클러스터에 배포하지 않고 호스트에서 돈다). 목표 토폴로지는
-> [../redesign.md](../redesign.md), 클러스터 규칙은 [../conventions/k8s.md](../conventions/k8s.md),
-> Dagster 배치 결정은 [dagster.md](dagster.md).
-> **실제로 도는 구성**: kind 클러스터 하나 —
-> ArgoCD · ingress-nginx · Spark Operator · Flink Operator · 카탈로그 Postgres(CNPG) · Trino · Airflow · Prometheus.
-> SeaweedFS는 클러스터 밖(스택 A 컨테이너), Dagster는 호스트에서 돈다.
-> **compose는 기본 `up`으로 아무것도 띄우지 않는다**(전부 profile opt-in이 됐다).
+이 문서는 **현행 배치**(어디서 무엇이 도는가)와 **데이터 흐름**(원천이 리포트까지 가는 길)을 갖는다.
+기술별 역할·결정은 [아키텍처 목차](README.md), 기동 절차는 [`../setup.md`](../setup.md)가 정본이다.
+
+## 한눈에
+
+```text
+호스트 (macOS)
+├─ Dagster                    호스트 프로세스 — 적재·dbt 자산 정의·실행
+├─ Jupyter Lab :8889          노트북 탐색
+├─ compose (옵션)             profile opt-in 전용 — 기본 up은 아무것도 띄우지 않는다
+│
+├─ 클러스터 밖 (podman 컨테이너)
+│   ├─ SeaweedFS               S3 — Terraform 스택 A 소유, 데이터는 호스트 바인드
+│   └─ 로컬 레지스트리         localhost:5001 — 러너 이미지 push 대상
+│
+└─ 클러스터 안 (kind 클러스터 lakehouse, *.localtest.me:8080)
+    ├─ ingress-nginx · ArgoCD  Terraform 스택 B
+    └─ ArgoCD가 gitops/에서 수렴
+        ├─ Spark Operator · Flink Operator · CNPG 오퍼레이터
+        ├─ 카탈로그 Postgres(CNPG) · Trino
+        ├─ Airflow
+        └─ Prometheus
+```
+
+## 구성 요소
+
+역할 열은 [아키텍처 목차](README.md)·루트 `README.md` 스택 표와 같은 문장이다.
+
+### 클러스터 안
+
+| 구성 | 역할 | 선언 |
+| --- | --- | --- |
+| ArgoCD | `gitops/`의 선언으로 클러스터 앱을 수렴시킨다 | 스택 B `terraform/platform/` |
+| ingress-nginx | `*.localtest.me:8080` 진입점 — 클러스터 UI·REST를 낸다 | 스택 B `terraform/platform/ingress.tf` |
+| Spark Operator | 대용량 배치 엔진 — Spark Operator가 `SparkApplication`을 실행한다 | `gitops/charts/spark-operator/` |
+| Flink Operator | 스트림 엔진 PoC — Iceberg 스트리밍 읽기, 세션 클러스터는 쓸 때만 띄운다 | `gitops/charts/flink-operator/` |
+| 카탈로그 Postgres(CNPG) | 테이블 포맷과 JDBC 카탈로그 — 모든 엔진이 카탈로그 `iceberg` 하나를 공유한다 | `gitops/charts/cnpg-operator/` · `gitops/charts/catalog-postgres/` |
+| Trino | silver/gold 변환 — dbt가 k8s Trino에서 SQL을 실행하고, Trino는 Iceberg 유지보수도 맡는다 | `gitops/apps/trino/` |
+| Airflow | 클러스터 안 오케스트레이터 — Dagster에서 이관한 DAG를 실행한다 | `gitops/charts/airflow/` |
+| Prometheus | 클러스터 안 메트릭 수집 | `gitops/charts/prometheus/` |
+
 > **Flink Operator는 설치돼 상주한다** — ArgoCD 앱(`gitops/charts/flink-operator/`)이 소유하며 부트스트랩에
 > 항상 포함된다. 상주하는 것은 **오퍼레이터까지**이고, 자원을 먹는 **세션 클러스터(JM/TM)는 띄우지
 > 않는다** — 잡을 돌릴 때 따로 세우고 끝나면 내린다([flink.md](flink.md)).
 > 철거된 compose `trino`가 쓰던 **"중단"과 "삭제"의 분리**가 여기서는 오퍼레이터/워크로드 경계로 나타난다.
 > 클러스터 UI는 `*.localtest.me:8080` 고정 URL, 데이터 접속은 `port-forward`
 > ([../conventions/k8s.md](../conventions/k8s.md) §10).
+> 목표 토폴로지는 [../redesign.md](../redesign.md), 클러스터 규칙은 [../conventions/k8s.md](../conventions/k8s.md),
+> Dagster 배치 결정은 [dagster.md](dagster.md).
 
-## 구성 요소
+### 클러스터 밖
 
-**뼈대(core)는 비어 있다 — 모든 서비스가 `--profile <name>`으로 opt-in**한다
-(규칙 [../conventions/docker.md](../conventions/docker.md) §profiles).
+| 구성 | 역할 | 선언 |
+| --- | --- | --- |
+| SeaweedFS | S3 호환 오브젝트 스토리지 — 클러스터 밖 컨테이너(Terraform 스택 A) | `terraform/cluster/kind/main.tf`(`docker_container.seaweedfs`) |
+| 로컬 레지스트리 | 러너 이미지 push 대상 `localhost:5001` | `scripts/k8s-up.sh` |
 
-| 서비스               | 이미지 / 위치              | profile                                      | 역할                                                                  |
-| -------------------- | -------------------------- | -------------------------------------------- | --------------------------------------------------------------------- |
-| `dagster-webserver`  | `dagster/dockerfile.d/`    | `host-dagster`                               | Dagster UI/GraphQL. `workspace.yaml`로 코드 로케이션 로드             |
-| `dagster-daemon`     | `dagster/dockerfile.d/`    | `host-dagster`                               | 스케줄·센서·런큐 처리 + run 실행(`DefaultRunLauncher` 서브프로세스)   |
-| `postgres`           | `postgres:15`              | `legacy-meta`·`host-dagster`                 | Dagster 메타데이터 저장소(호스트 Dagster 전용). Iceberg 카탈로그는 CNPG |
+파드는 `Service seaweedfs`(ExternalName)로 SeaweedFS에 닿는다 — [storage.md](storage.md).
 
-> 메트릭 수집기(Prometheus)는 compose에 없다 — 클러스터 안 `monitoring` 네임스페이스로 옮겼다
-> ([monitoring.md](monitoring.md)).
+### 호스트
 
-> 🔴 **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받는다**([../conventions/docker.md](../conventions/docker.md)
-> §profiles). 바꾼 뒤에는
-> `docker compose --profile <p> config --services`로 profile별 구성을 확인한다.
-> 오브젝트 스토리지 **정본 `seaweedfs`는 이 compose에 없다** — Terraform 스택 A(`terraform/cluster/kind`의
-> `docker_container.seaweedfs`)가 클러스터 밖 컨테이너로 소유한다. compose 서비스는 `host.containers.internal`
-> (podman 전제)로, 파드는 `Service seaweedfs`(ExternalName)로 닿는다 — [storage.md](storage.md).
+| 구성 | 역할 | 선언 |
+| --- | --- | --- |
+| Dagster | 호스트에서 도는 오케스트레이터 — 적재 자산과 dbt 자산을 정의·실행한다 | `dagster/dockerfile.d/src/` |
+| Jupyter Lab | 탐색 전용 노트북(:8889) | [`notebooks/README.md`](../../notebooks/README.md) |
+| compose(옵션) | 호스트 보조 서비스 — `compose.yml`의 `profiles`로 전부 opt-in 기동한다 | `compose.yml` — 아래 §로컬 compose |
 
 ## 데이터 흐름
+
+| 단계 | 담당 엔진 | 경로 |
+| --- | --- | --- |
+| 원천 → `raw/` | Dagster 수집 자산(PhysioNet) · Airflow DAG(raw JSON) | `defs/<dataset>/raw_assets.py` · `images/airflow/dags/github_trending.py` → `s3://warehouse/raw/` |
+| `raw/`·API → bronze | Dagster 적재 자산 · Airflow 적재 DAG | `defs/<dataset>/assets.py` · `images/airflow/dags/fx_rates_daily.py`·`equity_ohlcv_daily.py` |
+| bronze → silver/gold | dbt on k8s Trino(Dagster `dbt_assets.py` · Airflow Cosmos) | `dagster/dockerfile.d/src/dbt_pipelines/models/<dataset>/` |
+| bronze → 스트림 파생 | Flink 세션 클러스터(Iceberg 스트리밍 읽기) | `k8s/flink/` · `defs/flink/` |
+| 대용량 배치 | Spark `SparkApplication` | `k8s/spark/` · `defs/poc/` |
+| silver/gold → 노트북 | k8s Trino(ad-hoc 조회) | `notebooks/` |
+| 노트북 → 리포트 | 결론 수치는 gold/dbt 모델 경유 | `docs/analyses/<NN>-<slug>.md` |
+
+`defs/`는 `dagster/dockerfile.d/src/src/dagster_project/defs/` 기준이다. 모든 엔진이 같은 카탈로그 `iceberg`를 본다.
+
+### dbt 변환 경로
 
 ```mermaid
 flowchart LR
@@ -73,112 +115,7 @@ flowchart LR
     DG -->|메타데이터| CAT
 ```
 
-## 소비 계층 (분석) — 흐름의 종착지
-
-위 흐름은 **저장까지**다. 이 저장소는 파이프라인이 목적이 아니라 **데이터셋별 질문에 답하기 위한 수단**이므로,
-lineage는 소비에서 끝난다. 규칙 정본은 [`../conventions/analysis.md`](../conventions/analysis.md).
-
-```mermaid
-flowchart LR
-    ICE[(Iceberg<br/>bronze · silver)]
-    GOLD[["gold 마트<br/>dbt tags=['gold']<br/>(현재 0개)"]]
-    SC[Trino k8s<br/>trino.localtest.me:8080]
-    NB[노트북<br/>notebooks/*.ipynb]
-    RPT[리포트<br/>docs/analyses/*.md]
-
-    ICE --> GOLD
-    ICE -.탐색.-> SC
-    GOLD --> SC
-    SC --> NB
-    GOLD --> RPT
-    NB -.반복되면 승격.-> GOLD
-
-    classDef todo stroke-dasharray: 4 3
-    class GOLD,RPT todo
-```
-
-| 계층 | 위치 | 검증 |
-| --- | --- | --- |
-| **gold 마트** | `models/<dataset>/`(`tags=['gold']`) | dbt 스키마 테스트([`../test.md`](../test.md) §1) |
-| **노트북** | `notebooks/` — 호스트 Jupyter Lab(:8889) | 실행 가능성([`../test.md`](../test.md) §6) |
-| **리포트** | `docs/analyses/<NN>-<slug>.md` | 인용 수치의 재현 경로 |
-
-- **SQL 엔진은 k8s Trino**다 — dbt와 ad-hoc 조회(노트북)가 같은 엔진을 쓴다([trino.md](trino.md)).
-- **노트북 → gold 승격이 정방향**이다. 같은 조회가 3회 이상 반복되거나 리포트가 인용하면
-  노트북에 두지 않고 모델로 올린다(Rule of Three).
-- 점선 노드(gold·리포트)는 **아직 실물이 없다** — 규칙만 서 있고 첫 산출은 원천 데이터 적재
-  이후다([../redesign.md](../redesign.md) Phase 5).
-
-## 컨테이너 구성도 (compose)
-
-`compose.yml`의 서비스 의존성과 포트 매핑.
-
-```mermaid
-flowchart TB
-    subgraph host[호스트 머신]
-        U1([:3000 Dagster UI])
-        U3([:8333 S3 API])
-        U4([:8888 filer UI])
-        U5([:9333 master UI])
-    end
-
-    subgraph net[compose 네트워크 dagster]
-        WS[dagster-webserver]
-        DM[dagster-daemon]
-        PG[(postgres:15)]
-    end
-
-    subgraph tfa["compose 밖 — Terraform 스택 A"]
-        SW[seaweedfs]
-    end
-
-    U1 --- WS
-    U3 --- SW
-    U4 --- SW
-    U5 --- SW
-
-    WS -->|depends_on healthy| PG
-    DM -->|depends_on healthy| PG
-
-    WS -. 공유 storage .- DM
-
-    classDef ext fill:#eef,stroke:#88a
-    class U1,U3,U4,U5 ext
-```
-
-> ⚠️ **이 구성도는 `compose.yml`에 정의된 전체**(+ compose 밖 `seaweedfs`)이고, 뼈대(core)는 비어 있어
-> 기본 `up`으로는 **아무것도 뜨지 않는다**(Dagster는 `--profile host-dagster`).
-> SeaweedFS 메트릭(9324)은 클러스터 안 Prometheus가 kind 네트워크 별칭 `seaweedfs-ext`로 긁는다
-> ([monitoring.md](monitoring.md)).
->
-> `dagster-webserver`·`dagster-daemon`은 `postgres` 헬스체크 통과 후 기동된다.
-> webserver와 daemon은 같은 이미지·`dagster.yaml`을 쓰고
-> **Postgres 공유 storage**로 상태를 협조한다.
-
-## Dagster 프로세스 분리 (webserver / daemon)
-
-개발 편의용 일체형 `dg dev`(webserver+daemon+code 단일 프로세스) 대신, 운영 토폴로지로
-**webserver와 daemon을 별도 컨테이너로 분리**한다.
-
-| 프로세스             | entrypoint / command                          | 역할                                                       |
-| -------------------- | --------------------------------------------- | ---------------------------------------------------------- |
-| `dagster-webserver`  | `dagster-webserver -h 0.0.0.0 -p $PORT -w workspace.yaml` | UI/GraphQL 서빙(가벼움)                          |
-| `dagster-daemon`     | `dagster-daemon run -w workspace.yaml`        | 스케줄·센서·런큐 디스패치 + run 서브프로세스 실행(무거움)   |
-
-- **공유 storage 필수**: `dagster.yaml`의 run/event/schedule storage가 모두 **Postgres**라
-  두 프로세스가 같은 상태를 보고 협조한다. `DagsterDaemonScheduler`+`QueuedRunCoordinator`는
-  **daemon이 떠 있어야** 스케줄·큐가 처리된다.
-- **run 실행 위치**: `DefaultRunLauncher`라 run은 **daemon 컨테이너에서 서브프로세스**로 돈다
-  → daemon에 자원을 더 배정한다(compose `deploy.resources`).
-- **코드 로케이션**: 독립 바이너리는 자동발견 대신 [`workspace.yaml`](../../dagster/dockerfile.d/src/workspace.yaml)
-  (`python_module: dagster_project.definitions`)로 명시 로드한다.
-- **manifest 사전생성**: webserver/daemon은 비-dev라 `DbtProject.prepare_if_dev()`가 no-op이므로,
-  이미지 빌드(`Dockerfile`)에서 `dbt deps && dbt parse`로 `target/manifest.json`을 미리 만들어
-  `@dbt_assets` 로드를 보장한다.
-- (추후) 무중단 배포·코드 격리가 필요하면 독립 gRPC code-server(`dagster code-server start`)를
-  더해 3-way로 승격할 수 있다.
-
-## dbt 실행 시퀀스
+### dbt 실행 시퀀스
 
 스케줄(`dbt_all_schedule`, 매시 정각)이 잡을 트리거할 때의 흐름.
 
@@ -201,9 +138,45 @@ sequenceDiagram
     JOB-->>SCH: 성공/실패 보고
 ```
 
-## 레이크하우스 상세
+### 소비 계층 (분석) — 흐름의 종착지
 
-### Iceberg 카탈로그 (Trino)
+위 흐름은 **저장까지**다. 이 저장소는 파이프라인이 목적이 아니라 **데이터셋별 질문에 답하기 위한 수단**이므로,
+lineage는 소비에서 끝난다. 규칙 정본은 [`../conventions/analysis.md`](../conventions/analysis.md).
+
+```mermaid
+flowchart LR
+    ICE[(Iceberg<br/>bronze · silver)]
+    GOLD[["gold 마트<br/>dbt tags=['gold']"]]
+    SC[Trino k8s<br/>trino.localtest.me:8080]
+    NB[노트북<br/>notebooks/*.ipynb]
+    RPT[리포트<br/>docs/analyses/*.md]
+
+    ICE --> GOLD
+    ICE -.탐색.-> SC
+    GOLD --> SC
+    SC --> NB
+    GOLD --> RPT
+    NB -.반복되면 승격.-> GOLD
+
+    classDef todo stroke-dasharray: 4 3
+    class RPT todo
+```
+
+| 계층 | 위치 | 검증 |
+| --- | --- | --- |
+| **gold 마트** | `models/<dataset>/`(`tags=['gold']`) | dbt 스키마 테스트([`../test.md`](../test.md) §1) |
+| **노트북** | `notebooks/` — 호스트 Jupyter Lab(:8889) | 실행 가능성([`../test.md`](../test.md) §6) |
+| **리포트** | `docs/analyses/<NN>-<slug>.md` | 인용 수치의 재현 경로 |
+
+- **SQL 엔진은 k8s Trino**다 — dbt와 ad-hoc 조회(노트북)가 같은 엔진을 쓴다([trino.md](trino.md)).
+- **노트북 → gold 승격이 정방향**이다. 같은 조회가 3회 이상 반복되거나 리포트가 인용하면
+  노트북에 두지 않고 모델로 올린다(Rule of Three).
+- 점선 노드(리포트)는 **아직 실물이 없다** — 규칙만 서 있고 첫 산출은 원천 데이터 적재
+  이후다([../redesign.md](../redesign.md) Phase 5).
+
+### 레이크하우스 상세
+
+#### Iceberg 카탈로그 (Trino)
 
 k8s Trino의 `gitops/apps/trino/values.yaml`(`catalogs.iceberg`)에서 정의한다.
 
@@ -213,7 +186,7 @@ k8s Trino의 `gitops/apps/trino/values.yaml`(`catalogs.iceberg`)에서 정의한
 
 > 비밀정보(액세스 키 등)는 값에 직접 쓰지 않고 Secret 참조 env를 `${ENV:...}`로 치환한다.
 
-### dbt → Trino 접속 (profiles)
+#### dbt → Trino 접속 (profiles)
 
 `dbt_pipelines/profiles.yml` (`type: trino`):
 
@@ -399,6 +372,100 @@ Terraform(스택 A·B)과 ArgoCD가 **선언을 나눠 소유**한다.
 
 dbt 모델 추가는 스캐폴딩이 필요 없다 — `models/<dataset>/`에 `.sql`을 넣으면 데이터셋 subproject의
 `@dbt_assets(select="fqn:<dataset>")`가 자동 반영한다.
+
+## 로컬 compose (옵션)
+
+> **compose는 기본 `up`으로 아무것도 띄우지 않는다**(전부 profile opt-in이 됐다).
+
+### 서비스
+
+**뼈대(core)는 비어 있다 — 모든 서비스가 `--profile <name>`으로 opt-in**한다
+(규칙 [../conventions/docker.md](../conventions/docker.md) §profiles).
+
+| 서비스               | 이미지 / 위치              | profile                                      | 역할                                                                  |
+| -------------------- | -------------------------- | -------------------------------------------- | --------------------------------------------------------------------- |
+| `dagster-webserver`  | `dagster/dockerfile.d/`    | `host-dagster`                               | Dagster UI/GraphQL. `workspace.yaml`로 코드 로케이션 로드             |
+| `dagster-daemon`     | `dagster/dockerfile.d/`    | `host-dagster`                               | 스케줄·센서·런큐 처리 + run 실행(`DefaultRunLauncher` 서브프로세스)   |
+| `postgres`           | `postgres:15`              | `legacy-meta`·`host-dagster`                 | Dagster 메타데이터 저장소(호스트 Dagster 전용). Iceberg 카탈로그는 CNPG |
+
+> 메트릭 수집기(Prometheus)는 compose에 없다 — 클러스터 안 `monitoring` 네임스페이스로 옮겼다
+> ([monitoring.md](monitoring.md)).
+
+> 🔴 **의존받는 서비스는 의존하는 쪽의 profile을 전부 물려받는다**([../conventions/docker.md](../conventions/docker.md)
+> §profiles). 바꾼 뒤에는
+> `docker compose --profile <p> config --services`로 profile별 구성을 확인한다.
+> 오브젝트 스토리지 **정본 `seaweedfs`는 이 compose에 없다** — Terraform 스택 A(`terraform/cluster/kind`의
+> `docker_container.seaweedfs`)가 클러스터 밖 컨테이너로 소유한다. compose 서비스는 `host.containers.internal`
+> (podman 전제)로, 파드는 `Service seaweedfs`(ExternalName)로 닿는다 — [storage.md](storage.md).
+
+### 컨테이너 구성도 (compose)
+
+`compose.yml`의 서비스 의존성과 포트 매핑.
+
+```mermaid
+flowchart TB
+    subgraph host[호스트 머신]
+        U1([:3000 Dagster UI])
+        U3([:8333 S3 API])
+        U4([:8888 filer UI])
+        U5([:9333 master UI])
+    end
+
+    subgraph net[compose 네트워크 dagster]
+        WS[dagster-webserver]
+        DM[dagster-daemon]
+        PG[(postgres:15)]
+    end
+
+    subgraph tfa["compose 밖 — Terraform 스택 A"]
+        SW[seaweedfs]
+    end
+
+    U1 --- WS
+    U3 --- SW
+    U4 --- SW
+    U5 --- SW
+
+    WS -->|depends_on healthy| PG
+    DM -->|depends_on healthy| PG
+
+    WS -. 공유 storage .- DM
+
+    classDef ext fill:#eef,stroke:#88a
+    class U1,U3,U4,U5 ext
+```
+
+> ⚠️ **이 구성도는 `compose.yml`에 정의된 전체**(+ compose 밖 `seaweedfs`)이고, 뼈대(core)는 비어 있어
+> 기본 `up`으로는 **아무것도 뜨지 않는다**(Dagster는 `--profile host-dagster`).
+> SeaweedFS 메트릭(9324)은 클러스터 안 Prometheus가 kind 네트워크 별칭 `seaweedfs-ext`로 긁는다
+> ([monitoring.md](monitoring.md)).
+>
+> `dagster-webserver`·`dagster-daemon`은 `postgres` 헬스체크 통과 후 기동된다.
+> webserver와 daemon은 같은 이미지·`dagster.yaml`을 쓰고
+> **Postgres 공유 storage**로 상태를 협조한다.
+
+### Dagster 프로세스 분리 (webserver / daemon)
+
+개발 편의용 일체형 `dg dev`(webserver+daemon+code 단일 프로세스) 대신, 운영 토폴로지로
+**webserver와 daemon을 별도 컨테이너로 분리**한다.
+
+| 프로세스             | entrypoint / command                          | 역할                                                       |
+| -------------------- | --------------------------------------------- | ---------------------------------------------------------- |
+| `dagster-webserver`  | `dagster-webserver -h 0.0.0.0 -p $PORT -w workspace.yaml` | UI/GraphQL 서빙(가벼움)                          |
+| `dagster-daemon`     | `dagster-daemon run -w workspace.yaml`        | 스케줄·센서·런큐 디스패치 + run 서브프로세스 실행(무거움)   |
+
+- **공유 storage 필수**: `dagster.yaml`의 run/event/schedule storage가 모두 **Postgres**라
+  두 프로세스가 같은 상태를 보고 협조한다. `DagsterDaemonScheduler`+`QueuedRunCoordinator`는
+  **daemon이 떠 있어야** 스케줄·큐가 처리된다.
+- **run 실행 위치**: `DefaultRunLauncher`라 run은 **daemon 컨테이너에서 서브프로세스**로 돈다
+  → daemon에 자원을 더 배정한다(compose `deploy.resources`).
+- **코드 로케이션**: 독립 바이너리는 자동발견 대신 [`workspace.yaml`](../../dagster/dockerfile.d/src/workspace.yaml)
+  (`python_module: dagster_project.definitions`)로 명시 로드한다.
+- **manifest 사전생성**: webserver/daemon은 비-dev라 `DbtProject.prepare_if_dev()`가 no-op이므로,
+  이미지 빌드(`Dockerfile`)에서 `dbt deps && dbt parse`로 `target/manifest.json`을 미리 만들어
+  `@dbt_assets` 로드를 보장한다.
+- (추후) 무중단 배포·코드 격리가 필요하면 독립 gRPC code-server(`dagster code-server start`)를
+  더해 3-way로 승격할 수 있다.
 
 ### 주요 포트 (compose)
 

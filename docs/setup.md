@@ -3,7 +3,7 @@
 클론한 뒤 **위에서 아래로 실행**하면 로컬 환경이 뜨는 절차서다. 명령은 모두 **repo 루트**에서 시작한다.
 왜 이렇게 구성했는지는 다루지 않는다 — 배경은 각 절의 링크와 [`architectures/overview.md`](architectures/overview.md)를 본다.
 
-## 지금 되는 범위
+## 절별 전제
 
 데이터 층(SeaweedFS·카탈로그 CNPG·Secret)은 스택 A와 ArgoCD 앱(`gitops/apps/*`)·`scripts/k8s-secrets.sh`가 올린다.
 절마다 필요한 전제가 다르다.
@@ -98,8 +98,8 @@ kubectl get secret lakehouse-creds -o jsonpath='{.data.s3-secret-key}' | base64 
 ## 3. 로컬 Kubernetes
 
 설계는 [`argocd-gitops.md`](argocd-gitops.md).
-**처음이라면 [`setup/local-k8s.md`](setup/local-k8s.md)를 따른다** — 층마다 podman·terraform·kubectl 명령을
-직접 치고, 무엇이 생기는지와 kubectl로 확인하는 법을 함께 적었다. 이 절은 그 요약과 단축 경로다.
+**기본은 이 절의 단축 경로다.** 층마다 무엇이 생기는지 배우려면 [`setup/local-k8s.md`](setup/local-k8s.md)(학습용 수동)를
+따른다 — 층마다 podman·terraform·kubectl 명령을 직접 치고, kubectl로 확인하는 법을 함께 적었다.
 
 ### 층 지도
 

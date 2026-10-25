@@ -1,5 +1,14 @@
 # 모니터링 · 관측 (아키텍처 · 프로젝트 관점)
 
+## 이 프로젝트에서의 역할
+
+클러스터 안 메트릭 수집.
+
+## 어떻게 도나
+
+- 배포: ArgoCD 앱 `gitops/charts/prometheus/`(server 단독). 수집 대상은 그 `values.yaml`에 있다.
+- UI 주소는 [환경 세팅 §3-1](../setup.md#3-1-접근-경로).
+
 ## 개요
 
 **Prometheus**는 **pull(스크레이프) 모델**의 시계열 수집기다. 서버가 설정된 타깃의
@@ -11,7 +20,7 @@
 즉 관측이 성립하려면 **① 타깃(무엇을 볼지) ② 수집기(긁는 주체) ③ 규칙·라우팅(무엇을 알릴지)**
 셋이 이어져야 하고, 하나만 있어도 나머지가 없으면 데이터는 생기지 않는다.
 
-## 이 프로젝트에서의 위치 — ✅ 채택 (클러스터 안 · server 단독 · 알림은 관측 등급)
+## 왜 이걸 골랐나 — ✅ 채택 (클러스터 안 · server 단독 · 알림은 관측 등급)
 
 **수집기는 정본 쪽(kind 클러스터)에 하나만 있다.** ArgoCD 앱 `prometheus`(namespace `monitoring`,
 umbrella 차트 [`gitops/charts/prometheus/`](../../gitops/charts/prometheus/values.yaml))가
@@ -102,7 +111,7 @@ Chunks cache · Results cache). 끄는 옵션은 그 문서에 없다.
 | 자원 선언 | ❌ 전부 `{}` | ✅ server·사이드카 모두 선언(초기값) | ✅ 채워져 있음 |
 
 ⇒ **권고 순서는 ① Prometheus 정리 ② Loki ③ Robusta 보류**였고 ①을 마쳤다 —
-compose 수집기를 철거하고 클러스터 안으로 옮겼다(위 §이 프로젝트에서의 위치). 다음 후보는 ② Loki다.
+compose 수집기를 철거하고 클러스터 안으로 옮겼다(위 §왜 이걸 골랐나). 다음 후보는 ② Loki다.
 
 ⚠️ **자원 선언 유무는 비용의 부속이 아니라 판정의 선결 조건이다.** 차트가 `resources`를 비워 두면
 파드가 **BestEffort로 떠 `Σrequests` 합계에 0으로 잡히고**, 그러면 어떤 스택을 올려도
