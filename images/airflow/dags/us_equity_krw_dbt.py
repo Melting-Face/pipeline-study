@@ -33,7 +33,13 @@ DBT_EXECUTABLE = "/opt/dbt-venv/bin/dbt"
 # 🔴 Cosmos의 `fqn:`은 **완전 일치**만 한다(dbt는 접두 일치).
 #    `fqn:us_equity_krw`는 0개를 고른다(실측). Cosmos `path:`는 프로젝트 기준이라
 #    Dagster의 cwd 글롭 문제가 없다.
-DBT_SELECT = ["path:models/us_equity_krw", "equity_prices_daily"]
+# 🔴 trading_calendar도 소유한다 — equity_prices_daily의 relationships 테스트가 참조해,
+#    빼면 달력이 낡아 새 거래일마다 테스트가 실패한다(컷오버 실측).
+DBT_SELECT = [
+    "path:models/us_equity_krw",
+    "equity_prices_daily",
+    "trading_calendar",
+]
 
 
 @dag(
@@ -42,6 +48,9 @@ DBT_SELECT = ["path:models/us_equity_krw", "equity_prices_daily"]
     catchup=False,
     is_paused_upon_creation=True,
     max_active_runs=1,
+    # 🔴 태스크 동시 1 — Celery 워커(1Gi)에서 dbt 태스크 여럿이 겹쳐 OOMKilled 됐다
+    #    (컷오버 실측). 태스크마다 Airflow·Cosmos 프로세스가 떠 dbt(~130MB)보다 크다.
+    max_active_tasks=1,
     default_args={"retries": 1, "retry_delay": timedelta(minutes=5)},
     tags=["gold", "us_equity_krw", "dbt"],
 )
@@ -89,6 +98,12 @@ def us_equity_krw_dbt() -> None:
         extra = {"latest_trade_date": latest, "rows": rows}
         outlet_events[KRW_ASSET].extra = extra
         return extra
+
+    # 🔴 시세 relationships 테스트가 달력을 읽는다. Cosmos는 테스트의 참조를
+    #    의존으로 추론하지 않아(달력은 ref가 없는 독립 줄기) 명시로 잇는다.
+    #    없으면 낡은 달력을 보고 실패한다.
+    dbt_tasks = {t.task_id: t for t in models.iter_tasks()}
+    dbt_tasks["dbt.trading_calendar.run"] >> dbt_tasks["dbt.equity_prices_daily.test"]
 
     models >> record_latest_trade_date()
 

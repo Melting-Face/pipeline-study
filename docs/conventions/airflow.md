@@ -32,6 +32,10 @@ Dagster 정의를 Airflow DAG로 옮길 때 따르는 규칙이다. 첫 사례�
   컨텍스트 `dbt`로 넘긴다(컨텍스트를 저장소 루트로 넓히지 않는다).
 - 🔴 **Cosmos `fqn:`은 완전 일치**다(dbt는 접두 일치). 디렉터리 단위 선택은 `path:models/<dataset>`를 쓴다.
 - **원천 값을 로그·XCom·Asset event에 남기지 않는다** — 날짜·행 수·불리언만(재배포 제한 데이터셋).
+- 🔴 **dbt DAG는 `max_active_tasks=1`**. Celery 워커(1Gi)에서 Cosmos 태스크가 겹치면 OOMKilled된다 —
+  태스크마다 Airflow·Cosmos 프로세스가 떠 dbt 자체보다 크고, 같은 워커의 **다른 DAG 태스크까지 함께 죽는다**.
+- **dbt 테스트가 읽는 모델은 같은 DAG가 소유하고 순서를 명시**한다. Cosmos는 relationships 같은
+  테스트의 참조를 의존으로 추론하지 않는다 — 참조 모델의 run을 그 테스트 앞에 직접 잇는다.
 - **유료·한도 API는 동시성 1**로 묶는다. 같은 키를 쓰는 DAG가 하나면 `max_active_runs=1` +
   `max_active_tis_per_dag=1`, **두 번째 DAG가 생기면 Pool로 바꾼다**(Pool은 Git으로 선언할 수 없다).
 

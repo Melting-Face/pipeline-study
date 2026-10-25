@@ -60,6 +60,7 @@ dags = {
         "paused": d.is_paused_upon_creation,
         "catchup": d.catchup,
         "max_active_runs": d.max_active_runs,
+        "max_active_tasks": d.max_active_tasks,
         "tis": {t.task_id: t.max_active_tis_per_dag for t in d.tasks},
         # Cosmos dbt 태스크가 실행 때 dbt deps 를 다시 받는지(None = Cosmos 태스크 아님)
         "install_deps": {t.task_id: getattr(t, "install_deps", None) for t in d.tasks},
@@ -202,14 +203,36 @@ else
     rc=1
 fi
 
-# Cosmos 그룹은 모델 3개만 — stock_forecast 의 다른 모델(피처·라벨·뉴스)이 끌려오면 실패
+# Cosmos 그룹은 모델 4개만 — stock_forecast 의 다른 모델(피처·라벨·뉴스)이 끌려오면 실패.
+# 🔴 trading_calendar 포함: equity_prices_daily 의 relationships 테스트가 참조한다 — 빼면 달력이 낡아
+#    새 거래일마다 테스트가 실패한다(컷오버 실행에서 255,207행 FAIL 실측)
 if echo "${result}" | jq -e '.dags.us_equity_krw_dbt.tasks | keys as $k
-        | (["equity_prices_daily", "fx_usdkrw_daily", "us_equity_krw__close_daily"]
+        | (["trading_calendar", "equity_prices_daily", "fx_usdkrw_daily", "us_equity_krw__close_daily"]
            | all(. as $m | $k | any(contains($m))))
         and ($k | any(test("feature_store|labels_forward|news_|macro_")) | not)' >/dev/null; then
-    echo "PASS [krw-models] Cosmos 그룹 = 모델 3개(다른 stock_forecast 모델 없음)"
+    echo "PASS [krw-models] Cosmos 그룹 = 모델 4개(다른 stock_forecast 모델 없음)"
 else
     echo "FAIL [krw-models] Cosmos 그룹의 모델 집합이 기대와 다르다"
+    rc=1
+fi
+
+# 🔴 달력 run → 시세 테스트 — relationships 테스트가 trading_calendar 를 읽는데 Cosmos 는 테스트의 참조를
+#    의존으로 추론하지 않는다(trading_calendar 는 ref 가 없어 독립 줄기로 렌더된다). 명시 연결이 없으면
+#    실행 순서에 따라 낡은 달력을 보고 실패한다
+if echo "${result}" | jq -e '.dags.us_equity_krw_dbt.downstream["dbt.trading_calendar.run"]
+        | index("dbt.equity_prices_daily.test")' >/dev/null; then
+    echo "PASS [krw-calendar-first] trading_calendar.run >> equity_prices_daily.test"
+else
+    echo "FAIL [krw-calendar-first] 달력 run 이 시세 테스트보다 앞서지 않는다"
+    rc=1
+fi
+
+# 🔴 태스크 동시 1 — Celery 워커(1Gi)에서 dbt 태스크 여럿이 겹쳐 OOMKilled 됐다(컷오버 실측).
+#    태스크 프로세스(Airflow·Cosmos 로드)가 태스크마다 떠서 dbt 자체(~130MB)보다 크다
+if echo "${result}" | jq -e '.dags.us_equity_krw_dbt.max_active_tasks == 1' >/dev/null; then
+    echo "PASS [krw-serial] us_equity_krw_dbt 태스크 동시 1(max_active_tasks)"
+else
+    echo "FAIL [krw-serial] us_equity_krw_dbt max_active_tasks 가 1 이 아니다"
     rc=1
 fi
 
