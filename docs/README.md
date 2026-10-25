@@ -29,6 +29,7 @@
 | --- | --- | --- |
 | [전체 아키텍처](architectures/overview.md) | 현행 배치와 데이터 흐름 | Dagster · dbt · Iceberg · SeaweedFS 스택과 bronze 적재 템플릿 |
 | [Dagster](architectures/dagster.md) | 호스트에서 도는 오케스트레이터 — 적재 자산과 dbt 자산을 정의·실행한다 | 배치 결정 기록(in-cluster는 철거, 현행은 호스트) |
+| [Airflow](architectures/airflow.md) | 클러스터 안 오케스트레이터 — Dagster에서 이관한 DAG를 실행한다 | 클러스터 안 정기 실행 주체 · executor · 메타 DB 위치 |
 | [Trino](architectures/trino.md) | silver/gold 변환 — dbt가 k8s Trino에서 SQL을 실행하고, Trino는 Iceberg 유지보수도 맡는다 | 채택(재설계의 제거 결정 번복) |
 | [Spark](architectures/spark.md) | 대용량 배치 엔진 — Spark Operator가 `SparkApplication`을 실행한다 | 재설계 컴퓨트 |
 | [Flink](architectures/flink.md) | 스트림 엔진 PoC — Iceberg 스트리밍 읽기, 세션 클러스터는 쓸 때만 띄운다 | 재설계 컴퓨트 |

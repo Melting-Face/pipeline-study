@@ -13,6 +13,7 @@
 | [docker.md](docker.md) | ✅ | 호스트 보조 서비스 — `compose.yml`의 `profiles`로 전부 opt-in 기동한다 | 컨테이너·compose 배포(채택) |
 | [argocd.md](argocd.md) | ✅ | `gitops/`의 선언으로 클러스터 앱을 수렴시킨다 | GitOps 컨트롤러 — **`git push`로 클러스터가 수렴**. ApplicationSet(git files) + RollingSync를 고른 이유와 기각한 대안, 데이터 보호 4겹 |
 | [dagster.md](dagster.md) | ✅ | 호스트에서 도는 오케스트레이터 — 적재 자산과 dbt 자산을 정의·실행한다 | 오케스트레이터 — 배치 결정 기록(in-cluster 배포는 ArgoCD 전환으로 철거, 현행은 호스트 실행). raw 매니페스트 · `DefaultRunLauncher` 유지 이유와 대안 비교 |
+| [airflow.md](airflow.md) | 🚧 | 클러스터 안 오케스트레이터 — Dagster에서 이관한 DAG를 실행한다 | 오케스트레이터 — 클러스터 안 정기 실행 주체. umbrella 차트 · `CeleryExecutor,KubernetesExecutor` · 메타 DB는 CNPG 별도 롤·DB |
 | [spark.md](spark.md) | 🚧 | 대용량 배치 엔진 — Spark Operator가 `SparkApplication`을 실행한다 | 배치 엔진 — 대용량 인제스트 · Iceberg 쓰기(dbt 엔진은 Trino). 버전은 **최신이 아니라 Iceberg가 지원하는 짝**으로 고른다 |
 | [flink.md](flink.md) | 🚧 | 스트림 엔진 PoC — Iceberg 스트리밍 읽기, 세션 클러스터는 쓸 때만 띄운다 | 스트림 엔진 — 실시간 조기경보. Iceberg bronze 스트리밍 읽기를 소스로 쓴다 |
 | [k8s.md](k8s.md) | 🚧 | 로컬 단일 노드 플랫폼 — kind on Podman | 컨테이너 오케스트레이션 — 컴퓨트·데이터 서비스 이전(이행중) |

@@ -20,7 +20,7 @@
 | 기술 | 역할 한 줄 | 상세 |
 | --- | --- | --- |
 | Dagster | 호스트에서 도는 오케스트레이터 — 적재 자산과 dbt 자산을 정의·실행한다 | [dagster](docs/architectures/dagster.md) |
-| Airflow | 클러스터 안 오케스트레이터 — Dagster에서 이관한 DAG를 실행한다 | [airflow](docs/conventions/airflow.md) |
+| Airflow | 클러스터 안 오케스트레이터 — Dagster에서 이관한 DAG를 실행한다 | [airflow](docs/architectures/airflow.md) |
 | dbt · Trino | silver/gold 변환 — dbt가 k8s Trino에서 SQL을 실행하고, Trino는 Iceberg 유지보수도 맡는다 | [trino](docs/architectures/trino.md) |
 | Iceberg · CNPG | 테이블 포맷과 JDBC 카탈로그 — 모든 엔진이 카탈로그 `iceberg` 하나를 공유한다 | [cnpg](docs/conventions/k8s/cnpg.md) |
 | SeaweedFS | S3 호환 오브젝트 스토리지 — 클러스터 밖 컨테이너(Terraform 스택 A) | [storage](docs/architectures/storage.md) |
