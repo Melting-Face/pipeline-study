@@ -1,5 +1,14 @@
 # 오퍼레이터 패턴 3종 (아키텍처 · 프로젝트 관점)
 
+이 문서는 **「왜 셋 중 둘만 전용 이미지를 굽는가」의 판단축**을 갖는다.
+그 축과 3종의 **비교 구조**, 굽는 이유의 **분류**, **재검토 트리거**가 여기 있다.
+반대로 **정본이 아닌 것**을 먼저 밝힌다 — CRD 필드·설정 키·함정 상세는
+[../conventions/k8s.md](../conventions/k8s.md) §9·§9-2와
+[../conventions/k8s/cnpg.md](../conventions/k8s/cnpg.md)가, 자원 수치는
+[../resource-sizing.md](../resource-sizing.md)가, 엔진별 결정 배경은
+[spark.md](spark.md)·[flink.md](flink.md)·[k8s.md](k8s.md)가 갖는다.
+**여기에 복제하지 않는다** — 복제하면 양쪽이 각자 낡는다.
+
 ## 이 프로젝트에서의 역할
 
 Spark·Flink·CNPG 오퍼레이터 — CR 한 장으로 엔진과 카탈로그 DB를 선언한다.
@@ -10,15 +19,6 @@ Spark·Flink·CNPG 오퍼레이터 — CR 한 장으로 엔진과 카탈로그 D
 - Flink: `gitops/charts/flink-operator/` + 러너 이미지 `k8s/flink/Dockerfile.flink-runner`.
 - CNPG: `gitops/charts/cnpg-operator/` + 카탈로그 `Cluster` CR
   `gitops/charts/catalog-postgres/templates/cluster.yaml`(전용 이미지 없음).
-
-이 문서는 **「왜 셋 중 둘만 전용 이미지를 굽는가」의 판단축**을 갖는다.
-그 축과 3종의 **비교 구조**, 굽는 이유의 **분류**, **재검토 트리거**가 여기 있다.
-반대로 **정본이 아닌 것**을 먼저 밝힌다 — CRD 필드·설정 키·함정 상세는
-[../conventions/k8s.md](../conventions/k8s.md) §9·§9-2와
-[../conventions/k8s/cnpg.md](../conventions/k8s/cnpg.md)가, 자원 수치는
-[../resource-sizing.md](../resource-sizing.md)가, 엔진별 결정 배경은
-[spark.md](spark.md)·[flink.md](flink.md)·[k8s.md](k8s.md)가 갖는다.
-**여기에 복제하지 않는다** — 복제하면 양쪽이 각자 낡는다.
 
 ## 개요
 

@@ -35,7 +35,8 @@ scheduler가 스케줄·의존에 따라 태스크를 executor에 넘긴다. Air
 
 - **클러스터 안 정기 실행 주체** — Dagster는 클러스터에 배포하지 않으므로(D6) 정기 실행 주체가 없었다.
   원화 종가 파이프라인을 Airflow로 옮겨 매일 자동 실행하는 것이 Dagster를 대체하는 첫걸음이다(사용자 결정).
-- **umbrella 차트** — 모든 앱이 `path: gitops/charts/<앱>` 한 모양이다(ApplicationSet List generator).
+- **umbrella 차트** — umbrella 앱은 `gitops/charts/<앱>` 한 모양이다(설계 A1). upstream 예외는 `trino`다
+  — `gitops/apps/*/config.yaml`의 `source.type`.
 - **Executor `CeleryExecutor,KubernetesExecutor`**, Celery가 기본 — 사용자 결정. worker는 replicas 1이고
   KEDA·HPA는 없다(CPU가 급소).
 - **메타 DB는 CNPG `catalog-postgres`의 별도 롤·DB** — PG 이중화를 피하고,

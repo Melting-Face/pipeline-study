@@ -9,7 +9,7 @@
 
 | 문서 | 상태 | 역할 | 다루는 결정 |
 | --- | --- | --- | --- |
-| [overview.md](overview.md) | 🚧 | 현행 배치와 데이터 흐름 | 현행 스택 스냅샷·데이터 흐름(Dagster·dbt·Iceberg·SeaweedFS) — Trino는 dbt 엔진으로 유지(제거 번복), 스냅샷은 관측 시점과 함께 읽는다 |
+| [overview.md](overview.md) | 🚧 | 현행 배치와 데이터 흐름 | 현행 스택 스냅샷·데이터 흐름(Dagster·dbt·Iceberg·SeaweedFS) — Trino는 dbt 엔진으로 유지(제거 번복). 현행 배치 그림·구성 요소·bronze 적재 템플릿 |
 | [docker.md](docker.md) | ✅ | 호스트 보조 서비스 — `compose.yml`의 `profiles`로 전부 opt-in 기동한다 | 컨테이너·compose 배포(채택) |
 | [argocd.md](argocd.md) | ✅ | `gitops/`의 선언으로 클러스터 앱을 수렴시킨다 | GitOps 컨트롤러 — **`git push`로 클러스터가 수렴**. ApplicationSet(git files) + RollingSync를 고른 이유와 기각한 대안, 데이터 보호 4겹 |
 | [dagster.md](dagster.md) | ✅ | 호스트에서 도는 오케스트레이터 — 적재 자산과 dbt 자산을 정의·실행한다 | 오케스트레이터 — 배치 결정 기록(in-cluster 배포는 ArgoCD 전환으로 철거, 현행은 호스트 실행). raw 매니페스트 · `DefaultRunLauncher` 유지 이유와 대안 비교 |

@@ -1,17 +1,5 @@
 # 오브젝트 스토리지 (아키텍처 · 프로젝트 관점)
 
-## 이 프로젝트에서의 역할
-
-S3 호환 오브젝트 스토리지 — 클러스터 밖 컨테이너(Terraform 스택 A).
-
-## 어떻게 도나
-
-- 컨테이너: 스택 A `terraform/cluster/kind/main.tf`의 `docker_container.seaweedfs`.
-  데이터 `seaweedfs/data`는 호스트 바인드라 destroy에도 남는다.
-- 파드에서 닿는 길: ArgoCD 앱 `gitops/charts/storage-external/`의 `Service seaweedfs`(ExternalName).
-- 정확성 판정: `scripts/storage_conformance_probe.py`.
-- 체크섬: 클라이언트는 `AWS_REQUEST_CHECKSUM_CALCULATION=when_required`를 유지한다([checksum](../conventions/k8s/checksum.md)).
-
 이 문서는 **「무엇이 S3 슬롯을 차지하고, 갈아끼운다면 무엇으로 판정하는가」** 를 갖는다.
 현행 선택의 근거, 교체 검토를 연 **단일 동기**, 후보 비교와 **판정 수단**,
 재검토 트리거가 여기 있다.
@@ -27,6 +15,18 @@ path-style·카탈로그 정합 규칙은 [../conventions/k8s.md](../conventions
 **실행 규약의 정본은 [../test/manual-gates.md](../test/manual-gates.md) §5-5다** — 언제 통과시키는가,
 종료 코드의 의미, 대조군 규율, 전제, 첫 실행 범위, 미검사 축이 거기 있다. 이 문서는 *왜 이 스위트가
 유일한 판정 수단인가*와 후보 평가를 갖고, 인자·구현 세부는 스크립트 주석이 갖는다.
+
+## 이 프로젝트에서의 역할
+
+S3 호환 오브젝트 스토리지 — 클러스터 밖 컨테이너(Terraform 스택 A).
+
+## 어떻게 도나
+
+- 컨테이너: 스택 A `terraform/cluster/kind/main.tf`의 `docker_container.seaweedfs`.
+  데이터 `seaweedfs/data`는 호스트 바인드라 destroy에도 남는다.
+- 파드에서 닿는 길: ArgoCD 앱 `gitops/charts/storage-external/`의 `Service seaweedfs`(ExternalName).
+- 정확성 판정: `scripts/storage_conformance_probe.py`.
+- 체크섬: 클라이언트는 `AWS_REQUEST_CHECKSUM_CALCULATION=when_required`를 유지한다([checksum](../conventions/k8s/checksum.md)).
 
 ## 개요
 
