@@ -1,5 +1,16 @@
 # Kubernetes (아키텍처 · 프로젝트 관점)
 
+## 이 프로젝트에서의 역할
+
+로컬 단일 노드 플랫폼 — kind on Podman.
+
+## 어떻게 도나
+
+- VM·레지스트리: `scripts/k8s-up.sh`(podman machine rootful + `localhost:5001`).
+- 클러스터: Terraform 스택 A `terraform/cluster/kind/`(kind on Podman, 노드 이미지 고정).
+- 그 위: 스택 B `terraform/platform/`(ingress-nginx·ArgoCD) → ArgoCD가 `gitops/`를 수렴시킨다.
+- kubeconfig는 `~/.kube/lakehouse.config`. 절차는 [환경 세팅 §3](../setup.md#3-로컬-kubernetes).
+
 ## 개요
 
 Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다중 노드 클러스터에서 파드(pod)를
@@ -8,7 +19,7 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
 
 - 최신 안정: **v1.36**(2026-06). N-2 지원(최근 3개 마이너에 유지보수 제공).
 
-## 이 프로젝트에서의 위치 — 🚧 채택·이행중(PoC 게이트)
+## 왜 이걸 골랐나 — 🚧 채택·이행중(PoC 게이트)
 
 - **채택 방향**: 확장성/성능 한계 극복 + 학습·포트폴리오를 위해 **컴퓨트·데이터 서비스를 K8s로 이전**한다.
   Dagster는 **클러스터에 배포하지 않는다**(호스트 실행, **Airflow로 대체 예정**)
@@ -70,6 +81,11 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
   (in-cluster 판본은 철거 — [../argocd-gitops.md](../argocd-gitops.md) D6, 이력은 [dagster.md](dagster.md)).
   `dagster-k8s`의 `K8sRunLauncher`는 Dagster를 **클러스터 내부에 배포**할 때 run을 파드로 실행하는 옵션으로,
   본 토폴로지의 Spark 트리거 수단이 아니다(미채택, [../redesign.md](../redesign.md) Phase 4).
+
+## 교훈
+
+- [빈 클러스터를 세우며 — 순서는 취향이 아니라 제약이다](../../wiki/k8s-bootstrap.md)
+- [kubectl로 판정하기 — 이 출력이 증명하지 않는 것](../../wiki/kubectl-judgement.md)
 
 ## 참고
 

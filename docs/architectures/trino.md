@@ -22,6 +22,20 @@
 
 # Trino (아키텍처 · 프로젝트 관점)
 
+## 이 프로젝트에서의 역할
+
+silver/gold 변환 — dbt가 k8s Trino에서 SQL을 실행하고, Trino는 Iceberg 유지보수도 맡는다.
+
+## 어떻게 도나
+
+- 배포: ArgoCD 앱 `gitops/apps/trino/`(upstream 차트, `config.yaml`·`values.yaml`).
+- dbt: `dagster/dockerfile.d/src/dbt_pipelines/profiles.yml`의 `dev`·`prod` 타깃이 `TRINO_HOST`로 접속한다.
+  타깃 이름은 엔진이 아니라 환경이다.
+  엔진 방언은 `dagster/dockerfile.d/src/dbt_pipelines/macros/cross_engine.sql`이 흡수한다.
+- 유지보수: Dagster `dagster/dockerfile.d/src/src/dagster_project/defs/maintenance.py`가
+  `ALTER TABLE … EXECUTE`를 실행한다.
+- 카탈로그: 다른 엔진과 같은 Iceberg JDBC 카탈로그 `iceberg`(CNPG)를 본다.
+
 ## 개요
 
 Trino는 **MPP(대규모 병렬 처리) 분산 SQL 쿼리 엔진**이다. 데이터를 자체 저장하지 않고
@@ -29,7 +43,7 @@ Trino는 **MPP(대규모 병렬 처리) 분산 SQL 쿼리 엔진**이다. 데이
 coordinator가 SQL을 분해해 worker들에 분산하고, 메모리 기반 파이프라인으로 배치 SQL을
 빠르게 처리한다.
 
-## 이 프로젝트에서의 위치 — 🚧 K8s 이행중(재설계의 제거 결정 번복)
+## 왜 이걸 골랐나 — 🚧 K8s 이행중(재설계의 제거 결정 번복)
 
 > **상태 변경 이력**: compose 스택에서 ✅ 채택 → [재설계](../redesign.md)에서 **제거** 결정(dbt-spark 이관) →
 > Spark Connect 철거로 dbt 엔진이 필요해져 **번복**, K8s upstream 앱으로 올라왔다. 아래 「제거 이유」는 번복된 판단이며
@@ -57,6 +71,10 @@ coordinator가 SQL을 분해해 worker들에 분산하고, 메모리 기반 파�
   [conventions/docker.md](../conventions/docker.md) §1-3).
 - **Iceberg 유지보수**: pyiceberg 미지원 프로시저(`remove_orphan_files`)를 Trino
   `ALTER TABLE ... EXECUTE`로 실행한다([security.md](../security.md) §4-1).
+
+## 교훈
+
+- [엔진마다 값이 갈리는 SQL — 같은 자리에서 두 번 틀렸다](../../wiki/cross-engine-sql.md)
 
 ## 참고
 

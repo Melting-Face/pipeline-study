@@ -1,5 +1,17 @@
 # ArgoCD (아키텍처 · 프로젝트 관점)
 
+## 이 프로젝트에서의 역할
+
+`gitops/`의 선언으로 클러스터 앱을 수렴시킨다.
+
+## 어떻게 도나
+
+- 설치: 스택 B `terraform/platform/argocd.tf`, ApplicationSet은
+  `terraform/platform/charts/appset/templates/applicationset.yaml`.
+- 앱 목록: `gitops/apps/<app>/config.yaml`(디렉터리 하나 = 앱 하나), 차트는 `gitops/charts/<app>/`.
+- 추적 리비전: `terraform/platform/variables.tf`의 `target_revision`.
+- Secret은 앱보다 먼저 `scripts/k8s-secrets.sh`가 만든다.
+
 ## 개요
 
 Argo CD는 **Git을 원하는 상태의 단일 출처로 삼는 선언형 GitOps 컨트롤러**다. 저장소의 매니페스트(여기서는
@@ -10,7 +22,7 @@ applicationset-controller(Application 일괄 생성) · redis(캐시) 다섯이�
 - 이 저장소 고정: argo-cd 차트 **10.9.6**, ingress-nginx 차트 **4.15.1** — 자매 저장소 `argocd-study`가
   같은 VM에서 검증한 짝을 그대로 쓴다(상향은 두 저장소 공동 작업).
 
-## 이 프로젝트에서의 위치 — ✅ 채택
+## 왜 이걸 골랐나 — ✅ 채택
 
 **성공 기준은 「`git push`만으로 클러스터가 수렴한다」** 이다. 빈 클러스터에서 `terraform apply` 2회와
 Secret 생성(`scripts/k8s-secrets.sh`) 뒤, 사람의 `kubectl apply` 없이

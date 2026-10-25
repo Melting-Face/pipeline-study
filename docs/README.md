@@ -4,42 +4,81 @@
 같은 레이크하우스 패턴으로 적재·변환하는 것은 **데이터셋별 질문에 답하기 위한 준비**이고,
 답을 내는 규칙은 [분석 컨벤션](conventions/analysis.md)에 있다.
 
-> **누가 읽는가 — 이 저장소를 가져가 돌리려는 사람과 에이전트**
-> `README.md`와 `docs/`는 저장소를 **클론해 자기 환경에서 실행하려는 독자**를 대상으로 한다.
+> **누가 읽는가 — 검토자와 학습자**
+> `README.md`·`docs/`의 독자는 둘이다 — **위층은 검토자**(무엇을 왜 만들었나를 몇 분에),
+> **아래층·`docs/`는 학습자**(클론해 자기 환경에서 돌리고 고친다).
 > 그래서 여기 있는 문장은 **남의 환경에서도 참**이어야 한다 — 호스트 절대경로·개인 머신
 > 스펙·계정명은 담지 않는다. 저장소를 **모르는 사람**이 읽는 [`posts/`](posts/README.md)와
 > `wiki/`는 독자도 반출 통제도 다르다([publishing](conventions/publishing.md)).
 
+이 허브는 독자별 4칸이다 — **① 둘러보기 → ② 따라 하기 → ③ 기여자·에이전트용 규칙 → ④ 결정 기록**.
+
 ## 처음 왔다면
 
-1. [**환경 세팅**](setup.md) — 사전 요구 도구부터 검증·회수까지. 절차의 정본이다
-2. [전체 아키텍처 / 데이터 흐름](architectures/overview.md) — 무엇이 어디서 도는가
-3. [코딩 철학](philosophy.md) — 왜 이렇게 결정했는가
+1. 검토자라면 [**① 둘러보기**](#1-둘러보기) — [전체 아키텍처 / 데이터 흐름](architectures/overview.md)에서
+   무엇이 어디서 도는가를 본다
+2. 학습자라면 [**② 따라 하기**](#2-따라-하기) — [**환경 세팅**](setup.md)이 사전 요구 도구부터
+   검증·회수까지의 절차 정본이다
+3. 왜 이렇게 결정했는가는 [코딩 철학](philosophy.md)과 [**④ 결정 기록**](#4-결정-기록)
 
-## 아키텍처
+## 1. 둘러보기
 
-기술별 **개요 + 결정 관점**(채택 이유·대안 비교). 인덱스는 [architectures/](architectures/README.md).
+기술별 **역할 + 결정 관점**(채택 이유·대안 비교). 인덱스는 [architectures/](architectures/README.md).
+
+| 문서 | 역할 | 다루는 결정 |
+| --- | --- | --- |
+| [전체 아키텍처](architectures/overview.md) | 현행 배치와 데이터 흐름 | Dagster · dbt · Iceberg · SeaweedFS 스택과 bronze 적재 템플릿 |
+| [Dagster](architectures/dagster.md) | 호스트에서 도는 오케스트레이터 — 적재 자산과 dbt 자산을 정의·실행한다 | 배치 결정 기록(in-cluster는 철거, 현행은 호스트) |
+| [Airflow](architectures/airflow.md) | 클러스터 안 오케스트레이터 — Dagster에서 이관한 DAG를 실행한다 | 클러스터 안 정기 실행 주체 · executor · 메타 DB 위치 |
+| [Trino](architectures/trino.md) | silver/gold 변환 — dbt가 k8s Trino에서 SQL을 실행하고, Trino는 Iceberg 유지보수도 맡는다 | 채택(재설계의 제거 결정 번복) |
+| [Spark](architectures/spark.md) | 대용량 배치 엔진 — Spark Operator가 `SparkApplication`을 실행한다 | 재설계 컴퓨트 |
+| [Flink](architectures/flink.md) | 스트림 엔진 PoC — Iceberg 스트리밍 읽기, 세션 클러스터는 쓸 때만 띄운다 | 재설계 컴퓨트 |
+| [Kubernetes](architectures/k8s.md) | 로컬 단일 노드 플랫폼 — kind on Podman | 로컬 K8s 플랫폼 |
+| [ArgoCD](architectures/argocd.md) | `gitops/`의 선언으로 클러스터 앱을 수렴시킨다 | GitOps 채택 근거와 기각한 대안 |
+| [오브젝트 스토리지](architectures/storage.md) | S3 호환 오브젝트 스토리지 — 클러스터 밖 컨테이너(Terraform 스택 A) | 교체 검토의 동기는 **정확성 축 하나**, 판정 수단은 실측 프로브 |
+| [Terraform](architectures/terraform.md) | 스택 A(클러스터·S3) · 스택 B(ingress·ArgoCD) | 폭발반경 기준 스택 분할 |
+| [오퍼레이터 3종](architectures/operators.md) | Spark·Flink·CNPG 오퍼레이터 — CR 한 장으로 엔진과 카탈로그 DB를 선언한다 | **왜 셋 중 둘만 전용 이미지를 굽는가**(판단축은 런타임의 확장 적재 방식) |
+| [모니터링·관측](architectures/monitoring.md) | 클러스터 안 메트릭 수집 | Grafana·Loki·Robusta 등을 **지금 쓰지 않는 이유** |
+| [Docker/Compose](architectures/docker.md) | 호스트 보조 서비스 — `compose.yml`의 `profiles`로 전부 opt-in 기동한다 | 현행 채택 |
+| [OCI + Terraform + k3s](architectures/oci.md) | 쓰지 않는다(보류) — 대신 로컬 kind on Podman | 클라우드 이행 경로 |
+| [Kafka](architectures/kafka.md) | 쓰지 않는다 — 대신 Iceberg bronze 스트리밍 읽기가 스트림 소스다 | 미도입 유지. 근거 인덱스와 재검토 트리거 |
+| [DuckDB](architectures/duckdb.md) | 쓰지 않는다 — 대신 조회 엔진은 k8s Trino | 인프로세스 OLAP 미채택 |
+
+## 데이터셋 · 분석
+
+- [데이터셋 스키마·피처](dataset_schema.md) — 원천 스키마 정본(의료·환율·수문·시장·거시·GitHub)과 SOFA→Sepsis-3 매핑
+- ↳ [주식예측 실버](dataset_schema/stock-forecast.md) — 누수 방지 3축(세션 배정·as-of·라벨 격리)과
+  그 게이트·**선언된 공백**
+- ↳ [미국 주식 원화 종가](dataset_schema/us-equity-krw.md) — 교차 USD/KRW·as-of 환율·시각 차이 오차와 그 게이트
+- ↳ [USGS 수문](dataset_schema/usgs-water.md) — append 전용 bronze 2테이블·의도된 중복과 dedup 키, Flink 파생
+- ↳ [GitHub 트렌드](dataset_schema/github-trending.md) — Airflow가 남기는 raw JSON 레이아웃·필드,
+  「트렌드」 근사의 한계와 차분 소비. bronze 적재는 [설계](dataset_schema/github-trending-bronze.md)만 있고 구현 전이다
+- [분석 컨벤션](conventions/analysis.md) — 규칙 정본
+- [`notebooks/README.md`](../notebooks/README.md) — Jupyter Lab 실행·Trino 접속·셀 출력 통제
+- 리포트는 `docs/analyses/<NN>-<slug>.md`에 쌓는다
+
+## 외부 공개
+
+같은 결론이라도 **독자가 다르면 기준이 다르다.** `analyses/`는 저장소를 **아는 사람**이,
+`posts/`는 **모르는 사람**이 읽는다. 공개는 커밋보다 강한 기준이고, **발행은 사람이 한다.**
+
+- [외부 공개 컨벤션](conventions/publishing.md) — 규칙 정본
+- [`docs/posts/README.md`](posts/README.md) — 공개 산출물 디렉터리 규약
+
+## 2. 따라 하기
 
 | 문서 | 내용 |
 | --- | --- |
-| [재설계 로드맵](redesign.md) | K8s로의 이행. 목표 토폴로지·급소·PDCA |
-| [ArgoCD GitOps 전환](argocd-gitops.md) | 설계·구현됨. Terraform A·B + ApplicationSet, 오퍼레이터→데이터→Airflow 단계 |
-| [전체 아키텍처](architectures/overview.md) | Dagster · dbt · Iceberg · SeaweedFS 스택과 bronze 적재 템플릿 |
-| [ArgoCD](architectures/argocd.md) | GitOps — `git push`로 클러스터 수렴. 채택 근거와 기각한 대안 |
-| [Dagster](architectures/dagster.md) | 오케스트레이터 — 배치 결정 기록(in-cluster는 철거, 현행은 호스트) |
-| [Docker/Compose](architectures/docker.md) | 현행 채택 |
-| [Spark](architectures/spark.md) · [Flink](architectures/flink.md) | 재설계 컴퓨트 |
-| [Kubernetes](architectures/k8s.md) | 로컬 K8s 플랫폼 (kind on Podman) |
-| [오퍼레이터 3종](architectures/operators.md) | Spark·Flink·PostgreSQL — **왜 셋 중 둘만 전용 이미지를 굽는가**(판단축은 런타임의 확장 적재 방식) |
-| [오브젝트 스토리지](architectures/storage.md) | 현행 SeaweedFS — 교체 검토의 동기는 **정확성 축 하나**, 판정 수단은 실측 프로브 |
-| [Terraform](architectures/terraform.md) | IaC — 스택 A·B(ArgoCD까지), 폭발반경 기준 스택 분할 |
-| [OCI + Terraform + k3s](architectures/oci.md) | 클라우드 이행 경로 |
-| [Trino](architectures/trino.md) | dbt 엔진·Iceberg 유지보수 — 채택(재설계의 제거 결정 번복) |
-| [모니터링·관측](architectures/monitoring.md) | Grafana·Loki·Robusta 등을 **지금 쓰지 않는 이유** |
-| [Kafka](architectures/kafka.md) | 이벤트 스트리밍 — 미도입 유지. 근거 인덱스와 재검토 트리거 |
-| [DuckDB](architectures/duckdb.md) | 인프로세스 OLAP — 미채택. 조회 엔진 정본은 k8s Trino |
+| [환경 세팅](setup.md) | 절차 정본 — 사전 요구·기동·검증·회수·함정 |
+| ↳ [로컬 Kubernetes 손으로 올리기](setup/local-k8s.md) | 층별 podman·terraform·kubectl 명령, 생기는 것·확인·단축, 내리기 |
+| ↳ [시장 데이터 키 발급](setup/market-data-keys.md) | 외부 API 키 절차·무료 플랜 한계·**재배포 금지**·뉴스 축 폴백 |
+| [노트북](../notebooks/README.md) | Jupyter Lab 실행·Trino 접속·셀 출력 통제 |
+| [환경변수·운영 정책](operations.md) | `.env`→compose→`EnvVar` 전파 체인, 보존 정책, 토큰 비용 계측, 클러스터 재생성 |
+| [리소스 산정](resource-sizing.md) | 호스트 자원에 따른 서비스 옵션 조정 |
 
-## 코딩 규칙 (conventions)
+## 3. 기여자·에이전트용 규칙
+
+### 코딩 규칙 (conventions)
 
 인덱스와 읽는 순서는 [conventions/README.md](conventions/README.md).
 
@@ -65,36 +104,10 @@
 | [에이전트 오케스트레이션](conventions/agents.md) | AI 세션 2계층·권한·게이트·저널 |
 | [Codex 에이전트 구성](conventions/codex.md) | Claude와 분리된 Codex 지침·워커·권한·hook·스킬 운영 |
 
-## 데이터셋 · 분석
-
-- [데이터셋 스키마·피처](dataset_schema.md) — 원천 스키마 정본(의료·환율·수문·시장·거시·GitHub)과 SOFA→Sepsis-3 매핑
-- ↳ [주식예측 실버](dataset_schema/stock-forecast.md) — 누수 방지 3축(세션 배정·as-of·라벨 격리)과
-  그 게이트·**선언된 공백**
-- ↳ [미국 주식 원화 종가](dataset_schema/us-equity-krw.md) — 교차 USD/KRW·as-of 환율·시각 차이 오차와 그 게이트
-- ↳ [USGS 수문](dataset_schema/usgs-water.md) — append 전용 bronze 2테이블·의도된 중복과 dedup 키, Flink 파생
-- ↳ [GitHub 트렌드](dataset_schema/github-trending.md) — Airflow가 남기는 raw JSON 레이아웃·필드,
-  「트렌드」 근사의 한계와 차분 소비. bronze 적재는 [설계](dataset_schema/github-trending-bronze.md)만 있고 구현 전이다
-- [분석 컨벤션](conventions/analysis.md) — 규칙 정본
-- [`notebooks/README.md`](../notebooks/README.md) — Jupyter Lab 실행·Trino 접속·셀 출력 통제
-- 리포트는 `docs/analyses/<NN>-<slug>.md`에 쌓는다
-
-## 외부 공개
-
-같은 결론이라도 **독자가 다르면 기준이 다르다.** `analyses/`는 저장소를 **아는 사람**이,
-`posts/`는 **모르는 사람**이 읽는다. 공개는 커밋보다 강한 기준이고, **발행은 사람이 한다.**
-
-- [외부 공개 컨벤션](conventions/publishing.md) — 규칙 정본
-- [`docs/posts/README.md`](posts/README.md) — 공개 산출물 디렉터리 규약
-
-## 운영 · 보안 · 도구
+### 보안 · 리스크 · 도구
 
 | 문서 | 내용 |
 | --- | --- |
-| [환경 세팅](setup.md) | 절차 정본 — 사전 요구·기동·검증·회수·함정 |
-| ↳ [로컬 Kubernetes 손으로 올리기](setup/local-k8s.md) | 층별 podman·terraform·kubectl 명령, 생기는 것·확인·단축, 내리기 |
-| ↳ [시장 데이터 키 발급](setup/market-data-keys.md) | 외부 API 키 절차·무료 플랜 한계·**재배포 금지**·뉴스 축 폴백 |
-| [환경변수·운영 정책](operations.md) | `.env`→compose→`EnvVar` 전파 체인, 보존 정책, 토큰 비용 계측, 클러스터 재생성 |
-| [리소스 산정](resource-sizing.md) | 호스트 자원에 따른 서비스 옵션 조정 |
 | [리스크 관리 규약](risk.md) | 분류 4축·등급의 **가역성 축**·비가역 작업 한 벌·**사후 인시던트 대응** |
 | [보안·데이터 거버넌스 **정책**](security.md) | ISMS-P·의료데이터 규제 매핑, 통제 방침과 보증 범위 |
 | ↳ [그 밖의 데이터셋 판정](security/datasets.md) | §0-1 — 데이터셋별 개인정보·재배포 판정과 재검토 트리거 |
@@ -106,7 +119,7 @@
 > 탐색 대상(`.github/` → 루트 → `docs/`)이라, 미비점 목록이 첫 화면이 될 수 있다.
 > 현행 실태는 `$OBSIDIAN_VAULT/security/posture.md`에 둔다.
 
-## 핵심 원칙 요약
+### 핵심 원칙 요약
 
 > 가치(왜)는 [코딩 철학](philosophy.md), 아래는 빠른 규칙 참조(어떻게).
 
@@ -116,7 +129,7 @@
 4. **커밋 메시지는 한국어 `type: 설명`**
 5. 🔴 **성공 신호를 의심한다** — "통과"가 *검사했다*인지 *실행됐다*뿐인지 구분한다
 
-## 문서 작성·유지 규칙
+### 문서 작성·유지 규칙
 
 - 규칙·결정·작업 패턴은 최대한 문서로 남긴다. 문서는 한국어로 쓰고 식별자·명령어·경로는 원문 그대로.
 - 공통 규칙을 바꿀 때는 `AGENTS.md`·`CLAUDE.md`·`docs/`·`README.md`를 **함께 갱신**해 단일 출처를 유지한다.
@@ -126,3 +139,11 @@
 
 - [문서 동기화(doc-sync)](doc-sync.md) — 단일 출처 원칙, 변경 유형별 동기화 체인
 - [참고 문서(references)](references.md) — 규칙·설계가 근거로 삼는 외부 표준 인덱스
+
+## 4. 결정 기록
+
+| 문서 | 내용 |
+| --- | --- |
+| [재설계 로드맵](redesign.md) | K8s로의 이행. 목표 토폴로지·급소·PDCA |
+| [ArgoCD GitOps 전환](argocd-gitops.md) | 설계·구현됨. Terraform A·B + ApplicationSet, 오퍼레이터→데이터→Airflow 단계 |
+| [설계 문서](superpowers/specs/) · [구현 계획](superpowers/plans/) | 미션별 설계(spec)와 그 실행 계획(plan) |
