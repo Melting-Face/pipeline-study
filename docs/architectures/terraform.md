@@ -1,5 +1,16 @@
 # Terraform (아키텍처 · 프로젝트 관점)
 
+## 이 프로젝트에서의 역할
+
+스택 A(클러스터·S3) · 스택 B(ingress·ArgoCD).
+
+## 어떻게 도나
+
+- 스택 A `terraform/cluster/kind/`: 클러스터 + SeaweedFS 컨테이너 + 버킷.
+- 스택 B `terraform/platform/`: `ingress.tf`(ingress-nginx) · `argocd.tf`(ArgoCD + ApplicationSet).
+- 보류 스택 `terraform/oci-k3s/`.
+- state는 로컬 백엔드이고 apply는 루트 체크아웃에서 한다([환경 세팅 §3](../setup.md#3-로컬-kubernetes)).
+
 ## 개요
 
 Terraform은 **선언형 인프라 프로비저닝** 도구다. 리소스의 목표 상태를 HCL로 선언하면 실제 상태를
@@ -10,7 +21,7 @@ Terraform은 **선언형 인프라 프로비저닝** 도구다. 리소스의 목
 - 이 저장소 고정: Terraform **1.15.8** · 스택별 프로바이더는 `versions.tf`에 핀 — 스택 A·B(`cluster/kind`·`platform`)는
   **정확 고정**(`version = "x.y.z"`), 보류 중인 `oci-k3s`만 `~>` 범위다
 
-## 이 프로젝트에서의 위치 — ✅ 채택(스택 A·B, ArgoCD 부트스트랩)
+## 왜 이걸 골랐나 — ✅ 채택(스택 A·B, ArgoCD 부트스트랩)
 
 스택은 셋이다. 클라우드 축 [`terraform/oci-k3s/`](oci.md)는 **⏸ 보류**(A1 용량 부족)이고,
 이 문서가 다루는 것은 **로컬 K8s 플랫폼**의 두 스택이다.

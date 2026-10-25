@@ -1,5 +1,17 @@
 # Apache Flink (아키텍처 · 프로젝트 관점)
 
+## 이 프로젝트에서의 역할
+
+스트림 엔진 PoC — Iceberg 스트리밍 읽기, 세션 클러스터는 쓸 때만 띄운다.
+
+## 어떻게 도나
+
+- 오퍼레이터: ArgoCD 앱 `gitops/charts/flink-operator/`.
+- 세션 클러스터 `k8s/flink/flinkdeployment-session.yaml`, 잡 매니페스트 `k8s/flink/*-job.yaml`,
+  러너 이미지 `k8s/flink/Dockerfile.flink-runner`.
+- 트리거: Dagster `dagster/dockerfile.d/src/src/dagster_project/defs/flink/resources.py`의 `FlinkSessionResource`.
+- 소스는 Iceberg bronze 테이블의 스트리밍 읽기다(Kafka 미도입).
+
 ## 개요
 
 Flink는 **상태 기반 스트림 처리 엔진**이다. 무한 스트림을 이벤트 시간(event-time) 기준으로 낮은
@@ -8,7 +20,7 @@ TaskManager가 병렬 처리하며, 배치는 스트림의 특수 경우로 취�
 
 - 최신 안정: **Flink 2.3.0**(2026-06). (2.0은 2025-03의 메이저 마일스톤)
 
-## 이 프로젝트에서의 위치 — 🚧 채택·이행중
+## 왜 이걸 골랐나 — 🚧 채택·이행중
 
 **Flink는 배치 전용이 아니다.** 오퍼레이터 + `FlinkDeployment` 세션 클러스터로
 **Spark ↔ Flink Iceberg 왕복**을 배치·스트리밍 양쪽에 걸쳐 **설계했다.**
@@ -147,6 +159,11 @@ Spark 쪽 배치 변경분 조회는 Iceberg 프로시저 `create_changelog_view
 
 소스 DB·Debezium·브로커가 전부 새로 필요하고, 이 저장소의 원천은 **파일(csv.gz)이지 OLTP DB가 아니다.**
 CDC를 쓰려면 없는 DB를 먼저 만들어야 한다 — **목적과 수단이 뒤집힌다.**
+
+## 교훈
+
+- [Flink를 K8s 위에 올리며 — 막힌 층이 다르면 같은 처방이 안 듣는다](../../wiki/flink-on-k8s.md)
+- [스트림 소스를 고르며 — 질문이 틀리면 답을 잘 할수록 멀어진다](../../wiki/streaming-source-choice.md)
 
 ## 참고
 
