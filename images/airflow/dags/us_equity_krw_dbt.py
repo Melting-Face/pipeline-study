@@ -4,7 +4,7 @@ Dagster `defs/us_equity_krw/dbt_assets.py`(`@dbt_assets`) 이관(설계 F4·F5·
 - 🔴 스케줄은 두 Asset의 AND다. 환율은 주말에도 갱신되므로 OR이면
   낡은 시세 위에서 빌드한다.
 - `equity_prices_daily`(silver)는 이 DAG가 소유한다(F10).
-  Dagster `stock_forecast`는 컷오버에서 exclude한다.
+  Dagster `stock_forecast`는 이 모델과 `trading_calendar`를 exclude한다(컷오버 완료).
 - 최신 거래일은 날짜·행 수만 남긴다(원천 값 금지 — Polygon 재배포 금지).
 """
 

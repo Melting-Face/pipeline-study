@@ -77,12 +77,16 @@ POLYGON_BASE = "https://api.polygon.io"
 POLYGON_GROUPED_PATH = "/v2/aggs/grouped/locale/us/market/stocks"
 POLYGON_NEWS_PATH = "/v2/reference/news"
 
-# 🔴 **파서와 짝을 이루는 상수다.**
-# `defs/polygon_market/assets.py`의 `REQUIRED_BAR_FIELDS`·`REQUIRED_NEWS_FIELDS`와
-# 같아야 한다. 이 스크립트는 PEP 723 단독 실행이라 그 패키지를 import할 수 없어
-# 상수가 두 벌 존재하는데, 두 벌이 조용히 갈라지면 **프로브는 통과하고 파서만 깨진다**.
-# 그 갈라짐은 `tests/test_polygon_market_parse.py`의
-# `test_probe_and_parser_share_the_field_contract`가 AST 대조로 막는다(의도한 결합).
+# 🔴 **파서와 짝을 이루는 상수다.** 파서가 둘로 나뉘어 있다:
+#   - bar(시세)  → Airflow `images/airflow/dags/lakehouse/polygon.py`의
+# `REQUIRED_BAR_FIELDS`·
+#                 `KNOWN_BAR_FIELDS` —
+# `images/airflow/tests/lib/test_polygon_contract.py`가 대조
+#   - news(뉴스) → Dagster `defs/polygon_market/assets.py`의 `REQUIRED_NEWS_FIELDS`·
+#                 `KNOWN_NEWS_FIELDS` — `tests/test_polygon_market_parse.py`가 대조
+# 이 스크립트는 PEP 723 단독 실행이라 그 패키지들을 import할 수 없어 상수가 두 벌
+# 존재하는데, 두 벌이 조용히 갈라지면 **프로브는 통과하고 파서만 깨진다**. 그 갈라짐을
+# 위 두 테스트가 AST 대조로 막는다(의도한 결합).
 # 🔴 여기를 고치면 저쪽도 고친다 — 안 고치면 조용히 통과하지 않고 테스트가 멈춘다.
 
 # grouped daily 응답의 필수 필드. T=티커, o/h/l/c=시가·고가·저가·종가, v=거래량,

@@ -22,8 +22,12 @@ Dagster 정의를 Airflow DAG로 옮길 때 따르는 규칙이다. 첫 사례�
 - **파티션 키가 API 날짜로 나가면 timetable은 UTC**다 — [타임존 정책](timezone.md)의 의도된 예외.
 - **로직은 `lakehouse`에, DAG는 배선만** 둔다. `lakehouse`는 호스트 venv에서 인프라 없이 단위 테스트한다
   (`images/airflow/tests/lib/`, `PYTHONPATH=images/airflow/dags`).
-- 🔴 **Dagster에 남는 데이터셋이 같은 로직을 쓰면 두 벌이 공존**한다. 같은 테이블에 쓰는 스키마는
-  `test_parity.py`가 양쪽을 대조한다 — 한쪽만 바꾸면 실패한다.
+- 🔴 **Dagster에 남는 데이터셋이 같은 로직을 쓰면 두 벌이 공존**한다. 이관 중 같은 테이블에 쓰는 스키마는
+  `test_parity.py`가 양쪽을 대조하고, **컷오버로 Dagster 정의를 지우면 스키마 리터럴 고정으로 바꾼다**
+  (필드명·타입·tz — 적재된 테이블의 모양이라서다). 프로브↔파서 필드 계약 같은 대조 테스트도 파서를 따라 옮긴다.
+- **컷오버는 Dagster 쪽 삭제로 끝난다** — 자산·잡·스케줄·테이블 바인딩을 지우고, dbt `source.yml`의
+  `meta.dagster.asset_key`를 「적재 소유자: Airflow DAG」 주석으로 바꾼다. Airflow가 빌드하는 dbt 모델은
+  Dagster `@dbt_assets`에서 `exclude`한다 — 남은 모델은 그것을 외부 상류(비물질화 자산)로 본다.
 - **Asset URI는 `lakehouse/assets.py` 한 곳**에 둔다. DAG 모듈을 다른 DAG에서 import하면 그 DAG가 두 번
   등록된다(`AirflowDagDuplicatedIdException`).
 - 🔴 **Airflow 3 DagBag은 DAG 폴더를 `sys.path`에 넣지 않는다** — 이미지의 `ENV PYTHONPATH=/opt/airflow/dags`가
