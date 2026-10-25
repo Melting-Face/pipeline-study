@@ -216,4 +216,48 @@ else
     unset CONN_JSON
 fi
 
+# 4) 원화 종가 DAG Connection — 설계 docs/superpowers/specs/2026-10-24-airflow-us-equity-krw-design.md F6·F6a
+#    🔴 카탈로그 자격은 **재사용**이다(사용자 결정): default/catalog-pg-app 의 값과 한 벌. 회전 묶음이 하나 늘어
+#    CNPG 원본·default Secret·airflow Secret·호스트 .env 를 함께 바꾼다. 있으면 일치만 검사하고 다르면 멈춘다.
+CAT_USER="$(secret_field default catalog-pg-app username)"
+CAT_PW="$(secret_field default catalog-pg-app password)"
+nonempty catalog-pg-app.username "${CAT_USER}"
+nonempty catalog-pg-app.password "${CAT_PW}"
+if kubectl -n airflow get secret airflow-conn-iceberg >/dev/null 2>&1; then
+    CONN_EXISTING="$(secret_field airflow airflow-conn-iceberg connection)"
+    if [ "$(printf '%s' "${CONN_EXISTING}" | jq -r .login)" != "${CAT_USER}" ] \
+        || [ "$(printf '%s' "${CONN_EXISTING}" | jq -r .password)" != "${CAT_PW}" ]; then
+        printf '카탈로그 자격 사본 불일치: airflow/airflow-conn-iceberg 가 default/catalog-pg-app 과 다르다\n' >&2
+        printf '한 벌로 회전한다 — 옛 사본을 지우고 다시 실행한 뒤 Airflow worker 를 재기동한다\n' >&2
+        exit 1
+    fi
+    unset CONN_EXISTING
+    log "Secret 있음(건드리지 않음, 자격 일치): airflow/airflow-conn-iceberg"
+else
+    CONN_JSON="$(jq -cn --arg u "${CAT_USER}" --arg p "${CAT_PW}" \
+        '{conn_type: "postgres", login: $u, password: $p,
+          host: "catalog-postgres-rw.default.svc", port: 5432, schema: "iceberg"}')"
+    nonempty airflow-conn-iceberg "${CONN_JSON}"
+    ensure_secret airflow airflow-conn-iceberg --from-literal=connection="${CONN_JSON}"
+    unset CONN_JSON
+fi
+unset CAT_USER CAT_PW
+
+# Polygon 키 — 단일 출처는 .env 의 POLYGON_API_KEY(호스트 Dagster 와 한 벌). 키는 password 필드에만 둔다
+POLYGON_KEY="$(env_value POLYGON_API_KEY)"
+if kubectl -n airflow get secret airflow-conn-polygon >/dev/null 2>&1; then
+    if [ "$(secret_field airflow airflow-conn-polygon connection | jq -r .password)" != "${POLYGON_KEY}" ]; then
+        printf 'Polygon 키 사본 불일치: airflow/airflow-conn-polygon 이 .env 의 POLYGON_API_KEY 와 다르다\n' >&2
+        exit 1
+    fi
+    log "Secret 있음(건드리지 않음, 키 일치): airflow/airflow-conn-polygon"
+else
+    nonempty POLYGON_API_KEY "${POLYGON_KEY}"
+    CONN_JSON="$(jq -cn --arg k "${POLYGON_KEY}" '{conn_type: "http", host: "api.polygon.io", password: $k}')"
+    nonempty airflow-conn-polygon "${CONN_JSON}"
+    ensure_secret airflow airflow-conn-polygon --from-literal=connection="${CONN_JSON}"
+    unset CONN_JSON
+fi
+unset POLYGON_KEY
+
 log "완료. 카탈로그 Cluster는 ArgoCD(catalog-postgres)가, S3는 클러스터 밖 스택 A(terraform/cluster/kind)가 맡는다"

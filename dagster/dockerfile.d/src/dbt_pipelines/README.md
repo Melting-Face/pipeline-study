@@ -1,16 +1,7 @@
-Welcome to your new dbt project!
+# dbt_pipelines
 
-### Using the starter project
+이 저장소의 단일 dbt 프로젝트다. 엔진은 k8s Trino(`profiles.yml`의 `dev` 타깃)이고,
+데이터셋별 모델은 `models/<dataset>/`에 둔다.
 
-Try running the following commands:
-
-- dbt run
-- dbt test
-
-### Resources:
-
-- Learn more about dbt [in the docs](https://docs.getdbt.com/docs/introduction)
-- Check out [Discourse](https://discourse.getdbt.com/) for commonly asked questions and answers
-- Join the [chat](https://community.getdbt.com/) on Slack for live discussions and support
-- Find [dbt events](https://events.getdbt.com) near you
-- Check out [the blog](https://blog.getdbt.com/) for the latest news on dbt's development and best practices
+- 규칙·타깃·주의사항: [dbt 컨벤션](../../../../docs/conventions/dbt.md)
+- 실행은 Dagster `@dbt_assets`가 맡는다: [Dagster 컨벤션](../../../../docs/conventions/dagster.md)

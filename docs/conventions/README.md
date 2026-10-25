@@ -20,6 +20,7 @@
 | [`data-quality.md`](data-quality.md) | 데이터 품질 | 품질 **6차원**과 강제 지점 · 실패 시 **차단/경고/관측** 3등급 · **보증하지 않는 것**을 함께 선언 |
 | [`analysis.md`](analysis.md) | 분석(gold·노트북·리포트) | **3층 분리**(gold/노트북/리포트) · 결론 수치는 모델 경유 · 셀 출력 커밋 금지 |
 | [`publishing.md`](publishing.md) | 외부 공개(블로그·공유자료) | **공개는 커밋보다 강한 기준** · 소규모 셀(<5) 마스킹 · **발행은 사람이** · `reviewer` 보안 점검(E) 게이트 |
+| [`airflow.md`](airflow.md) | Airflow DAG(Dagster 이관) | Dagster 1:1 대응 · 로직은 `lakehouse`·DAG는 배선 · 두 벌 공존은 패리티 테스트 · Cosmos `fqn:` 완전 일치 |
 | [`docker.md`](docker.md) | Compose·Dockerfile | YAML 앵커 · `latest` 금지 · healthcheck + `depends_on` · `profiles` |
 | [`k8s.md`](k8s.md) | Kubernetes(이행) | kind on Podman · requests/probe · 로컬 레지스트리 · in-cluster Dagster |
 | [`k8s/cnpg.md`](k8s/cnpg.md) | CNPG Postgres | 카탈로그·메타 DB · 선언 롤 · 백업 · PVC 제약 |

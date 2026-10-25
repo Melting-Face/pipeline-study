@@ -21,6 +21,7 @@ on:
     branches: [main]
     paths:
       - 'images/airflow/**'
+      - 'dagster/dockerfile.d/src/dbt_pipelines/**'
       - 'gitops/charts/airflow/values.yaml'
       - 'scripts/airflow-image-version.sh'
       - 'scripts/ghcr-tag-exists.sh'
@@ -28,6 +29,7 @@ on:
   pull_request:
     paths:
       - 'images/airflow/**'
+      - 'dagster/dockerfile.d/src/dbt_pipelines/**'
       - 'gitops/charts/airflow/values.yaml'
       - 'scripts/airflow-image-version.sh'
       - 'scripts/ghcr-tag-exists.sh'
@@ -83,9 +85,10 @@ jobs:
           git show "origin/${BASE_REF}:${VALUES}" > /tmp/base-values.yaml
           base_ver="$(bash scripts/airflow-image-version.sh /tmp/base-values.yaml)"
           echo "base=${base_ver} head=${head_ver}"
-          # 이미지 내용 = 빌드 컨텍스트에서 tests/ 를 뺀 것(Dockerfile 은 dags/ 만 COPY 한다).
+          # 이미지 내용 = 빌드 컨텍스트에서 tests/ 를 뺀 것 + 추가 컨텍스트 dbt(dbt 프로젝트, COPY --from=dbt).
+          # 🔴 dbt 를 빼면 모델만 바뀐 PR 이 bump 없이 통과하고 publish 가 「변경 없음」으로 건너뛴다.
           # tests/ 만 바뀐 PR 에 bump 를 요구하면 같은 내용이 새 태그로 중복 발행된다.
-          if git diff --quiet "origin/${BASE_REF}...HEAD" -- images/airflow ':(exclude)images/airflow/tests'; then
+          if git diff --quiet "origin/${BASE_REF}...HEAD" -- images/airflow ':(exclude)images/airflow/tests' dagster/dockerfile.d/src/dbt_pipelines; then
               # 내용이 그대로면 태그만 바꾸는 PR(롤백·재지정)이다 — 이미 있는 태그를 가리켜도 정당하다
               echo "이미지 내용(images/airflow, tests 제외) 변경 없음 — bump 요구하지 않는다"
               exit 0
@@ -156,7 +159,7 @@ jobs:
           # 태그가 이미 있다 — 이번 push 의 이미지 내용 변경 여부로 skip/실패를 가른다
           if [[ "${BEFORE}" =~ ^0+$ ]] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
               echo "::warning::직전 커밋(${BEFORE})을 비교할 수 없다 — ${VERSION} 이미 있어 건너뛴다"
-          elif ! git diff --quiet "${BEFORE}" "${GITHUB_SHA}" -- images/airflow ':(exclude)images/airflow/tests'; then
+          elif ! git diff --quiet "${BEFORE}" "${GITHUB_SHA}" -- images/airflow ':(exclude)images/airflow/tests' dagster/dockerfile.d/src/dbt_pipelines; then
               echo "::error::이미지 내용이 바뀌었는데 ${IMAGE}:${VERSION} 가 이미 있다 — values 태그를 올리는 PR 이 필요하다"
               exit 1
           else
@@ -169,6 +172,10 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: images/airflow
+          # dbt 프로젝트는 컨텍스트 밖이라 이름 붙은 추가 컨텍스트로 넘긴다(Dockerfile 의 COPY --from=dbt,
+          # 로컬 테스트 images/airflow/tests/dag-import.test.sh 의 --build-context 와 같은 이름)
+          build-contexts: |
+            dbt=dagster/dockerfile.d/src/dbt_pipelines
           platforms: linux/arm64
           tags: ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
           push: true

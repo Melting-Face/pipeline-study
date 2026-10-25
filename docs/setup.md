@@ -3,18 +3,18 @@
 클론한 뒤 **위에서 아래로 실행**하면 로컬 환경이 뜨는 절차서다. 명령은 모두 **repo 루트**에서 시작한다.
 왜 이렇게 구성했는지는 다루지 않는다 — 배경은 각 절의 링크와 [`architectures/overview.md`](architectures/overview.md)를 본다.
 
-## 지금 되는 범위
+## 절별 전제
 
-GitOps 전환의 데이터 층(SeaweedFS·카탈로그 Postgres·Secret)은 PR2에서 온다.
-**지금은 오퍼레이터까지 뜨고, 적재·dbt는 돌지 않는다.** ⏸ 절은 PR2 뒤에 쓰는 절차다.
+데이터 층(SeaweedFS·카탈로그 CNPG·Secret)은 스택 A와 ArgoCD 앱(`gitops/apps/*`)·`scripts/k8s-secrets.sh`가 올린다.
+절마다 필요한 전제가 다르다.
 
-| 절 | 상태 |
+| 절 | 전제 |
 | --- | --- |
-| §0 도구 · §1 저장소 · §2 `.env` 복사 | ✅ |
-| §3 클러스터 → ArgoCD → 오퍼레이터 수렴 | ✅ |
-| §6 인프라 미접속 검증(`pre-commit`·`mypy`) | ✅ |
-| §6 `dg check defs` | ⚠️ 의존성 결함으로 실패 |
-| §2 비밀값 · §3-1 port-forward · §3-2 컴퓨트 · §5 Dagster · §6-1 원천 · §7 노트북 | ⏸ PR2 |
+| §0 도구 · §1 저장소 · §2 `.env` 복사 | 없음 |
+| §3 클러스터 → ArgoCD → 앱 수렴 | podman 머신(rootful) |
+| §6 인프라 미접속 검증(`pre-commit`·`mypy`·`dg check defs`) | `.env`(인프라 미접속) |
+| §2 비밀값 · §3-1 port-forward · §3-2 컴퓨트 · §6-1 원천 · §7 노트북 | §3 수렴 |
+| §5 Dagster | §3 수렴 + 메타 DB는 compose `postgres`(5432)만 유효 — 새 클러스터에 메타 DB 없음 |
 
 ## 검증 환경
 
@@ -85,7 +85,7 @@ cp .env.example .env
 | `PHYSIONET_*` | MIMIC-IV·eICU 다운로드 계정(§6-1) |
 | `POLYGON_API_KEY` · `FRED_API_KEY` | 시장 데이터 API 키(§6-2) |
 
-⏸ **PR2 뒤** — §3 이후 클러스터 Secret에서 비밀값을 꺼내 채운다.
+§3이 수렴한 뒤 클러스터 Secret에서 비밀값을 꺼내 채운다.
 
 ```shell
 kubectl get secret catalog-pg-app  -o jsonpath='{.data.password}'     | base64 -d   # ICEBERG_*_PASSWORD
@@ -98,8 +98,8 @@ kubectl get secret lakehouse-creds -o jsonpath='{.data.s3-secret-key}' | base64 
 ## 3. 로컬 Kubernetes
 
 설계는 [`argocd-gitops.md`](argocd-gitops.md).
-**처음이라면 [`setup/local-k8s.md`](setup/local-k8s.md)를 따른다** — 층마다 podman·terraform·kubectl 명령을
-직접 치고, 무엇이 생기는지와 kubectl로 확인하는 법을 함께 적었다. 이 절은 그 요약과 단축 경로다.
+**기본은 이 절의 단축 경로다.** 층마다 무엇이 생기는지 배우려면 [`setup/local-k8s.md`](setup/local-k8s.md)(학습용 수동)를
+따른다 — 층마다 podman·terraform·kubectl 명령을 직접 치고, kubectl로 확인하는 법을 함께 적었다.
 
 ### 층 지도
 
@@ -145,7 +145,8 @@ kubectl get applications -n argocd        # 전부 Synced · Healthy 면 수렴
 - VM 자원: `MACHINE_CPUS` · `MACHINE_MEMORY_MIB` · `MACHINE_DISK_GIB` 환경변수
   (`k8s-up.sh`가 머신을 **새로 만들 때만** 반영). 근거는 [`resource-sizing.md`](resource-sizing.md).
 - 오퍼레이터 버전·값: `gitops/charts/<app>/Chart.yaml`·`values.yaml`.
-- 앱 목록·추적 리비전: `terraform/platform/variables.tf`의 `apps`·`target_revision`.
+- 앱 목록: `gitops/apps/<app>/config.yaml`(디렉터리 하나 = 앱 하나).
+  추적 리비전: `terraform/platform/variables.tf`의 `target_revision`.
 
 ### 3-1. 접근 경로
 
@@ -158,7 +159,7 @@ kubectl get applications -n argocd        # 전부 Synced · Healthy 면 수렴
 | Prometheus UI | http://prometheus.localtest.me:8080 | ✅ 상시(`monitoring` 네임스페이스) — 인증 없음, 관리 API `/-/reload`·`/-/quit`도 같은 호스트 |
 | Dagster UI | http://localhost:3000 | ⏸ 호스트에서 `dg dev`를 띄웠을 때 — 클러스터 밖, 명령은 §5 |
 
-⏸ port-forward 경로:
+port-forward 경로:
 
 ```shell
 kubectl port-forward svc/catalog-postgres-rw 15432:5432   # Iceberg JDBC 카탈로그
@@ -208,7 +209,7 @@ kubectl -n airflow exec deploy/airflow-api-server -- airflow version
 - K8s executor 태스크의 로그는 파드와 함께 사라진다(선언된 공백, Celery 태스크는 worker PVC에서 UI가 서빙).
   설계는 [spec](superpowers/specs/2026-10-11-airflow-argocd-design.md) §7.
 
-### 3-2. 컴퓨트 기동·회수 ⏸
+### 3-2. 컴퓨트 기동·회수
 
 쓰기 직전에 올리고 끝나면 바로 내린다.
 
@@ -243,18 +244,21 @@ podman push --tls-verify=false localhost:5001/flink-runner:0.3.0
 - 태그를 올릴 때는 `k8s/spark/*.yaml`·`k8s/flink/*.yaml`의 `image:`도 함께 바꾼다.
   현재 태그 확인: `grep -rn "image:" k8s/spark/*.yaml k8s/flink/*.yaml`.
 
-## 5. Dagster (호스트 실행) ⏸
+## 5. Dagster (호스트 실행)
 
-Dagster는 클러스터에 배포하지 않고 호스트에서 돌린다. 메타 DB 위치는 PR2가 정한다
+Dagster는 클러스터에 배포하지 않고 호스트에서 돌린다. 메타 DB는 `.env`의 `POSTGRES_*`가 가리키는
+Postgres다(`dagster.yaml`). 새 클러스터에는 메타 DB가 없어 지금 유효한 것은 compose `postgres`(5432)뿐이다
 ([operations.md](operations.md) §1-2).
 
 ```shell
-kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 별도 터미널 (S3는 스택 A 컨테이너에 직결)
+podman compose --profile legacy-meta up -d                # 메타 DB(compose postgres, 5432)
+kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 별도 터미널 — Iceberg 카탈로그 (S3는 스택 A 직결)
 
-(cd dagster/dockerfile.d/src && DAGSTER_HOME="$PWD" uv run dg dev)   # http://localhost:3000
+(cd dagster/dockerfile.d/src && DAGSTER_HOME="$PWD" uv run --env-file ../../../.env dg dev)   # http://localhost:3000
 ```
 
-- `.env`의 `POSTGRES_PORT`로 메타 DB를 하나만 고른다 — 15432=port-forward, 5432=compose `postgres`.
+- `.env`의 `POSTGRES_PORT`는 5432(compose `postgres`)로 둔다 — 15432(port-forward)는 카탈로그 CNPG라
+  `dagster` DB가 없다.
   compose `--profile host-dagster`와 호스트 `dg dev`를 섞지 않는다.
 - compose는 기본 `up`으로 아무것도 띄우지 않는다. 필요한 profile만 켠다:
   `host-dagster`(webserver·daemon·postgres) · `legacy-meta`(postgres).
@@ -271,7 +275,7 @@ uv run --project dagster/dockerfile.d/src --with types-PyYAML --with types-reque
   --with mypy mypy dagster/dockerfile.d/src/src
 
 # 정의 로드 — `.env` 값이 env로 있어야 한다(`common/constants.py`가 import 시점에 읽는다)
-(cd dagster/dockerfile.d/src && DAGSTER_HOME="$(mktemp -d)" uv run dg check defs)
+(cd dagster/dockerfile.d/src && DAGSTER_HOME="$(mktemp -d)" uv run --env-file ../../../.env dg check defs)
 
 # 외부 접속 — 해당 원천을 처음 켜기 직전
 uv run scripts/physionet_access_probe.py
@@ -280,13 +284,13 @@ uv run scripts/stock_source_access_probe.py --source all
 
 관문별 실행 규약은 [`test/manual-gates.md`](test/manual-gates.md), 테스트 계층은 [`test.md`](test.md).
 
-## 6-1. 원천 데이터 가져오기 ⏸
+## 6-1. 원천 데이터 가져오기
 
 전제: `s3://warehouse` 버킷이 있다(스토리지 프로비저닝이 만든다). 존재는 `list_buckets`가 아니라
 `head_bucket`으로 확인한다.
 
 1. `.env`에 `PHYSIONET_USERNAME`/`PHYSIONET_PASSWORD`를 채운다(PhysioNet credentialed 계정 필요).
-2. in-cluster로 쓰려면 Secret `physionet-creds`를 만든다(PR2 `k8s-secrets.sh`).
+2. in-cluster로 쓰려면 Secret `physionet-creds`를 만든다(`scripts/k8s-secrets.sh`).
 3. `uv run scripts/physionet_access_probe.py` — 종료코드 `0`이어야 진행한다.
 4. Dagster UI에서 `raw_*` 자산을 머티리얼라이즈한다.
    `raw_mimiciv_chartevents`·`raw_mimiciv_labevents`는 동시에 돌리지 않는다.
@@ -306,7 +310,7 @@ uv run scripts/stock_source_access_probe.py --source all
 키를 채운 뒤 `uv run scripts/stock_source_access_probe.py --source all` — 종료코드 `0`이어야 자산을 켠다.
 발급 절차는 [`setup/market-data-keys.md`](setup/market-data-keys.md).
 
-## 7. 노트북 (옵션) ⏸
+## 7. 노트북 (옵션)
 
 ```shell
 (cd dagster/dockerfile.d/src \

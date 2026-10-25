@@ -180,9 +180,9 @@ inner join {{ ref('icustay_times') }} as t using (stay_id)
 | 실험 추적 | **없음** — `metrics.json` 파일 + 리포트 | 후보 **MLflow**는 미채택. 재검토 트리거는 아래 |
 
 **학습을 Spark에 올리지 않는 이유는 취향이 아니라 예산이다.** `spark.executor.instances ≤ 1`
-경계를 Spark Connect가 상시 소비하고 Dagster 상주는 회수 다이얼이 듣지 않는다 —
+경계가 있고(Spark Connect가 상주하던 시절에는 그 1개를 상시 소비했다) Dagster 상주는 회수 다이얼이 듣지 않는다 —
 executor를 늘리면 느려지는 게 아니라 **스케줄 자체가 실패**한다
-([`../resource-sizing.md`](../resource-sizing.md) §C). 그래서 집계·피처는 Spark에서 끝내고
+([`../resource-sizing.md`](../resource-sizing.md) §C). 그래서 집계·피처는 dbt(Trino)에서 끝내고
 학습만 호스트로 내린다. 표 형식 데이터 규모에서는 이 분업이 성능상으로도 불리하지 않다.
 
 **MLflow를 두지 않는 이유**는 상주 컴퓨트·스토리지 예산과 노출 축이 함께 늘기 때문이다.

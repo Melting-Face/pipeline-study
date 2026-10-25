@@ -8,10 +8,10 @@ Dagster `defs/<dataset>` 서브프로젝트가 S3의 `csv.gz`를 읽어 적재�
 여기 기술한 컬럼·itemid는 모두 `source.yml`·실버 `.sql`·`schema.yml`에서 **직접 확인된 것만** 담았다.
 데이터셋을 추가할 때는 이 문서에 `## <dataset> 원천 테이블` 절을 덧붙인다 — 다른 문서를 고칠 일이 아니다.
 
-원천이 파일이 아니라 공개 API인 데이터셋도 있다(**Frankfurter 환율** — 아래). **GitHub 트렌드**는
+원천이 파일이 아니라 공개 API인 데이터셋도 있다(**Frankfurter 환율** — 아래). **Frankfurter 환율과
+Polygon 시세**는 적재 주체가 **Airflow**다(뉴스는 Dagster에 남는다). **GitHub 트렌드**도
 적재 주체가 Airflow이고 Iceberg가 아니라 **raw JSON에서 멈춘다**(테이블이 아니라 파일 레이아웃을 적는다).
-⚠️ `usgs_water`는
-적재돼 있으나 이 문서에 절이 **없다**(선언된 공백).
+**USGS 수문**은 하류가 dbt가 아니라 **Flink 스트리밍**이라 bronze가 전부 `append`이고 중복이 의도적으로 쌓인다.
 
 > 저장은 UTC, 표시·스케줄은 KST. 저장/조인 흐름·컨테이너 구성은 [architectures/overview.md](architectures/overview.md),
 > source/ref·메달리온 태깅 규칙은 [conventions/dbt.md](conventions/dbt.md) 참고.
@@ -181,8 +181,8 @@ ICU 측정 항목 사전. `itemid`로 chartevents·inputevents·outputevents와 
 
 ## eICU 원천 테이블
 
-Iceberg 네임스페이스 `eicu`. `source.yml`에 3개 테이블이 선언돼 있다. **현재 실버 dbt 모델은
-MIMIC-IV만 존재하며 eICU는 bronze 적재까지만** 되어 있어 아래는 참조용으로 간략히 둔다.
+Iceberg 네임스페이스 `eicu`. `source.yml`에 3개 테이블이 선언돼 있다. **eICU에는 실버 dbt 모델이
+없고 bronze 적재까지만** 되어 있어 아래는 참조용으로 간략히 둔다.
 `nurse_charting`은 대용량이라 청크 append 경로로 적재한다.
 
 ### eicu.patient
@@ -228,8 +228,10 @@ ICU stay 단위 인구통계·재원 정보. eICU의 중심 테이블. **`*time2
 ## Frankfurter 환율 원천 테이블
 
 Iceberg 네임스페이스 `frankfurter_fx`. 앞의 둘과 성격이 다르다 — 원천이 S3 파일이 아니라 **공개 HTTP API**이고,
-**이 저장소의 첫 일자 파티션 자산**이다. dbt 모델을 두지 않으므로 `source.yml`·`dbt_project.yml` 항목이
-없다(**건너뛴 것이지 빠뜨린 것이 아니다** — [conventions/dagster.md](conventions/dagster.md) 체크리스트 참조).
+**이 저장소의 첫 일자 파티션 테이블**이다. **적재 주체는 Airflow DAG `fx_rates_daily`**
+(`images/airflow/dags/`, 로직 `lakehouse/fx.py`)이고 처음엔 Dagster 자산이었다. 이 테이블 위에 bronze 전용
+dbt 모델은 없고, 소비자 `us_equity_krw`가 `source.yml`로 받는다 — 원화 종가 규칙은
+[`dataset_schema/us-equity-krw.md`](dataset_schema/us-equity-krw.md).
 
 원천은 **Frankfurter**(환율을 무인증·무쿼터로 제공하는 공개 API)다. 처음 대상이던 상용 API는 **무료 플랜이
 과거 일자 조회를 막아** 원천을 바꿨다 — 일자 파티션은 과거 조회가 전제라 그 제약이 설계를 무효화했다.
@@ -252,7 +254,7 @@ cited as the source."* 로 **must**를 쓴다(요청이 아니다). 값을 외�
 
 | 컬럼 | 타입 | 의미 |
 |------|------|------|
-| `rate_date` | string | **우리가 요청한 날짜** = Dagster 파티션 키. 파티션 교체의 필터 대상 |
+| `rate_date` | string | **우리가 요청한 날짜** = 파티션 키(Airflow `data_interval_start`). 파티션 교체의 필터 대상 |
 | `source_date` | string | **원천이 응답에 에코한 날짜.** `rate_date`와 다를 수 있다(아래) |
 | `base_currency` | string | 기준 통화. 원천 기본값은 `EUR`이며 응답에서 읽는다 |
 | `quote_currency` | string | 상대 통화(ISO 4217) |
@@ -263,20 +265,32 @@ cited as the source."* 로 **must**를 쓴다(요청이 아니다). 값을 외�
 돌려준다**(대조 실험으로 실측 — 토요일 요청에 HTTP 200, 통화 수는 평일과 동일, `date` 필드만 시프트).
 상태코드로도 행 수로도 값의 범위로도 잡히지 않고 **응답의 날짜 필드 하나만 다르다.** 원천 문서는
 이 동작을 서술하지 않는다.
-그래서 요청값과 응답값을 나란히 두고 일치 여부를 머티리얼라이즈 메타데이터(`date_matches_request`)에
+그래서 요청값과 응답값을 나란히 두고 일치 여부를 Asset event의 `extra`(`date_matches_request`)에
 남긴다 — 판정하지 않고 **관측**만 한다([conventions/data-quality.md](conventions/data-quality.md)).
 ⇒ 이 테이블을 소비하는 쪽은 **`rate_date`로 조인하면 주말에 금요일 값이 딸려온다**는 것을 전제해야
 한다. 영업일만 쓰려면 `rate_date = source_date` 조건을 명시적으로 건다.
 
 **적재 모드**는 `replace_partition_in_iceberg`(파티션 범위만 교체)다. `append`는 재실행마다 행이
-늘고, `replace`는 `drop_table`이라 스냅샷 계보를 끊는다. 파티션 시작일·타임존의 근거는
-`defs/frankfurter_fx/constants.py` 주석에 있다(둘 다 조용히 어긋나는 축이다).
+늘고, `replace`는 `drop_table`이라 스냅샷 계보를 끊는다. 파티션 키가 UTC인 근거(API 날짜 파라미터로
+나간다)는 [timezone.md](conventions/timezone.md), 스키마 고정은 `images/airflow/tests/lib/test_parity.py`다.
+
+---
+
+## USGS 수문 원천 테이블
+
+Iceberg 네임스페이스 `usgs_water` — 순간값 `water_iv_raw`(15분)·관측소 메타 `water_sites`(일 1회), 둘 다 `append`.
+🔴 **같은 관측점·같은 관측소가 여러 행인 것이 정상이다**(재조회 창 겹침·차원 재적재) — 최신 판은 키별
+`ingested_at` 최대값으로 고르고, 행 수를 관측점 수로 읽지 않는다. 하류는 dbt가 아니라 Flink PoC(`iv_stream_echo`·
+`iv_joined`)이며 분석 입력이 아니다. 스키마·적재 모드 근거·함정은
+[`dataset_schema/usgs-water.md`](dataset_schema/usgs-water.md)가 정본이다.
 
 ---
 
 ## Polygon 시장 데이터 원천 테이블
 
 Iceberg 네임스페이스 `polygon_market`. 공개 HTTP API이고 두 축(시세·뉴스) 모두 **일자 파티션 교체**다.
+**적재 주체가 축마다 다르다** — 시세는 Airflow DAG `equity_ohlcv_daily`(로직 `lakehouse/polygon.py`),
+뉴스는 Dagster `defs/polygon_market/`. 같은 API 키의 분당 한도를 두 오케스트레이터가 나눠 쓴다.
 인증은 `Authorization: Bearer` 헤더라 크리덴셜이 URL에 실리지 않는다 — 쿼리 파라미터로만 받는 원천
 (FRED)과 갈리는 지점이고, 그래서 이쪽에는 예외 마스킹 래퍼가 없다(**없어도 되는 것이지 빠뜨린 것이 아니다**).
 
@@ -289,8 +303,9 @@ Iceberg 네임스페이스 `polygon_market`. 공개 HTTP API이고 두 축(시�
 
 ### polygon_market.equity_ohlcv_daily
 
-하루치 **전 미국 티커**를 한 번의 호출로 받는다. 파티션과 요청이 1:1이고, 그날 거래된 종목 전체가 응답
-그 자체라 **별도 유니버스 테이블 없이 생존 편향이 구조적으로 해소**된다(상장폐지 종목도 그날까지 행이 남는다).
+**적재: Airflow DAG `equity_ohlcv_daily`.** 하루치 **전 미국 티커**를 한 번의 호출로 받는다.
+파티션과 요청이 1:1이고, 그날 거래된 종목 전체가 응답 그 자체라
+**별도 유니버스 테이블 없이 생존 편향이 구조적으로 해소**된다(상장폐지 종목도 그날까지 행이 남는다).
 
 | 컬럼 | 타입 | 의미 |
 |------|------|------|
@@ -315,7 +330,7 @@ UTC 시각으로 온다).
 해석은 가정을 함께 적어 실버가 붙인다.
 
 **`source_date`가 따로 있는 이유**는 `frankfurter_fx`와 같다 — 휴장일 요청에 직전 거래일 값이 조용히
-올 수 있는 축을 관측용으로 남긴다. 판정하지 않고 메타데이터에 값만 적는다.
+올 수 있는 축을 관측용으로 남긴다. 판정하지 않고 Asset event에 값만 적는다.
 
 ### polygon_market.news_articles
 
@@ -400,6 +415,7 @@ S3 경로 `s3://warehouse/raw/github_trending/dt=<YYYY-MM-DD>/repos.json`. **Air
 `github_trending`이 GitHub Search API로 수집하며 **Iceberg 테이블·`source.yml`·dbt 모델이 없다**(raw에서 멈춘다).
 「트렌드」는 github.com/trending 이 아니라 *최근 생성 저장소의 누적 별 순위*라는 **근사**다.
 레이아웃·필드·소비 시 함정은 [`dataset_schema/github-trending.md`](dataset_schema/github-trending.md)가 정본이다.
+bronze 적재는 설계만 있고 구현 전이다 — [`dataset_schema/github-trending-bronze.md`](dataset_schema/github-trending-bronze.md).
 
 ---
 

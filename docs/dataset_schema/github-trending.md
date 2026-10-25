@@ -30,7 +30,8 @@ Hive식 `dt=` 접두어는 나중에 외부 테이블·bronze로 올릴 때 파�
 ## `items[]`
 
 원천 응답 필드 중 `KEEP_FIELDS` 8종만 남기고 나머지(`owner` 객체·라이선스 등)는 버린다.
-타입은 원천 문서의 응답 스키마 기준이다(`topics`의 null 허용 여부는 `미확인`).
+타입은 원천 OpenAPI 명세(`repo-search-result-item`) 기준이다. **`topics`만 `required`가 아니다** — 원천 응답에
+키가 없을 수 있고, DAG가 `repo.get(k)`로 담으므로 그때 저장 값은 `null`이 된다(원천의 null이 아니라 **키 부재**).
 
 | 키 | 타입 | 의미 |
 |----|------|------|
@@ -41,7 +42,7 @@ Hive식 `dt=` 접두어는 나중에 외부 테이블·bronze로 올릴 때 파�
 | `stargazers_count` | integer | **수집 시점의 누적** 별 수 |
 | `forks_count` | integer | 수집 시점의 누적 포크 수 |
 | `created_at` | string(date-time, UTC) | 저장소 생성 시각. 검색 조건이 걸리는 컬럼 |
-| `topics` | array\<string\> | 저장소 토픽. 비어 있을 수 있다 |
+| `topics` | array\<string\> \| null | 저장소 토픽. 빈 배열과 `null`(원천 키 부재)을 구분한다 |
 
 ## 소비 전에 알아야 할 것
 
@@ -67,9 +68,11 @@ Hive식 `dt=` 접두어는 나중에 외부 테이블·bronze로 올릴 때 파�
 
 ## 공백
 
-bronze(Iceberg) 테이블·`source.yml`·dbt 모델이 **없고**, 위 Asset을 받는 하류 DAG도 없다 —
-raw 착지에서 멈춘 상태다(**건너뛴 것이지 빠뜨린 것이 아니다**). 이 데이터를 분석에 쓰려면 bronze 적재를
-먼저 둔다(임시 SQL 결과를 리포트에 옮기지 않는다 — [conventions/analysis.md](../conventions/analysis.md)).
+**설계는 있고 구현은 미완이다.** bronze(Iceberg) 테이블·`source.yml`·dbt 모델은 **없고**, raw 착지에서
+멈춘 상태다(**건너뛴 것이지 빠뜨린 것이 아니다**). 적재 주체(Airflow 태스크 + pyiceberg)·스키마·덮어쓰기 모드·
+dbt 연결·검증 계획은 [bronze 적재 설계](github-trending-bronze.md)가 갖는다 — 같은 DAG에 `load_bronze`를 이으므로
+위 Asset을 받는 별도 하류 DAG는 두지 않는다. 이 데이터를 분석에 쓰려면 그 구현이 먼저다
+(임시 SQL 결과를 리포트에 옮기지 않는다 — [conventions/analysis.md](../conventions/analysis.md)).
 거버넌스 판정은 [security/datasets.md](../security/datasets.md)(security §0-1) — **저장소 단위 값은 공개물에 담지 않는다.**
 
 ## 참고
@@ -77,4 +80,6 @@ raw 착지에서 멈춘 상태다(**건너뛴 것이지 빠뜨린 것이 아니�
 - GitHub Docs — *REST API endpoints for search › Search repositories* (응답 스키마·`incomplete_results`·
   `per_page` 상한·Search 한도): https://docs.github.com/en/rest/search/search
 - GitHub Docs — *Rate limits for the REST API*: https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
+- GitHub REST API OpenAPI 명세 — `components.schemas.repo-search-result-item`의 `required`·`nullable`:
+  https://github.com/github/rest-api-description (`descriptions/api.github.com/api.github.com.json`)
 - github.com/trending 에 공식 API가 없다는 서술은 DAG docstring의 주장이며 1차 출처로 확인하지 않았다(`미확인`).

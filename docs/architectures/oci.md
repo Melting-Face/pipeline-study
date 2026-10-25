@@ -1,5 +1,10 @@
 # OCI + Terraform + k3s (아키텍처 · 프로젝트 관점)
 
+## 이 프로젝트에서의 역할
+
+쓰지 않는다(보류) — 대신 로컬 kind on Podman.
+OCI Always Free A1 + Terraform + k3s로 클라우드에 올리는 경로이고, 스택 `terraform/oci-k3s/`는 보류 상태다.
+
 ## 개요
 
 **OCI(Oracle Cloud Infrastructure) Always Free** 등급의 **Ampere A1(ARM64)** 컴퓨트에 **k3s**
@@ -17,7 +22,7 @@
   > 출처: [Always Free Resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm) ·
   > [Oracle Cloud Customer Connect 공지](https://community.oracle.com/customerconnect/discussion/970310/oci-always-free-updated-ampere-a1-compute-allocation)
 
-## 이 프로젝트에서의 위치 — 🔎 학습·확장 경로(로컬 이후)
+## 왜 이걸 골랐나 — 🔎 학습·확장 경로(로컬 이후)
 
 - **채택 방향**: 로컬 **kind on Podman**(자원은 [`scripts/k8s-env.sh`](../../scripts/k8s-env.sh)가 **정본**)으로 검증한
   K8s 재설계를, **비용 0**의 상시 클러스터(**2 OCPU/12 GB**)에서 재현한다. 포트폴리오상

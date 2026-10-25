@@ -5,8 +5,8 @@
 
 ## 무엇을 바꿨나
 
-노트북과 dbt가 붙는 SQL 엔드포인트로 **Spark Connect** 서버를 쓴다. 배치 잡은 끝나면 사라져
-세션을 유지할 수 없으므로, 이것만 Deployment로 상주시킨다.
+노트북과 dbt가 붙는 SQL 엔드포인트로 **Spark Connect** 서버를 썼다(이후 철거했고, 지금 그 자리는
+Trino다). 배치 잡은 끝나면 사라져 세션을 유지할 수 없으므로, 이것만 Deployment로 상주시켰다.
 
 그 서버가 **`--master local[2]`** 로 돌고 있었다. 이름은 클러스터인데 실제로는 **파드 한 개 안의
 로컬 모드**였고 executor가 없었다. 쿠버네티스는 그 파드를 스케줄했을 뿐, 계산을 분산하지 않았다.
@@ -34,7 +34,7 @@ client mode를 고르면 세 가지가 따라온다.
 파드 목록에 그냥 `Running`으로 보인다. 에러도, 재시작도, 알림도 없다.
 
 ```shell
-kubectl scale deploy/spark-connect --replicas=0
+kubectl scale deploy/spark-connect --replicas=0   # 당시 명령 — 이 배포는 철거됐다
 kubectl get pods -l spark-role=executor   # 여기가 비어야 회수가 끝난 것이다
 ```
 

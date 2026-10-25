@@ -75,7 +75,8 @@
 
 - Dagster 에셋은 함수와 데코레이터로 명시적으로 정의한다. 불필요한 클래스·팩토리
   동적 생성을 피한다.
-- 공통 로직은 `dagster_project/common/`, 정의는 `dagster_project/defs/`에 둔다.
+- 공통 로직은 `dagster_project/common/`, 정의는 `dagster_project/defs/`에 둔다
+  (실경로 접두 `dagster/dockerfile.d/src/src/`).
 - 일반 파일은 `pa.Table` + Iceberg IO manager, 대용량 파일은 스트리밍 청크 append
   경로를 사용한다.
 - dbt 적재분은 `source()`와 `meta.dagster.asset_key`로 lineage를 연결한다.
@@ -84,7 +85,7 @@
 - 비밀값은 환경변수 참조로만 주입하고 코드·문서·응답에 값을 노출하지 않는다.
 - 같은 로직의 추출은 세 번째 반복부터 검토한다(Rule of Three).
 - 상세 규칙은 `docs/conventions/dagster.md`, `dbt.md`, `python.md`,
-  `timezone.md`, `docker.md`, `k8s.md`, `terraform.md`를 따른다.
+  `timezone.md`, `docker.md`, `k8s.md`, `terraform.md`, `airflow.md`(Dagster→Airflow 이관)를 따른다.
 
 ## 데이터 분석과 거버넌스
 

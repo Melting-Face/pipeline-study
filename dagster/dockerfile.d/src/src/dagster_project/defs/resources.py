@@ -34,7 +34,6 @@ from dagster_project.common.physionet import PhysioNetResource
 from dagster_project.common.polygon import PolygonResource
 from dagster_project.common.trino import TrinoResource
 from dagster_project.defs.eicu.constants import NAMESPACE as EICU_NS
-from dagster_project.defs.frankfurter_fx.constants import NAMESPACE as FRANKFURTER_FX_NS
 from dagster_project.defs.fred_calendar.constants import NAMESPACE as FRED_CALENDAR_NS
 from dagster_project.defs.mimic_iv.constants import NAMESPACE as MIMICIV_NS
 from dagster_project.defs.polygon_market.constants import NAMESPACE as POLYGON_MARKET_NS
@@ -208,47 +207,13 @@ def resources() -> dg.Definitions:
                     }
                 ),
             ),
-            # Frankfurter 환율 bronze. 🔴 **일자 파티션 자산**이라 IO 매니저를 쓰지 않고
+            # Polygon 뉴스 bronze. 🔴 **일자 파티션 자산**이라 IO 매니저를 쓰지 않고
             # 테이블 바인딩으로 직접 적재한다 — 파티션 범위만 교체해야 재실행이
             # 멱등해지는데(`replace_partition_in_iceberg`), IO 매니저 경로에는
-            # 그 단위가 없다.
-            "frankfurter_fx_rates_table": IcebergTableResource(
-                name=CATALOG_NAME,
-                namespace=FRANKFURTER_FX_NS,
-                table="fx_rates_daily",
-                config=IcebergCatalogConfig(
-                    properties={
-                        "type": "sql",
-                        "uri": ICEBERG_CATALOG_URI,
-                        "warehouse": WAREHOUSE,
-                        "s3.endpoint": S3_ENDPOINT,
-                        "s3.access-key-id": S3_ACCESS_KEY_ID,
-                        "s3.secret-access-key": S3_SECRET_ACCESS_KEY,
-                        "s3.region": AWS_REGION,
-                        "s3.path-style-access": "true",
-                    }
-                ),
-            ),
-            # Polygon 시세 bronze. 일자 파티션 교체라 IO 매니저를 쓰지 않는다
-            # (근거는 위 frankfurter 주석과 같다).
-            "polygon_market_ohlcv_table": IcebergTableResource(
-                name=CATALOG_NAME,
-                namespace=POLYGON_MARKET_NS,
-                table="equity_ohlcv_daily",
-                config=IcebergCatalogConfig(
-                    properties={
-                        "type": "sql",
-                        "uri": ICEBERG_CATALOG_URI,
-                        "warehouse": WAREHOUSE,
-                        "s3.endpoint": S3_ENDPOINT,
-                        "s3.access-key-id": S3_ACCESS_KEY_ID,
-                        "s3.secret-access-key": S3_SECRET_ACCESS_KEY,
-                        "s3.region": AWS_REGION,
-                        "s3.path-style-access": "true",
-                    }
-                ),
-            ),
-            # Polygon 뉴스 bronze. 🔴 **append가 아니라 파티션 교체다** — 원천이
+            # 그 단위가 없다. (시세 `polygon_market.equity_ohlcv_daily`·환율
+            # `frankfurter_fx.fx_rates_daily` 바인딩은 적재가 Airflow로 이관돼 없다.)
+            #
+            # **append가 아니라 파티션 교체다** — 원천이
             # `published_utc` 날짜 구간 질의를 지원해 RSS의 롤링 윈도우 유실 축이
             # 없고, 그래서 재실행이 행 수를 늘리지 않는다.
             "polygon_market_news_table": IcebergTableResource(

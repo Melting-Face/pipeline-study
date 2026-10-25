@@ -12,7 +12,7 @@
 
 - **오퍼레이터/컨트롤러**(Spark Operator·Flink Operator): `Deployment`.
 - **컴퓨트 잡**(Spark driver/executor·Flink JM/TM): 오퍼레이터가 CRD(`SparkApplication`·`FlinkDeployment`)로 생성.
-- **상태 저장**: 오브젝트 스토리지(SeaweedFS)는 **클러스터 밖**(compose)이라 클러스터와 수명이 갈린다.
+- **상태 저장**: 오브젝트 스토리지(SeaweedFS)는 **클러스터 밖**(스택 A 컨테이너)이라 클러스터와 수명이 갈린다.
   클러스터 안의 **카탈로그 postgres는 오퍼레이터(CNPG)** 가 관리한다(§12) — 파드·PVC·서비스를 오퍼레이터가 만든다.
   **`emptyDir`를 상태 저장에 쓰지 않는다** — CNPG 이전 전까지 카탈로그 PG가 `emptyDir`였고,
   파드 재기동만으로 Iceberg 테이블 메타가 전부 소멸하는 상태였다(S3 parquet은 남아 "부분 생존"으로 보인다).
@@ -284,7 +284,8 @@ resources:
   싱크는 Iceberg(§11 공유 카탈로그), 체크포인트는 SeaweedFS(S3, path-style).
   상태 백엔드는 RocksDB. 러너 이미지는 `iceberg-flink-runtime`+S3A 의존을 포함해
   로컬 레지스트리에 push한다(§10 이름 규칙).
-- **역할 경계**: **배치는 Spark, 스트림은 Flink**로 분리한다(엔진 중복 금지). ad-hoc SQL은 Spark SQL로 대체(Trino 제거).
+- **역할 경계**: **배치는 Spark, 스트림은 Flink**로 분리한다(엔진 중복 금지). SQL 변환·ad-hoc 조회는 k8s Trino다
+  (재설계의 Trino 제거 결정은 번복 — [../redesign.md](../redesign.md) §3).
 
 ## 9-3. 컴퓨트 동시 기동 규약
 
@@ -408,7 +409,7 @@ resources:
     재검토 트리거: 새 TLS 엔드포인트 신설 또는 클러스터 재생성 시.
   - 클러스터는 스택 A가 소유하므로 재생성은 `terraform destroy`/`apply`(스택 A)로 한다. `k8s-down.sh`는
     아직 `kind delete cluster`를 직접 수행해 state와 어긋나고 **레지스트리까지 지워** 러너 이미지를 잃는다
-    (PR2 정리 대상).
+    (정리 대상).
 - **Ingress 규칙**: 컨트롤러는 **ingress-nginx**(Terraform 스택 B가 helm 차트로 설치, 버전은 `terraform/platform`에 핀).
   호스트명은 **`<service>.localtest.me`** — 공개 DNS가 127.0.0.1로 응답해 `/etc/hosts` 수정이 필요 없다.
   - Flink는 오퍼레이터 네이티브 **`FlinkDeployment.spec.ingress`**(`template`·`className`)를 쓴다.
@@ -445,7 +446,8 @@ resources:
 요지만: 오퍼레이터는 CNPG(chart 0.29.0 = app 1.30.0), 서비스는 **`-rw`/`-ro`/`-r` 접미사**,
 크리덴셜은 **선언 시크릿 + `managed.roles`**(bootstrap은 초기화 1회라 회전이 안 된다),
 probe·RBAC·securityContext는 **CR에 쓰지 않는다**(오퍼레이터가 채운다), PVC는 **사후 확장 불가**,
-Dagster 메타 DB는 **새 클러스터에 없다**(구 클러스터의 `Database` CR 선언은 철거, 위치는 PR2가 정한다).
+Dagster 메타 DB는 **새 클러스터에 없다**(구 클러스터의 `Database` CR 선언은 철거,
+Airflow 대체 결정 — [../argocd-gitops.md](../argocd-gitops.md) D6).
 
 ## 참고
 

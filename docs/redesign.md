@@ -14,7 +14,7 @@
 - **한계**: 단일 노드 자원 상한(Trino 메모리 제약·[resource-sizing.md](resource-sizing.md)), 스케일아웃 경로 부재.
 - **목표 지향점**: **학습/포트폴리오**. 실제 프로덕션 패턴인 **오케스트레이터(컨트롤 플레인) ↔ 원격 컴퓨트 분리**를
   로컬에서 재현한다. **분리는 프로세스 경계이지 머신 경계가 아니다** — Dagster도 같은 클러스터의
-  워크로드로 두되(Deployment ×2), 컴퓨트는 **오퍼레이터가 띄우는 별도 파드**로 옮긴다.
+  워크로드로 두되(Deployment ×2 — 이 배치는 이후 번복됐다, §2), 컴퓨트는 **오퍼레이터가 띄우는 별도 파드**로 옮긴다.
 - **로드맵의 종착지는 인프라가 아니라 분석이다.** Phase 0~4는 수단을 세우고, **Phase 5에서 gold 마트·
   리포트로 닫힌다**(§4). 인프라가 "도는 것"은 완료 조건이 아니다.
 
@@ -31,11 +31,13 @@
 │  Spark Operator (Helm) → SparkApplication → driver/executor       │  [BATCH]
 │  Flink Operator (Helm) → FlinkDeployment → JobManager/TaskManager │  [BATCH·STREAM]
 │  Iceberg bronze 테이블 ← 스트림 소스(changelog 읽기)              │  [STREAM]
-│  Service seaweedfs (ExternalName) → 클러스터 밖 SeaweedFS(compose)     │
+│  Service seaweedfs (ExternalName) → 클러스터 밖 SeaweedFS(스택 A)   │
 │  CloudNativePG (Helm) → Cluster(CRD) → Postgres(+PVC)             │
 │      ← Iceberg JDBC 카탈로그(iceberg DB) · Dagster 메타(dagster DB) │
 │  로컬 레지스트리 (kind local-registry)                             │
 └──────────────────────────────────────────────────────────────────┘
+   ※ 이 그림의 Dagster 행·`dagster DB`는 구 판정이다 — 현행은 호스트 Dagster이고 dagster DB는 없다.
+      Airflow(ArgoCD 앱)·Trino·Prometheus가 클러스터에 있다(아래 「Dagster 실행 위치」).
    Iceberg 공유:  Spark(batch write) ↔ dbt-trino(마트, k8s Trino) ↔ Flink(batch·stream r/w)
    ※ BATCH(Spark)·STREAM(Flink)은 동시 기동 허용(실측 — 경계 3개는 conventions/k8s.md §9-3)
    ※ 스트림 소스는 Redpanda → Iceberg bronze로 변경(결정·같은 날 이행). Redpanda는 미도입 유지
@@ -60,10 +62,13 @@
 > ⚠️ **배치 경로(`SparkApplication`)는 이와 별개로 오퍼레이터가 driver/executor를 띄운다.**
 > 그림에서 두 경로가 같은 "Spark"로 보이지만 **실행 모델이 다르다.**
 
-- **Dagster도 클러스터 안(in-cluster)** 에서 컨트롤 플레인 역할을 한다. 오케스트레이터와 컴퓨트를
+- ~~**Dagster도 클러스터 안(in-cluster)** 에서 컨트롤 플레인 역할을 한다.~~
+  → **번복됐다 — Dagster는 호스트에서 돈다.** in-cluster 판본은 ArgoCD 전환으로 철거됐다
+  ([argocd-gitops.md](argocd-gitops.md) D6). 아래는 당시 근거의 이력이다.
+  당시 근거: 오케스트레이터와 컴퓨트를
   가르는 것은 **프로세스·수명 경계**이지 머신 경계가 아니다 — Databricks/EMR을 트리거하는 패턴은
   그대로이고, 다만 트리거하는 쪽이 같은 클러스터에 산다.
-  🔴 **종전 서술("호스트 PC에 두고 `dg dev`로 돈다")은 폐기됐다.** 호스트 시절에는 클러스터에 닿기 위해
+  당시에는 종전 서술("호스트 PC에 두고 `dg dev`로 돈다")을 폐기했다. 호스트 시절에는 클러스터에 닿기 위해
   port-forward 2개와 TLS Ingress + 로컬 CA 신뢰 주입이 필요했고, in-cluster에서 그 우회가 전부
   **서비스 DNS 직결**로 사라졌다. 정본은 [architectures/dagster.md](architectures/dagster.md).
 - **컴퓨트·데이터 서비스는 K8s로 통일**한다(하이브리드 이중관리 회피). 컴퓨트는 **Spark(배치)+Flink(스트림)**.
@@ -120,7 +125,7 @@ lineage(스트림): **Iceberg bronze(changelog 스트리밍 읽기) → Flink(�
 | 데이터 서비스 위치 | 카탈로그 Postgres는 **K8s(CNPG)**, SeaweedFS는 **클러스터 밖 컨테이너**(compose를 거쳐 Terraform 스택 A 소유) | 처음엔 단일 패러다임(K8s)으로 통일했으나, 스토리지 수명이 클러스터에 묶여 재생성 때 레이크가 함께 사라졌다. 실무처럼 오브젝트 스토리지를 외부 서비스로 두고 `ExternalName`으로 닿는다 |
 | 카탈로그 Postgres 관리 | **CloudNativePG 오퍼레이터**(← Deployment+emptyDir) | PVC·failover·PITR·튜닝이 CR 한 장. Spark·Flink 오퍼레이터와 **같은 선언형 패러다임**. 이전 구성은 재기동만으로 카탈로그가 소멸했다 |
 | SeaweedFS 관리 | **Terraform 스택 A의 단일 컨테이너**(`docker_container.seaweedfs`, 오퍼레이터 미채택 🔎) | 클러스터 밖이라 오퍼레이터 대상이 아니다. 로컬 인프라 층을 IaC로 일원화해 순서를 의존 그래프가 지킨다 |
-| Dagster 실행 위치 | **in-cluster**(개정 — 구 판정은 "호스트 유지") | 우회 경로(port-forward 2개 + TLS Ingress + CA 주입)가 서비스 DNS 직결로 대체된다. 호스트 headroom 회수는 예산 설계의 전제였다. run launcher는 `DefaultRunLauncher` 유지 |
+| Dagster 실행 위치 | **호스트**(재개정 — 직전 판정 "in-cluster"는 ArgoCD 전환 D6로 철거) | 직전 판정의 근거: 우회 경로(port-forward 2개 + TLS Ingress + CA 주입)가 서비스 DNS 직결로 대체된다. 호스트 headroom 회수는 예산 설계의 전제였다. run launcher는 `DefaultRunLauncher` 유지 |
 
 > **※ 트리거 행 개정 — `PipesK8sClient`를 쓰지 않는다.**
 > Pipes는 K8s Job/Pod를 띄우는 방식인데, Flink SQL 경로는

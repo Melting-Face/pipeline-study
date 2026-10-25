@@ -12,7 +12,7 @@
   런타임 고유 설정은 복제하지 않는다([`codex.md`](docs/conventions/codex.md)).
 - `CLAUDE.md`는 핵심 컨벤션의 **요약/인덱스**, 상세 배경·흐름은 `docs/`에 둔다.
 - 문서는 한국어로 작성하고, 코드 식별자·명령어·경로는 원문 그대로 표기한다.
-- **`README.md`·`docs/`의 독자는 「클론해 돌리려는 사람·에이전트」다.** **일자·실측 수치는 두지 않는다.**
+- **독자: `README.md` 위층=검토자, 아래층·`docs/`=학습자(클론해 돌림).** **일자·실측 수치는 두지 않는다.**
   남길지는 **3축** — ①재현(남의 환경에서도 참인가) ②시제(저절로 낡는가) ③위협(공개가 이득인가).
   ①∧②면 남고, 나가는 것은 ③으로 갈라 **공개=Issue / 아니면 볼트**([`doc-sync.md`](docs/doc-sync.md) §실무 규칙 7).
 - **학습 노트는 `wiki/`**(CI 단방향 미러) — 독자·통제가 달라 [`publishing.md`](docs/conventions/publishing.md) §4-1을 따른다.
@@ -84,15 +84,22 @@
   **모듈 스코프 `@asset`이 조용히 누락**된다. 리소스 등록은 `resources.py`처럼 자산 없는 모듈에 두고,
   정의 추가 후 `dg check defs`로 자산 수를 확인한다. 상세 [`docs/conventions/dagster.md`](docs/conventions/dagster.md).
 
+### Airflow 이관은 Dagster 구조를 1:1로 옮긴다
+
+- bronze 테이블 1개 = Asset 1개 = DAG 1개, 로직은 `images/airflow/dags/lakehouse/`(Airflow 비의존)·DAG는 배선.
+  Dagster에 남는 쪽과 **두 벌 공존**은 패리티 테스트로 막는다. 상세 [`docs/conventions/airflow.md`](docs/conventions/airflow.md).
+
 ## 프로젝트 구조 컨벤션
 
 ### 공통 라이브러리(`common/`) + 자동발견 정의(`defs/`)
 
 - **공통 재사용 로직**은 `dagster_project/common/`에 둔다(데이터셋 무관 공통 라이브러리, `defs/` 밖).
+  실경로 접두는 `dagster/dockerfile.d/src/src/`다.
   - `constants.py` — 공통 상수/기본값(S3 파라미터 포함)
   - `helper.py` — 적재 헬퍼(`read_csv_gz_table` 일반 / `load_heavy_csv_gz_to_iceberg` 대용량)
   - `dbt.py` — 공유 dbt 설정(`DbtProject`·`build_dbt_resource`); 단일 dbt 프로젝트를 데이터셋 subproject가 공유
   - `trino.py` — Trino 접속 리소스(`TrinoResource`); Iceberg 유지보수 프로시저 실행(k8s Trino)
+  - `fetch.py`(외부 → S3 `raw/`)·`physionet.py`·`polygon.py`·`fred.py` — 원천 접속 리소스
 - **정의는 모두 `dagster_project/defs/` 하위**에 두고 `load_defs`가 재귀 자동발견한다.
   - **데이터셋별 서브프로젝트** `defs/<dataset>/`에 **정의만** 둔다.
     - `constants.py` — 데이터셋 전용 `NAMESPACE`·`GROUP_NAME`·`SOURCE_BASE`
@@ -101,7 +108,7 @@
   - `defs/resources.py` — 공유 리소스(S3·dbt·IO 매니저·테이블 바인딩)를 `@dg.definitions`로 제공.
     Iceberg 카탈로그 설정(`IcebergCatalogConfig`)은 별도 빌더 없이 **각 리소스에 인라인**해
     한 파일에서 전체를 파악한다(적은 파일로 파악).
-  - `defs/automation.py` — 잡·스케줄(모듈 스코프 객체라 자동 수집)
+  - `defs/automation.py`·`maintenance.py` — 잡·스케줄(모듈 스코프라 자동 수집)
 - **wiring은 최상위 `definitions.py` 한 곳**에서 `defs = load_defs(dagster_project.defs)`로
   자동발견 결과를 **단일 `Definitions`**로 합친다(중간 definitions 레이어 없음, 모듈 스코프 `Definitions` 1개).
 

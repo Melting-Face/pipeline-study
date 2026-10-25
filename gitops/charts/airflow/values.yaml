@@ -8,7 +8,7 @@ airflow:
     images:
         airflow:
             repository: ghcr.io/melting-face/pipeline-study-airflow
-            tag: "v0.3.0"  # bump-image-tag
+            tag: "v0.4.3"  # bump-image-tag
 
     # --- 1. Executor (A2) ---
     # 순서가 의미다 — 첫 자리(Celery)가 기본, 태스크 단위 `executor="KubernetesExecutor"` 로 라우팅한다.
@@ -39,12 +39,24 @@ airflow:
         - envName: AIRFLOW_CONN_SEAWEEDFS_S3
           secretName: airflow-conn-seaweedfs
           secretKey: connection
+        # 원화 종가 DAG(설계 F6·F6a) — 카탈로그 자격은 default/catalog-pg-app 과 한 벌(재사용)
+        - envName: AIRFLOW_CONN_ICEBERG_CATALOG
+          secretName: airflow-conn-iceberg
+          secretKey: connection
+        - envName: AIRFLOW_CONN_POLYGON_API
+          secretName: airflow-conn-polygon
+          secretKey: connection
     # SeaweedFS 는 aws-chunked 체크섬을 못 풀어 객체가 손상된다 — boto3 기본(when_supported)을 끈다
     env:
         - name: AWS_REQUEST_CHECKSUM_CALCULATION
           value: when_required
         - name: AWS_RESPONSE_CHECKSUM_VALIDATION
           value: when_required
+        # dbt(profiles.yml)·최신 거래일 조회가 쓰는 Trino — 클러스터 내부 Service(인증 없음)
+        - name: TRINO_HOST
+          value: trino.default.svc
+        - name: TRINO_PORT
+          value: "8080"
 
     # --- 3. 메타 DB 풀 (설계 §3) ---
     # max_connections 를 카탈로그(iceberg)와 공유하므로 프로세스마다 SQLAlchemy 풀을 작게 묶는다.

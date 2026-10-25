@@ -169,7 +169,10 @@
       "Bash(*tistory.com*)",
       "Bash(*.claude/.research/approved*)",
       "Bash(*.research/approved*)",
-      "Bash(*brainstorming/scripts*)"
+      "Bash(*brainstorming/scripts*)",
+      "Bash(*find-polluter*)",
+      "Bash(*condition-based-waiting-example*)",
+      "Bash(*render-graphs*)"
     ]
   },
   "hooks": {

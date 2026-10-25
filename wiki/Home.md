@@ -71,5 +71,5 @@
 ```
 
 저장소는 **Kubernetes(kind on Podman)** 위에서 돌고, 컴퓨트는 **Spark**·**Flink**가
-같은 Iceberg JDBC 카탈로그를 공유한다. 오케스트레이터는 **Dagster**이고
-in-cluster로 배포한다.
+같은 Iceberg JDBC 카탈로그를 공유한다. SQL·dbt 엔진은 클러스터 안의 **Trino**다.
+오케스트레이터는 **Dagster**이고 클러스터 밖 호스트에서 돈다(in-cluster 배포는 철거했다).

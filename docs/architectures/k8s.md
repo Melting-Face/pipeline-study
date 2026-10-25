@@ -1,5 +1,16 @@
 # Kubernetes (아키텍처 · 프로젝트 관점)
 
+## 이 프로젝트에서의 역할
+
+로컬 단일 노드 플랫폼 — kind on Podman.
+
+## 어떻게 도나
+
+- VM·레지스트리: `scripts/k8s-up.sh`(podman machine rootful + `localhost:5001`).
+- 클러스터: Terraform 스택 A `terraform/cluster/kind/`(kind on Podman, 노드 이미지 고정).
+- 그 위: 스택 B `terraform/platform/`(ingress-nginx·ArgoCD) → ArgoCD가 `gitops/`를 수렴시킨다.
+- kubeconfig는 `~/.kube/lakehouse.config`. 절차는 [환경 세팅 §3](../setup.md#3-로컬-kubernetes).
+
 ## 개요
 
 Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다중 노드 클러스터에서 파드(pod)를
@@ -8,7 +19,7 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
 
 - 최신 안정: **v1.36**(2026-06). N-2 지원(최근 3개 마이너에 유지보수 제공).
 
-## 이 프로젝트에서의 위치 — 🚧 채택·이행중(PoC 게이트)
+## 왜 이걸 골랐나 — 🚧 채택·이행중(PoC 게이트)
 
 - **채택 방향**: 확장성/성능 한계 극복 + 학습·포트폴리오를 위해 **컴퓨트·데이터 서비스를 K8s로 이전**한다.
   Dagster는 **클러스터에 배포하지 않는다**(호스트 실행, **Airflow로 대체 예정**)
@@ -20,7 +31,8 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
 - **핵심 컴포넌트**: **Spark Operator**(배치)·**Flink Operator**(스트림)로
   `SparkApplication`·`FlinkDeployment`(CRD)를 실행하고,
   **CloudNativePG**(카탈로그 Postgres)로 `Cluster`(CRD) 관리,
-  SeaweedFS·카탈로그 Postgres를 K8s에 배포한다(**Trino 제거**). Iceberg 테이블은 Spark·Flink가 공유한다.
+  카탈로그 Postgres(CNPG)·Trino를 K8s에 배포한다(SeaweedFS는 클러스터 밖 스택 A 컨테이너).
+  Iceberg 테이블은 Spark·Flink·Trino가 공유한다.
   **웹 UI 진입점은 ingress-nginx**로 고정 URL화한다(`*.localtest.me:8080`).
 - **구축 현황(실측)**: 클러스터 k8s **v1.36.1** 단일 노드.
   **Spark Operator 1.0.0**(chart 1.8.0) / **Flink Operator 1.15.0**(웹훅 끔 — cert-manager 불필요) 기동,
@@ -55,7 +67,7 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
 ## 운영 메모 (이행)
 
 - 패키징은 **Helm 차트**(값 분리·환경별 오버라이드). 이미지 태그 고정(`latest` 금지).
-- 오브젝트 스토리지(SeaweedFS)는 **클러스터 밖 compose**이고 `ExternalName` Service로 닿는다.
+- 오브젝트 스토리지(SeaweedFS)는 **클러스터 밖 스택 A 컨테이너**이고 `ExternalName` Service로 닿는다.
 - **카탈로그 Postgres는 CloudNativePG(CNPG) 오퍼레이터**가 관리한다(`postgresql.cnpg.io/v1` `Cluster`).
   직접 `StatefulSet`을 쓰지 않는 이유: PVC·failover·백업(PITR)·파라미터 튜닝이 **CR 한 장**에 들어오고,
   Spark·Flink 오퍼레이터와 **같은 선언형 패러다임**으로 통일된다. 서비스는 오퍼레이터가 만드는
@@ -69,6 +81,11 @@ Kubernetes(K8s)는 **컨테이너 오케스트레이션 플랫폼**이다. 다�
   (in-cluster 판본은 철거 — [../argocd-gitops.md](../argocd-gitops.md) D6, 이력은 [dagster.md](dagster.md)).
   `dagster-k8s`의 `K8sRunLauncher`는 Dagster를 **클러스터 내부에 배포**할 때 run을 파드로 실행하는 옵션으로,
   본 토폴로지의 Spark 트리거 수단이 아니다(미채택, [../redesign.md](../redesign.md) Phase 4).
+
+## 교훈
+
+- [빈 클러스터를 세우며 — 순서는 취향이 아니라 제약이다](../../wiki/k8s-bootstrap.md)
+- [kubectl로 판정하기 — 이 출력이 증명하지 않는 것](../../wiki/kubectl-judgement.md)
 
 ## 참고
 

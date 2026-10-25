@@ -67,7 +67,7 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
 | Terraform B | ingress-nginx · ArgoCD · 부트스트랩 ApplicationSet 1개(앱 목록은 갖지 않는다) |
 | ArgoCD | `gitops/apps/`가 선언한 Application과 `gitops/charts/` 하위 전부 |
 | GitHub Actions | Airflow 커스텀 이미지 빌드·GHCR 발행(`main` 머지가 트리거, 버전은 values 태그 — [conventions/docker.md §3](conventions/docker.md#3-이미지-발행-ghcr)) |
-| 사람 | Secret · 로컬 레지스트리 컨테이너 · Spark Connect·Flink 세션 기동/회수 · 러너 이미지 빌드·push · 발행을 부르는 PR 머지 |
+| 사람 | Secret · 로컬 레지스트리 컨테이너 · Flink 세션 기동/회수 · 러너 이미지 빌드·push · 발행을 부르는 PR 머지 |
 
 - **업스트림 차트는 umbrella로 감싼다** — `Chart.yaml` dependency + `Chart.lock` 커밋, `charts/*.tgz`는 gitignore.
   repo-server가 dependency를 받는다. 버전은 정확 고정하고 [`scripts/k8s-env.sh`](../scripts/k8s-env.sh)의 현행 짝을 따른다
@@ -174,7 +174,8 @@ gitops/charts/<app>/         ArgoCD가 sync하는 대상 — 앱 하나 = umbrel
   단 Application에 `resources-finalizer`가 원래 없어(템플릿이 달지 않는다) 비연쇄 삭제가 기본이므로,
   **이 잔존이 겹 1 덕인지는 가르지 못했다**. 그래서 데이터 층 앱은 여전히 `gitops/apps/`에서 **빼지 않는다**.
   (관측 당시는 List generator였다. 지금은 겹 0이 원소 제거 자체를 Application 삭제로 잇지 않는다.)
-- SeaweedFS는 클러스터 밖(compose)이라 데이터가 ArgoCD·클러스터 수명과 무관하다. `storage-external`은 Service 1개뿐이다.
+- SeaweedFS는 클러스터 밖(스택 A 컨테이너)이라 데이터가 ArgoCD·클러스터 수명과 무관하다.
+  `storage-external`은 Service 1개뿐이다.
 
 ## 5. sync 정책 — 앱 사이는 tier(RollingSync), tier 안은 재시도, 앱 안은 wave
 

@@ -91,6 +91,13 @@
 | `requesting-code-review` | 작업 완료·머지 전에 리뷰 요청 | obra/superpowers (C) |
 | `receiving-code-review` | 리뷰 피드백을 검증한 뒤 반영 | obra/superpowers (C) |
 | `using-git-worktrees` | 격리 작업 공간(worktree) 준비 | obra/superpowers (C) |
+| `systematic-debugging` | 버그·테스트 실패를 원인부터 추적(수정 제안 전) | obra/superpowers (C) |
+| `verification-before-completion` | 완료·통과 주장 전에 검증 명령 실행 | obra/superpowers (C) |
+| `dispatching-parallel-agents` | 독립 작업 2개 이상을 병렬 에이전트로 | obra/superpowers (C) |
+| `finishing-a-development-branch` | 구현 완료 후 통합 방식 결정 | obra/superpowers (C) |
+| `writing-skills` | 스킬 작성·검증 | obra/superpowers (C) |
+| `using-superpowers` | 세션 시작 시 스킬 탐색·호출 규칙 | obra/superpowers (C) |
+| `diagnosing-superpowers` | superpowers 세션 이상 진단·버그 리포트 작성 | obra/superpowers (C) |
 | `grilling` | 계획·결정을 집요한 질문으로 검증 | mattpocock/skills (C) |
 | `grill-me` | `/grill-me` 사용자 호출 전용 별칭 — 본문은 `grilling` 호출 한 줄 | mattpocock/skills (C) |
 
@@ -119,10 +126,16 @@
 | 스킬 | 스킬이 하라는 것 | 이 저장소에서는 |
 | --- | --- | --- |
 | obra/superpowers 전반 | 설계 문서 커밋, `docs/superpowers/` 산출 | 커밋은 **사용자 요청 시에만**([git.md](conventions/git.md)), 문서 위치는 저장소 정본을 따른다 |
-| obra/superpowers 전반 | `scripts/` 실행(브라우저 동반 서버 등) | **`scripts/`는 실행하지 않는다.** C등급에 실행 파일이 있으면 원칙상 도입 금지이고, 마크다운만 참조하는 예외(분리안)는 `brainstorming`뿐이다([governance.md](skills/governance.md) §C등급 단서) |
+| obra/superpowers 전반 | `scripts/` 실행(브라우저 동반 서버 등) | **`scripts/`는 실행하지 않는다.** C등급 + 실행 파일은 원칙상 도입 금지다. 예외(분리안) 대상은 [governance.md](skills/governance.md) §C등급 단서 표가 정본이다 |
+| `diagnosing-superpowers` | 세션 transcript를 묶어 `obra/superpowers`에 Issue 생성, `curl`로 기존 Issue 검색 | **워커는 쓰지 않는다.** 외부 발신은 사람 전담이다([risk.md](risk.md) §4). 아래 단서 참고 |
+| `finishing-a-development-branch` | 루트에서 base로 checkout·로컬 merge, `.worktrees/` 정리 | 통합은 PR squash 머지, 정리는 [git.md](conventions/git.md) §7과 `scripts/worktree-new.sh` 출력 절차를 따른다 |
+| `using-superpowers` | 1%라도 해당하면 스킬을 반드시 먼저 호출 | 매 세션 고정 호출하지 않는다(§설계 스킬은 언제 쓰나). 이 규칙은 이 문서에만 있어 본문의 「CLAUDE.md 우선」 조항이 받치지 못한다(규율) |
 | `git-commit` | `git add` 기반 스테이징 절차 | 정본은 [git.md](conventions/git.md) §2·§7과 [general.md](conventions/general.md) §커밋 메시지 |
 | `github-issues` | MCP 도구로 Issue 조작 | 절차는 [issue.md](conventions/issue.md)를 따른다 |
 | `documentation-writer` | 범용 문서 구조 | 매체·공개 판정은 [publishing.md](conventions/publishing.md)가 우선한다 |
+
+`diagnosing-superpowers`의 Issue 생성·`gh search issues`는 `ask`에 걸리지만, 검색용 `curl` GET은 `deny`에 걸리지 않는다.
+그래서 「검색어에 내부 데이터를 넣지 않는다」는 기계 차단이 아니라 규율이다.
 
 **워커별로 어떤 스킬을 쓰는지**는 각 워커 지시문 `.claude/agents/<worker>.md` §참고 스킬이 정본이다.
 채점의 「스택 일치」 축은 **저장소에 실재하는 스택**(Dagster·dbt·Spark·ArgoCD)으로 매긴다.

@@ -14,7 +14,8 @@ from datetime import datetime, timezone
 
 import pyarrow as pa
 import pytest
-from dagster_project.defs.frankfurter_fx.assets import FX_SCHEMA, _rates_json_to_arrow
+from lakehouse.fx import FX_SCHEMA
+from lakehouse.fx import rates_json_to_arrow as _rates_json_to_arrow
 
 INGESTED_AT = datetime(2026, 9, 9, 1, 0, tzinfo=timezone.utc)
 
