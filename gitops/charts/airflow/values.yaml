@@ -8,7 +8,7 @@ airflow:
     images:
         airflow:
             repository: ghcr.io/melting-face/pipeline-study-airflow
-            tag: "v0.4.3"  # bump-image-tag
+            tag: "v0.4.4"  # bump-image-tag
 
     # --- 1. Executor (A2) ---
     # 순서가 의미다 — 첫 자리(Celery)가 기본, 태스크 단위 `executor="KubernetesExecutor"` 로 라우팅한다.
