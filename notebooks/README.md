@@ -93,6 +93,7 @@ pyiceberg로 직접 붙는 경로는 `.env`가 추가로 필요하다(스타터 
 | `00-lakehouse-connect.ipynb` | 접속 스타터 — 환경 로드·경로 점검 → Trino → 카탈로그 탐색 → pandas → Iceberg 메타데이터 → (선택) pyiceberg 직접 접속 | `notebook` |
 | `02-water-task-candidates.ipynb` | **과제 후보 실측** — 규모·시간 범위 → 후보 3종의 표본·라벨 출처·누수 위험 → 피처 가용성 → 선정 근거표 | `notebook` |
 | `03-water-discharge-baseline.ipynb` | **베이스라인** — attrition → 수위→유량 회귀 → 관측소 단위 분할 → dummy·Ridge·HistGB → 음성 대조 → 유효 표본 검증 → 산출물 | `+ ml` |
+| `04-stock-direction-baseline.ipynb` | **베이스라인** — attrition(gold 행 수 검산) → 익일 등락 분류 → 날짜 단위 walk-forward·embargo·purge → dummy·logistic·HistGB → 풀링 vs 일별 AUC → 음성 대조 → 산출물 | `+ ml` |
 
 > 02가 03의 입력이다 — 과제는 02의 **실측 결과로** 고른다(미리 정해 두고 확인하지 않는다).
 

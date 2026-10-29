@@ -34,8 +34,11 @@ with bounded as (
     left join {{ ref('trading_calendar') }} as calendar
         on
             news.published_at < calendar.session_close_utc
-            and calendar.trade_date >= cast(news.published_at as date)
-            and calendar.trade_date
+            -- trade_date는 원천부터 ISO 문자열(varchar)이다. Spark는 date와의 비교를
+            -- 암묵 변환했지만 Trino는 TYPE_MISMATCH로 거부하므로 명시 cast한다.
+            and cast(calendar.trade_date as date)
+            >= cast(news.published_at as date)
+            and cast(calendar.trade_date as date)
             <= {{ dbt.dateadd('day', 7, 'cast(news.published_at as date)') }}
 ),
 
@@ -56,7 +59,8 @@ select
     news.insights,
     -- 🔴 관측 셀 — 배정된 날이 발행 달력일과 다른 기사 수가 곧 이 모델이 막고
     -- 있는 누수의 크기다. 0이면 모델이 일을 안 하고 있거나 모집단이 비었다.
-    assigned.effective_trade_date <> cast(news.published_at as date)
+    cast(assigned.effective_trade_date as date)
+    <> cast(news.published_at as date)
         as shifted_to_next_session,
     assigned.effective_trade_date is null as is_unassigned
 from {{ ref('news_articles_dedup') }} as news

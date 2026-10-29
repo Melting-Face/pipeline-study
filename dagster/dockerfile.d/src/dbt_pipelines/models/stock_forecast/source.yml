@@ -1,4 +1,4 @@
-# 주식예측 silver의 원천 — Dagster가 적재한 bronze 테이블들.
+# 주식예측 silver의 원천 — bronze 테이블들(적재 주체는 테이블마다 다르다, 아래).
 #
 # 🔴 **이 디렉터리는 bronze 서브프로젝트와 1:1이 아니다.** 다른 데이터셋
 # (eicu·mimic_iv)은 `models/<dataset>/`가 같은 이름의 `defs/<dataset>/`을 받지만,
@@ -10,20 +10,23 @@
 # - schema    : Iceberg 네임스페이스 = 각 데이터셋 constants.py의 NAMESPACE.
 # - meta.dagster.asset_key: bronze 자산이 단일 세그먼트 키라 기본값
 #       ([source_name, table])이 아니라 명시한다. 어긋나면 lineage가 조용히 끊긴다.
+#       🔴 Airflow가 적재하는 테이블에는 두지 않는다 — Dagster 자산이 아니라서 키를
+#       달면 Dagster가 존재하지 않는 상류를 가리킨다. 소유자는 테이블 주석에 적는다.
 version: 2
 
 sources:
   - name: polygon_market
-    description: "Polygon(Massive) 시세·뉴스 bronze. Dagster defs/polygon_market가 적재."
+    description: >-
+      Polygon(Massive) 시세·뉴스 bronze. 시세는 Airflow DAG equity_ohlcv_daily,
+      뉴스는 Dagster defs/polygon_market가 적재.
     schema: polygon_market
     tables:
+      # 적재 소유자: Airflow DAG equity_ohlcv_daily (images/airflow/dags/).
+      # 이 source를 읽는 모델(equity_prices_daily·trading_calendar)도 Airflow가 빌드한다.
       - name: equity_ohlcv_daily
         description: >-
           하루치 전 미국 티커 OHLCV. 파티션 키 trade_date.
           bar_timestamp는 16:00 America/New_York의 UTC 표현이다(DST 반영).
-        meta:
-          dagster:
-            asset_key: ["equity_ohlcv_daily"]
       - name: news_articles
         description: >-
           뉴스 메타데이터. 파티션 키 published_date.

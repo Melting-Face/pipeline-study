@@ -1,7 +1,9 @@
-"""Frankfurter 환율 bronze 스키마·파서(Dagster `defs/frankfurter_fx/assets.py` 이식).
+"""Frankfurter 환율 bronze 스키마·파서.
 
-🔴 `FX_SCHEMA`는 Dagster 쪽과 **같아야 한다**(같은 테이블에 쓴다).
-`test_parity.py`가 대조한다.
+Dagster `defs/frankfurter_fx/assets.py`에서 이식했다.
+
+🔴 `FX_SCHEMA`는 이미 적재된 Iceberg 테이블의 모양이다 — 바꾸면 기존 파티션과
+갈라진다. `test_parity.py`가 스키마 리터럴로 고정한다(Dagster 원본은 컷오버로 삭제).
 """
 
 from datetime import datetime

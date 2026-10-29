@@ -3,7 +3,8 @@
 Dagster `common/polygon.py`·`defs/polygon_market/assets.py` 이식.
 🔴 인증은 `Authorization: Bearer` 헤더다. 쿼리 파라미터로 보내면 실패 예외의
 URL에 키가 실린다.
-🔴 `OHLCV_SCHEMA`는 Dagster 쪽과 **같아야 한다**(`test_parity.py`가 대조).
+🔴 `OHLCV_SCHEMA`는 이미 적재된 Iceberg 테이블의 모양이다 — `test_parity.py`가 스키마
+리터럴로 고정한다(Dagster 원본은 컷오버로 삭제).
 """
 
 from datetime import datetime, timezone
@@ -16,8 +17,17 @@ from lakehouse.http import request_json
 BASE_URL = "https://api.polygon.io"
 GROUPED_DAILY_PATH = "/v2/aggs/grouped/locale/us/market/stocks"
 
+# 🔴 **프로브와 짝을 이루는 상수다.** `scripts/stock_source_access_probe.py`의
+# `POLYGON_BAR_FIELDS`·`POLYGON_BAR_KNOWN_FIELDS`와 같아야 한다. 프로브는 PEP 723 단독
+# 실행이라 이 패키지를 import할 수 없어 두 벌이 존재하고, 조용히 갈라지면 **프로브는
+# 통과하고 파서만 깨진다** — `tests/lib/test_polygon_contract.py`가 AST로 대조한다.
+
 # 없으면 레코드가 성립하지 않는 필드(KeyError로 드러낸다)
 REQUIRED_BAR_FIELDS = ("T", "o", "h", "l", "c", "v", "t")
+
+# 실측 응답의 **아는 전체** 필드 집합(필수와 축이 다르다). 응답에만 있는 필드는
+# 우리가 버리고 있는 것이고, 조회 범위가 롤링 윈도우라 판단을 미루면 영구 손실이다.
+KNOWN_BAR_FIELDS = ("T", "c", "h", "l", "n", "o", "t", "v", "vw")
 
 OHLCV_SCHEMA = pa.schema(
     [

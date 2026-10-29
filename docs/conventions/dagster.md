@@ -160,7 +160,7 @@ src/dagster_project/
     │   ├── assets.py       # 명시적 @asset (bronze 적재)
     │   └── dbt_assets.py   # @dbt_assets(select="fqn:mimic_iv", project=dbt_project)
     ├── eicu/               # mimic_iv와 같은 4파일
-    └── usgs_water/ · frankfurter_fx/ · polygon_market/ · fred_calendar/ · stock_forecast/ · us_equity_krw/ · flink/ · poc/
+    └── usgs_water/ · polygon_market/ · fred_calendar/ · stock_forecast/ · flink/ · poc/
 ```
 
 - **정의는 모두 `defs/` 하위**에 두고 `load_defs`가 재귀 자동발견해 단일 `Definitions`로 합친다.
@@ -288,8 +288,8 @@ DAILY_PARTITIONS = dg.DailyPartitionsDefinition(
 )
 
 @dg.asset(group_name=GROUP_NAME, partitions_def=DAILY_PARTITIONS, kinds={...})
-def fx_rates_daily(context: dg.AssetExecutionContext, ...) -> dg.MaterializeResult:
-    rate_date = context.partition_key      # "YYYY-MM-DD"
+def news_articles(context: dg.AssetExecutionContext, ...) -> dg.MaterializeResult:
+    published_date = context.partition_key  # "YYYY-MM-DD"
 ```
 
 **① 시작일은 리터럴로 고정한다.** `date.today() - timedelta(days=30)` 같은 계산식을 쓰면

@@ -1,7 +1,7 @@
 """Polygon grouped daily 파서(`lakehouse.polygon`).
 
 Dagster `test_polygon_market_parse.py`의 시세 부분 이식. 픽스처는 원본과 같다
-(공식 문서 기반, 합성값). 뉴스 셀은 이관 범위 밖이라 옮기지 않는다.
+(공식 문서 기반, 합성값). 뉴스 셀은 이관 범위 밖이라 Dagster에 남는다.
 """
 
 from datetime import datetime, timezone
@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import pytest
 import requests
 from lakehouse.polygon import (
+    KNOWN_BAR_FIELDS,
     OHLCV_SCHEMA,
     REQUIRED_BAR_FIELDS,
     fetch_grouped_daily,
@@ -210,6 +211,16 @@ def test_grouped_missing_required_field_raises(field: str) -> None:
 
     with pytest.raises(KeyError):
         _grouped_to_arrow(broken, TRADE_DATE, INGESTED_AT)
+
+
+def test_fixture_matches_the_known_field_contract() -> None:
+    """픽스처의 bar 필드 집합이 **아는 전체 집합**과 정확히 같다.
+
+    🔴 픽스처는 원천 약관(개인 사용 한정) 때문에 실측 값을 담을 수 없어 **합성**이다.
+    현실과의 대조는 프로브가 하고(응답 ↔ `KNOWN_BAR_FIELDS`), 프로브 ↔ 상수는
+    `test_polygon_contract.py`가, 남은 한 칸 **픽스처 ↔ 상수**는 이 셀이 잇는다.
+    """
+    assert set(GROUPED_PAYLOAD["results"][0]) == set(KNOWN_BAR_FIELDS)
 
 
 # ── 계획 Review Focus 4·5 ───────────────────────────────────────────────

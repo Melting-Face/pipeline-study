@@ -1,23 +1,21 @@
-# 미국 주식 원화 종가의 원천 — Dagster가 적재한 환율 bronze.
+# 미국 주식 원화 종가의 원천 — 환율 bronze.
 #
 # 🔴 달러 종가는 여기서 source로 받지 않는다. `stock_forecast`의 silver
 # `equity_prices_daily`(타입 확정)를 `ref`로 재사용한다 — 같은 bronze를 두 곳에서
 # 캐스팅하면 타입 규칙이 갈라진다. 그래서 이 디렉터리의 source는 환율 하나뿐이다.
 #
-# - schema    : Iceberg 네임스페이스 = defs/frankfurter_fx/constants.py의 NAMESPACE.
-# - meta.dagster.asset_key: bronze 자산이 단일 세그먼트 키라 명시한다.
-#       어긋나면 lineage가 조용히 끊긴다(stock_forecast/source.yml과 같은 이유).
+# - schema    : Iceberg 네임스페이스 frankfurter_fx (Airflow `lakehouse/fx.py`가 쓴다).
+# - meta.dagster.asset_key: 두지 않는다 — 적재·이 디렉터리 모델 빌드 모두 Airflow
+#       소유라 Dagster 자산이 아니다(stock_forecast/source.yml 머리 주석).
 version: 2
 
 sources:
   - name: frankfurter_fx
-    description: "Frankfurter 환율 bronze(EUR 기준). Dagster defs/frankfurter_fx가 적재."
+    description: "Frankfurter 환율 bronze(EUR 기준). Airflow DAG fx_rates_daily가 적재."
     schema: frankfurter_fx
     tables:
+      # 적재 소유자: Airflow DAG fx_rates_daily (images/airflow/dags/).
       - name: fx_rates_daily
         description: >-
           요청일(rate_date)별 EUR 대비 환율, 통화당 1행(long). 주말·휴일 요청에는
           원천이 직전 영업일 값을 돌려주며 그 날짜가 source_date다.
-        meta:
-          dagster:
-            asset_key: ["fx_rates_daily"]
