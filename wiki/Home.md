@@ -1,4 +1,4 @@
-# pipeline-study 학습 노트
+# pipeline-study 기술별 스터디 장
 
 성격이 다른 여러 도메인의 데이터셋을 하나의 레이크하우스 패턴으로 적재·변환하고,
 재현 가능한 분석 질문까지 연결하는 **학습·포트폴리오 프로젝트**다.
@@ -18,12 +18,32 @@
 | --- | --- |
 | [이 위키를 읽는 법](how-to-read.md) | 이 프로젝트가 무엇인지, 반복해서 쓰는 낱말 여섯 개 |
 
-## 학습 노트
+## 기술별 스터디 장
 
-스택별로 묶었다. 위키에 계층 사이드바가 없어 파일은 평평하게 두고,
+**장 하나 = 한 기술**이다. 장은 개념 → 이 저장소에서의 쓰임 → 실습 → 고장 대응 → 함정,
+5절 템플릿을 같은 이름·순서로 따른다. 하위 쪽은 템플릿 없이 상위 장의 「함정」에서 이어진다.
+
+- **파이프라인**
+    - [Dagster 오케스트레이션](dagster-orchestration.md)
+        - [Dagster 파티션](dagster-partitions.md)
+    - [엔진마다 값이 갈리는 SQL](cross-engine-sql.md)
+- **컴퓨트**
+    - [Spark를 K8s 위로](spark-on-k8s.md)
+    - [Flink를 K8s 위에](flink-on-k8s.md)
+        - [Flink 함정](flink-on-k8s-pitfalls.md)
+        - [스트림 소스를 고르며](streaming-source-choice.md)
+- **플랫폼**
+    - [빈 클러스터를 세우며](k8s-bootstrap.md)
+    - [오퍼레이터를 둘 것인가](k8s-operators.md)
+- **방법론**
+    - [이 위키를 읽는 법](how-to-read.md)
+        - [kubectl로 판정하기](kubectl-judgement.md)
+    - [Claude Code CLI](claude-code-cli.md)
+
+아래 표도 위 목록과 같은 묶음이다. 위키에 계층 사이드바가 없어 파일은 평평하게 두고,
 분류는 이 인덱스에서만 한다.
 
-### 데이터 파이프라인
+### 파이프라인
 
 | 노트 | 무엇을 배웠나 |
 | --- | --- |
@@ -31,26 +51,27 @@
 | [Dagster 파티션](dagster-partitions.md) | 날짜를 키로 삼으면 네 군데서 따로 어긋난다 |
 | [엔진마다 값이 갈리는 SQL](cross-engine-sql.md) | 같은 SQL이 Trino와 Spark에서 다른 답을 낸다 — 그리고 같은 자리에서 두 번 틀렸다 |
 
-### 컴퓨트 엔진
+### 컴퓨트
 
 | 노트 | 무엇을 배웠나 |
 | --- | --- |
 | [Spark를 K8s 위로](spark-on-k8s.md) | 파드가 뜬 것과 계산이 거기서 도는 것은 다르다 |
 | [Flink를 K8s 위에](flink-on-k8s.md) | 막힌 층이 다르면 같은 처방이 안 듣는다 |
+| [Flink 함정](flink-on-k8s-pitfalls.md) | 고장 대응과 회고 — 권한·경로·버전이 각각 두 층에서 판정됐다 |
 | [스트림 소스를 고르며](streaming-source-choice.md) | 질문을 되물었더니 설계 절반이 사라졌다 |
 
-### 쿠버네티스
+### 플랫폼
 
 | 노트 | 무엇을 배웠나 |
 | --- | --- |
 | [빈 클러스터를 세우며](k8s-bootstrap.md) | 순서를 정하는 것은 의존이 아니라 소유와 해석 시점이다 |
 | [오퍼레이터를 둘 것인가](k8s-operators.md) | 맡기면 선언은 짧아지고 관측은 한 칸 멀어진다 |
-| [kubectl로 판정하기](kubectl-judgement.md) | 없음·정상·통과는 셋 다 「안 봤다」와 모양이 같다 |
 
-### 그 외
+### 방법론
 
 | 노트 | 무엇을 배웠나 |
 | --- | --- |
+| [kubectl로 판정하기](kubectl-judgement.md) | 없음·정상·통과는 셋 다 「안 봤다」와 모양이 같다 |
 | [Claude Code CLI](claude-code-cli.md) | 세션은 누적만 한다 — 비용은 요청 수 × 컨텍스트 크기 |
 
 ## 이 프로젝트가 궁금하다면

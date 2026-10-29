@@ -1,9 +1,98 @@
 # 빈 클러스터를 세우며 — 순서는 취향이 아니라 제약이다
 
-> 학습 노트. 아무것도 없는 로컬 쿠버네티스에 레이크하우스 한 벌을 올리며 배운 것.
+> 스터디 장. 아무것도 없는 로컬 쿠버네티스에 레이크하우스 한 벌을 올리며 배운 것.
 > 결론부터 쓰면 — **단계를 가르는 것은 의존이 아니라 「소유」와 「해석 시점」이다.**
 
-## 무엇을 세웠나
+## 개념
+
+kind는 컨테이너를 노드로 삼아 로컬 쿠버네티스 클러스터를 만든다. 이 저장소는 Podman 위에 올린다.
+그 위는 Terraform 스택 둘과 ArgoCD가 층층이 쌓는다.
+
+- 공식 문서: [Kubernetes](https://kubernetes.io/docs/home/) · [kind](https://kind.sigs.k8s.io/)
+
+## 이 저장소에서의 쓰임
+
+아래 층부터 쌓인다. 각 층은 바로 아래 층이 있어야 만들어진다.
+
+| 층 | 만드는 주체 | 경로 |
+| --- | --- | --- |
+| ① VM · ② 레지스트리 | `podman machine` · `podman run` | [`scripts/k8s-up.sh`](https://github.com/Melting-Face/pipeline-study/blob/main/scripts/k8s-up.sh) |
+| ③ 클러스터 · S3 | Terraform 스택 A | [`terraform/cluster/kind/`](https://github.com/Melting-Face/pipeline-study/blob/main/terraform/cluster/kind) |
+| Secret | `kubectl create secret` | [`scripts/k8s-secrets.sh`](https://github.com/Melting-Face/pipeline-study/blob/main/scripts/k8s-secrets.sh) |
+| ④ 플랫폼 | Terraform 스택 B | [`terraform/platform/`](https://github.com/Melting-Face/pipeline-study/blob/main/terraform/platform) |
+| ⑤ 앱 | ArgoCD | [`gitops/`](https://github.com/Melting-Face/pipeline-study/blob/main/gitops) |
+
+- kubeconfig는 `~/.kube/lakehouse.config`다.
+- 경로 출처는 [docs/architectures/k8s.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/architectures/k8s.md) 「어떻게 도나」와
+  [docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §3 「층 지도」다.
+- 아래 「함정」의 여섯 단계 표는 회고 당시의 구성이다. 올리는 절차는 「실습」을 따른다.
+
+## 실습
+
+명령은 저장소 **루트 체크아웃(`main`)** 에서 실행한다. 스택 A는 linked worktree에서 precondition이 멈춘다.
+층마다 직접 치며 배우려면 [docs/setup/local-k8s.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup/local-k8s.md)를 따른다.
+
+**띄우기**
+
+출처: [docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §3 「올리기 (단축 경로)」
+
+```shell
+scripts/k8s-up.sh
+
+# 스택 A 변수 3개(S3 키 2개 · podman 소켓) — 값을 화면에 찍지 않는 준비 명령은 setup/local-k8s.md 2단계
+terraform -chdir=terraform/cluster/kind init                # 클러스터 + SeaweedFS 컨테이너 + 버킷
+terraform -chdir=terraform/cluster/kind apply
+export KUBECONFIG=~/.kube/lakehouse.config
+
+./scripts/k8s-secrets.sh                  # 앱보다 먼저 — Airflow Secret 8종 포함
+
+terraform -chdir=terraform/platform init
+terraform -chdir=terraform/platform apply   # 기본값: kind-lakehouse · 8080 · target_revision=main
+
+kubectl get applications -n argocd        # 전부 Synced · Healthy 면 수렴
+```
+
+**확인** — 층마다 하나씩 본다.
+
+출처: [docs/setup/local-k8s.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup/local-k8s.md) 2·4·5단계 「확인」
+
+```shell
+kubectl get nodes                                # lakehouse-control-plane  Ready
+podman inspect -f '{{.State.Health.Status}}' seaweedfs   # healthy
+helm list -A                                  # ingress-nginx · argo-cd · appset
+kubectl get applications -n argocd                # 전부 Synced · Healthy
+```
+
+- 성공 기준: 각 줄의 주석이 출처에 적힌 기대값이다.
+- 수렴 통과 기준: Application 수가 `gitops/apps/*/config.yaml` 수와 같고, 전부 `Synced` · `Healthy`다(5단계).
+
+**내리기**
+
+- 일상 회수: 검증이 끝나면 그 자리에서 내린다 —
+  [docs/conventions/k8s.md 「회수 규율은 예산이 늘어도 유지된다」](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/k8s.md#회수-규율은-예산이-늘어도-유지된다)
+- 철거: [docs/setup/local-k8s.md 「내리기」](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup/local-k8s.md#내리기).
+  ⚠️ 이 절은 클러스터를 지운다. CNPG 카탈로그도 함께 사라져 재적재가 필요하다
+  ([cnpg.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/k8s/cnpg.md)).
+
+## 고장 대응
+
+| 증상 | 먼저 볼 것 | 처방 |
+| --- | --- | --- |
+| `k8s-up.sh`가 rootful 오류로 멈춘다 | 머신의 rootful 여부 | `podman machine set --rootful` 후 재시작 — [architectures/k8s.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/architectures/k8s.md) |
+| `MACHINE_*`를 바꿔도 VM 자원이 그대로다 | 머신을 새로 만들었는가 | 머신을 중지하고 `podman machine set --cpus/--memory` — [resource-sizing.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/resource-sizing.md) |
+| `k8s-secrets.sh`가 「반쪽 Secret 쌍」으로 멈춘다 | 쌍 중 남은 쪽 | 남은 쪽을 지우고 다시 실행한다 — [cnpg.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/k8s/cnpg.md) |
+| 스택 A `terraform apply`가 linked worktree를 거부한다 | 실행한 체크아웃 | 루트 체크아웃에서 실행한다. state도 거기 있다 |
+| 호스트 포트를 바꿔야 한다 | 포트 매핑은 생성 시점에만 정해진다 | 클러스터를 다시 만든다(비가역). 카탈로그도 사라져 재적재가 필요하다 — 절차는 [argocd-gitops.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/argocd-gitops.md) §6 |
+| 15432 port-forward가 접속마다 끊긴다 | 호스트 압박 판정 지표 | 재기동 루프로 감싼다 — [resource-sizing.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/resource-sizing.md) |
+| 레지스트리 기동이 `the container name "<레지스트리>" is already in use`로 죽는다 | 컨테이너가 중지 상태로 있는가 | 새로 만들지 않고 시작한다 |
+| 클러스터 이름은 보이는데 다음 단계가 노드 명령에서 죽는다 | 노드 컨테이너 상태(`exit 137`) | 노드를 시작하고 API가 응답할 때까지 기다린다 |
+| 파드가 `Init:ErrImagePull` | 이미지를 push했는가 | push하면 kubelet이 재시도해 같은 파드가 올라온다. 지우지 않는다 |
+
+앞 여섯 행은 [docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §8, 나머지는 아래 「함정」에서 옮겼다.
+
+## 함정
+
+### 무엇을 세웠나
 
 노트북 한 대 안에 컨테이너 VM을 띄우고, 그 안에 쿠버네티스 클러스터를 만든다.
 그 위에 오퍼레이터 셋 — 배치 컴퓨트·스트리밍 컴퓨트·데이터베이스 — 과 인증서 발급 체인,
@@ -31,7 +120,7 @@ CloudNativePG**, 인증서는 **cert-manager**(뒤에 유일한 소비자였던 
 처음엔 과하다고 생각했다. 줄여 보려고 하나씩 들여다보니
 **줄일 수 없는 이유가 단계마다 달랐다.** 그 이유들이 이 글이다.
 
-## 에러 없이 깨진 것 ① — 도는 클러스터는 코드의 알리바이가 아니다
+### 에러 없이 깨진 것 ① — 도는 클러스터는 코드의 알리바이가 아니다
 
 오퍼레이터 셋은 각각 자기 네임스페이스에 들어간다. 그런데 그 네임스페이스를
 **아무도 만들지 않는 상태**였다.
@@ -57,7 +146,7 @@ namespaces "<오퍼레이터-ns>" not found
 
 CRD는 생겼고 에러는 아홉 줄이다. **부분 성공처럼 보인다.**
 
-## 에러 없이 깨진 것 ② — 볼륨에 이름을 안 붙이면 되돌릴 길이 없다
+### 에러 없이 깨진 것 ② — 볼륨에 이름을 안 붙이면 되돌릴 길이 없다
 
 클러스터가 이미지를 받아 가는 로컬 레지스트리는 컨테이너 하나로 돈다.
 러너 이미지들이 여기 push돼 있다.
@@ -71,7 +160,7 @@ CRD는 생겼고 에러는 아홉 줄이다. **부분 성공처럼 보인다.**
 ⚠️ 이 축은 성능에도 에러에도 안 나타난다. 지워진 다음에야 안다.
 그래서 자원을 만드는 코드를 쓸 때 **"이걸 지우면 무엇이 같이 지워지나"** 를 먼저 적는다.
 
-## 그럴듯해서 속은 것 ① — `Plan: 20 to add`를 띄운 채 실패한다
+### 그럴듯해서 속은 것 ① — `Plan: 20 to add`를 띄운 채 실패한다
 
 Terraform 스택 하나가 리소스 **스물한 개**를 적용한다 —
 매니페스트 열여덟 개와 helm 릴리스 셋이다. 그중 **하나**가 CloudNativePG의
@@ -96,7 +185,7 @@ Error: API did not recognize GroupVersionKind from manifest (CRD may not be inst
 두 번째가 전체다. CRD가 생긴 뒤로는 한 번으로 합쳐진다.
 **같은 명령이 두 번 나오는 것은 게으름이 아니라 해석 시점의 결과다.**
 
-## 그럴듯해서 속은 것 ② — 상태는 둘이 아니라 셋이다
+### 그럴듯해서 속은 것 ② — 상태는 둘이 아니라 셋이다
 
 멱등적인 기동 스크립트를 짤 때 자연스럽게 `있으면 통과, 없으면 만든다`로 쓴다.
 이 이분법이 **두 자리에서 같은 방식으로 틀렸다.**
@@ -128,7 +217,7 @@ the container name "<레지스트리>" is already in use
 현재 컨텍스트로 나가므로, 다른 클러스터가 설정에 함께 있으면 **엉뚱한 곳에 깔린다.**
 이것도 에러가 아니다.
 
-## 그럴듯해서 속은 것 ③ — 고장처럼 보이는 정상
+### 그럴듯해서 속은 것 ③ — 고장처럼 보이는 정상
 
 앞의 셋과 반대 방향도 있다.
 
@@ -147,7 +236,7 @@ kubelet이 스스로 재시도해 **같은 파드가 그대로 올라온다** �
 ⇒ 앞의 셋은 **정상처럼 보이는 고장**이고 이건 **고장처럼 보이는 정상**이다.
 둘 다 같은 원인에서 나온다 — **출력의 색깔이 아니라 그 출력을 만든 순서를 알아야 읽을 수 있다.**
 
-## 그래서 무엇을 배웠나
+### 그래서 무엇을 배웠나
 
 **순서를 정하는 것은 의존이 아니라 소유와 해석 시점이다.** 여섯 단계를 보고 처음 떠올린 질문은
 "무엇이 무엇을 필요로 하는가"였다. 그 답으로는 단계가 줄어들지 않았다.

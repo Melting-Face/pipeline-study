@@ -34,7 +34,7 @@
 | 데이터셋 스키마·피처 | `docs/dataset_schema.md` | 해당 `models/<dataset>/source.yml` · `schema.yml` |
 | 분석 규칙(gold·노트북·리포트) | `docs/conventions/analysis.md` | `CLAUDE.md` 분석 섹션 · `docs/conventions/dbt.md`(gold 레이어) · `docs/test.md`(grain 테스트) · `notebooks/README.md` |
 | 외부 공개(블로그·공유 자료) | `docs/conventions/publishing.md` | `CLAUDE.md` 운영 섹션 · `docs/README.md` 목차 · `docs/posts/README.md` · `docs/security.md`(반출 통제) |
-| 위키 학습 노트 | `wiki/**` | `wiki/_Sidebar.md`·`wiki/Home.md` 목차(페이지 추가 시 **한 벌**) · `docs/conventions/publishing.md` §4-1 |
+| 위키 스터디 장 | `wiki/**` | `wiki/_Sidebar.md`·`wiki/Home.md` 목차(페이지 추가 시 **한 벌**) · `docs/conventions/publishing.md` §4-1 |
 | Claude Code 스킬 | `docs/skills.md`(허브) + `docs/skills/**` | `skills-lock.json` · `.claude/agents/*.md` 프론트매터 · `CLAUDE.md` · `docs/conventions/agents.md` |
 | 에이전트 오케스트레이션 | `docs/conventions/agents.md` | `CLAUDE.md`(**절 신설·규칙 변경만** — 항상 적용이라 한 줄이 앞으로의 모든 요청에 곱해진다. 오탈자 교정은 면제) · `docs/README.md` · `.claude/agents/**` · 관련 가드 스크립트 (아래 §가드 배선 체인) |
 

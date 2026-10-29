@@ -1,9 +1,92 @@
 # Dagster 오케스트레이션 — 에러 없이 사라진 에셋들
 
-> 학습 노트. 이 프로젝트에서 Dagster로 적재 파이프라인을 짜며 배운 것을 정리한다.
+> 스터디 장. 이 프로젝트에서 Dagster로 적재 파이프라인을 짜며 배운 것을 정리한다.
 > 결론부터 쓰면 — **Dagster에서 가장 무서운 실패는 예외가 아니라 침묵이다.**
 
-## 왜 Dagster였나
+## 개념
+
+Dagster는 **에셋 중심** 오케스트레이터다.
+파이프라인의 단위를 「무엇을 실행하는가」가 아니라 「어떤 테이블이 존재하는가」로 잡는다.
+dbt 모델도 `@dbt_assets`로 같은 단위가 되어 lineage에 올라온다.
+
+- 공식 문서: [Dagster](https://docs.dagster.io/) · [dagster-dbt](https://docs.dagster.io/integrations/dbt)
+
+## 이 저장소에서의 쓰임
+
+Dagster는 클러스터가 아니라 **호스트**에서 돈다.
+정의는 [`dagster_project/`](https://github.com/Melting-Face/pipeline-study/blob/main/dagster/dockerfile.d/src/src/dagster_project) 아래에 있다.
+
+- [`definitions.py`](https://github.com/Melting-Face/pipeline-study/blob/main/dagster/dockerfile.d/src/src/dagster_project/definitions.py)가
+  `defs/`를 `load_defs`로 자동발견해 하나의 `Definitions`로 묶는다.
+- 데이터셋마다 `defs/<dataset>/`에 적재 `assets.py`와 dbt `dbt_assets.py`를 둔다.
+- 공유 리소스는 [`defs/resources.py`](https://github.com/Melting-Face/pipeline-study/blob/main/dagster/dockerfile.d/src/src/dagster_project/defs/resources.py)에,
+  공통 로직은 [`common/`](https://github.com/Melting-Face/pipeline-study/blob/main/dagster/dockerfile.d/src/src/dagster_project/common)에 둔다.
+
+다른 스택과는 이렇게 이어진다. 경로는 `dagster_project/` 기준이다.
+
+| 대상 | 연결 지점 |
+| --- | --- |
+| dbt → k8s Trino | [`common/dbt.py`](https://github.com/Melting-Face/pipeline-study/blob/main/dagster/dockerfile.d/src/src/dagster_project/common/dbt.py) |
+| Spark | [`defs/poc/resources.py`](https://github.com/Melting-Face/pipeline-study/blob/main/dagster/dockerfile.d/src/src/dagster_project/defs/poc/resources.py)의 `SparkOperatorResource` |
+| Flink | [`defs/flink/resources.py`](https://github.com/Melting-Face/pipeline-study/blob/main/dagster/dockerfile.d/src/src/dagster_project/defs/flink/resources.py)의 `FlinkSessionResource` |
+| Iceberg 유지보수 | [`defs/maintenance.py`](https://github.com/Melting-Face/pipeline-study/blob/main/dagster/dockerfile.d/src/src/dagster_project/defs/maintenance.py) |
+
+유지보수 잡은 [`common/trino.py`](https://github.com/Melting-Face/pipeline-study/blob/main/dagster/dockerfile.d/src/src/dagster_project/common/trino.py)의
+`TrinoResource`로 Trino에 맡긴다.
+경로 출처는 [docs/architectures/dagster.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/architectures/dagster.md) 「어떻게 도나」다.
+
+## 실습
+
+전제는 로컬 클러스터 수렴이다([docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §3).
+메타 DB는 compose `postgres`(5432)를 쓴다.
+
+**띄우기** — 메타 DB, 카탈로그 터널, `dg dev` 순서다. 터널은 별도 터미널에 둔다.
+
+출처: [docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §5 「Dagster (호스트 실행)」
+
+```shell
+podman compose --profile legacy-meta up -d                # 메타 DB(compose postgres, 5432)
+kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 별도 터미널 — Iceberg 카탈로그 (S3는 스택 A 직결)
+
+(cd dagster/dockerfile.d/src && DAGSTER_HOME="$PWD" uv run --env-file ../../../.env dg dev)   # http://localhost:3000
+```
+
+§5 아래 경고 두 가지를 그대로 옮긴다.
+
+- `.env`의 `POSTGRES_PORT`는 5432(compose `postgres`)로 둔다 — 15432(port-forward)는 카탈로그 CNPG라
+  `dagster` DB가 없다.
+- compose `--profile host-dagster`와 호스트 `dg dev`를 섞지 않는다.
+
+**확인** — 정의가 로드되는지 본다.
+
+출처: [docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §6 「검증」
+
+```shell
+(cd dagster/dockerfile.d/src && DAGSTER_HOME="$(mktemp -d)" uv run --env-file ../../../.env dg check defs)
+```
+
+- 성공 기준: 미관측 — 출처 문서에 기대 출력이 없어 비워 둔다.
+- UI 주소는 `http://localhost:3000`이다(§3-1 접근 경로 표).
+
+**내리기** — 출처 문서에 내리기 명령이 없다. 미관측이라 비워 둔다.
+
+## 고장 대응
+
+| 증상 | 먼저 볼 것 | 처방 |
+| --- | --- | --- |
+| `dg dev` 런이 UI에 안 남는다 | `DAGSTER_HOME` | `dagster/dockerfile.d/src`로 지정한다 — [operations.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/operations.md) |
+| 이미지에 `.venv`가 들어간다 | `.dockerignore` 패턴 | `src/` 접두어를 붙인다 — [conventions/dagster.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/dagster.md) |
+| 정의를 더했는데 에셋이 UI에 안 뜬다 | 같은 모듈의 `@dg.definitions` | 리소스 등록을 자산 없는 `resources.py`로 옮긴다 |
+| `DagsterInvalidDefinitionError: Cannot annotate context parameter` | 파일 맨 위 `from __future__ import annotations` | 자산·op 모듈에서 뺀다 |
+| `@dbt_assets`가 모델을 0건 수집한다 | 셀렉터가 `path:`인가 | `select="fqn:<dataset>"`과 `project=dbt_project`를 쓴다 |
+
+앞 두 행은 [docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §8, 나머지는 아래 「함정」에서 옮겼다.
+
+## 함정
+
+하위 쪽: [Dagster 파티션](dagster-partitions.md)
+
+### 왜 Dagster였나
 
 이 프로젝트가 다루는 것은 "매일 도는 잡"이 아니라 **테이블**이다.
 원천 CSV를 Iceberg bronze로 넣고, dbt가 silver/gold로 올리고,
@@ -17,7 +100,7 @@ Dagster는 파이프라인의 단위를 *"무엇을 실행하는가"* 가 아니
 *"어떤 테이블이 존재하는가"* 로 잡는다. dbt의 모델 개념과 그대로 포개지므로,
 `@dbt_assets`로 dbt 프로젝트를 통째로 lineage에 끌어올 수 있다.
 
-## 에셋은 함수 + 데코레이터로 정의한다
+### 에셋은 함수 + 데코레이터로 정의한다
 
 아래 `dg`는 `import dagster as dg`다 — 이 프로젝트가 쓰는 관례적 별칭이고 공식
 예제도 이렇게 쓴다. `pa`는 `pyarrow`라 `pa.Table`은 메모리 위의 표 한 장이다.
@@ -50,7 +133,7 @@ bronze_assets = [build_csv_to_iceberg_asset(t) for t in TABLES]
 팩토리로 만들면 UI에 뜬 이름이 코드 어디에도 문자열로 존재하지 않는다.
 공통 로직은 일반 함수로 빼서 재사용하되(DRY), **정의 자체는 각각 명시**한다.
 
-## 에러 없이 깨진 것 ① — 리소스가 에셋을 삼킨다
+### 에러 없이 깨진 것 ① — 리소스가 에셋을 삼킨다
 
 가장 오래 못 찾은 버그다.
 
@@ -75,7 +158,7 @@ UI에 뜬 적이 한 번도 없었다는 걸 한참 뒤에 발견했다.
 규칙으로 굳혔다 — **`@dg.definitions`는 `@asset`이 있는 모듈에 두지 않는다.**
 리소스 등록은 자산이 없는 별도 모듈(`resources.py`)에 둔다.
 
-## 에러를 내고 멈춘 것 — future annotations
+### 에러를 내고 멈춘 것 — future annotations
 
 이건 반대로 에러를 내고 멈추지만, 원인이 엉뚱한 곳에 있어서 헤맸다.
 
@@ -90,7 +173,7 @@ Dagster는 `@asset`/op의 `context` 파라미터를 **클래스 identity**로 �
 - 자산·op 정의가 있는 모듈에서는 future annotations를 쓰지 않는다.
 - 자산이 아닌 공통 헬퍼 모듈은 써도 무방하다.
 
-## 에러 없이 깨진 것 ② — 셀렉터가 cwd에 묶인다
+### 에러 없이 깨진 것 ② — 셀렉터가 cwd에 묶인다
 
 `@dbt_assets`로 dbt 모델을 데이터셋별로 나눠 소유할 때, 셀렉터를 이렇게 쓰면 안 된다.
 
@@ -105,7 +188,7 @@ cwd가 다르면 모델이 **하나도 수집되지 않는다**. 역시 에러�
 @dbt_assets(select="fqn:eicu", project=dbt_project)   # ← 이렇게
 ```
 
-## 그래서 무엇을 배웠나
+### 그래서 무엇을 배웠나
 
 셋 중 **에러 없이 깨진 둘**이 같은 형태다 — 실패가 예외로 나타나지 않고,
 **개수가 줄어든다.** 정상 기동, 정상 종료, 그냥 에셋이 없다.
