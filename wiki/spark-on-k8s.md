@@ -1,9 +1,73 @@
 # Spark를 K8s 위로 옮기며 — 파드가 뜬 것과 계산이 거기서 도는 것은 다르다
 
-> 학습 노트. 상주 Spark SQL 엔드포인트를 로컬 모드에서 쿠버네티스 리소스 매니저로 옮기며 배운 것.
+> 스터디 장. 상주 Spark SQL 엔드포인트를 로컬 모드에서 쿠버네티스 리소스 매니저로 옮기며 배운 것.
 > 결론부터 쓰면 — **`--master` 한 줄을 바꾸면 소유권·수명·자격증명 축 셋이 함께 열린다.**
 
-## 무엇을 바꿨나
+## 개념
+
+Spark는 대용량 배치 엔진이다.
+쿠버네티스 위에서는 executor가 **별도 파드**로 뜬다.
+이 저장소는 Spark Operator가 `SparkApplication` CR 한 장으로 잡을 실행한다.
+
+- 공식 문서: [Apache Spark](https://spark.apache.org/docs/latest/) ·
+  [Spark Kubernetes Operator](https://apache.github.io/spark-kubernetes-operator/) ·
+  [Iceberg + Spark](https://iceberg.apache.org/docs/latest/spark-getting-started/)
+
+## 이 저장소에서의 쓰임
+
+- 오퍼레이터: ArgoCD 앱 [`gitops/charts/spark-operator/`](https://github.com/Melting-Face/pipeline-study/blob/main/gitops/charts/spark-operator)
+- 러너 이미지: [`k8s/spark/Dockerfile.spark-runner`](https://github.com/Melting-Face/pipeline-study/blob/main/k8s/spark/Dockerfile.spark-runner)
+- PoC 매니페스트: [`k8s/spark/sparkapplication-poc.yaml`](https://github.com/Melting-Face/pipeline-study/blob/main/k8s/spark/sparkapplication-poc.yaml) ·
+  [`k8s/spark/poc_ingest.py`](https://github.com/Melting-Face/pipeline-study/blob/main/k8s/spark/poc_ingest.py)
+- 트리거: [`defs/poc/resources.py`](https://github.com/Melting-Face/pipeline-study/blob/main/dagster/dockerfile.d/src/src/dagster_project/defs/poc/resources.py)의
+  `SparkOperatorResource`가 CR을 제출하고 폴링한다.
+- 쓰는 곳: Iceberg 카탈로그 `iceberg`와 S3(SeaweedFS)다. dbt 엔진은 Spark가 아니라 Trino다.
+
+경로 출처는 [docs/architectures/spark.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/architectures/spark.md) 「어떻게 도나」다.
+아래 「함정」의 Spark Connect 상주 서버는 철거된 구성이다(「함정」 첫 절).
+
+## 실습
+
+**띄우기** — 러너 이미지를 로컬 레지스트리에 올린다. 최초 1회, 그리고 이미지를 바꿀 때 한다.
+
+출처: [docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §4 「러너 이미지」
+
+```shell
+podman build -f k8s/spark/Dockerfile.spark-runner -t localhost:5001/spark-runner:0.6.0 k8s/spark
+podman push --tls-verify=false localhost:5001/spark-runner:0.6.0
+```
+
+**확인** — 매니페스트가 push한 태그를 가리키는지 본다.
+
+출처: [docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §4 「러너 이미지」
+
+```shell
+grep -rn "image:" k8s/spark/*.yaml k8s/flink/*.yaml
+```
+
+- 성공 기준: `k8s/spark/*.yaml`의 `image:` 태그가 push한 태그와 같다.
+  §4는 태그를 올릴 때 `image:`도 함께 바꾸라고 적는다.
+- 잡 제출은 Dagster의 `SparkOperatorResource`가 맡는다. 손 제출 명령은 출처 문서에 없다 — 미관측이라 비워 둔다.
+- Flink와 동시에 띄울 때는 `spark.executor.instances` ≤ 1을 지킨다(§3-2).
+
+**내리기** — 출처 문서에 명령이 없다. 미관측이라 비워 둔다.
+회수 판정은 「함정」 ①의 executor 셀렉터로 한다.
+
+## 고장 대응
+
+| 증상 | 먼저 볼 것 | 처방 |
+| --- | --- | --- |
+| JVM 파드가 `unable to create native thread`(메모리는 여유) | 컨테이너 PID 상한 — `k8s-up.sh` 경고 | 경고가 나면 클러스터를 재생성한다(비가역). 카탈로그도 사라져 재적재가 필요하다 — [pids.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/k8s/pids.md) |
+| S3 업로드는 성공했는데 객체가 손상된다 | executor에도 체크섬 환경변수가 있는가 | `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` — [checksum.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/k8s/checksum.md) |
+| (철거된 Spark Connect 시절) replica 0 뒤에도 executor 파드가 `Running` | `kubectl get pods -l spark-role=executor` | driver 파드를 executor의 소유자로 건다 |
+| (철거된 Spark Connect 시절) 상주 driver 파드가 재시작 루프에 빠진다 | `--deploy-mode cluster`를 줬는가 | `--deploy-mode`를 주지 않는다(client) |
+| (철거된 Spark Connect 시절) `PYTHON_VERSION_MISMATCH` | 클라이언트 커널과 서버 이미지의 파이썬 마이너 버전 | 두 마이너 버전을 맞춘다 |
+
+앞 두 행은 [docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §8, 나머지는 아래 「함정」에서 옮겼다.
+
+## 함정
+
+### 무엇을 바꿨나
 
 노트북과 dbt가 붙는 SQL 엔드포인트로 **Spark Connect** 서버를 썼다(이후 철거했고, 지금 그 자리는
 Trino다). 배치 잡은 끝나면 사라져 세션을 유지할 수 없으므로, 이것만 Deployment로 상주시켰다.
@@ -13,7 +77,7 @@ Trino다). 배치 잡은 끝나면 사라져 세션을 유지할 수 없으므�
 
 이것을 `--master k8s://…`로 바꿨다. 바꾸고 나면 executor가 **별도 파드**로 뜬다.
 
-## client mode를 골랐다
+### client mode를 골랐다
 
 `--deploy-mode`를 주지 않는다. 기본값 client이고, 그러면 **driver는 Deployment 파드 그 자체**다.
 `cluster`를 주면 제출 명령이 별도 driver 파드를 만들고 원래 파드는 즉시 종료해서,
@@ -25,7 +89,7 @@ client mode를 고르면 세 가지가 따라온다.
 - executor를 만드는 주체가 이 파드이므로 인증은 **파드의 서비스 계정**으로 한다.
 - executor가 driver에게 **역방향으로 접속**한다. 그래서 driver 주소가 필요하다.
 
-## 에러 없이 깨진 것 ① — 회수 다이얼이 절반만 듣는다
+### 에러 없이 깨진 것 ① — 회수 다이얼이 절반만 듣는다
 
 상주 컴퓨트는 안 쓸 때 replica를 0으로 내린다. 그런데 executor 파드에 **소유자를 걸어 두지 않으면**
 그 명령이 **driver만 내리고 executor를 남긴다.**
@@ -47,7 +111,7 @@ driver가 사라질 때 쿠버네티스가 executor를 함께 지운다.
 이 프로젝트는 같은 형태를 이미 한 번 겪었다. 검증용으로 띄운 상주 컴퓨트가 반나절 넘게 살아
 있었고, 발견 경로는 성능 이상이 아니라 **"안 쓰는 것 정리"** 였다. 성능으로는 드러나지 않는다.
 
-## 에러 없이 깨진 것 ② — 한 몸이던 것이 갈라지며 설정이 새어 나간다
+### 에러 없이 깨진 것 ② — 한 몸이던 것이 갈라지며 설정이 새어 나간다
 
 오브젝트 스토리지가 최신 AWS SDK의 체크섬 프레이밍을 풀지 못해서, 그것을 끄는 환경변수 두 개를
 driver에 걸어 두고 있었다. **로컬 모드에서는 driver와 executor가 한 프로세스**라 그 두 개가
@@ -59,7 +123,7 @@ executor가 별도 파드가 되는 순간 그 우연이 깨진다. executor에�
 ⇒ 전환에서 가장 먼저 확인할 것은 성능이 아니라 **"한 몸이라서 덮여 있던 것이 무엇인가"** 다.
 자격증명, 환경변수, 파일시스템 설정이 전부 이 축에 걸린다.
 
-## 그럴듯해서 속은 것 ① — 두 경로가 다르게 실패하는데 하나로 읽었다
+### 그럴듯해서 속은 것 ① — 두 경로가 다르게 실패하는데 하나로 읽었다
 
 내부 문서에 *"원격 세션에서는 클라이언트가 보낸 설정이 조용히 무시된다"* 고 적혀 있었다.
 그래서 노트북에 「조용히 무시되는 것을 관측하는 셀」을 만들었다. 그런데 실행하니 **예외가 터졌다.**
@@ -80,7 +144,7 @@ AnalysisException: [CANNOT_MODIFY_CONFIG] Cannot modify the value of the Spark c
 
 ⇒ 실행해 보지 않았다면 노트북에 **거짓 설명을 박제**했을 것이다. 그럴듯했기 때문에 더 위험했다.
 
-## 그럴듯해서 속은 것 ② — 파드가 떴으니 거기서 돌겠지
+### 그럴듯해서 속은 것 ② — 파드가 떴으니 거기서 돌겠지
 
 전환이 됐는지 확인하려고 executor 파드 목록을 봤다. 하나 떠 있었다. 성공으로 읽었다.
 
@@ -106,7 +170,7 @@ PYTHON_VERSION_MISMATCH: Python in worker has different version (3, 10) than tha
 🔴 **`driver` 행이 0으로 남는 것이 이 관측의 핵심이다.** executor 쪽 숫자만 보면
 "원래 그 값이었다"와 구분되지 않는다. **음성 대조가 같이 있어야 양성이 증거가 된다.**
 
-## 그럴듯해서 속은 것 ③ — 같은 이름의 두 파티션
+### 그럴듯해서 속은 것 ③ — 같은 이름의 두 파티션
 
 노트북에 「파티션 프루닝이 도는 것을 보여주는 셀」을 넣으려 했다. 이 프로젝트의 적재 자산은
 **날짜 파티션**을 쓰고 있으니 당연히 될 줄 알았다.
@@ -127,7 +191,7 @@ PYTHON_VERSION_MISMATCH: Python in worker has different version (3, 10) than tha
 내부 기록을 그대로 옮겨 적었는데, 실제로 세어 보니 **부모 없는 스냅샷이 하나뿐인 선형 체인**이었다.
 그 테이블은 그 문제를 겪지 않은 쪽이었다. 옮겨 적기 전에 **세어 봤어야 했다.**
 
-## 그럴듯해서 속은 것 ④ — 종료 코드가 0이라 아무 일도 없었다고 읽었다
+### 그럴듯해서 속은 것 ④ — 종료 코드가 0이라 아무 일도 없었다고 읽었다
 
 전환 뒤 회귀 점검 스크립트를 돌렸다. 통과했다. **종료 코드 0.**
 
@@ -149,7 +213,7 @@ PYTHON_VERSION_MISMATCH: Python in worker has different version (3, 10) than tha
 없는 명령을 부른 스크립트가 실행조차 못 했는데 배경 작업은 성공으로 보고했다.
 셋 다 **성공처럼 생긴 미실행**이다.
 
-## 그래서 무엇을 배웠나
+### 그래서 무엇을 배웠나
 
 **한 몸이던 것을 가르면, 가려져 있던 의존이 전부 드러난다.** 로컬 모드에서 driver와 executor가
 한 프로세스였다는 사실이 자격증명·환경변수·파이썬 버전을 전부 덮고 있었다. 전환의 작업량은

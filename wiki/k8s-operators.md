@@ -1,11 +1,71 @@
 # 오퍼레이터를 둘 것인가 — 맡기면 무엇이 내 손을 떠나는가
 
-> 학습 노트. 배치·스트리밍·데이터베이스에는 오퍼레이터를 두고, 오브젝트 스토리지와
+> 스터디 장. 배치·스트리밍·데이터베이스에는 오퍼레이터를 두고, 오브젝트 스토리지와
 > 오케스트레이터에는 두지 않으면서 배운 것.
 > 결론부터 쓰면 — **오퍼레이터는 기능이 아니라 「층」이고, 그 층은 선언을 줄이는 대신
 > 관측 지점을 한 칸 밖으로 옮긴다.**
 
-## 왜 「쓴다 / 안 쓴다」가 답이 아닌가
+## 개념
+
+오퍼레이터는 **CRD + 조정 루프**다.
+CR에 원하는 상태를 선언하면 컨트롤러가 실제 상태를 그쪽으로 수렴시킨다.
+CRD와 컨트롤러는 따로 온다. 컨트롤러 없는 CRD는 아무 일도 하지 않는다.
+
+- 개념 문서: [Kubernetes — Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/) ·
+  [Kubernetes — Controllers](https://kubernetes.io/docs/concepts/architecture/controller/)
+- 제품 문서: [Spark Kubernetes Operator](https://apache.github.io/spark-kubernetes-operator/) ·
+  [CloudNativePG](https://cloudnative-pg.io/)
+- Flink Kubernetes Operator는 차트 버전에 맞는 릴리스 문서를 본다.
+  경로 규칙은 [docs/architectures/operators.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/architectures/operators.md) 「참고」에 있다.
+
+## 이 저장소에서의 쓰임
+
+| 오퍼레이터 | 차트 | 함께 쓰는 것 |
+| --- | --- | --- |
+| Spark | [`gitops/charts/spark-operator/`](https://github.com/Melting-Face/pipeline-study/blob/main/gitops/charts/spark-operator) | 러너 이미지 [`k8s/spark/Dockerfile.spark-runner`](https://github.com/Melting-Face/pipeline-study/blob/main/k8s/spark/Dockerfile.spark-runner) |
+| Flink | [`gitops/charts/flink-operator/`](https://github.com/Melting-Face/pipeline-study/blob/main/gitops/charts/flink-operator) | 러너 이미지 [`k8s/flink/Dockerfile.flink-runner`](https://github.com/Melting-Face/pipeline-study/blob/main/k8s/flink/Dockerfile.flink-runner) |
+| CNPG | [`gitops/charts/cnpg-operator/`](https://github.com/Melting-Face/pipeline-study/blob/main/gitops/charts/cnpg-operator) | 카탈로그 `Cluster` CR [`cluster.yaml`](https://github.com/Melting-Face/pipeline-study/blob/main/gitops/charts/catalog-postgres/templates/cluster.yaml) |
+
+- 경로 출처는 [docs/architectures/operators.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/architectures/operators.md) 「어떻게 도나」다.
+- `gitops/charts/<app>`은 ArgoCD가 클러스터에 수렴시킨다.
+- 직접 만든 오퍼레이터는 없다. CR을 제출하고 폴링하는 글루만 있다(「함정」의 「폴링하는 클라이언트」 절).
+
+## 실습
+
+**띄우기** — 따로 띄우지 않는다. 오퍼레이터와 카탈로그는 로컬 클러스터의 앱 수렴으로 함께 뜬다
+([docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §3).
+
+**확인**
+
+출처: [docs/setup/local-k8s.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup/local-k8s.md) 5단계 「⑤ 앱 수렴」
+
+```shell
+kubectl get pods -n cnpg-system                   # 앱마다 자기 네임스페이스에 파드가 뜬다
+kubectl get clusters.postgresql.cnpg.io -n default  # catalog-postgres  (Secret 3단계가 있어야 진행)
+```
+
+- 성공 기준: 각 줄의 주석이 출처에 적힌 기대값이다.
+- 층·저장 버전·채워진 필드·권한·finalizer는 아래 [확인 방법](#확인-방법)의 다섯 명령으로 판정한다.
+
+**내리기** — 앱 제거는 설정 파일 삭제 PR 머지에 Application 손 삭제(비가역)를 더한다.
+경로는 [docs/setup/local-k8s.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup/local-k8s.md) 「운영 — 바꾸기·되돌리기」 표를 따른다.
+삭제 순서는 「함정」의 finalizer 절을 먼저 읽는다.
+
+## 고장 대응
+
+| 증상 | 먼저 볼 것 | 처방 |
+| --- | --- | --- |
+| CR 상태 요약이 driver 종료 뒤에도 중간 상태에 고착된다 | driver 파드 phase · 오퍼레이터 파드 재시작 수 | 롤아웃을 다시 돌리면 전이가 다시 온다. 글루는 파드 phase로 탈출한다 |
+| driver 로그에 `cannot deletecollection resource "services"` | 워크로드 ClusterRole의 verb | 잡 네임스페이스 한정 Role에 빠진 동사 하나만 더한다 |
+| `kubectl delete`가 응답 없이 멈춘다 | `metadata.finalizers` | CR이 오퍼레이터에 의존한다고 명시해 파괴 순서를 강제한다 |
+| Secret을 바꿨는데 DB 롤 비밀번호가 옛 값이다 | 그 롤이 부트스트랩 계정인가 | 롤을 선언 관리로 인수하고 재기동까지 한 벌로 한다 — 절차는 [cnpg.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/k8s/cnpg.md) |
+| 정적 감사가 「보안 컨텍스트 미설정」을 낸다 | 파드 spec에 오퍼레이터가 채운 필드 | 갭으로 읽지도, 덮어쓰지도 않는다 |
+
+다섯 행 모두 아래 「함정」에서 옮겼다.
+
+## 함정
+
+### 왜 「쓴다 / 안 쓴다」가 답이 아닌가
 
 처음에는 이분법으로 접근했다. 실제로 세워 보니 **층이 셋**이고 층이 있는 것과 없는 것이 공존한다.
 
@@ -24,7 +84,7 @@ CR 종류도 한 갈래가 아니다 — 배치 잡·스트리밍 세션·데이
 CRD 자체도 한 버전이 아니다. 한 CRD가 두 버전을 **동시에 제공**하면서 실제 저장 버전은 하나라, 제공되는
 쪽으로 적용하면 통과는 하는데 변환되며 전용 필드를 못 쓴다. 설치 순서 축은 [빈 클러스터를 세우며](k8s-bootstrap.md)가 갖는다.
 
-## 오퍼레이터가 실제로 하는 일 — 조정 루프
+### 오퍼레이터가 실제로 하는 일 — 조정 루프
 
 오퍼레이터는 **CRD + 조정 루프**로 동작한다고 알려져 있다. 원하는 상태를 오브젝트로 선언하면 컨트롤러가
 실제 상태를 그쪽으로 수렴시킨다. 그래서 CR 한 장에는 성질이 다른 두 종류의 필드가 들어 있다.
@@ -52,7 +112,7 @@ status:               # 오퍼레이터가 쓴다 — 내 자리가 아니다
 이 루프가 흡수하는 범위는 생각보다 넓다. 데이터베이스 오퍼레이터의 경우 볼륨 클레임·failover·시점
 복구·서버 파라미터 튜닝이 **CR 한 장의 필드 선언**으로 들어온다 — 직접 짜면 절차서 여러 장이 될 것들이다.
 
-## 무엇을 보고 채택을 정했나 — 세 기준
+### 무엇을 보고 채택을 정했나 — 세 기준
 
 **제품 이름을 밝힌다.** 아래 판정은 일반론이 아니라 이 조합에 대한 것이고, 이름이
 없으면 독자가 다음 검색어를 만들 수 없다. 런타임 값(네임스페이스·태그·계정 이름)은
@@ -83,7 +143,7 @@ status:               # 오퍼레이터가 쓴다 — 내 자리가 아니다
 ⇒ 기준은 셋이다 — ⓐ**막을 유실 급소가 있는가** ⓑ**상주 자원 순증이 얼마인가** ⓒ**전제가 내 선택과 맞는가.**
 📌 셋 중 어느 것도 **「그 오퍼레이터가 좋은가」를 묻지 않는다.**
 
-## 에러 없이 깨진 것 ① — 조정 루프는 도는데 관측 채널이 죽는다
+### 에러 없이 깨진 것 ① — 조정 루프는 도는데 관측 채널이 죽는다
 
 배치 잡 CR — Spark Operator의 `SparkApplication`이다 — 의 상태 요약 필드가 driver 파드가
 종료된 뒤에도 **중간 상태에 영구 고착**했다. 몇 시간이 지나도
@@ -116,7 +176,7 @@ driver 파드 phase           종료 상태     "이미 끝났다"
 
 출력을 어떻게 읽을 것인가는 [kubectl로 판정하기](kubectl-judgement.md)가 갖는다. 다른 것은 **그 출력을 쓰는 주체가 내가 아님**이다.
 
-## 에러 없이 깨진 것 ② — 오퍼레이터가 채운 것을 「없다」로 읽는다
+### 에러 없이 깨진 것 ② — 오퍼레이터가 채운 것을 「없다」로 읽는다
 
 데이터베이스 CR에는 probe도 RBAC도 보안 컨텍스트도 쓰지 않는다. **오퍼레이터가 채우기
 때문이다.** 파드를 열어 보면 내가 선언한 적 없는 것들이 이미 들어가 있다.
@@ -140,7 +200,7 @@ CR에 쓴 것            파드에 생긴 것
 
 ⚠️ 규율은 **양방향**이다 — **갭으로 읽지도, 덮어쓰지도 않는다.**
 
-## 에러 없이 깨진 것 ③ — 차트가 준 권한과 코드가 부르는 동사가 다르다
+### 에러 없이 깨진 것 ③ — 차트가 준 권한과 코드가 부르는 동사가 다르다
 
 Spark Operator 차트는 워크로드용 ClusterRole을 만들어 주는데, 그 **verb 목록이 템플릿에 하드코딩**돼 있어
 값으로 조정할 수 없고 **일괄 삭제 권한이 빠져 있다.** 핵심은 **잡이 끝날 때의 정리를 오퍼레이터가 아니라 잡의
@@ -156,7 +216,7 @@ driver가 자기 권한으로 한다**는 점이다. driver가 종료하며 라�
 ⇒ **오퍼레이터 차트의 RBAC이 곧 워크로드 RBAC이 아니다.** 보완은 최소권한으로 한다 — ClusterRole을
 새로 만들지 않고 **잡 네임스페이스 한정 Role**에 **빠진 동사 하나만** 더한다.
 
-## 에러를 내고 멈춘 것 — 삭제가 영원히 멈춘다
+### 에러를 내고 멈춘 것 — 삭제가 영원히 멈춘다
 
 **finalizer는 컨트롤러가 붙이고 컨트롤러만 뗀다.** 선언 도구가 의존 관계를 모르면 삭제 순서를 보장하지
 않으므로, **오퍼레이터가 먼저 삭제되면 finalizer를 처리할 주체가 사라져 CR 삭제가 영원히 멈춘다.**
@@ -173,7 +233,7 @@ metadata.finalizers: ["<오퍼레이터 그룹>/<정리 작업 이름>"]
 ⇒ **삭제도 조정의 일부다.** 처방은 CR이 오퍼레이터에 의존한다고 **명시해** 파괴 순서를 역순으로 강제하는
 것이다. finalizer를 붙이는 오퍼레이터가 하나뿐이어도 나머지에 함께 건다 — 어느 오퍼레이터든 붙일 수 있다.
 
-## 그럴듯해서 속은 것 ① — 「선언하면 반영된다」가 모든 필드에 걸리지 않는다
+### 그럴듯해서 속은 것 ① — 「선언하면 반영된다」가 모든 필드에 걸리지 않는다
 
 같은 CR 안에 **조정 대상 필드**와 **초기화 1회 필드**가 섞여 있다. 데이터베이스 부트스트랩으로 만든 계정의
 비밀번호가 후자다 — 시크릿을 새 값으로 바꾸고 다시 적용해도 **DB 롤의 비밀번호는 옛 값 그대로**다.
@@ -183,7 +243,7 @@ metadata.finalizers: ["<오퍼레이터 그룹>/<정리 작업 이름>"]
 「바꿨다」로 읽힌다.** 해법은 롤을 선언 관리로 인수하는 것이고, 이미 뜬 워크로드의 환경변수는 손으로 돌려야
 해서 **재기동까지가 한 벌**이다.
 
-## 그럴듯해서 속은 것 ② — 폴링하는 클라이언트는 컨트롤러가 아니다
+### 그럴듯해서 속은 것 ② — 폴링하는 클라이언트는 컨트롤러가 아니다
 
 이 저장소에는 **직접 만든 오퍼레이터가 없다** — 컨트롤러 프레임워크 흔적도 직접 정의한 CRD도 전수 확인에서
 0건이다. 있는 것은 **CR 제출·폴링 글루**다: 자산 실행 시점에 1회 제출하고 폴링한다. reconcile 루프가 없다.
@@ -200,7 +260,7 @@ patch · update — status 기록     get     — 폴링
 않으므로 넣지 않고, 폴링을 감시로 바꾸는 날 그때 더한다. 미리 넣어두면 **「왜 있는지 아무도 모르는
 권한」**이 된다. 직접 만든 컨트롤러가 없어 **작성법은 범위 밖**이다 — 빠뜨린 것이 아니라 고르지 않았다.
 
-## 확인 방법
+### 확인 방법
 
 ```shell
 # 1. 층이 있는가 — 비면 CRD가 없다. CRD만 있고 컨트롤러가 없으면 아무 일도 안 일어난다
@@ -219,7 +279,7 @@ kubectl get <커스텀 리소스> <이름> -o jsonpath='{.metadata.finalizers}'
 그리고 **음성 대조가 가장 중요하다**: 전이가 안 오는 CR을 그대로 둔 채 오퍼레이터를 재기동해 다시 제출했을 때
 전이가 오면 **죽은 것은 조정 루프가 아니라 관측 채널**이다. 대조군 없이는 둘이 **같은 화면**으로 보인다.
 
-## 출처
+### 출처
 
 개념 서술은 아래 1차 문서에서 대조했다(확인 시점 2026-09-19). 제품 쪽은 각 저장소의 **기본 브랜치**
 기준이라 특정 릴리스와 다를 수 있다. 표에 없는 것은 「없다」가 아니라 **고르지 않았거나 확인하지
@@ -251,7 +311,7 @@ kubectl get <커스텀 리소스> <이름> -o jsonpath='{.metadata.finalizers}'
 아니라 **프로젝트 이슈 트래커**에서만 확인됐고, 감시 범위와 RBAC의 관계는 1차 대조를 **못 했다**.
 그 둘은 **이 프로젝트에서 관측한 것**이지 문서화된 계약이 아니다.
 
-## 그래서 무엇을 배웠나
+### 그래서 무엇을 배웠나
 
 **오퍼레이터는 기능이 아니라 층이다 — 그래서 「쓴다/안 쓴다」가 아니라 「어디에 두는가」다.** 같은 클러스터에
 층이 있는 것과 없는 것이 공존하고, 판정을 가른 것은 제품 품질이 아니라 **유실 급소·상주 순증·전제 일치**다.
