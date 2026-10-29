@@ -301,9 +301,18 @@ def heading_slug(text: str) -> str:
     `4-3. 서비스 RBAC·최소권한 (2.5 · 2.6)` → `…rbac최소권한-25--26`
     (`·` 양옆 공백이 `--`가 된다). 이 규칙을 틀리면 **정상 링크를 위반으로
     잡아 "고치다가" 실제로 깨뜨린다.**
+
+    🔴 **유니코드 범주 `No` 전체를 지운다.** Python `isalnum()`은 `'①'`을 True로 보지만
+    GitHub 렌더는 지운다 — `에러를 내고 멈춘 것 ① — …` → `…것---…`. 이 차이로 원문자
+    제목 앵커 6개가 `--links`를 0건으로 통과한 채 공개 위키에서 깨졌다.
+    렌더와 대조한 것은 ①②③뿐이다. 나머지 `No`(④·²·½ 등)와 `Nl`(Ⅻ)은 미대조다.
     """
     text = re.sub(r"[`*\[\]()]", "", text).strip().lower()
-    text = "".join(c for c in text if c.isalnum() or c.isspace() or c in "-_")
+    text = "".join(
+        c
+        for c in text
+        if (c.isalnum() and unicodedata.category(c) != "No") or c.isspace() or c in "-_"
+    )
     return re.sub(r"\s", "-", text)
 
 
