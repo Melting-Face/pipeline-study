@@ -50,8 +50,12 @@ Airflow라는 도구 자체를 다른 클러스터 오케스트레이터와 비�
 ## 운영 메모
 
 - DAG는 기본 일시정지로 배포되고, 켜는 것은 사람이다([컨벤션 §2](../conventions/airflow.md#2-규칙)).
-- 이미지 테스트는 로컬 podman 빌드로 돌린다 — `images/airflow/tests/dag-import.test.sh`.
+- 절차는 [Airflow를 클러스터 안에 두며](../../wiki/airflow-on-k8s.md#실습)로 옮겼다.
 - K8s 태스크 로그는 파드 회수와 함께 사라진다 — 설계의 「관측 경로 선언」이 선언한 공백이다.
+
+## 교훈
+
+- [Airflow를 클러스터 안에 두며 — 정기 실행 주체는 클러스터에 상주해야 한다](../../wiki/airflow-on-k8s.md)
 
 ## 참고
 
