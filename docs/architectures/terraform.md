@@ -220,6 +220,10 @@ CI 잡은 `terraform/*/`를 순회해 스택이 늘어도 자동으로 집고, *
 (`.env`·`.claude/settings.local.json`)을 **직접 링크**해야 한다 —
 `settings.local.json`이 빠지면 권한 범위가 **조용히** 달라진다.
 
+## 교훈
+
+- [Terraform 스택을 둘로 가르며 — 분할 축은 destroy가 무엇을 파괴하는가다](../../wiki/terraform-stacks.md)
+
 ## 참고
 
 외부 공식 문서는 [`../references.md`](../references.md)에 단일 관리한다 — URL을 여기 복제하지 않는다.

@@ -7,6 +7,7 @@
 - [Dagster 오케스트레이션](dagster-orchestration.md)
     - [Dagster 파티션](dagster-partitions.md)
 - [엔진마다 값이 갈리는 SQL](cross-engine-sql.md)
+- [Airflow를 클러스터 안에](airflow-on-k8s.md)
 
 **컴퓨트**
 
@@ -19,12 +20,18 @@
 
 - [빈 클러스터를 세우며](k8s-bootstrap.md)
 - [오퍼레이터를 둘 것인가](k8s-operators.md)
+- [ArgoCD로 수렴시키며](argocd-bootstrap.md)
+- [Terraform 스택을 둘로](terraform-stacks.md)
+- [Iceberg JDBC 카탈로그](iceberg-catalog.md)
+- [클러스터 밖에 S3를](seaweedfs-s3.md)
+- [클러스터 안 Prometheus](prometheus-monitoring.md)
 
 **방법론**
 
 - [읽는 법](how-to-read.md)
     - [kubectl로 판정하기](kubectl-judgement.md)
 - [Claude Code CLI](claude-code-cli.md)
+- [분석을 세 층에](analysis-layers.md)
 
 **정본은 저장소에**
 

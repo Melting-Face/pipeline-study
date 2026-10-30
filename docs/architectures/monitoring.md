@@ -189,6 +189,10 @@ Robusta의 기존 Prometheus 연동 모드 파드 차분 · `grafana/loki`와 `g
   **탐지 공백**으로 성격이 바뀌고, 위 표는 그 노드에서 무엇을 못 보는지의 목록이 된다.
   [../security.md](../security.md) 2.6·2.11과 함께 다시 읽어야 하는 지점이다.
 
+## 교훈
+
+- [클러스터 안 Prometheus 하나 — 수집기보다 먼저 「먹일 것이 있는가」를 묻는다](../../wiki/prometheus-monitoring.md)
+
 ## 참고
 
 - Prometheus — Overview: https://prometheus.io/docs/introduction/overview/

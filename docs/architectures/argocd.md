@@ -75,6 +75,10 @@ Application의 자동 sync를 끈다)는 [../argocd-gitops.md](../argocd-gitops.
 - 관측: healthcheck·로그는 K8s 기본 경로를 쓰고 ArgoCD 전용 메트릭 수집기는 **두지 않는다**(계측 대상 없는
   수집기 금지 — [../conventions/monitoring.md](../conventions/monitoring.md)).
 
+## 교훈
+
+- [ArgoCD로 클러스터를 수렴시키며 — 앱 목록은 Git이, 순서는 tier가 쥔다](../../wiki/argocd-bootstrap.md)
+
 ## 참고
 
 외부 1차 출처(A등급, stable 문서)는 [../references.md](../references.md)에 단일 관리한다 —

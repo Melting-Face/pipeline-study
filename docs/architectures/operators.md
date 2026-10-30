@@ -249,6 +249,7 @@ Terraform으로 옮겨갈 때 한쪽 산문만 갱신돼, 두 파일이 **서로
 ## 교훈
 
 - [오퍼레이터를 둘 것인가 — 맡기면 무엇이 내 손을 떠나는가](../../wiki/k8s-operators.md)
+- [Iceberg JDBC 카탈로그를 Postgres에 둘 때 — 테이블 목록은 DB에, 데이터는 S3에 있다](../../wiki/iceberg-catalog.md)
 
 ## 참고
 
