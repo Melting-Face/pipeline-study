@@ -52,6 +52,47 @@ terraform -chdir=terraform/platform apply   # 기본값: kind-lakehouse · 8080 
 kubectl get applications -n argocd        # 전부 Synced · Healthy 면 수렴
 ```
 
+관측한 출력은 핵심만 발췌했다. 클러스터·컨테이너가 없는 빈 상태에서 돌렸다.
+
+```text
+# 관측: scripts/k8s-up.sh
+...
+[k8s] 로컬 레지스트리 기동: kind-registry → 127.0.0.1:5001
+<컨테이너 ID>
+[k8s] 없음: seaweedfs — 스택 A apply가 만든다
+[k8s] 없음: lakehouse-control-plane — 스택 A apply가 만든다
+[k8s] 완료: podman machine + 레지스트리(127.0.0.1:5001) 준비됨
+[k8s] 다음: terraform -chdir=terraform/cluster/kind apply (클러스터), 이후 platform 스택
+```
+
+- 성공 기준: 끝줄이 `완료`이고, 클러스터·SeaweedFS는 `없음 … 스택 A apply가 만든다`로 안내된다.
+
+```text
+# 관측: terraform -chdir=terraform/cluster/kind apply
+Apply complete! Resources: 5 added, 0 changed, 3 destroyed.
+```
+
+- 성공 기준: `Apply complete!`. 이번 `3 destroyed`는 `terraform_data` 교체(레지스트리 인증서·네트워크·버킷)이다.
+
+```text
+# 관측: ./scripts/k8s-secrets.sh
+[k8s] Secret 생성: default/lakehouse-creds
+[k8s] Secret 생성: default/catalog-pg-app
+...
+[k8s] Secret 생성: airflow/airflow-conn-polygon
+[k8s] 완료. 카탈로그 Cluster는 ArgoCD(catalog-postgres)가, S3는 클러스터 밖 스택 A(terraform/cluster/kind)가 맡는다
+```
+
+- 성공 기준: 끝줄이 `완료`다. 선택 Secret은 `건너뜀`으로 나올 수 있다(`physionet-creds` — 자격 환경변수 미설정).
+
+```text
+# 관측: terraform -chdir=terraform/platform apply
+Apply complete! Resources: 3 added, 0 changed, 0 destroyed.
+```
+
+- 성공 기준: 3개(`argo-cd`·`appset`·`ingress-nginx` helm 릴리스)가 생성된다.
+- apply 직후 Application은 아직 대부분 `OutOfSync`·`Missing`이다. 수렴은 다음 절의 확인으로 본다.
+
 **확인** — 층마다 하나씩 본다.
 
 출처: [docs/setup/local-k8s.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup/local-k8s.md) 2·4·5단계 「확인」
@@ -63,8 +104,49 @@ helm list -A                                  # ingress-nginx · argo-cd · apps
 kubectl get applications -n argocd                # 전부 Synced · Healthy
 ```
 
-- 성공 기준: 각 줄의 주석이 출처에 적힌 기대값이다.
-- 수렴 통과 기준: Application 수가 `gitops/apps/*/config.yaml` 수와 같고, 전부 `Synced` · `Healthy`다(5단계).
+```text
+# 관측: kubectl get nodes
+NAME                      STATUS   ROLES           AGE   VERSION
+lakehouse-control-plane   Ready    control-plane   <경과>   v1.35.0
+```
+
+- 성공 기준: 노드 `lakehouse-control-plane`이 `Ready`다.
+
+```text
+# 관측: podman inspect -f '{{.State.Health.Status}}' seaweedfs
+healthy
+```
+
+- 성공 기준: 출력이 `healthy` 한 단어다.
+
+```text
+# 관측: helm list -A
+NAME         	NAMESPACE    	REVISION	UPDATED                             	STATUS  	CHART               	APP VERSION
+appset       	argocd       	1       	<시각>	deployed	appset-0.1.0
+argo-cd      	argocd       	1       	<시각>	deployed	argo-cd-10.9.6      	v3.5.3
+ingress-nginx	ingress-nginx	1       	<시각>	deployed	ingress-nginx-4.15.1	1.15.1
+```
+
+- 성공 기준: 릴리스 셋(`appset`·`argo-cd`·`ingress-nginx`)이 모두 `deployed`다.
+
+```text
+# 관측: kubectl get applications -n argocd
+NAME               SYNC STATUS   HEALTH STATUS
+airflow            Synced        Healthy
+catalog-postgres   Synced        Healthy
+cnpg-operator      Synced        Healthy
+flink-operator     Synced        Healthy
+prometheus         Synced        Healthy
+spark-operator     Synced        Healthy
+storage-external   Synced        Healthy
+trino              Synced        Healthy
+```
+
+- 성공 기준(수렴, 5단계): Application 수가 `gitops/apps/*/config.yaml` 수와 같고(위 관측에서는 8개),
+  전부 `Synced` · `Healthy`다. 스택 B apply 직후에는 바로 오지 않는다 — 수 분 폴링한다.
+- 그 전에는 `airflow`(마이그레이션 Job → 상주 파드)와 `prometheus`(`ContainerCreating`)가
+  마지막까지 `Progressing`이었다.
+  수렴 중의 `Progressing`은 고장이 아니다.
 
 **내리기**
 
@@ -82,13 +164,18 @@ kubectl get applications -n argocd                # 전부 Synced · Healthy
 | `MACHINE_*`를 바꿔도 VM 자원이 그대로다 | 머신을 새로 만들었는가 | 머신을 중지하고 `podman machine set --cpus/--memory` — [resource-sizing.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/resource-sizing.md) |
 | `k8s-secrets.sh`가 「반쪽 Secret 쌍」으로 멈춘다 | 쌍 중 남은 쪽 | 남은 쪽을 지우고 다시 실행한다 — [cnpg.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/k8s/cnpg.md) |
 | 스택 A `terraform apply`가 linked worktree를 거부한다 | 실행한 체크아웃 | 루트 체크아웃에서 실행한다. state도 거기 있다 |
-| 호스트 포트를 바꿔야 한다 | 포트 매핑은 생성 시점에만 정해진다 | 클러스터를 다시 만든다(비가역). 카탈로그도 사라져 재적재가 필요하다 — 절차는 [argocd-gitops.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/argocd-gitops.md) §6 |
+| 호스트 포트를 바꿔야 한다 | 클러스터 생성 때 건 포트 매핑이 원하는 값인가 | 포트 매핑은 생성 시점에만 정해지므로 클러스터를 다시 만든다(비가역, 카탈로그 재적재 필요) — [argocd-gitops.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/argocd-gitops.md) §6 |
 | 15432 port-forward가 접속마다 끊긴다 | 호스트 압박 판정 지표 | 재기동 루프로 감싼다 — [resource-sizing.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/resource-sizing.md) |
 | 레지스트리 기동이 `the container name "<레지스트리>" is already in use`로 죽는다 | 컨테이너가 중지 상태로 있는가 | 새로 만들지 않고 시작한다 |
 | 클러스터 이름은 보이는데 다음 단계가 노드 명령에서 죽는다 | 노드 컨테이너 상태(`exit 137`) | 노드를 시작하고 API가 응답할 때까지 기다린다 |
 | 파드가 `Init:ErrImagePull` | 이미지를 push했는가 | push하면 kubelet이 재시도해 같은 파드가 올라온다. 지우지 않는다 |
+| 스택 A `plan`이 `could not locate any control plane nodes for cluster named 'lakehouse'`로 멈춘다 | state에 `kind_cluster.this`가 있는데 `kind get clusters`·노드 컨테이너는 없는가 | state 백업 후 `terraform -chdir=terraform/cluster/kind state rm kind_cluster.this`, 다시 `plan`한다. state 편집이라 비가역 게이트를 거친다 |
+| 호스트 수면 뒤 VM 시계가 호스트보다 뒤처진다 | 호스트 `date +%s`와 `podman machine ssh 'date +%s'`의 차 | VM 안에서 시계를 호스트 epoch로 맞춘다: `podman machine ssh "sudo date -u -s @<호스트 epoch>"`. 상주 컴퓨트가 떠 있으면 영향을 먼저 본다 |
 
-앞 여섯 행은 [docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §8, 나머지는 아래 「함정」에서 옮겼다.
+앞 여섯 행은 [docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §8, 그다음 셋은 아래 「함정」에서 옮겼다.
+마지막 두 행은 이 장의 실습 관측에서 왔다.
+첫 번째 관측 행의 `state rm` 뒤 `plan`은 `5 to add, 0 to change, 3 to destroy`였고, 3은 `terraform_data` 교체다.
+비가역 게이트의 판정 기준은 [risk.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/risk.md) §4다.
 
 ## 함정
 

@@ -51,6 +51,32 @@ kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 별도 터미널 —
 (cd dagster/dockerfile.d/src && DAGSTER_HOME="$PWD" uv run --env-file ../../../.env dg dev)   # http://localhost:3000
 ```
 
+카탈로그 터널은 띄운 터미널에서 이런 출력을 낸다. 접속이 들어올 때마다 `Handling connection` 줄이 붙는다.
+
+```text
+# 관측: kubectl port-forward svc/catalog-postgres-rw 15432:5432
+Forwarding from 127.0.0.1:15432 -> 5432
+Forwarding from [::1]:15432 -> 5432
+Handling connection for 15432
+```
+
+터널이 열렸는지는 다른 터미널에서 포트로 본다. 터널 없는 포트 15433을 음성 대조로 함께 건다.
+
+```text
+# 관측: nc -z -w 3 127.0.0.1 15432; echo "tunnel_exit=$?"
+Connection to 127.0.0.1 port 15432 [tcp/*] succeeded!
+tunnel_exit=0
+```
+
+```text
+# 관측: nc -z -w 3 127.0.0.1 15433; echo "control_exit=$?"   (음성 대조 — 터널 없는 포트)
+control_exit=1
+```
+
+- 성공 기준: 터널 포트는 `succeeded!`·`tunnel_exit=0`, 대조 포트는 `control_exit=1`이다.
+  대조가 실패하므로 성공은 터널이 살아 있다는 뜻이다.
+- 메타 DB(`podman compose --profile legacy-meta up -d`)와 `dg dev`는 이번에 관측하지 않았다. 미관측이라 비워 둔다.
+
 §5 아래 경고 두 가지를 그대로 옮긴다.
 
 - `.env`의 `POSTGRES_PORT`는 5432(compose `postgres`)로 둔다 — 15432(port-forward)는 카탈로그 CNPG라
@@ -65,10 +91,20 @@ kubectl port-forward svc/catalog-postgres-rw 15432:5432   # 별도 터미널 —
 (cd dagster/dockerfile.d/src && DAGSTER_HOME="$(mktemp -d)" uv run --env-file ../../../.env dg check defs)
 ```
 
-- 성공 기준: 미관측 — 출처 문서에 기대 출력이 없어 비워 둔다.
+```text
+# 관측: (cd dagster/dockerfile.d/src && DAGSTER_HOME=<임시 디렉터리> uv run --env-file ../../../.env dg check defs)   (발췌)
+All component YAML validated successfully.
+... - dagster - WARNING - No dagster instance configuration file (dagster.yaml) found at <임시 디렉터리>. ...
+INFO:trino.auth:keyring module not found. OAuth2 token will not be stored in keyring.
+All definitions loaded successfully.
+```
+
+- 성공 기준: 마지막 줄이 `All definitions loaded successfully.`다.
+- 텔레메트리 안내와 `RequestsDependencyWarning`(urllib3/chardet 버전) 경고가 함께 나온다. 실패 신호가 아니다.
 - UI 주소는 `http://localhost:3000`이다(§3-1 접근 경로 표).
 
 **내리기** — 출처 문서에 내리기 명령이 없다. 미관측이라 비워 둔다.
+카탈로그 터널은 띄운 터미널에서 Ctrl+C로 내린다.
 
 ## 고장 대응
 

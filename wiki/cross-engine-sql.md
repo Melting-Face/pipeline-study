@@ -41,8 +41,27 @@ Trino는 분산 SQL 쿼리 엔진이다. 이 저장소에서 dbt는 k8s Trino에
 kubectl get applications -n argocd        # 전부 Synced · Healthy 면 수렴
 ```
 
-- 성공 기준: 전부 `Synced` · `Healthy`면 수렴이다(같은 줄 주석).
-- Trino UI는 `http://trino.localtest.me:8080`이다(§3-1).
+```text
+# 관측: kubectl get applications -n argocd
+NAME               SYNC STATUS   HEALTH STATUS
+airflow            Synced        Healthy
+catalog-postgres   Synced        Healthy
+cnpg-operator      Synced        Healthy
+flink-operator     Synced        Healthy
+prometheus         Synced        Healthy
+spark-operator     Synced        Healthy
+storage-external   Synced        Healthy
+trino              Synced        Healthy
+```
+
+- 성공 기준: 전부 `Synced` · `Healthy`면 수렴이다(같은 줄 주석). 위는 8개 앱이 모두 그 상태인 관측이다.
+- 수렴 직전에는 `airflow`·`prometheus`가 `Progressing`으로 남는다. 이 둘이 마지막에 수렴했다.
+- Trino UI는 `http://trino.localtest.me:8080`이다(§3-1). `…/ui/`가 200이면 열린 것이다.
+
+```text
+# 관측: curl -s -o /dev/null -w '%{http_code}\n' http://trino.localtest.me:8080/ui/
+200
+```
 
 출처: [docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §1 「저장소 준비」
 
@@ -52,7 +71,31 @@ kubectl get applications -n argocd        # 전부 Synced · Healthy 면 수렴
   && uv run dbt parse --project-dir dbt_pipelines --profiles-dir dbt_pipelines)
 ```
 
-- 성공 기준: 미관측 — 출처 문서에 기대 출력이 없어 비워 둔다.
+```text
+# 관측: uv run dbt deps --project-dir dbt_pipelines
+...
+<시각>  Installed from version 0.19.0
+<시각>  Updated version available: 0.21.0
+<시각>
+<시각>  Updates available for packages: ['dbt-labs/dbt_utils', 'godatadriven/dbt_date']
+Update your versions in packages.yml, then run dbt deps
+```
+
+```text
+# 관측: uv run dbt parse --project-dir dbt_pipelines --profiles-dir dbt_pipelines
+...
+<시각>  Registered adapter: trino=1.10.6
+<시각>  Unable to do partial parsing because saved manifest not found. Starting full parse.
+<시각>  [WARNING]: Configuration paths exist in your dbt_project.yml file which do not apply to any resources.
+There are 1 unused configuration paths:
+- models.dbt_pipelines.eicu
+<시각>  Performance info: dbt_pipelines/target/perf_info.json
+```
+
+- 성공 기준: `dbt parse`가 에러 없이 끝나고 마지막 줄이 `Performance info: dbt_pipelines/target/perf_info.json`이다.
+- `Configuration paths … unused: models.dbt_pipelines.eicu` 경고는 실패 신호가 아니다.
+  위 관측에서 이 경고와 함께 parse가 끝까지 갔다.
+- `dbt deps`의 `Updates available for packages` 안내도 설치가 끝난 뒤의 버전 안내다.
 - `dbt parse`는 엔진에 접속하지 않는다. setup.md 「절별 전제」에서 §1의 전제는 「없음」이다.
 - ⚠️ 파싱 통과는 「같은 값」의 증거가 아니다. 아래 「함정」의 마지막 절이 그 이유다.
 
@@ -62,9 +105,9 @@ kubectl get applications -n argocd        # 전부 Synced · Healthy 면 수렴
 
 | 증상 | 먼저 볼 것 | 처방 |
 | --- | --- | --- |
-| `elapsed: 이 어댑터용 구현이 없다` 컴파일 에러 | 새 엔진의 `<adapter>__elapsed` 구현 | 그 어댑터용 구현을 추가한다 |
+| `elapsed: 이 어댑터용 구현이 없다` 컴파일 에러 | 새 엔진용 `<adapter>__elapsed` 구현이 있는가 | 그 어댑터용 구현을 추가한다 |
 | 임계값 비교의 코호트 행이 엔진마다 다르다 | `dbt.datediff`·`dbt.dateadd`를 썼는가 | 어댑터별 구현 둘을 나란히 읽고, 갈리면 프로젝트 dispatch 매크로로 흡수한다 |
-| `INTERVAL` 줄에서 컴파일이 깨진다 | 엔진별 따옴표 유무 | 크로스 어댑터 내장 매크로를 쓰되, 둘째 행처럼 구현을 확인한다 |
+| `INTERVAL` 줄에서 컴파일이 깨진다 | `INTERVAL` 값의 따옴표가 엔진마다 같은가 | 크로스 어댑터 내장 매크로를 쓰되, 둘째 행처럼 구현을 확인한다 |
 
 세 행 모두 아래 「함정」에서 옮겼다.
 

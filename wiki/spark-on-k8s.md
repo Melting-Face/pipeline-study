@@ -37,6 +37,14 @@ podman build -f k8s/spark/Dockerfile.spark-runner -t localhost:5001/spark-runner
 podman push --tls-verify=false localhost:5001/spark-runner:0.6.0
 ```
 
+레지스트리에 이미 태그가 있으면 다시 올리지 않는다. 태그 목록으로 확인한다.
+이번 관측에서는 이미지가 레지스트리 볼륨에 남아 있어 build·push를 하지 않았다 — 두 명령의 출력은 미관측이다.
+
+```text
+# 관측: curl -s http://127.0.0.1:5001/v2/spark-runner/tags/list
+{"name":"spark-runner","tags":["0.5.0","0.6.0"]}
+```
+
 **확인** — 매니페스트가 push한 태그를 가리키는지 본다.
 
 출처: [docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §4 「러너 이미지」
@@ -45,23 +53,39 @@ podman push --tls-verify=false localhost:5001/spark-runner:0.6.0
 grep -rn "image:" k8s/spark/*.yaml k8s/flink/*.yaml
 ```
 
-- 성공 기준: `k8s/spark/*.yaml`의 `image:` 태그가 push한 태그와 같다.
+```text
+# 관측: grep -rn "image:" k8s/spark/*.yaml k8s/flink/*.yaml
+k8s/spark/sparkapplication-poc.yaml:32:        spark.kubernetes.container.image: "localhost:5001/spark-runner:0.6.0"
+k8s/flink/flinkdeployment-session.yaml:19:    image: localhost:5001/flink-runner:0.3.0
+```
+
+- 성공 기준: `k8s/spark/*.yaml`의 `image:` 태그(`spark-runner:0.6.0`)가 레지스트리 태그 목록에 있다.
   §4는 태그를 올릴 때 `image:`도 함께 바꾸라고 적는다.
 - 잡 제출은 Dagster의 `SparkOperatorResource`가 맡는다. 손 제출 명령은 출처 문서에 없다 — 미관측이라 비워 둔다.
 - Flink와 동시에 띄울 때는 `spark.executor.instances` ≤ 1을 지킨다(§3-2).
 
 **내리기** — 출처 문서에 명령이 없다. 미관측이라 비워 둔다.
 회수 판정은 「함정」 ①의 executor 셀렉터로 한다.
+CR이 남아 있지 않은지는 아래로 본다.
+이번에 Spark 잡을 돌리지 않았으므로 잡을 낸 뒤의 회수가 아니라 CR이 없는 상태다.
+
+```text
+# 관측: kubectl get flinkdeployment,sparkapplication -A   (회수 뒤)
+No resources found
+```
 
 ## 고장 대응
 
 | 증상 | 먼저 볼 것 | 처방 |
 | --- | --- | --- |
-| JVM 파드가 `unable to create native thread`(메모리는 여유) | 컨테이너 PID 상한 — `k8s-up.sh` 경고 | 경고가 나면 클러스터를 재생성한다(비가역). 카탈로그도 사라져 재적재가 필요하다 — [pids.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/k8s/pids.md) |
+| JVM 파드가 `unable to create native thread`(메모리는 여유) | `k8s-up.sh` 출력에 PID 상한 경고가 있는가 | 원인은 컨테이너 PID 상한이다. 경고가 나면 클러스터를 재생성한다(비가역) — [pids.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/k8s/pids.md) |
 | S3 업로드는 성공했는데 객체가 손상된다 | executor에도 체크섬 환경변수가 있는가 | `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` — [checksum.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/k8s/checksum.md) |
 | (철거된 Spark Connect 시절) replica 0 뒤에도 executor 파드가 `Running` | `kubectl get pods -l spark-role=executor` | driver 파드를 executor의 소유자로 건다 |
 | (철거된 Spark Connect 시절) 상주 driver 파드가 재시작 루프에 빠진다 | `--deploy-mode cluster`를 줬는가 | `--deploy-mode`를 주지 않는다(client) |
 | (철거된 Spark Connect 시절) `PYTHON_VERSION_MISMATCH` | 클라이언트 커널과 서버 이미지의 파이썬 마이너 버전 | 두 마이너 버전을 맞춘다 |
+
+첫 행의 재생성은 카탈로그도 지우므로 재적재가 필요하다(카탈로그 Postgres는 CNPG 소유) —
+[cnpg.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/k8s/cnpg.md)
 
 앞 두 행은 [docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §8, 나머지는 아래 「함정」에서 옮겼다.
 

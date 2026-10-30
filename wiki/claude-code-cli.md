@@ -43,7 +43,39 @@ claude --version
 claude doctor
 ```
 
-- 성공 기준: 버전이 이 장 머리의 확인 기준과 맞는지 먼저 본다(①).
+```text
+# 관측: claude --version
+2.1.287 (Claude Code)
+```
+
+```text
+# 관측: claude doctor
+Claude Code doctor
+
+Running: package-manager (2.1.287)
+Commit: 3c446a1b98ac
+Platform: darwin-arm64
+Package manager: homebrew
+Path: <설치 경로>/claude
+Config install method: unknown
+Search: OK (bundled)
+Auto-updates: Managed by package manager
+Auto-update channel: latest
+Last update attempt: none recorded
+Managed settings (remote): not fetched — requires an Enterprise or Team subscription
+Organization policy: not applicable to Pro and Max accounts
+
+Remote Control
+Control this session from claude.ai/code or the Claude mobile app
+
+No installation issues found.
+
+For a full setup checkup that can also fix issues, run /doctor in a Claude Code session.
+```
+
+- 성공 기준: `claude doctor`가 `No installation issues found.`로 끝난다.
+- 버전이 이 장 머리의 확인 기준과 맞는지 먼저 본다(①).
+  이번 관측은 `2.1.287`이고 장 머리의 확인 기준은 `2.1.236`이라 **다르다**.
 - ②~⑤는 [확인 방법](#확인-방법)을 그대로 따른다. `/context`·`/usage`·재귀 계측·음성 대조 순서다.
 
 **내리기** — 미션이 끝나면 세션도 끝낸다(「그럴듯해서 속은 것 ①」).
@@ -53,11 +85,11 @@ claude doctor
 
 | 증상 | 먼저 볼 것 | 처방 |
 | --- | --- | --- |
-| `-c`로 이어붙인 세션이 생각과 다르다 | `-c`는 가장 최근 세션을 집는다 | `-r`로 특정 세션을 고른다 |
+| `-c`로 이어붙인 세션이 생각과 다르다 | 이어붙인 세션이 가장 최근 세션인가 (`-c`는 그것을 집는다) | `-r`로 특정 세션을 고른다 |
 | 서브에이전트 요청이 0건으로 나온다 | 최상위 `*.jsonl`만 셌는가 | 세션 UUID 디렉터리까지 재귀로 센다 |
 | 요청 수가 부풀어 보인다 | 줄 수를 셌는가 | 고유 `requestId` 수로 센다 |
 | 서브에이전트 소요 시간이 기준선보다 길다 | 그 사이 노드가 멈춰 있었는가 | 벽시계 값이다. 오래 걸릴 호출은 앞뒤로 시각을 찍는다 |
-| `Shift+Enter` 줄바꿈이 안 먹는다 | 터미널 설정 의존 | `Ctrl+J`를 쓴다 |
+| `Shift+Enter` 줄바꿈이 안 먹는다 | 터미널 설정이 그 키를 구분해 보내는가 | `Ctrl+J`를 쓴다 |
 
 다섯 행 모두 아래 「함정」에서 옮겼다.
 

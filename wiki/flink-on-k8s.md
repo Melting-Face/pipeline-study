@@ -67,6 +67,14 @@ podman build -f k8s/flink/Dockerfile.flink-runner -t localhost:5001/flink-runner
 podman push --tls-verify=false localhost:5001/flink-runner:0.3.0
 ```
 
+레지스트리에 이미 태그가 있으면 다시 올리지 않는다. 이번 관측에서는 이미지가 레지스트리 볼륨에 남아 있어
+build·push를 하지 않았다 — 두 명령의 출력은 미관측이다.
+
+```text
+# 관측: curl -s http://127.0.0.1:5001/v2/flink-runner/tags/list
+{"name":"flink-runner","tags":["0.3.0"]}
+```
+
 ConfigMap 5종을 먼저 올리고 세션 클러스터를 띄운다.
 ConfigMap이 하나라도 없으면 파드가 `CreateContainerConfigError`로 멈춘다(§3-2).
 
@@ -78,6 +86,22 @@ kubectl apply -n default -f $F/iceberg-catalog-init.yaml -f $F/iceberg-batch-job
   -f $F/iceberg-stream-job.yaml -f $F/iceberg-datagen-job.yaml -f $F/usgs-water-stream-job.yaml
 kubectl apply  -f $F/flinkdeployment-session.yaml   # Flink 세션 클러스터 → http://flink.localtest.me:8080
 ```
+
+```text
+# 관측: kubectl apply -n default -f $F/iceberg-catalog-init.yaml -f $F/iceberg-batch-job.yaml -f $F/iceberg-stream-job.yaml -f $F/iceberg-datagen-job.yaml -f $F/usgs-water-stream-job.yaml
+configmap/iceberg-catalog-init created
+configmap/iceberg-batch-job created
+configmap/iceberg-stream-job created
+configmap/iceberg-datagen-job created
+configmap/usgs-water-stream-job created
+```
+
+```text
+# 관측: kubectl apply -f $F/flinkdeployment-session.yaml
+flinkdeployment.flink.apache.org/flink-session created
+```
+
+apply 직후 `/overview`는 503(기동 중)이고, 잠시 뒤 200으로 바뀐다.
 
 - ConfigMap은 파일을 나열한다. `iceberg-*.yaml`은 usgs를, `*-job.yaml`은 catalog-init을 놓치고 둘 다
   4개라 개수만 세면 맞아 보인다.
@@ -91,7 +115,21 @@ kubectl apply  -f $F/flinkdeployment-session.yaml   # Flink 세션 클러스터 
 curl http://flink.localtest.me:8080/overview
 ```
 
-- 성공 기준: JSON이 돌아온다(§3-2).
+```text
+# 관측: curl http://flink.localtest.me:8080/overview
+{"taskmanagers":0,"slots-total":0,"slots-available":0,"jobs-running":0,"jobs-finished":0,"jobs-cancelled":0,"jobs-failed":0,"flink-version":"2.1.3","flink-commit":"6cda56b"}
+```
+
+- 성공 기준: JSON이 돌아오고 `taskmanagers`가 0이다(§3-2). TM은 잡 제출 시 온디맨드라 세션만 띄우면 0이 정상이다.
+- 세션이 떠 있는 동안 CR을 나열하면 `flink-session`이 보인다. 이 조회가 살아 있다는 대조이므로,
+  회수 뒤의 `No resources found`가 의미를 가진다.
+
+```text
+# 관측: kubectl get flinkdeployment,sparkapplication -A   (세션 기동 중 — 관측 경로 생존 대조)
+NAMESPACE   NAME                                             JOB STATUS    LIFECYCLE STATE
+default     flinkdeployment.flink.apache.org/flink-session   RECONCILING   STABLE
+```
+
 - 이 포트는 UI와 REST가 같아서, UI를 열면 잡 제출 API도 함께 나간다(§3-1).
 - 매니페스트가 push한 태그를 가리키는지는 아래 명령으로 본다(§4).
 
@@ -99,7 +137,13 @@ curl http://flink.localtest.me:8080/overview
 grep -rn "image:" k8s/spark/*.yaml k8s/flink/*.yaml
 ```
 
-- 성공 기준: `k8s/flink/*.yaml`의 `image:` 태그가 push한 태그와 같다.
+```text
+# 관측: grep -rn "image:" k8s/spark/*.yaml k8s/flink/*.yaml
+k8s/spark/sparkapplication-poc.yaml:32:        spark.kubernetes.container.image: "localhost:5001/spark-runner:0.6.0"
+k8s/flink/flinkdeployment-session.yaml:19:    image: localhost:5001/flink-runner:0.3.0
+```
+
+- 성공 기준: `k8s/flink/*.yaml`의 `image:` 태그(`flink-runner:0.3.0`)가 레지스트리 태그 목록에 있다.
 - 잡 제출과 그 결과 판정은 출처 문서에 명령이 없다 — 미관측이라 비워 둔다.
 - Spark와 동시에 띄울 때는 `spark.executor.instances` ≤ 1을 지킨다(§3-2).
 
@@ -109,10 +153,37 @@ grep -rn "image:" k8s/spark/*.yaml k8s/flink/*.yaml
 
 ```shell
 F=k8s/flink
-kubectl delete -f $F/flinkdeployment-session.yaml   # 회수(ConfigMap은 같은 -f 목록으로 delete)
+kubectl delete -f $F/flinkdeployment-session.yaml   # 회수
+kubectl delete -n default -f $F/iceberg-catalog-init.yaml -f $F/iceberg-batch-job.yaml \
+  -f $F/iceberg-stream-job.yaml -f $F/iceberg-datagen-job.yaml -f $F/usgs-water-stream-job.yaml
 ```
 
-- 성공 기준: 위 `curl`이 404로 돌아온다. Ingress까지 정리된 것이다(§3-2).
+```text
+# 관측: kubectl delete -f $F/flinkdeployment-session.yaml
+flinkdeployment.flink.apache.org "flink-session" deleted from default namespace
+```
+
+```text
+# 관측: kubectl delete -n default -f $F/iceberg-catalog-init.yaml -f $F/iceberg-batch-job.yaml -f $F/iceberg-stream-job.yaml -f $F/iceberg-datagen-job.yaml -f $F/usgs-water-stream-job.yaml
+configmap "iceberg-catalog-init" deleted from default namespace
+configmap "iceberg-batch-job" deleted from default namespace
+configmap "iceberg-stream-job" deleted from default namespace
+configmap "iceberg-datagen-job" deleted from default namespace
+configmap "usgs-water-stream-job" deleted from default namespace
+```
+
+```text
+# 관측: curl -s -o /dev/null -w '%{http_code}' http://flink.localtest.me:8080/overview   (회수 뒤)
+404
+```
+
+```text
+# 관측: kubectl get flinkdeployment,sparkapplication -A   (회수 뒤)
+No resources found
+```
+
+- 성공 기준: 위 `curl`이 404로 돌아오고 `kubectl get flinkdeployment,sparkapplication -A`가 `No resources found`다.
+  Ingress까지 정리된 것이다(§3-2).
 - 스트림 잡이 돌고 있으면 삭제 전에 잡을 먼저 취소한다. 순서를 뒤집으면 CR이 `DELETING`에 고착한다 —
   [함정 쪽](flink-on-k8s-pitfalls.md#순서가-규칙이-된-자리-둘).
 
