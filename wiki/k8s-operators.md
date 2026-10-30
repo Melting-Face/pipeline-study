@@ -44,7 +44,21 @@ kubectl get pods -n cnpg-system                   # 앱마다 자기 네임스�
 kubectl get clusters.postgresql.cnpg.io -n default  # catalog-postgres  (Secret 3단계가 있어야 진행)
 ```
 
-- 성공 기준: 각 줄의 주석이 출처에 적힌 기대값이다.
+```text
+# 관측: kubectl get pods -n cnpg-system
+NAME                                           READY   STATUS    RESTARTS   AGE
+cnpg-operator-cloudnative-pg-<hash>   1/1     Running   0          <경과>
+```
+
+- 성공 기준: 오퍼레이터 파드가 `1/1` `Running`이다.
+
+```text
+# 관측: kubectl get clusters.postgresql.cnpg.io -n default
+NAME               AGE     INSTANCES   READY   STATUS                     PRIMARY
+catalog-postgres   <경과>   1           1       Cluster in healthy state   catalog-postgres-1
+```
+
+- 성공 기준: `catalog-postgres`의 `STATUS`가 `Cluster in healthy state`다. Secret 단계가 없으면 진행하지 않는다.
 - 층·저장 버전·채워진 필드·권한·finalizer는 아래 [확인 방법](#확인-방법)의 다섯 명령으로 판정한다.
 
 **내리기** — 앱 제거는 설정 파일 삭제 PR 머지에 Application 손 삭제(비가역)를 더한다.

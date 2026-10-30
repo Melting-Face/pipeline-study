@@ -351,6 +351,12 @@ uv run scripts/stock_source_access_probe.py --source all
 | 새 버킷에만 `PutObject` `InternalError` | SeaweedFS 볼륨 슬롯 부족 — `-volume.max` 상향 | [`resource-sizing.md`](resource-sizing.md) |
 | 이미지에 `.venv`가 들어감 | `.dockerignore` 패턴에 `src/` 접두어 | [`conventions/dagster.md`](conventions/dagster.md) |
 
+기술별 고장 대응은 위키 장에 더 있다 — 각 장의 「고장 대응」 절:
+[클러스터 기동](../wiki/k8s-bootstrap.md#고장-대응) · [오퍼레이터](../wiki/k8s-operators.md#고장-대응) ·
+[Spark](../wiki/spark-on-k8s.md#고장-대응) · [Flink](../wiki/flink-on-k8s-pitfalls.md#고장-대응) ·
+[엔진 간 SQL](../wiki/cross-engine-sql.md#고장-대응) · [Dagster](../wiki/dagster-orchestration.md#고장-대응) ·
+[Claude Code CLI](../wiki/claude-code-cli.md#고장-대응).
+
 ### dbt 타깃별 전제
 
 | 타깃 | 전제 |

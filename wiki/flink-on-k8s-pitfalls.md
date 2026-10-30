@@ -7,7 +7,7 @@
 
 | 증상 | 먼저 볼 것 | 처방 |
 | --- | --- | --- |
-| JVM 파드가 `unable to create native thread`(메모리는 여유) | 컨테이너 PID 상한 — `k8s-up.sh` 경고 | 경고가 나면 클러스터를 재생성한다(비가역). 카탈로그도 사라져 재적재가 필요하다 — [pids.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/k8s/pids.md) |
+| JVM 파드가 `unable to create native thread`(메모리는 여유) | `k8s-up.sh` 출력에 PID 상한 경고가 있는가 | 원인은 컨테이너 PID 상한이다. 경고가 나면 클러스터를 재생성한다(비가역) — [pids.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/k8s/pids.md) |
 | S3 업로드는 성공했는데 객체가 손상된다 | JM·TM 파드에도 체크섬 환경변수가 있는가 | `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` — [checksum.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/k8s/checksum.md) |
 | (철거된 웹훅 구성 시절) `FlinkSessionJob` 생성이 403으로 거부된다 | 오퍼레이터 SA의 `flinkdeployments` 클러스터 스코프 list 권한 | 해당 리소스 한정·읽기 세 동사 ClusterRole + Binding — [에러를 내고 멈춘 것 ①](#에러를-내고-멈춘-것---감시-범위를-좁혔더니-잡-생성이-거부됐다) |
 | DDL·`SHOW`는 되는데 쿼리만 `services "<세션 이름>-rest" is forbidden` | 잡 SA의 잡 네임스페이스 `services` get 권한 | 잡 네임스페이스 한정 Role — [그럴듯해서 속은 것 ①](#그럴듯해서-속은-것---ddl은-되고-쿼리만-안-되니-권한을-의심하지-않았다) |
@@ -17,6 +17,7 @@
 | CR이 `DELETING`에 고착하고 `CLEANUPFAILED`가 15초마다 반복된다 | 세션에 끝나지 않은 잡이 남았는가 — 오퍼레이터 고장이 아니다 | 잡을 먼저 취소하고 삭제한다 — [순서가 규칙이 된 자리 둘](#순서가-규칙이-된-자리-둘) |
 | 핀해 둔 오퍼레이터 차트 URL이 404다 | 배포처의 현행 릴리스 목록 | 목록과 대조해 다시 핀한다 — [그럴듯해서 속은 것 ②](#그럴듯해서-속은-것---버전을-내가-고른다고-생각했다) |
 
+첫 행의 재생성은 카탈로그도 지워 재적재가 필요하다 — [cnpg.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/conventions/k8s/cnpg.md).
 앞 두 행은 [docs/setup.md](https://github.com/Melting-Face/pipeline-study/blob/main/docs/setup.md) §8, 나머지는 아래 「함정」에서 옮겼다.
 
 ## 함정
