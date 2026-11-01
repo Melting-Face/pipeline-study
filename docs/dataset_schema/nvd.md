@@ -106,4 +106,5 @@ CVE 피드는 "지금의 마지막 버전"만 주므로 **그 사이의 수정�
 다시 복사해도 바뀌지 않지만, 수집 호스트의 시계가 어긋나 있었다면 그만큼 밀린 채 고정된다.
 
 ⚠️ **이용 조건**: 판정 정본은 [security/datasets.md](../security/datasets.md)다. KEV는 CC0 1.0이고,
-NVD(CVE·Change History)는 이용 조건이 **`미확인`** 이라 확정 전에는 raw 수집(스케줄·백필)을 켜지 않는다.
+NVD(CVE·Change History)는 NVD Terms of Use에 따라 **수집·분석이 허용**된다. 재배포는 `미확인`이라
+원천 값을 저장소·공개물에 담지 않는다.
