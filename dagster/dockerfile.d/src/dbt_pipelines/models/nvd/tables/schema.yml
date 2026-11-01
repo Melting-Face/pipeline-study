@@ -2,9 +2,9 @@ version: 2
 
 # NVD silver. 빌드 소유자: Airflow DAG nvd_dbt(Cosmos) — images/airflow/dags/nvd_dbt.py.
 #
-# 🔴 CVE·History bronze는 **실적재된 적이 없다**(이용 조건 확인 전 수집 금지, docs/setup.md).
-#    그래서 펼침 로직의 회귀 방어는 아래 unit_tests(합성 raw_json)가 맡는다. 빈 source 위의
-#    `dbt build` 통과는 「0행에서 실행됐다」이지 「검사했다」가 아니다(docs/philosophy.md 원칙 7).
+# 🔴 펼침 로직의 회귀 방어는 아래 unit_tests(합성 raw_json)가 맡는다. 실데이터는 분기를 골라
+#    주지 않는다 — CVE당 버전이 하나뿐이거나 이스케이프된 CPE가 없으면 최신 선택·이스케이프 경로를
+#    지나지 않고도 `dbt build`가 통과한다(「실행됐다」≠「검사했다」, docs/philosophy.md 원칙 7).
 # ⚠️ vuln_status에 accepted_values를 두지 않는다 — 상태 목록은 NVD가 바꿀 수 있는 값이고,
 #    warn으로 두면 읽는 사람이 없어 무시와 같다(docs/conventions/data-quality.md).
 
