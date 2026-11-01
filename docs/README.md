@@ -51,6 +51,7 @@
   그 게이트·**선언된 공백**
 - ↳ [미국 주식 원화 종가](dataset_schema/us-equity-krw.md) — 교차 USD/KRW·as-of 환율·시각 차이 오차와 그 게이트
 - ↳ [USGS 수문](dataset_schema/usgs-water.md) — append 전용 bronze 2테이블·의도된 중복과 dedup 키, Flink 파생
+- ↳ [NVD 취약점](dataset_schema/nvd.md) — raw 스냅샷(커밋 표지·force 재수집)과 bronze 3테이블(CVE·변경 이력·KEV)
 - ↳ [GitHub 트렌드](dataset_schema/github-trending.md) — Airflow가 남기는 raw JSON 레이아웃·필드,
   「트렌드」 근사의 한계와 차분 소비. bronze 적재는 [설계](dataset_schema/github-trending-bronze.md)만 있고 구현 전이다
 - [분석 컨벤션](conventions/analysis.md) — 규칙 정본

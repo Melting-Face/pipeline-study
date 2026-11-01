@@ -99,7 +99,7 @@
   - `helper.py` — 적재 헬퍼(`read_csv_gz_table` 일반 / `load_heavy_csv_gz_to_iceberg` 대용량)
   - `dbt.py` — 공유 dbt 설정(`DbtProject`·`build_dbt_resource`); 단일 dbt 프로젝트를 데이터셋 subproject가 공유
   - `trino.py` — Trino 접속 리소스(`TrinoResource`); Iceberg 유지보수 프로시저 실행(k8s Trino)
-  - `fetch.py`(외부 → S3 `raw/`)·`physionet.py`·`polygon.py`·`fred.py` — 원천 접속 리소스
+  - `fetch.py`(외부 → S3 `raw/`)·`physionet.py`·`polygon.py`·`fred.py`·`nvd.py` — 원천 접속 리소스
 - **정의는 모두 `dagster_project/defs/` 하위**에 두고 `load_defs`가 재귀 자동발견한다.
   - **데이터셋별 서브프로젝트** `defs/<dataset>/`에 **정의만** 둔다.
     - `constants.py` — 데이터셋 전용 `NAMESPACE`·`GROUP_NAME`·`SOURCE_BASE`
