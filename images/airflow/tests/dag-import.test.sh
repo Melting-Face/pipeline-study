@@ -268,6 +268,45 @@ else
     rc=1
 fi
 
+# --- nvd_dbt (NVD silver dbt) -----------------------------------------------------------
+# 🔴 CVE·History bronze Asset 의 AND — 상류는 Dagster 가 적재해 Airflow 안에 생산자가 없다(수동 트리거).
+#    max_active_tasks=1 은 krw-serial 과 같은 이유(1Gi 워커 OOM)
+if echo "${result}" | jq -e '.dags.nvd_dbt | .asset_cond == "AssetAll"
+        and .asset_uris == ["iceberg://nvd/nvd_cve_history", "iceberg://nvd/nvd_cves"]
+        and .paused == true and .max_active_runs == 1 and .max_active_tasks == 1' >/dev/null; then
+    echo "PASS [nvd-schedule] nvd_dbt: CVE AND History Asset 스케줄·일시정지·run 1·태스크 동시 1"
+else
+    echo "FAIL [nvd-schedule] nvd_dbt 모양이 기대와 다르다"
+    rc=1
+fi
+
+# Cosmos 그룹은 NVD silver 5종만 — 다른 데이터셋 모델이 끌려오면 실패
+if echo "${result}" | jq -e '.dags.nvd_dbt.tasks | keys as $k
+        | (["nvd_cve_latest", "nvd_cve_metrics", "nvd_cve_cwe", "nvd_cve_cpe", "nvd_cve_changes"]
+           | all(. as $m | $k | any(startswith("dbt." + $m + "."))))
+        and ($k | map(select(startswith("dbt."))) | all(test("^dbt\\.nvd_cve_")))' >/dev/null; then
+    echo "PASS [nvd-models] Cosmos 그룹 = NVD silver 5종"
+else
+    echo "FAIL [nvd-models] Cosmos 그룹의 모델 집합이 기대와 다르다"
+    rc=1
+fi
+
+if echo "${result}" | jq -e '.dags.nvd_dbt as $d
+        | ($d.indirect | to_entries | map(select(.key | endswith(".test"))) | length > 0 and all(.value == "cautious"))
+        and ($d.install_deps | to_entries | map(select(.key | startswith("dbt."))) | length > 0 and all(.value == false))' >/dev/null; then
+    echo "PASS [nvd-cosmos] nvd_dbt 테스트 cautious·dbt deps 미수행"
+else
+    echo "FAIL [nvd-cosmos] nvd_dbt Cosmos 설정이 기대와 다르다"
+    rc=1
+fi
+
+if echo "${result}" | jq -e '.dags.nvd_dbt.outlets.record_nvd_silver == ["iceberg://nvd/nvd_cve_latest"]' >/dev/null; then
+    echo "PASS [nvd-outlet] record_nvd_silver → iceberg://nvd/nvd_cve_latest"
+else
+    echo "FAIL [nvd-outlet] record_nvd_silver 의 Asset outlet이 기대와 다르다"
+    rc=1
+fi
+
 # --- 이미지 내용(원화 종가 이관 — pyiceberg·cosmos·dbt venv·dbt 프로젝트) -------------
 # 🔴 lint CI 초록은 빌드 보증이 아니다 — 이미지 안에서 실제로 import·실행해 본다.
 if "${CLI}" run --rm "${IMAGE}" python -c "import pyiceberg, cosmos, trino, holidays, lakehouse.iceberg" >/dev/null 2>&1; then

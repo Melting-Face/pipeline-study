@@ -1,0 +1,37 @@
+# NVD silver의 원천 — bronze 세 테이블(적재 주체 Dagster `defs/nvd/`).
+#
+# 🔴 **적재 소유자와 모델 빌드 소유자가 다르다.** bronze는 Dagster가 적재하고, 이 디렉터리의
+# 모델은 Airflow DAG `nvd_dbt`(Cosmos)가 빌드한다. 그래서 source에는 **적재 소유자 기준**으로
+# `meta.dagster.asset_key`를 단다(Dagster UI의 lineage용). bronze를 Airflow로 이관하면
+# 이 키를 걷고 「적재 소유자: Airflow DAG」 주석으로 바꾼다(docs/conventions/airflow.md 컷오버).
+#
+# - schema    : Iceberg 네임스페이스 nvd (= defs/nvd/constants.py NAMESPACE).
+# - asset_key : bronze 자산이 단일 세그먼트 키라 명시한다(stock_forecast/source.yml 머리 주석).
+version: 2
+
+sources:
+  - name: nvd
+    description: "NVD CVE·Change History·CISA KEV bronze. Dagster defs/nvd가 적재."
+    schema: nvd
+    tables:
+      - name: nvd_cves
+        description: >-
+          CVE 레코드 버전 이력. 파티션 키 window_date(= lastModified의 UTC 하루).
+          같은 cve_id가 수정될 때마다 다른 파티션에 한 행 더 쌓인다 — 최신 1행 접기는 silver.
+        meta:
+          dagster:
+            asset_key: ["nvd_cves"]
+      - name: nvd_cve_history
+        description: >-
+          CVE 변경 이벤트. 파티션 키 window_date(= created의 UTC 하루).
+          raw_json에 details 배열이 있다.
+        meta:
+          dagster:
+            asset_key: ["nvd_cve_history"]
+      - name: nvd_kev
+        description: >-
+          CISA KEV 카탈로그 최신 스냅샷(테이블 전체 교체). 스칼라가 이미 타입이 맞아
+          silver 모델을 두지 않고 gold가 이 source를 직접 읽는다.
+        meta:
+          dagster:
+            asset_key: ["nvd_kev"]

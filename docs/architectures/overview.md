@@ -230,7 +230,7 @@ S3/Iceberg 연결은 **Dagster 리소스**(`dagster-aws`·`dagster-iceberg`)로 
 > S3 파일 원천: `defs/mimic_iv/`(icu·hosp 11테이블 — 일반=IO 매니저, chartevents·labevents=대용량),
 > `defs/eicu/`(3테이블 — patient·diagnosis=일반, nurse_charting=대용량).
 > 공개 API 원천: `defs/usgs_water/`(2테이블 — 순간값·관측소 메타, `dbt_assets.py` 없음 — bronze에서 멈춘다),
-> `defs/nvd/`(3테이블 — CVE·Change History·CISA KEV, raw 스냅샷 → bronze. `dbt_assets.py` 없음 — bronze에서 멈춘다).
+> `defs/nvd/`(3테이블 — CVE·Change History·CISA KEV, raw → bronze. silver는 Airflow `nvd_dbt`가 빌드).
 > 원천을 가로지르는 dbt 소유 서브프로젝트: `defs/stock_forecast/`(Polygon 뉴스·FRED).
 > `@asset` 없이 `dbt_assets.py`만 둔다.
 > 그 밖에 시장 원천 `defs/polygon_market/`(뉴스)·`defs/fred_calendar/`, 엔진 실행 자산 `defs/flink/`·`defs/poc/`가 있다.

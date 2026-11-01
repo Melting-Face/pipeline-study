@@ -135,6 +135,9 @@ library_path = "sqlfluff_libs"
 [tool.sqlfluff.templater.jinja.macros]
 elapsed = "{% macro elapsed(datepart, from_ts, to_ts) %}date_diff('{{ datepart }}', {{ from_ts }}, {{ to_ts }}){% endmacro %}"
 unnest_array = "{% macro unnest_array(array_expr, table_alias, column_alias) %}cross join unnest({{ array_expr }}) as {{ table_alias }} ({{ column_alias }}){% endmacro %}"
+unnest_array_ordinal = "{% macro unnest_array_ordinal(array_expr, table_alias, column_alias, ordinal_alias) %}cross join unnest({{ array_expr }}) with ordinality as {{ table_alias }} ({{ column_alias }}, {{ ordinal_alias }}){% endmacro %}"
+json_value_at = "{% macro json_value_at(json_expr, path) %}json_extract_scalar({{ json_expr }}, '{{ path }}'){% endmacro %}"
+json_array_at = "{% macro json_array_at(json_expr, path) %}json_extract({{ json_expr }}, '{{ path }}'){% endmacro %}"
 
 [tool.sqlfluff.indentation]
 tab_space_size = 4

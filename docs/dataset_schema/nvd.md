@@ -5,8 +5,8 @@
 
 Iceberg 네임스페이스 `nvd`. 원천은 셋이다 — NVD **CVE API 2.0**(CVE 레코드의 현재 버전),
 **CVE Change History API 2.0**(변경 이벤트), CISA **KEV**(악용 확인 취약점 카탈로그, 키 없음).
-적재 주체는 Dagster `defs/nvd/`이고 **bronze에서 멈춘다** — 이 데이터셋에는 dbt 모델·`source.yml`을 두지 않았다
-(새 데이터셋 체크리스트 3·5·6을 건너뛴 것은 선언된 공백이다. 펼침은 dbt의 몫이다).
+bronze 적재 주체는 Dagster `defs/nvd/`이고, 펼침(silver)은 dbt `models/nvd/`를 **Airflow DAG `nvd_dbt`**(Cosmos)가
+빌드한다 — 적재 소유자와 빌드 소유자가 다르다([§silver](#silver-dbt)).
 
 | 자산(raw → bronze) | 적재 모드 | 스케줄(기본 `STOPPED`) |
 |------|-----------|-----------------------------|
@@ -91,6 +91,36 @@ CVE 피드는 "지금의 마지막 버전"만 주므로 **그 사이의 수정�
 가장 최근에 커밋된 raw 스냅샷으로 **테이블 전체를 교체**한다. `drop_table` 재생성이 아니라
 `Table.overwrite`라 스냅샷 계보가 이어진다(`helper.overwrite_iceberg_table`). 착지 전과 적재 전에
 `count == len(vulnerabilities)`를 대조한다.
+
+## silver (dbt)
+
+`dbt_pipelines/models/nvd/` — 스키마는 bronze와 같은 `nvd`, 레이어는 `tags=['silver']`로 표기한다.
+빌드 소유자는 Airflow DAG `nvd_dbt`(`images/airflow/dags/nvd_dbt.py`)이고, 스케줄은 CVE·History bronze Asset의
+AND다. 🔴 bronze는 Dagster가 적재해 **Airflow 안에 Asset 생산자가 없으므로** bronze 이관 전까지 수동 트리거다.
+
+| 모델 | 1행 | 원천 |
+|------|-----|------|
+| `nvd_cve_latest` | CVE(현재 버전) — 스칼라·영어 설명·`is_rejected`·원문 | `nvd_cves` |
+| `nvd_cve_metrics` | (CVE, `cvss_version`, `source`, `source_type`) — CVSS v2·v3.0·v3.1·v4.0 | `nvd_cve_latest` |
+| `nvd_cve_cwe` | (CVE, `source`, `cwe_id`) — weaknesses 1:N | `nvd_cve_latest` |
+| `nvd_cve_cpe` | (CVE, `config_idx`, `node_idx`, `match_idx`) — cpeMatch·`part`·`vendor`·`product`·버전 범위 | `nvd_cve_latest` |
+| `nvd_cve_changes` | (`cve_change_id`, `detail_idx`) — 변경 이벤트의 details | `nvd_cve_history` |
+
+- **최신 = `last_modified` 최대, 동률이면 `window_date` 최대.** 백필 파티션은 「받은 날의 현재 버전」이라
+  window_date만으로 고르면 옛 버전을 고를 수 있다.
+- **이력의 정본은 `nvd_cve_changes`다.** 버전 행 diff(SCD2)는 증분 시작 이후에만 존재해 두지 않는다.
+- silver는 **해석하지 않는다** — 대표 CVSS 점수, Rejected 제외, KEV 조인(`nvd_kev`는 silver 없이 gold가
+  source로 직접 읽는다), CPE operator·negate 해석은 gold의 몫이다.
+- CPE `vendor`·`product`는 이스케이프된 콜론(`\:`)에서 자르지 않고 뽑은 뒤 이스케이프를 푼다.
+- JSON은 `macros/cross_engine.sql`의 `json_value_at`·`json_array_at`·`unnest_array_ordinal`(Trino만 구현)로 펼친다.
+- **경로 대조는 「키가 있는 원문 수 = 펼친 행의 고유 수」로 한다** — `raw_json`에 `cvssMetric*`·비지 않은
+  `weaknesses`·`configurations`가 있는 CVE 수와 `details`가 있는 이벤트 수가 각 silver의 고유 `cve_id`(changes는
+  `cve_change_id`) 수와 같아야 한다. 어긋나면 경로가 틀려 **에러 없이 0행**이 된 것이다.
+- ⚠️ **최신 선택(동률 포함)과 CPE 이스케이프는 unit_tests만 받친다** — bronze에 CVE당 버전이 하나뿐이거나
+  이스케이프된 criteria가 없으면 실데이터는 그 분기를 지나지 않는다(통과가 검사를 뜻하지 않는다).
+- Cosmos는 모델마다 `.run`·`.test` 태스크만 만들고 unit_test 전용 태스크는 없다. `.test`의
+  `--select <모델>`(cautious)은 그 모델의 unit_test도 고르므로(`dbt ls` 동등 셀렉터 기준 — Airflow 실행으로는
+  미관측) unit_test는 **모델 빌드 뒤에** 돈다. 빌드 전에 막는 게이트는 로컬 `dbt build`다.
 
 ## 함정
 

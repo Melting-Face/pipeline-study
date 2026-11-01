@@ -74,3 +74,65 @@
 {% macro spark__unnest_array(array_expr, table_alias, column_alias) -%}
     lateral view explode({{ array_expr }}) {{ table_alias }} as {{ column_alias }}
 {%- endmacro %}
+
+
+{#-
+    배열을 행으로 펼치면서 **1부터 세는 위치**를 함께 낸다. 원소에 자연 키가 없는 중첩 배열
+    (NVD `configurations[].nodes[].cpeMatch[]`·`details[]`)의 행 키를 만드는 데 쓴다.
+    `unnest_array`와 같은 1필드 ROW 감싸기(위 주석)를 따른다.
+    🔴 `spark__`를 두지 않는다 — 아래 json_* 주석과 같은 이유.
+-#}
+
+{% macro unnest_array_ordinal(array_expr, table_alias, column_alias, ordinal_alias) -%}
+    {%- set impl = adapter.dispatch('unnest_array_ordinal', 'dbt_pipelines') -%}
+    {{ return(impl(array_expr, table_alias, column_alias, ordinal_alias)) }}
+{%- endmacro %}
+
+{% macro default__unnest_array_ordinal(array_expr, table_alias, column_alias, ordinal_alias) -%}
+    {{ exceptions.raise_compiler_error(
+        "unnest_array_ordinal: 이 어댑터용 구현이 없다 — macros/cross_engine.sql에 추가 필요"
+    ) }}
+{%- endmacro %}
+
+{% macro trino__unnest_array_ordinal(array_expr, table_alias, column_alias, ordinal_alias) -%}
+    cross join unnest(transform({{ array_expr }}, e -> row(e))) with ordinality
+        as {{ table_alias }} ({{ column_alias }}, {{ ordinal_alias }})
+{%- endmacro %}
+
+
+{#-
+    JSON 문자열(또는 JSON 값)에서 경로의 값을 꺼낸다. bronze가 원본을 `raw_json` 문자열로만
+    두므로(NVD) 펼침은 전부 이 두 매크로를 거친다.
+      - json_value_at : 스칼라 → varchar. 경로가 없거나 값이 스칼라가 아니면 NULL.
+      - json_array_at : 배열 → 원소가 JSON인 배열. 경로가 없으면 NULL(→ unnest 0행).
+    🔴 `spark__`를 두지 않는다 — dbt-spark가 철거돼 실행해 볼 수 없는 구현이다. Spark가
+    돌아오면 그때 쓰고, 그 전에는 `default__`가 컴파일 단계에서 시끄럽게 멈춘다.
+-#}
+
+{% macro json_value_at(json_expr, path) -%}
+    {{ return(adapter.dispatch('json_value_at', 'dbt_pipelines')(json_expr, path)) }}
+{%- endmacro %}
+
+{% macro default__json_value_at(json_expr, path) -%}
+    {{ exceptions.raise_compiler_error(
+        "json_value_at: 이 어댑터용 구현이 없다 — macros/cross_engine.sql에 추가 필요"
+    ) }}
+{%- endmacro %}
+
+{% macro trino__json_value_at(json_expr, path) -%}
+    json_extract_scalar({{ json_expr }}, '{{ path }}')
+{%- endmacro %}
+
+{% macro json_array_at(json_expr, path) -%}
+    {{ return(adapter.dispatch('json_array_at', 'dbt_pipelines')(json_expr, path)) }}
+{%- endmacro %}
+
+{% macro default__json_array_at(json_expr, path) -%}
+    {{ exceptions.raise_compiler_error(
+        "json_array_at: 이 어댑터용 구현이 없다 — macros/cross_engine.sql에 추가 필요"
+    ) }}
+{%- endmacro %}
+
+{% macro trino__json_array_at(json_expr, path) -%}
+    cast(json_extract({{ json_expr }}, '{{ path }}') as array(json))
+{%- endmacro %}
