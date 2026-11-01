@@ -15,7 +15,7 @@ MIMIC-IV·eICU 밖의 적재 데이터셋에 적용한 결과다. 본문의 `§2
 | `us_equity_krw` | **없음** — `polygon_market` 시세 × `frankfurter_fx` 환율의 파생이다 | **엄격한 쪽을 상속** — 원화 종가는 Polygon 종가의 파생이라 **재배포 금지**, 환율 열은 ECB **출처 표기 의무**까지 함께 진다 | 파생은 원천 조건을 **풀지 않는다**. 원천 값·환산 값을 저장소·공개물에 **담지 않고**, 환율만 인용할 때도 ECB를 표기한다 |
 | `fred_calendar` | **없음** — 거시 집계 지표다 | 연방기관 산출물이나 일부 시리즈가 상류 저작권을 물려받을 수 있어 **미확인** | §2 이하 비적용. 미확인이 의무를 줄이는 쪽으로 작용하지 않게 **담지 않는 쪽**을 기본값으로 둔다 |
 | `github_trending` | **미확인** — `full_name`에 **개인 계정 login**이 섞일 수 있다(아래) | 일반 재배포 금지는 관측 안 됨. 연구 이용 허용은 **비개인 정보**에 한정(아래) | §2 이하 마스킹 **비적용**. 그러나 **저장소 단위 원천 값**은 저장소·공개물에 **담지 않고**, login을 사람 단위로 묶는 가공은 하지 않는다 |
-| `nvd` (CVE·Change History) | **없음** — 소프트웨어 취약점 레코드이고 개인 단위 관측이 아니다 | **미확인** — NVD 이용 조건의 1차 본문을 확인하지 못했다(아래) | §2 이하 재식별 통제 **비적용**. 미확인이라 **통제를 유지**한다 — **확정 전 raw 수집 금지**(스케줄·백필을 켜지 않는다), 원천 값을 저장소·공개물에 **담지 않는다** |
+| `nvd` (CVE·Change History) | **없음** — 소프트웨어 취약점 레코드이고 개인 단위 관측이 아니다 | **수집·분석 허용, 조건 3** — 고지 문구 **요청**, 가공 값의 NVD 출처 표기 **금지**, 키 비공유·한도 준수. 공개 재배포는 `미확인`(아래) | §2 이하 재식별 통제 **비적용**. **raw 수집 허용**(스케줄·백필 가능). 원천 값은 저장소·공개물에 **아직 담지 않는다**. 고지·출처 조건은 아래 |
 | `nvd` (`nvd_kev` — CISA KEV) | **없음** — 악용 확인 취약점 카탈로그이고 개인 단위 관측이 아니다 | **CC0 1.0** — 권리 포기, 재배포 제한 **없음**(아래) | §2 이하 재식별·마스킹 통제 **비적용**. 원천 값·파생 수치를 저장소·공개물에 **담을 수 있다** |
 
 **`frankfurter_fx` 근거.** 상류에 유럽중앙은행이 있고 그 이용조건은 자유 이용을 허용하되
@@ -79,10 +79,25 @@ Acceptable Use Policies *Information Usage Restrictions*가 정한다.
 이 미확인이 의무를 **줄이는 쪽으로 작용하지 않게** login이 섞인 저장소 단위 값은 담지 않는다.
 DAG가 `owner` 객체를 버리는 것(수집 최소화)은 이 판정과 같은 방향이지만 `full_name`에 login이 남는다.
 
-**`nvd` 근거.** CVE·Change History는 NVD REST API에서 받는다. 이용 조건을 담은 개발자 문서가
-스크립트 렌더링이라 1차 본문을 기계로 읽지 못했고, 그래서 재배포 축은 `미확인`이다(침묵이 아니라
-미열람 — 둘은 다른 축이다). 미확인이 의무를 줄이는 쪽으로 작용하지 않게 **raw 수집 자체를 보류**한다 —
-수집 경로(`defs/nvd/`)와 스케줄은 기본 정지 상태로만 존재한다. KEV는 CISA가 라이선스 파일
+**`nvd` 근거.** CVE·Change History는 NVD REST API에서 받는다. 이용 조건은 NVD *Terms of Use*
+(`nvd.nist.gov` → Developers → Terms of Use)다. 페이지가 스크립트 렌더링이라 기계로 읽지 못해
+**사람이 브라우저에서 옮긴 본문**으로 판정했다.
+
+- **Use** — *"intended to be used to develop a service or services to search, display, analyze, retrieve,
+  view and otherwise "get" information from NVD data."* — 수집·적재·분석이 이용 목적 안에 든다.
+- **Attribution** — *"are asked to display the following notice prominently within the application:
+  "This product uses the NVD API but is not endorsed or certified by the NVD.""* — `asked`라 **요청**으로
+  읽되 따른다. NVD 이름으로 보증을 암시하지 않는다.
+- **Modification** — *"If you modify the content accessed through the API, you may not attribute the
+  source as the NVD."* — bronze 이후 **가공 값은 NVD를 출처로 표기하지 않는다**(원천 열 그대로만 NVD 유래).
+- **Use Limitations** — 한도 초과·우회 시 차단될 수 있고, 키는 *"should not be used by, or shared with,
+  individuals or organizations other than the original requestor."* — `NVD_API_KEY`는 `.env` 참조로만 쓰고
+  `pool="nvd_api"` 한도 1로 호출을 직렬화한다.
+
+⚠️ **재배포 축은 여전히 `미확인`이다.** TOU 본문에는 재배포를 금지하는 조항도 허용하는 조항도 없다(**침묵**이다).
+그런데 TOU는 *"NIST Website Policies"* 를 함께 편입하고, 그 문서는 아직 열람하지 않았다(**미열람**이다).
+침묵과 미열람은 서로 다른 축이다. 미확인이 의무를 줄이는 쪽으로 작용하지 않도록,
+**원천 값을 저장소·공개물에 담는 것은 보류**한다. 수집 금지는 해제한다. KEV는 CISA가 라이선스 파일
 (`cisa.gov/sites/default/files/licenses/kev/license.txt`)로 **CC0 1.0**을 고시한다. KEV 판정이 `nvd`
 네임스페이스 전체로 번지지 않는다 — 같은 네임스페이스라도 테이블마다 원천이 다르다.
 
@@ -95,8 +110,9 @@ DAG가 `owner` 객체를 버리는 것(수집 최소화)은 이 판정과 같은
 - `github_trending` — **저장소 단위 값이나 그 파생물을 공개물에 담으려 할 때**, 또는 **수집 필드에
   사람 단위 정보(`owner` 객체·커미터 등)를 더할 때** — 개인정보 판정(현재 `미확인`)을 먼저 닫는다.
   언어·토픽별 **집계 수치**만 담는 경우도 이 트리거로 판정한다(자동 허용으로 읽지 않는다).
-- `nvd`(CVE·Change History) — **NVD 이용 조건 1차 본문을 확인했을 때** `미확인`을 닫고 수집 금지를 푼다.
-  그 전에 `nvd_cves`·`nvd_cve_history` 스케줄이나 백필을 켜려 할 때도 이 트리거로 막는다.
+- `nvd`(CVE·Change History) — 수집 금지 트리거는 **해소됐다**(위 TOU 근거). 남은 트리거는
+  **원천 값이나 그 파생을 저장소·공개물에 담으려 할 때**다 — NIST Website Policies를 열람해 재배포 `미확인`을
+  먼저 닫고, 담는 공개물에는 고지 문구를 붙인다. **TOU가 개정될 때**도 다시 판정한다.
 
 ⚠️ **이 트리거에는 기계 감지 수단이 없다.** `no-health-data-files` 훅은 `files` 정규식이
 **확장자**(`.csv`·`.parquet` 등)를 보므로 `.md`·`.py` **본문에 값을 옮겨 적으면 통과**하고,
