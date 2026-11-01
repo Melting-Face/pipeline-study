@@ -13,6 +13,9 @@
   🔴 Flink 스트리밍 소스로 쓸 bronze 테이블은 **반드시 append**여야 한다 —
   Iceberg Flink 소스는 IncrementalAppendScan 기반이라 overwrite·delete 스냅샷을
   지원하지 않고, 그 실패 모드는 에러가 아니라 **조용한 누락**이다.
+- replace_partition_in_iceberg / overwrite_iceberg_table: 파티션 범위 또는 테이블
+  전체를 `drop_table` 없이 교체한다(멱등 + 스냅샷 계보 유지).
+- fetch_bytes: 응답 본문을 받은 바이트 그대로 돌려준다(raw 스냅샷 랜딩용).
 """
 
 from __future__ import annotations
@@ -286,6 +289,27 @@ def fetch_text(
     return _request(url, params, timeout_s=timeout_s, retries=retries).text
 
 
+def fetch_bytes(
+    url: str,
+    params: dict[str, str],
+    *,
+    timeout_s: int = 30,
+    retries: int = 3,
+    headers: dict[str, str] | None = None,
+) -> bytes:
+    """공개 API에서 응답 본문을 **받은 바이트 그대로** 반환한다.
+
+    raw 랜딩(응답을 S3에 스냅샷으로 남기는 경로)용이다. `fetch_json`으로 파싱한 뒤
+    다시 직렬화하면 키 순서·공백·숫자 표기가 원문과 달라져 "원본 그대로"가 아니게
+    되고, `fetch_text`는 인코딩 추정을 거친다. 파싱은 호출부가 이 바이트로 한다.
+
+    `headers`는 키를 헤더로 보내는 원천용이다 — 근거는 `_request` 독스트링.
+    """
+    return _request(
+        url, params, timeout_s=timeout_s, retries=retries, headers=headers
+    ).content
+
+
 def append_arrow_to_iceberg(
     context: dg.AssetExecutionContext,
     *,
@@ -415,6 +439,51 @@ def replace_partition_in_iceberg(
         "rows": arrow.num_rows,
         "mode": "replace_partition",
         "partition": f"{partition_column}={partition_value}",
+    }
+    if extra_metadata:
+        metadata.update(extra_metadata)
+    return dg.MaterializeResult(metadata=metadata)
+
+
+def overwrite_iceberg_table(
+    context: dg.AssetExecutionContext,
+    *,
+    iceberg_table: IcebergTableResource,
+    arrow: pa.Table,
+    extra_metadata: dict[str, Any] | None = None,
+) -> dg.MaterializeResult:
+    """테이블 **전체**를 새 내용으로 교체한다(스냅샷 계보 유지).
+
+    전체 스냅샷만 주는 원천(예: CISA KEV — 카탈로그 전체를 한 파일로 준다)용이다.
+    `append_arrow_to_iceberg(mode="replace")`와 결과 행은 같지만 **축이 다르다** —
+    그쪽은 `drop_table` 후 재생성이라 재생성본이 `parent_id = NULL`인 새 루트가 되어
+    계보가 끊기고, 이쪽은 `Table.overwrite(df)`(필터 기본값 = 전체)라 `drop_table`이
+    없어 계보가 이어진다. `replace_partition_in_iceberg`에서 필터만 뺀 형태다.
+
+    🔴 **Flink 스트리밍 소스로 쓸 테이블에는 쓰지 않는다** — 계보는 이어지지만
+    delete/overwrite 스냅샷이 생긴다(`replace_partition_in_iceberg`와 같은 이유).
+
+    검증: `tests/test_nvd_parse.py`가 SQLite 카탈로그로 두 번 덮어써도 행 수가
+    그대로이고 스냅샷 루트가 하나임을 확인한다.
+
+    Args:
+        context: 에셋 실행 컨텍스트.
+        iceberg_table: 대상 테이블 바인딩 리소스.
+        arrow: 테이블 전체를 대신할 Arrow 테이블. 스키마는 호출부가 명시한다.
+        extra_metadata: 자산이 덧붙일 관측 메타데이터.
+
+    Returns:
+        적재 메타데이터를 담은 MaterializeResult.
+    """
+    catalog, identifier = _load_iceberg_table(iceberg_table)
+    table = ensure_table(catalog, identifier, arrow.schema)
+    table.overwrite(arrow)
+
+    context.log.info("%s ← %d rows 전체 교체", identifier, arrow.num_rows)
+    metadata: dict[str, Any] = {
+        "table": identifier,
+        "rows": arrow.num_rows,
+        "mode": "overwrite_all",
     }
     if extra_metadata:
         metadata.update(extra_metadata)

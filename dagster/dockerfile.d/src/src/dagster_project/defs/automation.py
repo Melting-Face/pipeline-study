@@ -11,6 +11,8 @@
 - FRED 경제지표 잡·스케줄 **2쌍** — 🔴 **선언 방식이 서로 다르다.** 릴리스 일정은
   일자 파티션이라 파생시키지만, 관측치는 **정적 파티션(시리즈)** 이라 파생 함수를
   쓸 수 없고 시리즈마다 `RunRequest`를 내는 스케줄을 직접 쓴다.
+- NVD 잡·스케줄 **3쌍**(CVE·History·KEV) — 잡마다 raw + bronze 쌍. CVE·History는
+  일자 파티션이라 파생, KEV는 비파티션이라 cron + `execution_timezone`.
 
 환율(`fx_rates_daily`)·시세(`equity_ohlcv_daily`) 적재와 원화 종가 dbt 빌드는
 **Airflow가 소유**한다(`docs/conventions/airflow.md`) — 여기에 잡·스케줄이 없는 것은
@@ -24,6 +26,10 @@ from dagster_project.defs.fred_calendar.constants import (
     SCHEDULE_HOUR_UTC as FRED_SCHEDULE_HOUR_UTC,
 )
 from dagster_project.defs.fred_calendar.constants import SERIES_IDS
+from dagster_project.defs.nvd.constants import KEV_SCHEDULE_CRON
+from dagster_project.defs.nvd.constants import (
+    SCHEDULE_HOUR_UTC as NVD_SCHEDULE_HOUR_UTC,
+)
 from dagster_project.defs.polygon_market.constants import (
     SCHEDULE_HOUR_UTC as POLYGON_SCHEDULE_HOUR_UTC,
 )
@@ -173,5 +179,55 @@ fred_release_dates_schedule = dg.build_schedule_from_partitioned_job(
     fred_release_dates_job,
     name="fred_release_dates_schedule",
     hour_of_day=FRED_SCHEDULE_HOUR_UTC,
+    default_status=dg.DefaultScheduleStatus.STOPPED,
+)
+
+# ── NVD CVE·Change History·CISA KEV 적재 ─────────────────────────────────────
+# 잡 하나 = 피드 하나의 **raw + bronze 쌍**이다 — 한 run 안에서 raw가 스냅샷을
+# 커밋한 뒤 bronze가 그것을 읽는다(deps 순서). 피드끼리 묶지 않는 이유는 파티션
+# 정의가 다르기 때문이다(CVE·History는 시작일이 다르고 KEV는 비파티션).
+#
+# CVE·History는 일자 파티션이라 polygon 뉴스처럼 스케줄을 파생시킨다
+# (타임존은 `nvd/constants.py`의 `PARTITION_TIMEZONE`이 명시한다).
+#
+# 🔴 **전부 기본 STOPPED다.** 외부 API를 주기적으로 부르고, NVD 이용 조건이
+# 확인되기 전에는 켜지 않는다. 백필은 파티션 백필로 한다 — NVD를 부르는 step의
+# 동시 실행은 잡이 아니라 raw 자산의 pool(`nvd_api`, 한도 1)이 막는다(common/nvd.py).
+nvd_cves_job = dg.define_asset_job(
+    "nvd_cves_job",
+    selection=dg.AssetSelection.assets("raw_nvd_cves", "nvd_cves"),
+)
+
+nvd_cves_schedule = dg.build_schedule_from_partitioned_job(
+    nvd_cves_job,
+    name="nvd_cves_schedule",
+    hour_of_day=NVD_SCHEDULE_HOUR_UTC,
+    default_status=dg.DefaultScheduleStatus.STOPPED,
+)
+
+nvd_cve_history_job = dg.define_asset_job(
+    "nvd_cve_history_job",
+    selection=dg.AssetSelection.assets("raw_nvd_cve_history", "nvd_cve_history"),
+)
+
+nvd_cve_history_schedule = dg.build_schedule_from_partitioned_job(
+    nvd_cve_history_job,
+    name="nvd_cve_history_schedule",
+    hour_of_day=NVD_SCHEDULE_HOUR_UTC,
+    default_status=dg.DefaultScheduleStatus.STOPPED,
+)
+
+nvd_kev_job = dg.define_asset_job(
+    "nvd_kev_job",
+    selection=dg.AssetSelection.assets("raw_nvd_kev", "nvd_kev"),
+)
+
+# KEV는 비파티션이라 cron·타임존을 직접 준다(usgs_water_sites와 같은 선언 방식).
+# 발화마다 run 하나뿐이고 run별 판단이 없어 `@dg.schedule` 함수 대신 정의 객체로 둔다.
+nvd_kev_schedule = dg.ScheduleDefinition(
+    name="nvd_kev_schedule",
+    job=nvd_kev_job,
+    cron_schedule=KEV_SCHEDULE_CRON,
+    execution_timezone="Asia/Seoul",
     default_status=dg.DefaultScheduleStatus.STOPPED,
 )
