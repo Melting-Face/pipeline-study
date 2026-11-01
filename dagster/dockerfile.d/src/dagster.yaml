@@ -18,11 +18,16 @@ run_launcher:
   module: dagster.core.launcher
   class: DefaultRunLauncher
 
+# 🔴 `scheme`을 세 storage 모두에 명시한다. 기본값 `postgresql`은 드라이버를 SQLAlchemy에
+# 맡기는데, SQLAlchemy 2.1부터 그 기본 드라이버가 psycopg(v3)라 lock에 있는 psycopg2를 못 찾고
+# 인스턴스 생성 자체가 실패한다(`dg dev`·`dagster instance` 전부). Iceberg 카탈로그
+# (`common/constants.py`)와 같은 드라이버로 고정한다.
 run_storage:
   module: dagster_postgres.run_storage
   class: PostgresRunStorage
   config:
     postgres_db:
+      scheme: postgresql+psycopg2
       hostname:
         env: POSTGRES_HOST
       username:
@@ -39,6 +44,7 @@ schedule_storage:
   class: PostgresScheduleStorage
   config:
     postgres_db:
+      scheme: postgresql+psycopg2
       hostname:
         env: POSTGRES_HOST
       username:
@@ -55,6 +61,7 @@ event_log_storage:
   class: PostgresEventLogStorage
   config:
     postgres_db:
+      scheme: postgresql+psycopg2
       hostname:
         env: POSTGRES_HOST
       username:
