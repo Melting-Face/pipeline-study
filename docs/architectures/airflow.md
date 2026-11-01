@@ -13,6 +13,8 @@ Dagster는 클러스터에 배포하지 않아 정기 실행 주체가 없다. �
 - DAG(`images/airflow/dags/`):
   - `fx_rates_daily.py` · `equity_ohlcv_daily.py` — 환율·시세를 Iceberg bronze에 적재한다
   - `us_equity_krw_dbt.py` — 위 두 Asset이 갱신되면 Cosmos `DbtTaskGroup`이 dbt 모델을 k8s Trino에서 돌린다
+  - `nvd_dbt.py` — NVD silver 5종을 Cosmos로 빌드한다. 상류 bronze는 **Dagster**가 적재해 Airflow 안에
+    Asset 생산자가 없으므로, bronze를 이관하기 전까지는 수동 트리거다
   - `github_trending.py` — raw JSON 수집, `hello.py` — 수동 트리거 전용 확인용
 - 로직: `images/airflow/dags/lakehouse/` — Airflow를 import하지 않는 순수 패키지(Dagster의 `common/`에 대응).
   단위 테스트는 `images/airflow/tests/lib/`.
