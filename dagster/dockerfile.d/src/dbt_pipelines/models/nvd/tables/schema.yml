@@ -1,0 +1,163 @@
+version: 2
+
+# NVD silver. 빌드 소유자: Airflow DAG nvd_dbt(Cosmos) — images/airflow/dags/nvd_dbt.py.
+#
+# 🔴 CVE·History bronze는 **실적재된 적이 없다**(이용 조건 확인 전 수집 금지, docs/setup.md).
+#    그래서 펼침 로직의 회귀 방어는 아래 unit_tests(합성 raw_json)가 맡는다. 빈 source 위의
+#    `dbt build` 통과는 「0행에서 실행됐다」이지 「검사했다」가 아니다(docs/philosophy.md 원칙 7).
+# ⚠️ vuln_status에 accepted_values를 두지 않는다 — 상태 목록은 NVD가 바꿀 수 있는 값이고,
+#    warn으로 두면 읽는 사람이 없어 무시와 같다(docs/conventions/data-quality.md).
+
+models:
+  - name: nvd_cve_latest
+    description: >-
+      1행 = CVE의 현재 버전(last_modified 최대, 동률은 window_date 최대).
+      Rejected도 남기고 is_rejected로 표시한다. raw_json은 브리지 모델이 펼친다.
+    columns:
+      - name: cve_id
+        data_tests:
+          - unique
+          - not_null
+      - name: last_modified
+        data_tests:
+          - not_null
+      - name: is_rejected
+        data_tests:
+          - not_null
+
+  - name: nvd_cve_metrics
+    description: >-
+      1행 = (cve_id, cvss_version, source, source_type). CVSS v2·v3.0·v3.1·v4.0 점수를 손실 없이
+      펼친다. 대표 점수 규칙은 gold.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cve_id, cvss_version, source, source_type]
+    columns:
+      - name: cve_id
+        data_tests:
+          - not_null
+      - name: base_score
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 10
+                inclusive: true
+
+  - name: nvd_cve_cwe
+    description: "1행 = (cve_id, source, cwe_id). weaknesses의 1:N 브리지(영어 값)."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cve_id, source, cwe_id]
+    columns:
+      - name: cwe_id
+        data_tests:
+          - not_null
+
+  - name: nvd_cve_cpe
+    description: >-
+      1행 = (cve_id, config_idx, node_idx, match_idx). 적용 대상 조건(cpeMatch)과
+      CPE 2.3 문자열에서 이스케이프를 인지해 뽑은 part·vendor·product.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cve_id, config_idx, node_idx, match_idx]
+    columns:
+      - name: criteria
+        data_tests:
+          - not_null
+      # 🔴 vendor가 비면 정규식이 그 criteria를 못 읽은 것이다(형식 이탈) — 스택 매칭에서
+      #    조용히 빠지므로 차단한다.
+      - name: vendor
+        data_tests:
+          - not_null
+
+  - name: nvd_cve_changes
+    description: >-
+      1행 = (cve_change_id, detail_idx). Change History 이벤트의 details를 펼친 변경 이력 정본.
+      details가 빈 이벤트는 행이 없다.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cve_change_id, detail_idx]
+    columns:
+      - name: cve_id
+        data_tests:
+          - not_null
+
+unit_tests:
+  # 최신 선택: last_modified가 1차 키다 — 나중 파티션(window_date 큼)이 옛 버전이어도 고르지 않는다.
+  # 동률이면 window_date가 큰 쪽. Rejected는 남고 플래그가 선다. 설명은 영어만, 없으면 NULL.
+  - name: nvd_cve_latest_picks_current_version
+    model: nvd_cve_latest
+    given:
+      - input: source('nvd', 'nvd_cves')
+        rows:
+          - {window_date: '2026-10-02', cve_id: CVE-2026-0001, published: '2026-10-01 00:00:00', last_modified: '2026-10-02 01:00:00', vuln_status: Analyzed, fetched_at: '2026-10-03 00:00:00', raw_json: '{"sourceIdentifier":"cna@example.test","descriptions":[{"lang":"es","value":"nuevo"},{"lang":"en","value":"new"}]}'}
+          - {window_date: '2026-10-05', cve_id: CVE-2026-0001, published: '2026-10-01 00:00:00', last_modified: '2026-10-01 01:00:00', vuln_status: Received, fetched_at: '2026-10-06 00:00:00', raw_json: '{"descriptions":[{"lang":"en","value":"old"}]}'}
+          - {window_date: '2026-10-03', cve_id: CVE-2026-0002, published: '2026-10-01 00:00:00', last_modified: '2026-10-03 09:00:00', vuln_status: Analyzed, fetched_at: '2026-10-04 00:00:00', raw_json: '{"descriptions":[{"lang":"en","value":"tie-early"}]}'}
+          - {window_date: '2026-10-04', cve_id: CVE-2026-0002, published: '2026-10-01 00:00:00', last_modified: '2026-10-03 09:00:00', vuln_status: Rejected, fetched_at: '2026-10-05 00:00:00', raw_json: '{"descriptions":[{"lang":"en","value":"tie-late"}]}'}
+          - {window_date: '2026-10-04', cve_id: CVE-2026-0003, published: '2026-10-01 00:00:00', last_modified: '2026-10-04 09:00:00', vuln_status: Received, fetched_at: '2026-10-05 00:00:00', raw_json: '{}'}
+    expect:
+      rows:
+        - {cve_id: CVE-2026-0001, source_identifier: cna@example.test, vuln_status: Analyzed, is_rejected: false, description_en: new, version_window_date: '2026-10-02'}
+        - {cve_id: CVE-2026-0002, source_identifier: null, vuln_status: Rejected, is_rejected: true, description_en: tie-late, version_window_date: '2026-10-04'}
+        - {cve_id: CVE-2026-0003, source_identifier: null, vuln_status: Received, is_rejected: false, description_en: null, version_window_date: '2026-10-04'}
+
+  # 버전·출처별 점수가 모두 남는다. v2 심각도는 원소 바로 아래에 있다. 점수 없는 CVE는 0행.
+  - name: nvd_cve_metrics_keeps_all_versions
+    model: nvd_cve_metrics
+    given:
+      - input: ref('nvd_cve_latest')
+        rows:
+          - {cve_id: CVE-2026-0001, raw_json: '{"metrics":{"cvssMetricV31":[{"source":"nvd@nist.gov","type":"Primary","cvssData":{"version":"3.1","vectorString":"CVSS:3.1/AV:N","baseScore":9.8,"baseSeverity":"CRITICAL"},"exploitabilityScore":3.9,"impactScore":5.9},{"source":"cna@example.test","type":"Secondary","cvssData":{"version":"3.1","baseScore":7.5,"baseSeverity":"HIGH"}}],"cvssMetricV2":[{"source":"nvd@nist.gov","type":"Primary","cvssData":{"version":"2.0","baseScore":5.0},"baseSeverity":"MEDIUM"}],"cvssMetricV40":[{"source":"cna@example.test","type":"Secondary","cvssData":{"version":"4.0","baseScore":8.7,"baseSeverity":"HIGH"}}]}}'}
+          - {cve_id: CVE-2026-0002, raw_json: '{"metrics":{}}'}
+    expect:
+      rows:
+        - {cve_id: CVE-2026-0001, cvss_version: '4.0', source: cna@example.test, source_type: Secondary, base_score: 8.7, base_severity: HIGH, impact_score: null}
+        - {cve_id: CVE-2026-0001, cvss_version: '3.1', source: nvd@nist.gov, source_type: Primary, base_score: 9.8, base_severity: CRITICAL, impact_score: 5.9}
+        - {cve_id: CVE-2026-0001, cvss_version: '3.1', source: cna@example.test, source_type: Secondary, base_score: 7.5, base_severity: HIGH, impact_score: null}
+        - {cve_id: CVE-2026-0001, cvss_version: '2.0', source: nvd@nist.gov, source_type: Primary, base_score: 5.0, base_severity: MEDIUM, impact_score: null}
+
+  # 다중 CWE는 1:N 그대로, 출처가 다르면 따로 남는다. 영어 아닌 값은 버린다.
+  - name: nvd_cve_cwe_keeps_multiple
+    model: nvd_cve_cwe
+    given:
+      - input: ref('nvd_cve_latest')
+        rows:
+          - {cve_id: CVE-2026-0001, raw_json: '{"weaknesses":[{"source":"nvd@nist.gov","type":"Primary","description":[{"lang":"en","value":"CWE-79"},{"lang":"en","value":"CWE-89"}]},{"source":"cna@example.test","type":"Secondary","description":[{"lang":"en","value":"CWE-79"},{"lang":"es","value":"CWE-1"}]}]}'}
+    expect:
+      rows:
+        - {cve_id: CVE-2026-0001, source: nvd@nist.gov, source_type: Primary, cwe_id: CWE-79}
+        - {cve_id: CVE-2026-0001, source: nvd@nist.gov, source_type: Primary, cwe_id: CWE-89}
+        - {cve_id: CVE-2026-0001, source: cna@example.test, source_type: Secondary, cwe_id: CWE-79}
+
+  # 🔴 vendor·product 안의 이스케이프된 콜론(`\:`)에서 값을 자르지 않고, 이스케이프를 푼다.
+  #    위치 키는 1부터. vulnerable=false(플랫폼 조건)도 남는다.
+  #    (YAML 작은따옴표 안의 `\\`는 JSON 이스케이프라 원문 문자열에는 `\`가 하나 들어간다.)
+  - name: nvd_cve_cpe_parses_escaped_vendor
+    model: nvd_cve_cpe
+    given:
+      - input: ref('nvd_cve_latest')
+        rows:
+          - {cve_id: CVE-2026-0001, raw_json: '{"configurations":[{"operator":"AND","nodes":[{"operator":"OR","negate":false,"cpeMatch":[{"vulnerable":true,"criteria":"cpe:2.3:a:acme\\:labs:trino\\:server:*:*:*:*:*:*:*:*","matchCriteriaId":"M1","versionEndExcluding":"470"}]},{"operator":"OR","negate":false,"cpeMatch":[{"vulnerable":false,"criteria":"cpe:2.3:o:linux:linux_kernel:-:*:*:*:*:*:*:*","matchCriteriaId":"M2"}]}]}]}'}
+    expect:
+      rows:
+        - {cve_id: CVE-2026-0001, config_idx: 1, config_operator: AND, node_idx: 1, match_idx: 1, vulnerable: true, part: a, vendor: 'acme:labs', product: 'trino:server', version_end_excluding: '470'}
+        - {cve_id: CVE-2026-0001, config_idx: 1, config_operator: AND, node_idx: 2, match_idx: 1, vulnerable: false, part: o, vendor: linux, product: linux_kernel, version_end_excluding: null}
+
+  # details가 위치 키로 펼쳐진다. details가 빈 이벤트는 행이 없다.
+  - name: nvd_cve_changes_unnests_details
+    model: nvd_cve_changes
+    given:
+      - input: source('nvd', 'nvd_cve_history')
+        rows:
+          - {window_date: '2026-10-02', cve_change_id: C1, cve_id: CVE-2026-0001, event_name: Initial Analysis, created: '2026-10-02 12:00:00', raw_json: '{"sourceIdentifier":"nvd@nist.gov","details":[{"action":"Added","type":"CVSS V3.1","newValue":"9.8"},{"action":"Changed","type":"CWE","oldValue":"NVD-CWE-noinfo","newValue":"CWE-79"}]}'}
+          - {window_date: '2026-10-02', cve_change_id: C2, cve_id: CVE-2026-0002, event_name: CVE Received, created: '2026-10-02 13:00:00', raw_json: '{"details":[]}'}
+    expect:
+      rows:
+        - {cve_change_id: C1, cve_id: CVE-2026-0001, source_identifier: nvd@nist.gov, detail_idx: 1, action: Added, detail_type: CVSS V3.1, old_value: null, new_value: '9.8'}
+        - {cve_change_id: C1, cve_id: CVE-2026-0001, source_identifier: nvd@nist.gov, detail_idx: 2, action: Changed, detail_type: CWE, old_value: NVD-CWE-noinfo, new_value: CWE-79}
