@@ -319,8 +319,9 @@ uv run scripts/nvd_access_probe.py --source all
 | NVD — Developers → Request an API Key | `NVD_API_KEY` (선택) |
 | CISA KEV 피드 | 없음 |
 
-- 🔴 **NVD(CVE·History)는 이용 조건 판정 전 raw 수집 금지**다 — [`security/datasets.md`](security/datasets.md)에서
-  `미확인`이 닫힌 뒤에 아래 절차로 켠다. KEV는 CC0 1.0이라 지금 켜도 된다.
+- **NVD(CVE·History) 수집은 허용**이다(이용 조건 판정 [`security/datasets.md`](security/datasets.md)).
+  키는 본인만 쓰고 한도를 지킨다. 원천 값은 저장소·공개물에 담지 않는다(재배포 `미확인`).
+  KEV는 CC0 1.0이다.
 - **키 없이도 돈다** — 공개 한도로 돌고 요청 간격만 길어진다(`common/nvd.py`). 다만 `.env`에
   `NVD_API_KEY=` **줄은 둔다**: `dg.EnvVar`는 빈 값은 받고 *미설정*은 run 실패로 본다.
 - 키는 `apiKey` **헤더**로 나가 URL·로그에 실리지 않는다. KEV 호스트로는 보내지 않는다.
