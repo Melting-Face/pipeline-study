@@ -46,6 +46,9 @@ x-dagster-common: &dagster-common
     # (in-cluster Dagster는 철거돼 이 compose/호스트 경로가 유일한 실행처다.)
     - POLYGON_API_KEY=${POLYGON_API_KEY:-}
     - FRED_API_KEY=${FRED_API_KEY:-}
+    # NVD CVE·Change History. 키는 비어도 되지만(공개 한도) EnvVar가 *미설정*을
+    # 실패로 보므로 `:-`로 항상 설정한다.
+    - NVD_API_KEY=${NVD_API_KEY:-}
     # SEC EDGAR 폴백 시에만 쓰인다(연락처 포함 UA). 비밀 아님.
     - NEWS_RSS_USER_AGENT=${NEWS_RSS_USER_AGENT:-}
     # SeaweedFS는 AWS SDK의 aws-chunked 체크섬 업로드를 못 푼다(객체가 깨진다).

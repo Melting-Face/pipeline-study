@@ -84,6 +84,7 @@ cp .env.example .env
 | `AWS_*_CHECKSUM_*` | SeaweedFS 호환 — `when_required` 유지 |
 | `PHYSIONET_*` | MIMIC-IV·eICU 다운로드 계정(§6-1) |
 | `POLYGON_API_KEY` · `FRED_API_KEY` | 시장 데이터 API 키(§6-2) |
+| `NVD_API_KEY` | NVD CVE API 키(§6-3). **비워도 되지만 줄은 둔다** — 미설정이면 run 실패 |
 
 §3이 수렴한 뒤 클러스터 Secret에서 비밀값을 꺼내 채운다.
 
@@ -280,6 +281,7 @@ uv run --project dagster/dockerfile.d/src --with types-PyYAML --with types-reque
 # 외부 접속 — 해당 원천을 처음 켜기 직전
 uv run scripts/physionet_access_probe.py
 uv run scripts/stock_source_access_probe.py --source all
+uv run scripts/nvd_access_probe.py --source all
 ```
 
 관문별 실행 규약은 [`test/manual-gates.md`](test/manual-gates.md), 테스트 계층은 [`test.md`](test.md).
@@ -309,6 +311,26 @@ uv run scripts/stock_source_access_probe.py --source all
 
 키를 채운 뒤 `uv run scripts/stock_source_access_probe.py --source all` — 종료코드 `0`이어야 자산을 켠다.
 발급 절차는 [`setup/market-data-keys.md`](setup/market-data-keys.md).
+
+## 6-3. 취약점 원천 (NVD · CISA KEV)
+
+| 사이트 | `.env` 키 |
+| --- | --- |
+| NVD — Developers → Request an API Key | `NVD_API_KEY` (선택) |
+| CISA KEV 피드 | 없음 |
+
+- 🔴 **NVD(CVE·History)는 이용 조건 판정 전 raw 수집 금지**다 — [`security/datasets.md`](security/datasets.md)에서
+  `미확인`이 닫힌 뒤에 아래 절차로 켠다. KEV는 CC0 1.0이라 지금 켜도 된다.
+- **키 없이도 돈다** — 공개 한도로 돌고 요청 간격만 길어진다(`common/nvd.py`). 다만 `.env`에
+  `NVD_API_KEY=` **줄은 둔다**: `dg.EnvVar`는 빈 값은 받고 *미설정*은 run 실패로 본다.
+- 키는 `apiKey` **헤더**로 나가 URL·로그에 실리지 않는다. KEV 호스트로는 보내지 않는다.
+- `uv run scripts/nvd_access_probe.py --source all` — 종료코드 `0`이어야 자산을 켠다
+  (`2`는 판정 불가 — 키 부재면 키 축만 미확인으로 남는다).
+- 잡 3개(`nvd_cves_job`·`nvd_cve_history_job`·`nvd_kev_job`)는 raw + bronze 쌍이고 스케줄은 기본 `STOPPED`다.
+  과거 구간은 별도 잡 없이 **파티션 백필**로 받는다.
+- 🔴 **켜기 전에 pool 한도를 건다** — `dagster instance concurrency set nvd_api 1`(`DAGSTER_HOME`이 가리키는
+  인스턴스 DB에 저장된다). NVD를 부르는 raw 자산은 `pool="nvd_api"`라 어느 경로로 띄워도 step이 한 번에 하나만
+  돈다. 한도가 1이 아니면 raw 자산이 API를 부르기 전에 실패한다. 확인은 `dagster instance concurrency get nvd_api`.
 
 ## 7. 노트북 (옵션)
 
