@@ -10,7 +10,7 @@
 """
 
 import pyarrow as pa
-from lakehouse import fx, polygon
+from lakehouse import fx, nvd_parse, polygon
 
 # frankfurter_fx.fx_rates_daily
 FX_SCHEMA_PINNED = pa.schema(
@@ -42,6 +42,46 @@ OHLCV_SCHEMA_PINNED = pa.schema(
     ]
 )
 
+# nvd.nvd_cves
+NVD_CVES_SCHEMA_PINNED = pa.schema(
+    [
+        ("window_date", pa.date32()),
+        ("cve_id", pa.string()),
+        ("published", pa.timestamp("us", tz="UTC")),
+        ("last_modified", pa.timestamp("us", tz="UTC")),
+        ("vuln_status", pa.string()),
+        ("raw_json", pa.string()),
+        ("fetched_at", pa.timestamp("us", tz="UTC")),
+    ]
+)
+
+# nvd.nvd_cve_history
+NVD_CVE_HISTORY_SCHEMA_PINNED = pa.schema(
+    [
+        ("window_date", pa.date32()),
+        ("cve_change_id", pa.string()),
+        ("cve_id", pa.string()),
+        ("event_name", pa.string()),
+        ("created", pa.timestamp("us", tz="UTC")),
+        ("raw_json", pa.string()),
+        ("fetched_at", pa.timestamp("us", tz="UTC")),
+    ]
+)
+
+# nvd.nvd_kev
+NVD_KEV_SCHEMA_PINNED = pa.schema(
+    [
+        ("catalog_version", pa.string()),
+        ("date_released", pa.timestamp("us", tz="UTC")),
+        ("cve_id", pa.string()),
+        ("date_added", pa.date32()),
+        ("due_date", pa.date32()),
+        ("known_ransomware_campaign_use", pa.string()),
+        ("raw_json", pa.string()),
+        ("fetched_at", pa.timestamp("us", tz="UTC")),
+    ]
+)
+
 
 def _assert_pinned(actual: pa.Schema, pinned: pa.Schema) -> None:
     """스키마가 리터럴과 같다. 실패 시 어느 필드가 갈렸는지 보이게 한다."""
@@ -65,6 +105,18 @@ def test_fx_schema_is_pinned():
 
 def test_ohlcv_schema_is_pinned():
     _assert_pinned(polygon.OHLCV_SCHEMA, OHLCV_SCHEMA_PINNED)
+
+
+def test_nvd_cves_schema_is_pinned():
+    _assert_pinned(nvd_parse.NVD_CVES_SCHEMA, NVD_CVES_SCHEMA_PINNED)
+
+
+def test_nvd_cve_history_schema_is_pinned():
+    _assert_pinned(nvd_parse.NVD_CVE_HISTORY_SCHEMA, NVD_CVE_HISTORY_SCHEMA_PINNED)
+
+
+def test_nvd_kev_schema_is_pinned():
+    _assert_pinned(nvd_parse.NVD_KEV_SCHEMA, NVD_KEV_SCHEMA_PINNED)
 
 
 def test_timestamps_are_tz_aware_utc():
