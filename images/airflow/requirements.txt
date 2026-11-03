@@ -8,3 +8,5 @@ astronomer-cosmos==1.15.1
 trino==0.340.0
 # 거래일 0행 판정(NYSE 휴장일)
 holidays==0.107
+# GeekNews Atom 피드(외부 원천) 파싱 — DTD·엔티티를 거부하는 안전 파서(표준 ElementTree는 ruff S314)
+defusedxml==0.7.1
