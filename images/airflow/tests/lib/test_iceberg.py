@@ -8,6 +8,7 @@ pyiceberg SQLite 카탈로그 + `tmp_path` warehouse.
 
 from datetime import datetime, timezone
 
+import pyarrow as pa
 import pytest
 from lakehouse.fx import FX_SCHEMA, rates_json_to_arrow
 from lakehouse.iceberg import (
@@ -15,6 +16,7 @@ from lakehouse.iceberg import (
     catalog_uri,
     ensure_table,
     make_catalog,
+    overwrite_table,
     replace_partition,
 )
 from pyiceberg.catalog.sql import SqlCatalog
@@ -143,3 +145,53 @@ def test_catalog_uri_quotes_password():
 def test_catalog_uri_rejects_empty_password():
     with pytest.raises(ValueError, match="iceberg_catalog"):
         catalog_uri("iceberg", "", "h", 5432, "iceberg")
+
+
+# ── 전체 overwrite (KEV 같은 스냅샷 피드) ─────────────────────────────────
+# Dagster `test_kev_overwrite_is_idempotent_and_keeps_lineage`·
+# `test_full_replace_check_catches_append_variant` 이식. 합성 2열 스키마.
+
+FULL_IDENTIFIER = "nvd.nvd_kev"
+FULL_SCHEMA = pa.schema([("cve_id", pa.string()), ("fetched_at", pa.string())])
+
+
+def _full_arrow(rows):
+    return pa.table(
+        {
+            "cve_id": [f"CVE-SYN-{i}" for i in range(rows)],
+            "fetched_at": ["2026-01-01"] * rows,
+        },
+        schema=FULL_SCHEMA,
+    )
+
+
+def _append_variant(table, arrow):
+    """변이체 — `overwrite_table`의 overwrite를 append로 바꾼 것."""
+    table.append(arrow)
+
+
+def _assert_full_replace(tmp_path, loader):
+    """두 번 적재하면 두 번째 내용만 남고 스냅샷 루트가 하나인가."""
+    catalog = SqlCatalog(
+        "probe",
+        uri=f"sqlite:///{tmp_path}/catalog.db",
+        warehouse=f"file://{tmp_path}/warehouse",
+    )
+    table = ensure_table(catalog, FULL_IDENTIFIER, FULL_SCHEMA)
+    loader(table, _full_arrow(3))
+    loader(table, _full_arrow(2))
+    table.refresh()
+    assert table.scan().to_arrow().num_rows == 2
+    snapshots = table.metadata.snapshots
+    assert len(snapshots) > 1
+    assert len([s for s in snapshots if s.parent_snapshot_id is None]) == 1
+
+
+def test_overwrite_table_is_idempotent_and_keeps_lineage(tmp_path):
+    _assert_full_replace(tmp_path, overwrite_table)
+
+
+def test_full_replace_check_catches_append_variant(tmp_path):
+    # 음성 대조 — 같은 판정이 append 변이체는 잡는다(둔감하지 않다)
+    with pytest.raises(AssertionError):
+        _assert_full_replace(tmp_path, _append_variant)

@@ -83,6 +83,19 @@ def ensure_table(catalog: Catalog, identifier: str, schema: pa.Schema) -> Table:
         return catalog.create_table(identifier, schema=schema)
 
 
+def overwrite_table(table: Table, arrow: pa.Table) -> dict[str, Any]:
+    """테이블 전체를 새 내용으로 교체한다(멱등, 스냅샷 피드용). 반환: 관측 메타.
+
+    필터 없는 `overwrite`라 `drop_table` 없이 스냅샷 계보가 이어진다.
+    """
+    table.overwrite(arrow)
+    snapshot = table.current_snapshot()
+    return {
+        "rows": arrow.num_rows,
+        "snapshot_id": snapshot.snapshot_id if snapshot else None,
+    }
+
+
 def replace_partition(
     table: Table, arrow: pa.Table, column: str, value: str
 ) -> dict[str, Any]:
