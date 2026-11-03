@@ -13,9 +13,11 @@ import pytest
 from lakehouse.fx import FX_SCHEMA, rates_json_to_arrow
 from lakehouse.iceberg import (
     S3Conf,
+    append_rows,
     catalog_from_conns,
     catalog_uri,
     ensure_table,
+    latest_snapshot_property,
     make_catalog,
     overwrite_table,
     replace_partition,
@@ -241,3 +243,36 @@ def test_full_replace_check_catches_append_variant(tmp_path):
     # 음성 대조 — 같은 판정이 append 변이체는 잡는다(둔감하지 않다)
     with pytest.raises(AssertionError):
         _assert_full_replace(tmp_path, _append_variant)
+
+
+# ── append + 스냅샷 속성 (GeekNews 같은 누적 피드) ────────────────────────
+
+
+@pytest.fixture
+def append_table(tmp_path):
+    catalog = SqlCatalog(
+        "probe",
+        uri=f"sqlite:///{tmp_path}/catalog.db",
+        warehouse=f"file://{tmp_path}/warehouse",
+    )
+    return ensure_table(catalog, FULL_IDENTIFIER, FULL_SCHEMA)
+
+
+def test_append_rows_accumulates(append_table):
+    meta = append_rows(append_table, _full_arrow(2))
+    assert meta["rows"] == 2
+    assert isinstance(meta["snapshot_id"], int)
+    append_rows(append_table, _full_arrow(2))
+    append_table.refresh()
+    assert append_table.scan().to_arrow().num_rows == 4
+
+
+def test_latest_snapshot_property_walks_back(append_table):
+    assert latest_snapshot_property(append_table, "k") is None
+    append_rows(append_table, _full_arrow(1), {"k": "a"})
+    assert latest_snapshot_property(append_table, "k") == "a"
+    # 속성 없는 최신 스냅샷이 끼어도 과거로 거슬러 올라간다
+    append_rows(append_table, _full_arrow(1))
+    assert latest_snapshot_property(append_table, "k") == "a"
+    append_rows(append_table, _full_arrow(1), {"k": "b"})
+    assert latest_snapshot_property(append_table, "k") == "b"

@@ -10,6 +10,7 @@
 
 import re
 from datetime import datetime, timezone
+from typing import Any
 from urllib.parse import parse_qs, parse_qsl, urlencode, urlsplit, urlunsplit
 from xml.etree.ElementTree import (
     Element,
@@ -17,6 +18,10 @@ from xml.etree.ElementTree import (
 
 import pyarrow as pa
 from defusedxml import ElementTree
+from pyiceberg.table import Table
+
+from lakehouse.iceberg import append_rows, latest_snapshot_property
+from lakehouse.s3raw import gzip_sha256, put_gzip_with_sidecar
 
 FEED_URL = "https://news.hada.io/rss/news"  # 302 → FeedBurner(requests 기본 추종)
 USER_AGENT = (
@@ -102,6 +107,10 @@ def _required_text(entry: Element, tag: str) -> str:
 
 def parse_feed(body: bytes, fetched_at: datetime) -> pa.Table:
     """Atom 피드 원문을 bronze 스키마 테이블로 파싱한다. 이상 입력은 ValueError."""
+    # silver dedup이 fetched_at을 키로 쓰므로 호스트 로컬 시각으로 해석하지 않는다
+    if fetched_at.tzinfo is None:
+        message = "fetched_at은 tz-aware여야 함"
+        raise ValueError(message)
     if len(body) > MAX_FEED_BYTES:
         message = f"피드가 상한({MAX_FEED_BYTES}바이트)을 넘음"
         raise ValueError(message)
@@ -145,3 +154,37 @@ def parse_feed(body: bytes, fetched_at: datetime) -> pa.Table:
         raise ValueError(message)
     rows.sort(key=lambda row: row["topic_id"])
     return pa.Table.from_pylist(rows, schema=GEEKNEWS_SCHEMA)
+
+
+def ingest_feed(
+    s3: Any, table: Table, body: bytes, fetched_at: datetime
+) -> dict[str, Any] | None:
+    """피드를 검증하고, 직전 bronze 적재분과 다르면 raw → bronze append 한다.
+
+    「직전」의 기준은 raw 사이드카가 아니라 **bronze 스냅샷 속성**이다. 사이드카를
+    기준으로 하면 raw 쓰기 성공 → append 실패 뒤 다음 회차가 「같은 해시」로
+    스킵해 그 스냅샷이 bronze에 영영 안 들어간다. 속성은 append와 원자적이라
+    실패 후엔 다르게 보여 다시 적재한다(중복 raw 1벌 = 낭비이되 정확).
+
+    Returns:
+        직전과 같아 스킵하면 None. 아니면 관측 메타(원천 값 없음).
+    """
+    arrow = parse_feed(body, fetched_at)  # 검증 실패면 raw도 쓰지 않는다
+    digest = gzip_sha256(body)
+    if latest_snapshot_property(table, FEED_DIGEST_PROPERTY) == digest:
+        return None
+    key = raw_key(fetched_at)
+    written = put_gzip_with_sidecar(s3, RAW_BUCKET, key, body)
+    if written["sha256"] != digest:
+        message = "gzip_sha256과 put_gzip_with_sidecar의 해시가 다름(압축 규칙 갈라짐)"
+        raise RuntimeError(message)
+    meta = append_rows(
+        table, arrow, {FEED_DIGEST_PROPERTY: digest, RAW_KEY_PROPERTY: key}
+    )
+    return {
+        "rows": arrow.num_rows,
+        "rows_with_cve": sum(1 for ids in arrow["cve_ids"].to_pylist() if ids),
+        "raw_key": key,
+        "snapshot_id": meta["snapshot_id"],
+        "feed_sha256_prefix": digest[:12],
+    }

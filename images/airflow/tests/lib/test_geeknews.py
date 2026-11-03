@@ -4,21 +4,30 @@
 네트워크에 붙지 않는다.
 """
 
-from datetime import datetime, timezone
+import io
+from datetime import datetime, timedelta, timezone
 
 import defusedxml
 import pytest
+from botocore.exceptions import ClientError
 from lakehouse.geeknews import (
+    FEED_DIGEST_PROPERTY,
     GEEKNEWS_SCHEMA,
+    IDENTIFIER,
     MAX_FEED_BYTES,
+    RAW_BUCKET,
     USER_AGENT,
     extract_cve_ids,
+    ingest_feed,
     parse_atom_timestamp,
     parse_feed,
     raw_key,
     strip_tracking_params,
     topic_id_from_entry_id,
 )
+from lakehouse.iceberg import ensure_table, latest_snapshot_property
+from lakehouse.s3raw import gzip_sha256, read_verified_gzip
+from pyiceberg.catalog.sql import SqlCatalog
 
 FEED_XML = """<?xml version='1.0' encoding='UTF-8'?>
 <feed xmlns='http://www.w3.org/2005/Atom'>
@@ -172,3 +181,117 @@ def test_user_agent_is_identifiable():
     assert "pipeline-study" in USER_AGENT
     for token in ("GPTBot", "ClaudeBot", "CCBot"):
         assert token not in USER_AGENT
+
+
+def test_parse_feed_rejects_naive_fetched_at():
+    # silver dedup이 fetched_at을 키로 쓰므로 호스트 로컬 시각으로 해석하지 않는다
+    with pytest.raises(ValueError, match="tz"):
+        parse_feed(FEED_XML, FETCHED_AT.replace(tzinfo=None))
+
+
+# ── ingest_feed: raw → bronze append, 직전 해시 판정 ──────────────────────
+
+
+class FakeS3:
+    """boto3 S3 클라이언트 대역 — 쓰기 순서를 기록한다."""
+
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+        self.ops: list[tuple[str, str]] = []
+
+    def put_object(self, Bucket, Key, Body, ContentType=None):  # noqa: N803
+        self.objects[Key] = Body
+        self.ops.append(("put", Key))
+
+    def get_object(self, Bucket, Key):  # noqa: N803
+        if Key not in self.objects:
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+        return {"Body": io.BytesIO(self.objects[Key])}
+
+
+class FailingAppendTable:
+    """append가 항상 실패하는 테이블 래퍼(나머지는 위임)."""
+
+    def __init__(self, table) -> None:
+        self._table = table
+
+    def append(self, *args, **kwargs):
+        message = "append 실패(합성)"
+        raise RuntimeError(message)
+
+    def __getattr__(self, name):
+        return getattr(self._table, name)
+
+
+@pytest.fixture
+def bronze(tmp_path):
+    catalog = SqlCatalog(
+        "probe",
+        uri=f"sqlite:///{tmp_path}/catalog.db",
+        warehouse=f"file://{tmp_path}/warehouse",
+    )
+    return ensure_table(catalog, IDENTIFIER, GEEKNEWS_SCHEMA)
+
+
+def test_ingest_writes_raw_then_appends(bronze):
+    s3 = FakeS3()
+    key = raw_key(FETCHED_AT)
+    result = ingest_feed(s3, bronze, FEED_XML, FETCHED_AT)
+    assert result["rows"] == 2
+    assert result["rows_with_cve"] == 1
+    assert result["raw_key"] == key
+    assert result["feed_sha256_prefix"] == gzip_sha256(FEED_XML)[:12]
+    assert s3.ops == [("put", key), ("put", key + ".sha256")]
+    assert read_verified_gzip(s3, RAW_BUCKET, key) == FEED_XML
+    bronze.refresh()
+    assert bronze.scan().to_arrow().num_rows == 2
+    digest = latest_snapshot_property(bronze, FEED_DIGEST_PROPERTY)
+    assert digest == gzip_sha256(FEED_XML)
+    # 원천 값(제목·링크·CVE 목록)은 반환에 없다
+    assert "합성" not in str(result)
+    assert "CVE-" not in str(result)
+
+
+def test_ingest_skips_unchanged_feed(bronze):
+    s3 = FakeS3()
+    ingest_feed(s3, bronze, FEED_XML, FETCHED_AT)
+    ops_before = list(s3.ops)
+    later = FETCHED_AT + timedelta(hours=1)
+    assert ingest_feed(s3, bronze, FEED_XML, later) is None
+    assert s3.ops == ops_before
+    bronze.refresh()
+    assert bronze.scan().to_arrow().num_rows == 2
+
+
+def test_ingest_relands_after_failed_append(bronze):
+    s3 = FakeS3()
+    with pytest.raises(RuntimeError, match="append 실패"):
+        ingest_feed(s3, FailingAppendTable(bronze), FEED_XML, FETCHED_AT)
+    assert len(s3.objects) == 2  # raw는 이미 썼다
+    bronze.refresh()
+    assert bronze.scan().to_arrow().num_rows == 0
+    # 사이드카 기준이었다면 여기서 「같은 해시」로 스킵해 영영 못 들어간다
+    later = FETCHED_AT + timedelta(hours=1)
+    result = ingest_feed(s3, bronze, FEED_XML, later)
+    assert result is not None
+    assert result["raw_key"] == raw_key(later)
+    assert len(s3.objects) == 4
+    bronze.refresh()
+    assert bronze.scan().to_arrow().num_rows == 2
+
+
+def test_ingest_invalid_feed_writes_nothing(bronze):
+    s3 = FakeS3()
+    with pytest.raises(ValueError, match="Atom"):
+        ingest_feed(s3, bronze, b"<html/>", FETCHED_AT)
+    assert s3.ops == []
+
+
+def test_cve_ids_roundtrip_through_iceberg(bronze):
+    ingest_feed(FakeS3(), bronze, FEED_XML, FETCHED_AT)
+    bronze.refresh()
+    scanned = bronze.scan().to_arrow().sort_by("topic_id")
+    assert scanned.column("cve_ids").to_pylist() == [
+        ["CVE-2025-0001", "CVE-2026-12345"],
+        [],
+    ]
