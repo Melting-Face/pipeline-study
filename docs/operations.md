@@ -223,7 +223,7 @@ find ~/.claude/projects -name '*.jsonl' -mtime +<보존일> | wc -l
 > 자동화했다. 컴팩션·orphan 정리는 **Trino `ALTER TABLE … EXECUTE`** 로 실행한다(Spark 프로시저로 갔다가
 > Connect 철거로 되돌아옴 — [architectures/trino.md](architectures/trino.md)). 실행에는 k8s Trino
 > (`trino.localtest.me:8080`)가 필요하고 상주 컴퓨트를 올리고 내릴 절차는 없다(coordinator 상시).
-> 엔진은 op config `engine`(지금 `trino`만)으로 고른다 — Spark·Flink 경로는 후속 미션이다.
+> 엔진은 op config `engine`(`trino` 하나)이다 — Spark·Flink 경로는 진행하지 않기로 했다(#232·#233).
 >
 > 남은 결정은 **보존기간(기본 7일)·컴팩션 임계값
 > (기본 100MB)·대상 테이블 범위** 확정이며, 확정 시 이 표·[security.md §4-1](security.md)·[resource-sizing.md](resource-sizing.md)를 함께 갱신한다.
