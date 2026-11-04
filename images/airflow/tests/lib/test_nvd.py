@@ -588,6 +588,9 @@ def test_land_kev_skips_unchanged_content(monkeypatch, sleeps) -> None:
 
     assert result["decision"] == "skipped_unchanged"
     assert len(http.calls) == 1
+    # 단위: 스킵해도 GET은 했으므로 1이다(0이 아니다).
+    assert result["api_requests"] == 1
+    assert result["latest_run"] == f"{KEV_ROOT}/dt=2026-10-31/{run_segment(FETCHED_1)}"
     assert s3.ops == ops_before
 
 
