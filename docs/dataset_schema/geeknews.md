@@ -23,7 +23,8 @@ Iceberg 네임스페이스 `geeknews`. 오케스트레이터는 **Airflow뿐**�
 
 - raw 원문에는 본문 HTML과 작성자(name·uri)가 그대로 남는다. 비공개 레이크 안에서만 보관한다.
 - 파싱·검증을 raw 쓰기보다 **먼저** 한다 — 깨진 응답(HTML 오류 페이지 등)을 raw에 쌓지 않는다.
-  대가로 진단용 원문이 남지 않으므로 실패 메시지에는 크기·루트 태그만 담긴다. 응답 상한 5MiB.
+  대가로 진단용 원문이 남지 않으므로 실패 메시지에는 크기 상한과 검증 사유만 담긴다.
+  파싱 상한은 5MiB이고 전체를 내려받은 뒤에 검사한다.
 
 ### 스킵 규칙 — 직전과 같으면 쓰지 않는다
 
@@ -47,7 +48,7 @@ bronze. 변경이 감지된 회차마다 피드의 모든 entry를 **append**한
 | `published` | timestamp(UTC) | entry `published`를 UTC로 환산 |
 | `updated` | timestamp(UTC) | entry `updated`를 UTC로 환산 |
 | `cve_ids` | array(string) | 본문 HTML에서 `CVE-\d{4}-\d{4,}`를 추출해 대문자·중복 제거·정렬한 목록 |
-| `fetched_at` | timestamp(UTC) | 수집 시각(경로 `fetched=`와 같다) |
+| `fetched_at` | timestamp(UTC) | 수집 시각(경로 `fetched=`와는 초 단위까지만 같다. 컬럼은 마이크로초를 가진다) |
 
 **본문과 작성자는 적재하지 않는다**(라이선스 판정, [`../security/datasets.md`](../security/datasets.md)). 한 피드 안에서
 `topic_id`가 중복되면 그 회차는 검증 실패다.
