@@ -1,0 +1,39 @@
+version: 2
+
+# GeekNews silver. 빌드 소유자: Airflow DAG geeknews_dbt(Cosmos) — images/airflow/dags/geeknews_dbt.py.
+# 🔴 dedup 회귀 방어는 아래 unit_tests가 맡는다. 실데이터는 같은 topic_id가 두 번 수집되지
+#    않았으면 최신 선택 경로를 지나지 않고도 `dbt build`가 통과한다(「실행됐다」≠「검사했다」).
+
+models:
+  - name: geeknews_items_latest
+    description: >-
+      1행 = topic_id의 최신 수집본(fetched_at 최대, 동률은 updated 최대).
+    columns:
+      - name: topic_id
+        data_tests:
+          - unique
+          - not_null
+      - name: title
+        data_tests:
+          - not_null
+      - name: link
+        data_tests:
+          - not_null
+      - name: fetched_at
+        data_tests:
+          - not_null
+
+unit_tests:
+  # 최신 선택: 같은 topic_id의 두 수집본 중 fetched_at이 큰 쪽을 고른다. cve_ids는 생략(NULL).
+  - name: geeknews_items_latest_picks_latest_fetch
+    model: geeknews_items_latest
+    given:
+      - input: source('geeknews', 'geeknews_items')
+        rows:
+          - {topic_id: 1, title: old, link: 'https://news.hada.io/topic?id=1', fetched_at: '2026-11-03 00:00:00'}
+          - {topic_id: 1, title: new, link: 'https://news.hada.io/topic?id=1', fetched_at: '2026-11-04 00:00:00'}
+          - {topic_id: 2, title: only, link: 'https://news.hada.io/topic?id=2', fetched_at: '2026-11-03 00:00:00'}
+    expect:
+      rows:
+        - {topic_id: 1, title: new}
+        - {topic_id: 2, title: only}

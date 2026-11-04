@@ -390,6 +390,44 @@ else
     rc=1
 fi
 
+# --- geeknews_dbt (GeekNews silver dbt) -------------------------------------------------
+# 🔴 bronze Asset 단일 스케줄 — 단일 Asset 을 리스트로 준다(리스트 없이 주면 조건 타입이 달라질 수 있어 이 셀이 판정)
+#    max_active_tasks=1 은 krw-serial 과 같은 이유(1Gi 워커 OOM)
+if echo "${result}" | jq -e '.dags.geeknews_dbt | .asset_cond == "AssetAll"
+        and .asset_uris == ["iceberg://geeknews/geeknews_items"]
+        and .paused == true and .max_active_runs == 1 and .max_active_tasks == 1' >/dev/null; then
+    echo "PASS [gn-dbt-schedule] geeknews_dbt: bronze Asset 스케줄·일시정지·run 1·태스크 동시 1"
+else
+    echo "FAIL [gn-dbt-schedule] geeknews_dbt 모양이 기대와 다르다"
+    rc=1
+fi
+
+# Cosmos 그룹은 GeekNews silver 만 — 다른 데이터셋 모델이 끌려오면 실패
+if echo "${result}" | jq -e '.dags.geeknews_dbt.tasks | keys
+        | map(select(startswith("dbt."))) as $k
+        | ($k | length > 0) and ($k | all(test("^dbt\\.geeknews_items_latest\\.")))' >/dev/null; then
+    echo "PASS [gn-dbt-models] Cosmos 그룹 = geeknews_items_latest"
+else
+    echo "FAIL [gn-dbt-models] Cosmos 그룹의 모델 집합이 기대와 다르다"
+    rc=1
+fi
+
+if echo "${result}" | jq -e '.dags.geeknews_dbt as $d
+        | ($d.indirect | to_entries | map(select(.key | endswith(".test"))) | length > 0 and all(.value == "cautious"))
+        and ($d.install_deps | to_entries | map(select(.key | startswith("dbt."))) | length > 0 and all(.value == false))' >/dev/null; then
+    echo "PASS [gn-dbt-cosmos] geeknews_dbt 테스트 cautious·dbt deps 미수행"
+else
+    echo "FAIL [gn-dbt-cosmos] geeknews_dbt Cosmos 설정이 기대와 다르다"
+    rc=1
+fi
+
+if echo "${result}" | jq -e '.dags.geeknews_dbt.outlets.record_geeknews_silver == ["iceberg://geeknews/geeknews_items_latest"]' >/dev/null; then
+    echo "PASS [gn-dbt-outlet] record_geeknews_silver → iceberg://geeknews/geeknews_items_latest"
+else
+    echo "FAIL [gn-dbt-outlet] record_geeknews_silver 의 Asset outlet이 기대와 다르다"
+    rc=1
+fi
+
 # --- 이미지 내용(원화 종가 이관 — pyiceberg·cosmos·dbt venv·dbt 프로젝트) -------------
 # 🔴 lint CI 초록은 빌드 보증이 아니다 — 이미지 안에서 실제로 import·실행해 본다.
 #    defusedxml 은 Dagster 쪽 uv.lock 에 없고 이미지 requirements 에만 있다 — 해석 충돌이 여기서 드러난다.

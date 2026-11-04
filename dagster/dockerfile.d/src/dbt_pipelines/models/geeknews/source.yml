@@ -1,0 +1,17 @@
+# GeekNews silver의 원천 — Atom 피드 bronze 한 테이블.
+#
+# - schema    : Iceberg 네임스페이스 geeknews (Airflow `lakehouse/geeknews.py`가 쓴다).
+# - meta.dagster.asset_key: 두지 않는다 — 적재·이 디렉터리 모델 빌드 모두 Airflow
+#       소유라 Dagster 자산이 아니다(us_equity_krw/source.yml 머리 주석과 같은 이유).
+version: 2
+
+sources:
+  - name: geeknews
+    description: "GeekNews(news.hada.io) Atom 피드 bronze. Airflow DAG geeknews_items가 적재."
+    schema: geeknews
+    tables:
+      # 적재 소유자: Airflow DAG geeknews_items (images/airflow/dags/).
+      - name: geeknews_items
+        description: >-
+          피드 수집 1회당 항목마다 1행을 append한다(수집 시각 fetched_at). 같은 topic_id가
+          수집마다 다시 쌓이므로 최신 1건 접기는 silver. 본문·작성자는 저장하지 않는다.
