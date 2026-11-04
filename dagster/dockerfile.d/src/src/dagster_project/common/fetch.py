@@ -22,7 +22,6 @@
 기반 `dg.Config`를 담고, 자산 모듈과 같은 이유로 어노테이션 문자열화를 피한다.
 """
 
-import gzip
 import hashlib
 import io
 from datetime import datetime, timezone
@@ -80,10 +79,6 @@ class RawFetchConfig(dg.Config):
 
         ⚠️ 환경변수 플래그로 두지 않는다 — 전역이고 끈적여서 누가 켜둔 채
         잊으면 매 실행 전량을 다시 받는다. 런타임 config는 그 실행에만 산다.
-
-        🔴 **NVD 피드(`common/nvd.py`)에서는 force가 새 회차(`fetched=`)를 추가할 뿐
-        기존 스냅샷을 지우거나 덮어쓰지 않는다** — 과거 구간은 다시 물으면 답이
-        바뀌어 옛 스냅샷이 재현 불가능한 관측이기 때문이다.
     """
 
     force: bool = False
@@ -337,76 +332,6 @@ def write_sidecar(s3: S3Resource, bucket: str, key: str, digest: str) -> None:
         Body=digest.encode("utf-8"),
         ContentType="text/plain",
     )
-
-
-def put_gzip_with_sidecar(
-    s3: S3Resource, bucket: str, key: str, body: bytes
-) -> dict[str, Any]:
-    """바이트를 gzip해 S3에 올리고, **그 뒤에** sha256 사이드카를 쓴다.
-
-    `download_to_s3`와 갈리는 축은 **원천의 형태**다 — 그쪽은 이미 gzip인 대용량
-    파일을 스트리밍으로 흘려보내고, 이쪽은 API 응답(메모리에 이미 있는 수 MB 이하의
-    JSON 바이트)을 압축해 한 번에 올린다. 사이드카 규약(`SIDECAR_SUFFIX`·쓰기 순서)은
-    같은 것을 쓴다.
-
-    `mtime=0`으로 압축한다 — gzip 헤더에 시각이 박히면 같은 본문도 해시가 매번
-    달라져, 해시가 "내용"이 아니라 "압축한 시각"을 세게 된다.
-
-    Args:
-        s3: dagster-aws S3Resource.
-        bucket: 버킷.
-        key: 데이터 객체 키(사이드카는 `key + SIDECAR_SUFFIX`).
-        body: 압축 전 원문 바이트.
-
-    Returns:
-        `sha256`·`raw_bytes`·`gzip_bytes`.
-    """
-    compressed = gzip.compress(body, mtime=0)
-    digest = hashlib.sha256(compressed).hexdigest()
-    s3.get_client().put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=compressed,
-        ContentType="application/gzip",
-    )
-    # 🔴 데이터 → 사이드카 순서(역순이면 깨진 객체를 영영 스킵한다
-    #    — write_sidecar 참조).
-    write_sidecar(s3, bucket, key, digest)
-    return {"sha256": digest, "raw_bytes": len(body), "gzip_bytes": len(compressed)}
-
-
-def read_verified_gzip(s3: S3Resource, bucket: str, key: str) -> bytes:
-    """사이드카로 무결성을 대조한 뒤 gzip 객체를 풀어 돌려준다.
-
-    🔴 **사이드카가 없으면 읽지 않는다.** 사이드카는 "쓰기가 끝났다"는 커밋 표지라
-    (데이터 → 사이드카 순서), 없다는 것은 쓰는 중에 죽었거나 아직 안 쓴 것이다.
-    그 객체를 읽어 적재하면 잘린 스냅샷이 정상으로 들어간다.
-
-    Args:
-        s3: dagster-aws S3Resource.
-        bucket: 버킷.
-        key: 데이터 객체 키.
-
-    Returns:
-        압축을 푼 원문 바이트.
-
-    Raises:
-        RuntimeError: 사이드카가 없거나 해시가 다를 때.
-    """
-    expected = read_sidecar(s3, bucket, key)
-    if expected is None:
-        message = f"s3://{bucket}/{key}: 사이드카 없음 — 미완결 객체는 읽지 않는다"
-        raise RuntimeError(message)
-    response = s3.get_client().get_object(Bucket=bucket, Key=key)
-    compressed = response["Body"].read()
-    digest = hashlib.sha256(compressed).hexdigest()
-    if digest != expected:
-        message = (
-            f"s3://{bucket}/{key}: 무결성 불일치 — "
-            f"사이드카 {expected[:12]}… / 실제 {digest[:12]}…"
-        )
-        raise RuntimeError(message)
-    return gzip.decompress(compressed)
 
 
 def download_to_s3(

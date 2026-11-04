@@ -6,7 +6,7 @@
 """NVD CVE·Change History API와 CISA KEV 피드의 접근·형식·경계를 **실측으로 판정**한다.
 
 왜 이 스크립트인가:
-    `defs/nvd`의 수집 경로는 저장소 안에서 확인할 수 없는 외부 사실 위에 선다.
+    Airflow `lakehouse/nvd.py`의 수집 경로는 저장소 밖의 외부 사실 위에 선다.
         ① 엔드포인트·응답 필드가 파서의 계약과 맞는가
         ② 페이지 최대 크기와 `lastMod*`/`change*` 조회 구간의 최대 길이
            (상수가 여기 걸린다)
@@ -75,9 +75,10 @@ NVD_CALLS_NO_KEY = 5
 NVD_CALLS_WITH_KEY = 50
 _NVD_CALL_TIMES: list[float] = []
 
-# 🔴 **파서와 짝을 이루는 상수다**(`defs/nvd/assets.py`의 `REQUIRED_*`·`KNOWN_*`).
+# 🔴 **파서와 짝을 이루는 상수다**(`lakehouse/nvd_parse.py`의 `REQUIRED_*`·`KNOWN_*`).
 # 이 스크립트는 PEP 723 단독 실행이라 그 패키지를 import할 수 없어 두 벌이 존재하고,
-# 갈라지면 **프로브는 통과하고 파서만 깨진다**. AST 대조 테스트가 그 갈라짐을 막는다.
+# 갈라지면 **프로브는 통과하고 파서만 깨진다**. AST 대조 테스트
+# (`images/airflow/tests/lib/test_nvd_contract.py`)가 그 갈라짐을 막는다.
 NVD_CVE_FIELDS = ("id", "lastModified", "published", "vulnStatus")
 NVD_CVE_KNOWN_FIELDS = (
     "affected",
