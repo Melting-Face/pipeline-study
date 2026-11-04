@@ -118,6 +118,7 @@ DAG가 `owner` 객체를 버리는 것(수집 최소화)은 이 판정과 같은
 - 피드는 `feeds.feedburner.com`으로 302된다 — **실제 요청 상대는 Google FeedBurner**다.
   FeedBurner 자체의 이용 조건은 `미확인`이다.
 - 저장은 비공개 레이크의 raw(원문 gz)까지 원문 그대로이고, bronze는 본문과 작성자를 버린다.
+  스키마 정본 [`dataset_schema/geeknews.md`](../dataset_schema/geeknews.md).
 
 **재검토 트리거**(시점이 아니라 **조건**이다 — [risk.md](../risk.md) §대응):
 
