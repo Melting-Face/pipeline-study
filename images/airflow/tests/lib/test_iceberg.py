@@ -13,6 +13,7 @@ import pytest
 from lakehouse.fx import FX_SCHEMA, rates_json_to_arrow
 from lakehouse.iceberg import (
     S3Conf,
+    catalog_from_conns,
     catalog_uri,
     ensure_table,
     make_catalog,
@@ -129,6 +130,51 @@ def test_make_catalog_properties(monkeypatch):
     assert captured["warehouse"] == "s3://warehouse"
     assert captured["s3.path-style-access"] == "true"
     assert captured["s3.endpoint"] == "http://s3:8333"
+
+
+class _FakeConn:
+    """Airflow Connection 대역(duck typing)."""
+
+    def __init__(self, attrs):
+        self.login = attrs.get("login")
+        self.password = attrs.get("password")
+        self.host = attrs.get("host")
+        self.port = attrs.get("port")
+        self.schema = attrs.get("schema")
+        self.extra_dejson = attrs.get("extra", {})
+
+
+def test_catalog_from_conns_maps_fields(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "lakehouse.iceberg.load_catalog",
+        lambda name, **props: captured.update(name=name, **props) or object(),
+    )
+    catalog_from_conns(
+        _FakeConn({"login": "u", "password": "p@s", "host": "h", "schema": "iceberg"}),
+        _FakeConn(
+            {
+                "login": "ak",
+                "password": "sk",
+                "extra": {"endpoint_url": "http://s3:8333"},
+            }
+        ),
+    )
+    # 포트 미지정이면 5432, 비밀번호는 인코딩
+    assert captured["uri"] == "postgresql+psycopg2://u:p%40s@h:5432/iceberg"
+    assert captured["s3.endpoint"] == "http://s3:8333"
+    assert captured["s3.access-key-id"] == "ak"
+    assert captured["s3.secret-access-key"] == "sk"
+
+
+def test_catalog_from_conns_rejects_empty_s3_endpoint():
+    with pytest.raises(ValueError, match="endpoint"):
+        catalog_from_conns(
+            _FakeConn(
+                {"login": "u", "password": "p", "host": "h", "schema": "iceberg"}
+            ),
+            _FakeConn({"login": "ak", "password": "sk"}),
+        )
 
 
 def test_catalog_uri_quotes_password():

@@ -513,8 +513,11 @@ def test_land_result_has_no_api_key(monkeypatch, sleeps) -> None:
     assert SECRET not in json.dumps(result)
 
 
-def test_land_to_load_chain_carries_no_api_key(monkeypatch, sleeps) -> None:
-    """XCom·Asset event로 흘리는 값(착지 반환·읽기 메타) 어디에도 키가 없다."""
+def test_land_return_and_read_metadata_carry_no_api_key(monkeypatch, sleeps) -> None:
+    """lakehouse 착지 반환값과 읽기 메타(회차 경로 등)에 키가 없다.
+
+    DAG가 조립하는 extra·XCom 자체는 Airflow 없이 검증하지 못한다(미검증).
+    """
     _install_http(monkeypatch, _two_pages())
     s3 = _FakeS3()
     landed = _land(s3, api_key=SECRET)

@@ -56,10 +56,8 @@ def nvd_kev() -> None:
     def load_nvd_kev(outlet_events: Any = None) -> dict:
         """최신 커밋 회차가 테이블에 없으면 전체 교체하고, 같으면 스킵한다."""
         from lakehouse.iceberg import (
-            S3Conf,
-            catalog_uri,
+            catalog_from_conns,
             ensure_table,
-            make_catalog,
             overwrite_table,
         )
         from lakehouse.nvd import read_latest_kev
@@ -73,21 +71,10 @@ def nvd_kev() -> None:
         s3 = S3Hook(aws_conn_id=S3_CONN_ID).get_conn()
         payload, fetched_at, source_object = read_latest_kev(s3)
 
-        cat = Connection.get("iceberg_catalog")
-        s3c = Connection.get(S3_CONN_ID)
-        s3conf = S3Conf(
-            s3c.extra_dejson.get("endpoint_url", ""),
-            s3c.login or "",
-            s3c.password or "",
+        catalog = catalog_from_conns(
+            Connection.get("iceberg_catalog"), Connection.get(S3_CONN_ID)
         )
-        uri = catalog_uri(
-            cat.login or "",
-            cat.password or "",
-            cat.host or "",
-            cat.port or 5432,
-            cat.schema or "",
-        )
-        table = ensure_table(make_catalog(uri, s3conf), IDENTIFIER, NVD_KEV_SCHEMA)
+        table = ensure_table(catalog, IDENTIFIER, NVD_KEV_SCHEMA)
         # 🔴 스킵 판정의 정본은 land의 `skipped_unchanged`가 아니라
         #    **테이블의 fetched_at**이다 — 직전 시각에 raw만 쓰고 적재가 죽었다면
         #    land는 「변경 없음」을 내도 테이블은 낡았다.

@@ -315,7 +315,8 @@ if echo "${result}" | jq -e '.dags.nvd_cves | .tasks == {"land_raw_nvd_cves": nu
         and .downstream.land_raw_nvd_cves == ["load_nvd_cves"]
         and .cron == "0 19 * * *" and .cron_tz == "UTC" and .timetable == "CronDataIntervalTimetable"
         and .paused == true and .catchup == false and .max_active_runs == 1
-        and .pools.land_raw_nvd_cves == "nvd_api" and .tis.land_raw_nvd_cves == 1
+        and .pools.land_raw_nvd_cves == "nvd_api" and .pools.load_nvd_cves != "nvd_api"
+        and .tis.land_raw_nvd_cves == 1
         and .params == ["force"]' >/dev/null; then
     echo "PASS [nvd-cves-dag] nvd_cves: raw 착지 >> 적재·0 19 * * * UTC·데이터 구간·일시정지·pool nvd_api"
 else
@@ -335,7 +336,8 @@ if echo "${result}" | jq -e '.dags.nvd_cve_history | .tasks == {"land_raw_nvd_cv
         and .downstream.land_raw_nvd_cve_history == ["load_nvd_cve_history"]
         and .cron == "0 19 * * *" and .cron_tz == "UTC" and .timetable == "CronDataIntervalTimetable"
         and .paused == true and .catchup == false and .max_active_runs == 1
-        and .pools.land_raw_nvd_cve_history == "nvd_api" and .tis.land_raw_nvd_cve_history == 1
+        and .pools.land_raw_nvd_cve_history == "nvd_api" and .pools.load_nvd_cve_history != "nvd_api"
+        and .tis.land_raw_nvd_cve_history == 1
         and .params == ["force"]' >/dev/null; then
     echo "PASS [nvd-history-dag] nvd_cve_history: raw 착지 >> 적재·0 19 * * * UTC·데이터 구간·일시정지·pool nvd_api"
 else

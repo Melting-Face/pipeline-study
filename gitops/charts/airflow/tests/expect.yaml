@@ -28,7 +28,7 @@ fields:
     - {ref: Job/airflow-pools, path: [metadata, annotations, argocd.argoproj.io/hook], value: PostSync}
     - ref: Job/airflow-pools
       path: [spec, template, spec, containers, 0, args, 2]
-      value: "set -e\nairflow pools set \"nvd_api\" 1 \"NVD API(CVE·History) 직렬화 — 키 하나의 한도를 DAG 간 공유\""
+      value: "set -e\nairflow pools set 'nvd_api' 1 'NVD API(CVE·History) 직렬화 — 키 하나의 한도를 DAG 간 공유'"
     - {ref: StatefulSet/airflow-worker, path: [spec, replicas], value: 1}
     - ref: StatefulSet/airflow-worker
       path: [spec, volumeClaimTemplates, 0, spec, resources, requests, storage]

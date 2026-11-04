@@ -72,6 +72,27 @@ def make_catalog(catalog_uri: str, s3: S3Conf) -> Catalog:
     )
 
 
+def catalog_from_conns(catalog_conn: Any, s3_conn: Any) -> Catalog:
+    """Connection 두 개(`iceberg_catalog`·`seaweedfs_s3`)로 카탈로그를 연다.
+
+    Airflow를 import하지 않는다 — DAG가 `Connection.get`으로 받은 객체를 그대로 넘긴다
+    (속성 `login`·`password`·`host`·`port`·`schema`·`extra_dejson`만 쓴다).
+    """
+    s3 = S3Conf(
+        s3_conn.extra_dejson.get("endpoint_url", ""),
+        s3_conn.login or "",
+        s3_conn.password or "",
+    )
+    uri = catalog_uri(
+        catalog_conn.login or "",
+        catalog_conn.password or "",
+        catalog_conn.host or "",
+        catalog_conn.port or 5432,
+        catalog_conn.schema or "",
+    )
+    return make_catalog(uri, s3)
+
+
 def ensure_table(catalog: Catalog, identifier: str, schema: pa.Schema) -> Table:
     """테이블을 로드하고, 없으면 네임스페이스·테이블을 만든다."""
     namespace = identifier.rsplit(".", 1)[0]

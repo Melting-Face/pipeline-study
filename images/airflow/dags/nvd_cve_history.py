@@ -89,10 +89,8 @@ def nvd_cve_history() -> None:
     ) -> dict:
         """그 날의 최신 커밋 회차를 읽어 `window_date` 파티션만 교체한다."""
         from lakehouse.iceberg import (
-            S3Conf,
-            catalog_uri,
+            catalog_from_conns,
             ensure_table,
-            make_catalog,
             replace_partition,
         )
         from lakehouse.nvd import HISTORY_FEED, read_window_pages
@@ -114,23 +112,10 @@ def nvd_cve_history() -> None:
         )
         arrow = changes_to_arrow(pages, window_date, fetched_at)
 
-        cat = Connection.get("iceberg_catalog")
-        s3c = Connection.get(S3_CONN_ID)
-        s3conf = S3Conf(
-            s3c.extra_dejson.get("endpoint_url", ""),
-            s3c.login or "",
-            s3c.password or "",
+        catalog = catalog_from_conns(
+            Connection.get("iceberg_catalog"), Connection.get(S3_CONN_ID)
         )
-        uri = catalog_uri(
-            cat.login or "",
-            cat.password or "",
-            cat.host or "",
-            cat.port or 5432,
-            cat.schema or "",
-        )
-        table = ensure_table(
-            make_catalog(uri, s3conf), IDENTIFIER, NVD_CVE_HISTORY_SCHEMA
-        )
+        table = ensure_table(catalog, IDENTIFIER, NVD_CVE_HISTORY_SCHEMA)
         loaded = replace_partition(table, arrow, "window_date", window_date)
 
         extra = {
