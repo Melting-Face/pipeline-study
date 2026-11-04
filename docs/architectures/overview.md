@@ -215,22 +215,22 @@ S3/Iceberg 연결은 **Dagster 리소스**(`dagster-aws`·`dagster-iceberg`)로 
 | `helper.py`     | `read_csv_gz_table()`(일반: 통째 읽어 pa.Table) · `load_heavy_csv_gz_to_iceberg()`(대용량: 청크 append) |
 | `dbt.py`        | 공유 `DbtProject`·`build_dbt_resource` (단일 dbt 프로젝트를 데이터셋 subproject가 공유) |
 | `trino.py`      | `TrinoResource` — k8s Trino 접속, Iceberg 유지보수 프로시저 실행 |
-| `fetch.py`      | 외부 원천 파일 → S3 `raw/` 수집 헬퍼(원천 획득 단계) · 사이드카 규약(`put_gzip_with_sidecar`·`read_verified_gzip`) |
-| `physionet.py` · `polygon.py` · `fred.py` · `nvd.py` | 원천 접속 리소스(인증·URL 조립). `nvd.py`는 raw 레이아웃 쓰기·읽기 프로토콜도 갖는다 |
+| `fetch.py`      | 외부 원천 파일 → S3 `raw/` 수집 헬퍼(원천 획득 단계) · 사이드카 규약(`read_sidecar`·`write_sidecar`) |
+| `physionet.py` · `polygon.py` · `fred.py` | 원천 접속 리소스(인증·URL 조립) |
 
 ### 서브프로젝트 (`defs/<dataset>/`) — 데이터셋별, **정의만**(load_defs가 자동발견)
 
 | 파일             | 역할                                                                          |
 | ---------------- | ----------------------------------------------------------------------------- |
 | `constants.py`   | 데이터셋 전용 `NAMESPACE`·`GROUP_NAME`·`SOURCE_BASE`, 원천 좌표(`PHYSIONET_*`·파일 상대경로) |
-| `raw_assets.py`  | 파일·피드별 **명시적 `@dg.asset`**(원천 획득: 외부 → S3 `raw/`. PhysioNet 데이터셋·NVD)  |
+| `raw_assets.py`  | 파일·피드별 **명시적 `@dg.asset`**(원천 획득: 외부 → S3 `raw/`. PhysioNet 데이터셋)  |
 | `assets.py`      | 테이블별 **명시적 `@dg.asset`**(bronze; 일반=IO 매니저 / 대용량=청크 append)   |
 | `dbt_assets.py`  | 데이터셋 dbt 모델 소유 `@dbt_assets(select="fqn:<dataset>", project=dbt_project)` |
 
 > S3 파일 원천: `defs/mimic_iv/`(icu·hosp 11테이블 — 일반=IO 매니저, chartevents·labevents=대용량),
 > `defs/eicu/`(3테이블 — patient·diagnosis=일반, nurse_charting=대용량).
 > 공개 API 원천: `defs/usgs_water/`(2테이블 — 순간값·관측소 메타, `dbt_assets.py` 없음 — bronze에서 멈춘다),
-> `defs/nvd/`(3테이블 — CVE·Change History·CISA KEV, raw → bronze. silver는 Airflow `nvd_dbt`가 빌드).
+> NVD(CVE·Change History·CISA KEV)는 Airflow로 이관했다(→ [`airflow.md`](airflow.md)).
 > 원천을 가로지르는 dbt 소유 서브프로젝트: `defs/stock_forecast/`(Polygon 뉴스·FRED).
 > `@asset` 없이 `dbt_assets.py`만 둔다.
 > 그 밖에 시장 원천 `defs/polygon_market/`(뉴스)·`defs/fred_calendar/`, 엔진 실행 자산 `defs/flink/`·`defs/poc/`가 있다.
@@ -269,8 +269,8 @@ S3/Iceberg 연결은 **Dagster 리소스**(`dagster-aws`·`dagster-iceberg`)로 
 끝나는 *같은 단계의 변종*이고, 이 구간은 S3에서 멈추며 테이블을 만들지 않는다. 한 표에
 넣으면 "적재 경로"가 두 가지 뜻을 갖게 된다.
 
-**공개 API도 이 단계를 탄다(NVD)** — 다시 물으면 답이 바뀌는 구간 조회라 응답을 S3 raw 스냅샷으로 먼저 남긴다.
-회차(`fetched=`)마다 경로가 갈려 덮어쓰지 않고 회차의 page-0000 사이드카가 커밋 표지다. 상세 [`../dataset_schema/nvd.md`](../dataset_schema/nvd.md).
+**공개 API도 이 단계를 탄다(NVD, Airflow)** — 답이 바뀌는 구간 조회라 응답을 S3 raw 스냅샷으로 먼저 남긴다.
+회차(`fetched=`)별 경로·page-0000 사이드카 커밋 표지 — [`../dataset_schema/nvd.md`](../dataset_schema/nvd.md).
 
 ### 네 가지 적재 경로
 
@@ -285,7 +285,7 @@ S3/Iceberg 연결은 **Dagster 리소스**(`dagster-aws`·`dagster-iceberg`)로 
 
 C와 D는 **정반대 방향**이다 — C는 중복을 남겨 dedup 실습 재료로 쓰고, D는 파티션 재실행·백필이
 전제라 중복이 곧 버그다. 같은 "API → Iceberg"라도 갈리는 지점이니 원천의 성격으로 고른다.
-NVD는 D의 변종(입력이 raw 스냅샷)이고, 전체 스냅샷 원천(KEV)은 `overwrite_iceberg_table`(계보 유지)로 교체한다.
+NVD는 D의 변종(입력이 raw 스냅샷)이지만 Dagster가 아니라 Airflow로 이관해 이 표 밖이다(→ [`airflow.md`](airflow.md)).
 
 ```mermaid
 flowchart LR

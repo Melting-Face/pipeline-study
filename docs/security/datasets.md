@@ -92,7 +92,7 @@ DAG가 `owner` 객체를 버리는 것(수집 최소화)은 이 판정과 같은
   source as the NVD."* — bronze 이후 **가공 값은 NVD를 출처로 표기하지 않는다**(원천 열 그대로만 NVD 유래).
 - **Use Limitations** — 한도 초과·우회 시 차단될 수 있고, 키는 *"should not be used by, or shared with,
   individuals or organizations other than the original requestor."* — `NVD_API_KEY`는 `.env` 참조로만 쓰고
-  `pool="nvd_api"` 한도 1로 호출을 직렬화한다.
+  Connection `nvd_api`의 `apiKey` 헤더로만 보내며, Airflow Pool `nvd_api`(slots 1)로 호출을 직렬화한다.
 
 ⚠️ **재배포 축은 여전히 `미확인`이다.** TOU 본문에는 재배포를 금지하는 조항도 허용하는 조항도 없다(**침묵**이다).
 그런데 TOU는 *"NIST Website Policies"* 를 함께 편입하고, 그 문서는 아직 열람하지 않았다(**미열람**이다).

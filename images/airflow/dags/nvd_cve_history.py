@@ -1,6 +1,6 @@
 """NVD CVE Change History bronze 수집 — UTC 하루를 raw로 착지시켜 파티션 교체 적재.
 
-`nvd_cves.py`와 같은 모양이다(Dagster `defs/nvd/`의 `nvd_cve_history` 이관, 미션 ②).
+`nvd_cves.py`와 같은 모양이다(옛 Dagster `nvd_cve_history` 이관, 미션 ②, 삭제됨).
 - 두 단계: `land_raw_nvd_cve_history`(API → S3 raw 새 회차) >>
   `load_nvd_cve_history`(raw → Iceberg).
 - 창 = `data_interval_start`의 UTC 날짜 하루(`changeStartDate`~`changeEndDate`).

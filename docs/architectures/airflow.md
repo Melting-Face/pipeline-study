@@ -13,13 +13,15 @@ Dagster는 클러스터에 배포하지 않아 정기 실행 주체가 없다. �
 - DAG(`images/airflow/dags/`):
   - `fx_rates_daily.py` · `equity_ohlcv_daily.py` — 환율·시세를 Iceberg bronze에 적재한다
   - `us_equity_krw_dbt.py` — 위 두 Asset이 갱신되면 Cosmos `DbtTaskGroup`이 dbt 모델을 k8s Trino에서 돌린다
-  - `nvd_dbt.py` — NVD silver 5종을 Cosmos로 빌드한다. 상류 bronze는 **Dagster**가 적재해 Airflow 안에
-    Asset 생산자가 없으므로, bronze를 이관하기 전까지는 수동 트리거다
+  - `nvd_cves.py` · `nvd_cve_history.py` · `nvd_kev.py` — NVD·KEV를 raw 착지 → Iceberg bronze 2태스크로 적재한다.
+    API 태스크는 Pool `nvd_api`(slots 1)를 공유한다
+  - `nvd_dbt.py` — NVD silver 5종을 Cosmos로 빌드한다. CVE·History bronze 태스크의 Asset 갱신이 트리거다
   - `github_trending.py` — raw JSON 수집, `hello.py` — 수동 트리거 전용 확인용
 - 로직: `images/airflow/dags/lakehouse/` — Airflow를 import하지 않는 순수 패키지(Dagster의 `common/`에 대응).
   단위 테스트는 `images/airflow/tests/lib/`.
 - 접속 정보: Connection(`AIRFLOW_CONN_<ID>`) ← Secret ← `scripts/k8s-secrets.sh`.
-  `gitops/charts/airflow/values.yaml`이 Secret을 env로 주입한다(S3·Iceberg 카탈로그·Polygon).
+  `gitops/charts/airflow/values.yaml`이 Secret을 env로 주입한다(S3·Iceberg 카탈로그·Polygon·NVD `nvd_api`).
+  Pool은 같은 values의 `pools:`를 PostSync Job이 `airflow pools set`으로 반영한다(upsert — 삭제는 수동).
 - UI는 `airflow.localtest.me`(ingress-nginx). 주소·로그인은 [환경 세팅 §3-1](../setup.md#3-1-접근-경로).
 - 이관 규칙(Dagster 개념 대응·일시정지·동시성·검증)은 [Airflow 컨벤션](../conventions/airflow.md)이 정본이다.
 

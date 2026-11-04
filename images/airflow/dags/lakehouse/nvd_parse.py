@@ -1,6 +1,7 @@
 """NVD CVE·Change History·CISA KEV 필드 계약, bronze 스키마, 파서 (Airflow 비의존).
 
-Dagster `defs/nvd/assets.py`에서 이식했다. raw 스냅샷(`raw/nvd/…`)을 읽은 페이지 JSON을
+옛 Dagster NVD 자산 모듈(삭제됨)에서 이식했다.
+raw 스냅샷(`raw/nvd/…`)을 읽은 페이지 JSON을
 bronze Arrow 테이블로 편다 — API를 다시 부르지 않는다.
 
 **bronze = 핵심 스칼라 + 원본 JSON 문자열(`raw_json`)이다.** 중첩 구조(metrics·

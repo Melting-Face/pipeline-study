@@ -1,6 +1,6 @@
 """CISA KEV bronze 수집 — 매시간 카탈로그를 받아 바뀐 때만 전체 교체 적재한다.
 
-Dagster `defs/nvd/`의 `nvd_kev` raw·bronze 자산 이관(미션 ②).
+옛 Dagster `nvd_kev` raw·bronze 자산 이관(미션 ②, Dagster 정의는 삭제됨).
 - 두 단계: `land_raw_nvd_kev`(CISA → S3 raw) >>
   `load_nvd_kev`(raw → Iceberg 전체 overwrite).
 - 🔴 NVD 키를 쓰지 않는다 — 다른 호스트(cisa.gov)·CC0라 키가 없고,

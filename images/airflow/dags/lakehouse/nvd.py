@@ -1,7 +1,6 @@
 """NVD CVE·Change History API 순회와 raw 스냅샷 회차 프로토콜, CISA KEV 착지.
 
-Dagster `common/nvd.py`(`NvdResource`·`land_window_pages`·`read_window_pages`)와
-`defs/nvd/raw_assets._land_kev`·`defs/nvd/assets.nvd_kev`의 읽기부 이식이다.
+옛 Dagster NVD 모듈(NVD 리소스·창 순회·KEV 착지·읽기부, 이관 후 삭제됨)의 이식이다.
 Airflow를 import하지 않는다 — Connection 조회·S3 클라이언트 생성은 DAG가 하고
 값만 넘긴다.
 

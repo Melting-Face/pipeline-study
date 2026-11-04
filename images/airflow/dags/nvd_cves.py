@@ -1,6 +1,6 @@
 """NVD CVE bronze 수집 — UTC 하루 구간을 raw로 착지시킨 뒤 그 파티션만 교체 적재한다.
 
-Dagster `defs/nvd/`의 `nvd_cves` raw·bronze 자산 이관(미션 ②). 로직은
+옛 Dagster `nvd_cves` raw·bronze 자산 이관(미션 ②, Dagster 정의는 삭제됨). 로직은
 `lakehouse.nvd`·`lakehouse.nvd_parse`(Airflow 비의존)에 있고 이 파일은 배선만 한다.
 - 두 단계: `land_raw_nvd_cves`(API → S3 raw 새 회차) >> `load_nvd_cves`(raw → Iceberg).
   파서를 고친 뒤 bronze만 다시 돌릴 수 있게(API 미호출) 나눴다.

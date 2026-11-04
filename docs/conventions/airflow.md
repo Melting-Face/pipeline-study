@@ -12,6 +12,7 @@ Dagster 정의를 Airflow DAG로 옮길 때 따르는 규칙이다. 첫 사례�
 | 일자 파티션(UTC) | `CronDataIntervalTimetable(..., timezone="UTC")`의 `data_interval_start` 날짜 |
 | `MaterializeResult(metadata=...)` | `outlet_events[asset].extra` + 태스크 반환값 |
 | 리소스 | **Connection**(`AIRFLOW_CONN_<ID>` ← Secret ← `scripts/k8s-secrets.sh`) |
+| `pool` 동시성 한도 | **Airflow Pool**(`@task(pool=...)`). 런타임 한도 fail-closed 검사는 이식하지 않는다 — 선언된 공백 |
 | `@dbt_assets(select=...)` | **Cosmos `DbtTaskGroup`**(모델 = run·test 태스크) |
 | 자산 계보 | **Asset 스케줄**(`schedule=A & B`) |
 | `common/` | `images/airflow/dags/lakehouse/` — **Airflow를 import하지 않는** 순수 패키지 |
@@ -43,12 +44,21 @@ Dagster 정의를 Airflow DAG로 옮길 때 따르는 규칙이다. 첫 사례�
   대가로 **두 모델에 걸친 테스트**(relationships 등)는 모델별 태스크 어디에도 안 잡히므로, 교집합 셀렉터
   (`a,b`)의 `DbtTestLocalOperator`를 두 모델 run 뒤·하류 run 앞에 명시로 둔다(`dbt ls`로 선택 결과를 확인).
 - **유료·한도 API는 동시성 1**로 묶는다. 같은 키를 쓰는 DAG가 하나면 `max_active_runs=1` +
-  `max_active_tis_per_dag=1`, **두 번째 DAG가 생기면 Pool로 바꾼다**(Pool은 Git으로 선언할 수 없다).
+  `max_active_tis_per_dag=1`, **두 번째 DAG가 생기면 Pool로 바꾼다**. NVD 키를 CVE·History 두 DAG가 나눠 쓰면서
+  첫 Pool `nvd_api`(slots 1)가 생겼다.
+- **Pool은 Git으로 선언한다** — umbrella `gitops/charts/airflow/values.yaml`의 `pools:` 목록을 PostSync Job이
+  `airflow pools set`(**upsert**)으로 반영한다(공식 차트에 pool 키가 없다). 단 values에서 지워도 클러스터의 Pool은
+  **삭제되지 않는다** — 수동 `airflow pools delete`가 필요하다.
+- **raw 스냅샷 데이터셋은 「raw 착지 → bronze 적재」 2태스크**로 나누고 Pool은 **API 호출 태스크에만** 건다.
+  다시 물으면 답이 바뀌는 원천이라 raw를 보존하고, 파서를 고친 뒤 bronze만 API 없이 재실행하기 위해서다.
+- **백필은 수동 CLI**다(`catchup=False`): `airflow backfill create --dag-id <id> --from-date <D> --to-date <D>`
+  (Airflow 3 — 이미지에서 `--help` 실재 확인). 요청 수 = 일수 × 페이지이므로 착수 전에 계산한다.
 
 ## 3. 검증
 
-- DAG를 더하면 `images/airflow/tests/dag-import.test.sh`에 **모양 셀**(스케줄·timetable·일시정지·outlet·동시성)을
+- DAG를 더하면 `images/airflow/tests/dag-import.test.sh`에 **모양 셀**(스케줄·timetable·일시정지·outlet·동시성·pool)을
   함께 더한다. 새 게이트는 일부러 위반시켜 FAIL을 본다.
+- `lakehouse` 단위 테스트 명령은 [`../test.md`](../test.md) §5 — **CI는 돌리지 않는 로컬 관문**이다.
 - 이미지 테스트는 **로컬 podman 빌드**로 돌린다 — 린트 CI 초록은 빌드 보증이 아니다.
 - 🔴 import 셀은 **실행 경로**(Connection 조회·Asset event·dbt 실행)를 보지 않는다. 컷오버 때 이미 적재된
   파티션을 다시 돌려 행 수·키 집합이 같은지 대조한 뒤 unpause한다.

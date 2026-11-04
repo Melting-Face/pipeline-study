@@ -149,7 +149,7 @@ src/dagster_project/
 │   ├── dbt.py              # 공유 DbtProject · build_dbt_resource (단일 dbt 프로젝트)
 │   ├── trino.py            # TrinoResource (k8s Trino — Iceberg 유지보수 프로시저 실행)
 │   ├── fetch.py            # 외부 원천 파일 → S3 raw/ 수집 헬퍼 (원천 획득 단계)
-│   └── physionet.py · polygon.py · fred.py · nvd.py   # 원천 접속 리소스 (인증·URL 조립)
+│   └── physionet.py · polygon.py · fred.py   # 원천 접속 리소스 (인증·URL 조립)
 └── defs/                   # load_defs가 재귀 자동발견하는 정의 루트
     ├── resources.py        # @dg.definitions: s3 · dbt · trino · io_manager_* · 테이블 바인딩
     ├── automation.py       # dbt_all_job · 데이터셋별 잡·스케줄 (모듈 스코프 객체)

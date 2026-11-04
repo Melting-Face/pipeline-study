@@ -1,8 +1,8 @@
 """raw 스냅샷의 gzip + sha256 사이드카 규약.
 
-Dagster `common/fetch.py`(`put_gzip_with_sidecar`·`read_verified_gzip`·`read_sidecar`)와
-`common/helper.py`(`parse_s3_uri`)·`common/nvd.py`(`_list_keys`) 이식. Dagster의
-`S3Resource.get_client()`는 두지 않는다 — boto3 **클라이언트**를 직접 받는다.
+옛 Dagster 공통 코드(사이드카 쓰기·검증 읽기, URI 파서, 키 나열)의 이식이다
+(NVD 전용분은 삭제됨). Dagster의 `S3Resource.get_client()`는 두지 않는다 —
+boto3 **클라이언트**를 직접 받는다.
 """
 
 import gzip

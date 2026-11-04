@@ -412,7 +412,7 @@ Iceberg 네임스페이스 `fred_calendar`. ⚠️ **크리덴셜을 쿼리 파�
 ## NVD 취약점 원천 테이블
 
 네임스페이스 `nvd` — CVE·변경 이력(일자 파티션)·KEV(전체 overwrite). API 응답을 **S3 raw 스냅샷으로 먼저** 남기고
-bronze가 읽으며, 시각은 **UTC 가정(미확인)**이다. silver 5종은 Airflow DAG `nvd_dbt`가 빌드한다.
+bronze가 읽으며, 시각은 **UTC 가정(미확인)**이다. 적재는 Airflow DAG 3개, silver 5종은 `nvd_dbt`가 빌드한다.
 정본 [`dataset_schema/nvd.md`](dataset_schema/nvd.md).
 
 ---
