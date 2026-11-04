@@ -207,7 +207,7 @@ repos:
           승인 이력을 남겨야 하면 미션 저널($OBSIDIAN_VAULT)에 요약해 적어라.
           정본 docs/conventions/agents.md §researcher 조사 프로토콜.
         files: >-
-          ^\.claude/\.research/
+          ^\.claude/\.research(/|$)
 
   # 문서 가독성 규약 검사 (2026-08-24 신설 — 위반 0건이 된 뒤에 건다).
   # 🔴 **초록인 시점에만 건다.** 이 훅은 위 두 훅보다 늦게 등록됐다 — 신설 당시 위반이

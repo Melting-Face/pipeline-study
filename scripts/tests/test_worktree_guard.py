@@ -189,6 +189,37 @@ class WorktreeGuardTest(unittest.TestCase):
         target = self.main_tree / ".claude" / "settings.local.json"
         assert self.decide_path(target) is None
 
+    def test_research_manifest_is_whitelisted(self):
+        """승인 매니페스트는 worktree에서 루트로 향하는 링크를 **통해 써야** 한다(#134).
+
+        🔴 화이트리스트가 없으면 쓸 수 있는 곳(링크 없는 worktree 사본)과 게이트가
+        읽는 곳(루트)이 갈라져 researcher가 전량 deny된다.
+        """
+        target = self.main_tree / ".claude" / ".research" / "approved.json"
+        assert self.decide_path(target) is None
+
+    def test_research_query_log_is_not_whitelisted(self):
+        """🔴 대조군 — 같은 디렉터리의 질의 로그는 **열리지 않는다**.
+
+        `queries.jsonl`은 게이트가 직접 쓰는 관측 로그다. 디렉터리째 열면
+        모델이 관측 경로를 고쳐 쓸 수 있다 — 넓힌 범위가 한 파일인지 이 셀이 지킨다.
+        """
+        target = self.main_tree / ".claude" / ".research" / "queries.jsonl"
+        assert self.decide_path(target) == "deny"
+
+    def test_research_manifest_backup_is_not_whitelisted(self):
+        """접두어 매칭으로 새지 않는다 — `approved.json.bak`은 막힌다."""
+        target = self.main_tree / ".claude" / ".research" / "approved.json.bak"
+        assert self.decide_path(target) == "deny"
+
+    def test_research_manifest_trailing_newline_is_not_whitelisted(self):
+        """🔴 끝 개행이 붙은 별개 이름은 막힌다.
+
+        `re`의 `$`는 끝 개행 앞에서도 맞는다.
+        """
+        target = self.main_tree / ".claude" / ".research" / "approved.json\n"
+        assert self.decide_path(target) == "deny"
+
     def test_settings_json_is_not_whitelisted(self):
         """🔴 `settings.json`은 화이트리스트가 **아니다**.
 
@@ -201,8 +232,9 @@ class WorktreeGuardTest(unittest.TestCase):
     def test_env_is_not_whitelisted(self):
         """🔴 `.env`는 링크 자산 **2종 중 유일하게** 화이트리스트가 아니다.
 
-        `worktree-new.sh`의 `LINK_ASSETS`는 `.env`·`.claude/settings.local.json`
-        **2종**인데 `WHITELIST_RE`는 **1종**이다. 둘 다 루트로 향하는 링크인데
+        `worktree-new.sh`의 `LINK_ASSETS`는 `.env`·`.claude/settings.local.json`·
+        `.claude/.research` **3종**인데 `WHITELIST_RE`는 **2종**이다.
+        셋 다 루트로 향하는 링크인데
         `.env`만 목록에 없어 `deny`된다 — 비밀정보이고 편집할 대상이 아니기 때문이다.
         누가 `LINK_ASSETS`와 「맞춘다」며 `.env`를 더하면 이 셀이 빨개진다.
         """

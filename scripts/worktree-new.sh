@@ -23,7 +23,9 @@ SRC_DIR="dagster/dockerfile.d/src"
 # 링크로 공유할 비커밋 자산(단일 출처 유지가 이득인 것들).
 #   .env                        — 비밀정보. 복사하면 사본이 늘고 회전 시 어긋난다.
 #   .claude/settings.local.json — 권한 오버라이드. 갈라지면 worktree마다 프롬프트가 달라진다.
-LINK_ASSETS=(".env" ".claude/settings.local.json")
+#   .claude/.research           — 조사 게이트 상태(승인 매니페스트·질의 로그). 갈라지면 쓴 곳과
+#                                 게이트가 읽는 곳이 어긋나 researcher가 전량 deny된다(#134).
+LINK_ASSETS=(".env" ".claude/settings.local.json" ".claude/.research")
 
 # 새 브랜치의 기본 시작점. 🔴 **현재 HEAD를 쓰지 않는다**(축 1 주석 참고) —
 # 공유 루트의 HEAD는 다른 세션이 옮길 수 있고, 그러면 새 브랜치가 남의 브랜치 위에 선다.
@@ -150,9 +152,10 @@ cat <<EOF
   \`remove\`가 "contains modified or untracked files"로 거부하면 \`--force\`를 붙인다.
   \`--force\`가 링크 **원본**을 지우지 않는다는 것은 실측으로 확인했다.
 
-🔴 링크된 자산(.env·settings.local.json)은 **메인 트리와 같은 실체**다.
+🔴 링크된 자산(.env·settings.local.json·.claude/.research)은 **메인 트리와 같은 실체**다.
    링크를 **통해 쓴 내용**은 원본에 그대로 반영된다(그게 목적이다).
    반면 링크 자체를 지우는 것(\`rm\`·\`git worktree remove\`)은 원본을 건드리지 않는다 —
    \`rm -rf\`는 심볼릭 링크를 따라 들어가지 않고 링크만 끊는다.
-   다만 \`rm -rf ${WORKTREE_DIR}/.env/\` 처럼 **끝에 슬래시**를 붙이면 링크를 따라간다. 붙이지 마라.
+   다만 \`rm -rf ${WORKTREE_DIR}/.claude/.research/\` 처럼 **끝에 슬래시**를 붙이면 링크를 따라가
+   루트의 조사 게이트 상태(승인 목록·질의 로그)를 지운다. 붙이지 마라.
 EOF

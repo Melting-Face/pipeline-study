@@ -84,11 +84,18 @@ CD_RE = re.compile(r"^[(\s]*(?:cd|pushd)\s+(?:--\s+)?([^\s;|&)]+)")
 
 # 루트에서 허용되는 예외 경로. 프로젝트 루트 기준 상대경로로 대조한다.
 #
-# 🔴 **`worktree-new.sh`의 `LINK_ASSETS`는 2종인데 여기는 1종** — `.env`를 일부러 뺐다.
-#    둘 다 루트로 향하는 링크인데 `.env`만 목록에 없어 **`deny`된다**.
-#    비밀정보이고 편집할 대상이 아니기 때문이다. 권한 오버라이드는
+# 🔴 **`worktree-new.sh`의 `LINK_ASSETS`는 3종인데 여기는 2종** — `.env`를 일부러 뺐다.
+#    셋 다 루트로 향하는 링크인데 `.env`만 목록에 없어 **`deny`된다**.
+#    비밀정보이고 편집할 대상이 아니기 때문이다. 권한 오버라이드와 승인 매니페스트는
 #    링크를 **통해 써야** 기능이 성립한다.
-WHITELIST_RE = (re.compile(r"^\.claude/settings\.local\.json$"),)
+# 🔴 `.claude/.research`는 **디렉터리가 아니라 `approved.json` 한 파일만** 연다.
+#    질의 로그(`queries.jsonl`)는 게이트가 파이썬으로 직접 쓰므로
+#    파일 도구가 쓸 일이 없다 —
+#    디렉터리째 열면 모델이 관측 로그를 고쳐 쓸 수 있게 된다(#134).
+WHITELIST_RE = (
+    re.compile(r"^\.claude/settings\.local\.json$"),
+    re.compile(r"^\.claude/\.research/approved\.json$"),
+)
 
 # git 호출 상한. hook은 `timeout: 10`으로 걸리므로 그보다 짧게 잡는다 —
 # 여기서 늘어지면 hook 전체가 죽고 **결정이 사라진 채 도구가 진행한다**(fail-open).
@@ -309,7 +316,9 @@ def classify(raw_path: str) -> tuple[str, str]:
         return "unknown", "대상이 toplevel 밖이다"
 
     rel = relative.as_posix()
-    if any(pattern.match(rel) for pattern in WHITELIST_RE):
+    # 🔴 `match`가 아니라 `fullmatch` — `$`는 끝 개행 앞에서도 맞아
+    #    `approved.json\n` 같은 별개 이름이 화이트리스트를 통과했다(#134 리뷰 실측).
+    if any(pattern.fullmatch(rel) for pattern in WHITELIST_RE):
         return "worktree", f"화이트리스트: {rel}"
     return "main", rel
 
