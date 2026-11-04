@@ -136,15 +136,19 @@ def append_rows(
 
 
 def latest_snapshot_property(table: Table, key: str) -> str | None:
-    """최신 스냅샷부터 거슬러 올라가며 처음 나오는 요약 속성 값. 없으면 None.
+    """현재 스냅샷의 계보(parent 사슬)를 거슬러 처음 나오는 요약 속성 값. 없으면 None.
 
-    속성 없는 스냅샷(유지보수가 만든 것)이 끼어도 과거 값을 찾는다.
+    속성 없는 스냅샷(유지보수가 만든 것)이 끼어도 과거 값을 찾는다. 시각 정렬이
+    아니라 계보를 따르므로 롤백으로 계보에서 빠진 스냅샷은 보지 않고, 시각이
+    같은 스냅샷의 순서 모호성도 없다.
     """
-    newest_first = sorted(table.snapshots(), key=lambda s: s.timestamp_ms, reverse=True)
-    for snapshot in newest_first:
+    snapshot = table.current_snapshot()
+    while snapshot is not None:
         value = snapshot.summary.get(key) if snapshot.summary else None
         if value is not None:
             return value
+        parent_id = snapshot.parent_snapshot_id
+        snapshot = table.snapshot_by_id(parent_id) if parent_id is not None else None
     return None
 
 

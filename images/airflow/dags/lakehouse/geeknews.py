@@ -131,7 +131,8 @@ def parse_feed(body: bytes, fetched_at: datetime) -> pa.Table:
             (
                 link.get("href")
                 for link in entry.findall(ATOM_NS + "link")
-                if link.get("rel") == "alternate" and link.get("href")
+                # RFC 4287 §4.2.7.2: rel이 없으면 alternate
+                if link.get("rel", "alternate") == "alternate" and link.get("href")
             ),
             None,
         )

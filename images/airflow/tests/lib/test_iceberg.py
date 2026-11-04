@@ -276,3 +276,12 @@ def test_latest_snapshot_property_walks_back(append_table):
     assert latest_snapshot_property(append_table, "k") == "a"
     append_rows(append_table, _full_arrow(1), {"k": "b"})
     assert latest_snapshot_property(append_table, "k") == "b"
+
+
+def test_latest_snapshot_property_ignores_rolled_back_snapshots(append_table):
+    # 롤백으로 현재 계보에서 빠진 스냅샷의 값은 시각이 더 최신이어도 쓰지 않는다
+    first = append_rows(append_table, _full_arrow(1), {"k": "h1"})["snapshot_id"]
+    append_rows(append_table, _full_arrow(1), {"k": "h2"})
+    append_table.manage_snapshots().rollback_to_snapshot(first).commit()
+    append_table.refresh()
+    assert latest_snapshot_property(append_table, "k") == "h1"

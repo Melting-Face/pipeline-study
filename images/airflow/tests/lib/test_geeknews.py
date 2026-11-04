@@ -6,10 +6,13 @@
 
 import io
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import defusedxml
 import pytest
+import yaml
 from botocore.exceptions import ClientError
+from lakehouse.assets import GEEKNEWS_ITEMS_URI
 from lakehouse.geeknews import (
     FEED_DIGEST_PROPERTY,
     GEEKNEWS_SCHEMA,
@@ -69,6 +72,24 @@ def test_parse_feed_rows_and_schema():
     assert table.schema.equals(GEEKNEWS_SCHEMA)
     assert table.num_rows == 2
     assert table.column("topic_id").to_pylist() == [36530, 36531]
+
+
+def test_link_without_rel_counts_as_alternate():
+    # RFC 4287 §4.2.7.2: rel이 없으면 alternate
+    body = _feed(_ENTRY.replace(" rel='alternate'", "").format(id=1))
+    assert parse_feed(body, FETCHED_AT).column("link").to_pylist() == [
+        "https://x.example/a"
+    ]
+
+
+def test_identifier_contract_with_asset_uri_and_dbt_source():
+    assert "iceberg://" + IDENTIFIER.replace(".", "/") == GEEKNEWS_ITEMS_URI
+    source_yml = (
+        Path(__file__).resolve().parents[4]
+        / "dagster/dockerfile.d/src/dbt_pipelines/models/geeknews/source.yml"
+    )
+    source = yaml.safe_load(source_yml.read_text())["sources"][0]
+    assert f"{source['schema']}.{source['tables'][0]['name']}" == IDENTIFIER
 
 
 def test_parse_feed_has_no_body_or_author():
