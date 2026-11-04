@@ -37,15 +37,19 @@ NVD 일별 구간은 **다시 물으면 답이 바뀐다** — 그 사이 다시
 - 객체마다 `<key>.sha256` 사이드카가 붙고 **쓰기 순서는 데이터 → 사이드카**다. 회차의 커밋 표지는
   **page-0000(KEV는 `kev.json.gz`)의 사이드카**다 — 맨 마지막에 쓰므로, 표지가 없는 회차는 중간에 죽은 것이고
   bronze는 읽지 않는다. bronze는 dt마다 **가장 최근에 커밋된 회차**를 읽는다(KEV는 전체에서 최근).
-- 해당 dt에 커밋된 회차가 있으면 **기본 스킵**한다. DAG param `force=true`는 **새 회차를 추가할 뿐
-  기존 스냅샷을 지우지 않는다** — force가 도중에 실패하면 직전 커밋 회차가 그대로 최신으로 읽힌다.
+- **CVE·History**는 해당 dt에 커밋된 회차가 있으면 **기본 스킵**한다(`skipped_committed`). DAG param
+  `force=true`는 **새 회차를 추가할 뿐 기존 스냅샷을 지우지 않는다** — force가 도중에 실패하면
+  직전 커밋 회차가 그대로 최신으로 읽힌다.
+- **KEV**는 dt 스킵이 없다 — 항상 GET하고 **내용 해시**(gzip sha256)가 직전 커밋 회차와 같으면 쓰지 않는다
+  (`skipped_unchanged`). 적재 쪽은 **테이블의 `fetched_at`이 최신 회차와 같으면** 건너뛴다(스킵의 정본은 이쪽).
 - 커밋 **전에** 절단(`count`·`totalResults` 대조)과 레코드 ID 중복을 거른다 — 깨진 회차가 최신이 되지 않게.
 - 파티션 구간은 `D T00:00:00.000Z` ~ `D T23:59:59.999Z`다. 끝을 다음 날 0시로 두면 경계 시각의
   레코드가 이웃 파티션과 두 번 세진다. 과거 전체는 **`airflow backfill create`**로 받는다.
 - 🔴 **받은 합계 ≠ `totalResults`면 실패한다**(조용한 절단 금지). 순회 도중 `totalResults`가 바뀌어도
   실패한다 — 구간 안 레코드가 이동하면 `startIndex`가 한 건을 건너뛸 수 있다.
 - 🔴 **두 일자 피드의 시작일이 다르다.** CVE 피드의 `lastModified`는 재수정될 때마다 앞으로 끌려와
-  과거가 비지만, Change History는 변경이 일어난 시각을 보존한다. 근거는 DAG 파일의 `start_date` 주석과 프로브.
+  과거가 비지만, Change History는 변경이 일어난 시각을 보존한다. 두 상수를 「맞추면」 History 앞 24년이
+  에러 없이 수집 범위 밖이 된다 — 이 가드의 근거를 각 DAG 파일의 `start_date` 옆 주석에 두었고, 값의 근거는 프로브다.
 - 요청 간 최소 간격은 run 안에서 지키고, **run 사이**는 API 태스크(`land_raw_nvd_cves`·`land_raw_nvd_cve_history`)의
   Airflow Pool `nvd_api`(slots 1)가 막는다. Pool은 차트 PostSync Job이 선언한다([컨벤션](../conventions/airflow.md#2-규칙)).
   Dagster 때의 「한도 미설정이면 실패」 검사는 이식하지 않았다 — Pool이 없을 때 스케줄러 동작은 `미확인`이다

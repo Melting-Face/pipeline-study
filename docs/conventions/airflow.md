@@ -53,6 +53,8 @@ Dagster 정의를 Airflow DAG로 옮길 때 따르는 규칙이다. 첫 사례�
   다시 물으면 답이 바뀌는 원천이라 raw를 보존하고, 파서를 고친 뒤 bronze만 API 없이 재실행하기 위해서다.
 - **백필은 수동 CLI**다(`catchup=False`): `airflow backfill create --dag-id <id> --from-date <D> --to-date <D>`
   (Airflow 3 — 이미지에서 `--help` 실재 확인). 요청 수 = 일수 × 페이지이므로 착수 전에 계산한다.
+  구간 D의 run은 논리 날짜가 **D 19:00 UTC**다(일별 `0 19 * * *` timetable). `--from-date/--to-date`가
+  이 논리 날짜에 어떻게 대응하는지는 `미확인`이라 **`--dry-run`으로 만들어질 run 목록을 먼저 확인**한다.
 
 ## 3. 검증
 
