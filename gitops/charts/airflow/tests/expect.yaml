@@ -23,6 +23,12 @@ absent:
 fields:
     - {ref: Job/airflow-run-airflow-migrations, path: [metadata, annotations, argocd.argoproj.io/hook], value: Sync}
     - {ref: Job/airflow-create-user, path: [metadata, annotations, argocd.argoproj.io/hook], value: PostSync}
+    # 선언형 Pool Job(templates/pools-job.yaml) — ArgoCD PostSync 훅이어야 마이그레이션(Sync) 뒤에 돈다.
+    # args 2번 원소는 렌더된 bash 스크립트 전체(fields 는 값 전체 일치)라 pools 값이 바뀌면 함께 고친다
+    - {ref: Job/airflow-pools, path: [metadata, annotations, argocd.argoproj.io/hook], value: PostSync}
+    - ref: Job/airflow-pools
+      path: [spec, template, spec, containers, 0, args, 2]
+      value: "set -e\nairflow pools set \"nvd_api\" 1 \"NVD API(CVE·History) 직렬화 — 키 하나의 한도를 DAG 간 공유\""
     - {ref: StatefulSet/airflow-worker, path: [spec, replicas], value: 1}
     - ref: StatefulSet/airflow-worker
       path: [spec, volumeClaimTemplates, 0, spec, resources, requests, storage]

@@ -513,6 +513,23 @@ def test_land_result_has_no_api_key(monkeypatch, sleeps) -> None:
     assert SECRET not in json.dumps(result)
 
 
+def test_land_to_load_chain_carries_no_api_key(monkeypatch, sleeps) -> None:
+    """XCom·Asset event로 흘리는 값(착지 반환·읽기 메타) 어디에도 키가 없다."""
+    _install_http(monkeypatch, _two_pages())
+    s3 = _FakeS3()
+    landed = _land(s3, api_key=SECRET)
+    pages, fetched_at, source_run = _read(s3)
+    # DAG의 load 태스크가 extra로 내는 필드와 같은 모양(단위: source_run = 회차 경로)
+    extra = {
+        "source_run": source_run,
+        "pages": len(pages),
+        "total_results": pages[0]["totalResults"],
+        "fetched_at": fetched_at.isoformat(),
+    }
+    assert source_run.startswith(f"s3://{BUCKET}/{DT_KEY}/")
+    assert SECRET not in json.dumps([landed, extra])
+
+
 def test_land_logs_have_no_api_key(monkeypatch, sleeps, caplog) -> None:
     http = _install_http(monkeypatch, _two_pages())
     with caplog.at_level(logging.DEBUG):
