@@ -11,6 +11,7 @@ pool 한도 검사 — Airflow Pool은 차트가 선언), `test_nvd_raw_assets_d
 """
 
 import gzip
+import hashlib
 import io
 import json
 import logging
@@ -668,3 +669,49 @@ def test_land_kev_refuses_to_reuse_run_path(monkeypatch, sleeps) -> None:
 def test_read_latest_kev_requires_committed_run() -> None:
     with pytest.raises(RuntimeError, match="커밋된 KEV 회차가 없다"):
         read_latest_kev(_FakeS3())
+
+
+# ── 6. Dagster 형식 raw 호환 (독립 근거) ─────────────────────────────────
+# 🔴 키를 모듈 헬퍼(`page_key`·`run_segment`)로 만들지 않고 **리터럴로 손으로 쓴다** —
+# 헬퍼로 만들면 쓰기·읽기가 같은 버그를 공유해도 통과한다. 레이아웃은 Dagster 시절
+# `common/nvd.py` 독스트링의 사본이다.
+# (`<feed>/dt=…/fetched=…/page-NNNN.json.gz` + `.sha256` 사이드카)
+
+
+def _plant(s3: _FakeS3, key: str, payload: dict) -> None:
+    """gzip 본문과 sha256 사이드카를 hashlib으로 직접 심는다(모듈 헬퍼 미사용)."""
+    body = gzip.compress(json.dumps(payload).encode("utf-8"), mtime=0)
+    s3.objects[key] = body
+    s3.objects[key + ".sha256"] = hashlib.sha256(body).hexdigest().encode("utf-8")
+
+
+def test_reads_dagster_format_cve_run_from_literal_keys() -> None:
+    s3 = _FakeS3()
+    run = "raw/nvd/cves/dt=2026-10-30/fetched=20261031T040000Z"
+    _plant(s3, f"{run}/page-0000.json.gz", _cve_page([_cve("CVE-1"), _cve("CVE-2")], 3))
+    _plant(s3, f"{run}/page-0001.json.gz", _cve_page([_cve("CVE-3")], 3, start=2))
+
+    uri = "s3://warehouse/raw/nvd/cves/dt=2026-10-30"
+    assert latest_committed_run(s3, uri, "page-0000.json.gz") == run
+
+    pages, fetched_at, run_uri = read_window_pages(
+        s3, feed="cves", window_date="2026-10-30", items_key="vulnerabilities"
+    )
+    assert fetched_at == datetime(2026, 10, 31, 4, 0, 0, tzinfo=timezone.utc)
+    assert run_uri == f"s3://warehouse/{run}"
+    assert [len(p["vulnerabilities"]) for p in pages] == [2, 1]
+    arrow = cves_to_arrow(pages, "2026-10-30", fetched_at)
+    assert arrow.num_rows == 3
+
+
+def test_reads_dagster_format_kev_run_from_literal_keys() -> None:
+    s3 = _FakeS3()
+    run = "raw/nvd/kev/dt=2026-10-31/fetched=20261031T050000Z"
+    _plant(s3, f"{run}/kev.json.gz", _kev_payload([_kev_entry("A"), _kev_entry("B")]))
+
+    assert latest_committed_run(s3, "s3://warehouse/raw/nvd/kev", "kev.json.gz") == run
+
+    payload, fetched_at, kev_uri = read_latest_kev(s3)
+    assert fetched_at == datetime(2026, 10, 31, 5, 0, 0, tzinfo=timezone.utc)
+    assert kev_uri == f"s3://warehouse/{run}/kev.json.gz"
+    assert len(payload["vulnerabilities"]) == 2

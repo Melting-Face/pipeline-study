@@ -265,6 +265,8 @@ unset POLYGON_KEY
 # 🔴 Polygon 과 달리 `nonempty NVD_API_KEY` 를 두지 않는다 — 키 없는 공개 한도로 돌 수 있어야 하고,
 #    차트의 secretKeyRef 는 Secret 이 없으면 **모든 Airflow 파드**가 뜨지 못하므로 빈 키라도 Secret 은 항상 만든다
 NVD_KEY="$(env_value NVD_API_KEY)"
+# ⚠️ 아래 Connection 의 `host` 는 코드가 읽지 않는다 — 접속 호스트의 정본은 `lakehouse/nvd.py` 의 NVD_BASE_URL 이다.
+#    (Connection 은 키를 싣는 그릇이다. host 를 바꿔도 요청 대상은 그대로다.)
 if kubectl -n airflow get secret airflow-conn-nvd >/dev/null 2>&1; then
     if [ "$(secret_field airflow airflow-conn-nvd connection | jq -r .password)" != "${NVD_KEY}" ]; then
         printf 'NVD 키 사본 불일치: airflow/airflow-conn-nvd 가 .env 의 NVD_API_KEY 와 다르다\n' >&2

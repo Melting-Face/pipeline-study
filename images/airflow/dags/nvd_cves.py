@@ -37,7 +37,10 @@ S3_CONN_ID = "seaweedfs_s3"
 
 @dag(
     schedule=CronDataIntervalTimetable("0 19 * * *", timezone="UTC"),
-    # Dagster 파티션 시작 리터럴 그대로(NVD CVE 2.0 API 공개 시점 이후)
+    # Dagster 파티션 시작 리터럴 그대로(NVD CVE 2.0 API 공개 시점 이후).
+    # 🔴 History(1999-01-01)와 26년 다른 것이 정상이다 — CVE의 lastModified는
+    #    재수정마다 앞으로 끌려와 과거가 비지만 History는 변경 시각을 보존한다.
+    #    두 시작일을 "맞추면" History 앞 24년이 에러 없이 범위 밖이 된다.
     start_date=pendulum.datetime(2023, 8, 23, tz="UTC"),
     catchup=False,
     is_paused_upon_creation=True,
