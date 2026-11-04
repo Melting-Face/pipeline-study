@@ -74,8 +74,8 @@
 
 | 단계 | 담당 엔진 | 경로 |
 | --- | --- | --- |
-| 원천 → `raw/` | Dagster 수집 자산(PhysioNet) · Airflow DAG(raw JSON) | `defs/<dataset>/raw_assets.py` · `images/airflow/dags/github_trending.py` → `s3://warehouse/raw/` |
-| `raw/`·API → bronze | Dagster 적재 자산 · Airflow 적재 DAG(환율·시세) | `defs/<dataset>/assets.py` · `images/airflow/dags/fx_rates_daily.py`·`equity_ohlcv_daily.py` |
+| 원천 → `raw/` | Dagster 수집 자산(PhysioNet) · Airflow DAG(raw JSON) | `defs/<dataset>/raw_assets.py` · `images/airflow/dags/github_trending.py` · `geeknews_items.py` → `s3://warehouse/raw/` |
+| `raw/`·API → bronze | Dagster 적재 자산 · Airflow 적재 DAG(환율·시세) | `defs/<dataset>/assets.py` · `images/airflow/dags/fx_rates_daily.py`·`equity_ohlcv_daily.py`·`geeknews_items.py` |
 | bronze → silver/gold | dbt on k8s Trino(Dagster `dbt_assets.py` · Airflow Cosmos) | `dagster/dockerfile.d/src/dbt_pipelines/models/<dataset>/` |
 | bronze → 스트림 파생 | Flink 세션 클러스터(Iceberg 스트리밍 읽기) | `k8s/flink/` · `defs/flink/` |
 | 대용량 배치 | Spark `SparkApplication` | `k8s/spark/` · `defs/poc/` |

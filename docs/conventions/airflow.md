@@ -19,6 +19,8 @@ Dagster 정의를 Airflow DAG로 옮길 때 따르는 규칙이다. 첫 사례�
 
 ## 2. 규칙
 
+- **새 데이터셋은 Airflow 전용이다** — Dagster 정의·`test_parity.py` 대조를 만들지 않는다(Dagster는 철거 예정).
+  아래 두 벌 공존 규칙은 **이관 중인 기존 데이터셋**에만 적용된다. 사례 `geeknews_items`·`geeknews_dbt`.
 - **DAG는 기본 일시정지**(`is_paused_upon_creation=True`)·`catchup=False`. 켜는 것은 사람이다.
 - **파티션 키가 API 날짜로 나가면 timetable은 UTC**다 — [타임존 정책](timezone.md)의 의도된 예외.
 - **로직은 `lakehouse`에, DAG는 배선만** 둔다. `lakehouse`는 호스트 venv에서 인프라 없이 단위 테스트한다

@@ -89,6 +89,7 @@
 - bronze 테이블 1개 = Asset 1개 = DAG 1개, 로직은 `images/airflow/dags/lakehouse/`(Airflow 비의존)·DAG는 배선.
   Dagster에 남는 쪽과 **두 벌 공존**은 패리티 테스트로 막는다. Pool은 umbrella 차트 Job으로 선언한다.
   상세 [`docs/conventions/airflow.md`](docs/conventions/airflow.md).
+- **새 데이터셋은 Airflow 전용**(Dagster·패리티 테스트 없음).
 
 ## 프로젝트 구조 컨벤션
 
