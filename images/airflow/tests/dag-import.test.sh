@@ -372,10 +372,29 @@ else
     rc=1
 fi
 
+# --- geeknews_items (GeekNews bronze) ---------------------------------------------------
+# 매시 17분 — 정각 몰림 회피. 스케줄 문자열 + KST start_date 라 cron_tz 가 Asia/Seoul 로 잡힌다
+if echo "${result}" | jq -e '.dags.geeknews_items | .tasks == {"load_geeknews_items": null}
+        and .cron == "17 * * * *" and .cron_tz == "Asia/Seoul"
+        and .paused == true and .catchup == false and .max_active_runs == 1' >/dev/null; then
+    echo "PASS [gn-dag] geeknews_items: 태스크 1·17 * * * * KST·일시정지·catchup 없음·run 1"
+else
+    echo "FAIL [gn-dag] geeknews_items 모양이 기대와 다르다"
+    rc=1
+fi
+
+if echo "${result}" | jq -e '.dags.geeknews_items.outlets.load_geeknews_items == ["iceberg://geeknews/geeknews_items"]' >/dev/null; then
+    echo "PASS [gn-outlet] load_geeknews_items → iceberg://geeknews/geeknews_items"
+else
+    echo "FAIL [gn-outlet] load_geeknews_items 의 Asset outlet이 기대와 다르다"
+    rc=1
+fi
+
 # --- 이미지 내용(원화 종가 이관 — pyiceberg·cosmos·dbt venv·dbt 프로젝트) -------------
 # 🔴 lint CI 초록은 빌드 보증이 아니다 — 이미지 안에서 실제로 import·실행해 본다.
-if "${CLI}" run --rm "${IMAGE}" python -c "import pyiceberg, cosmos, trino, holidays, lakehouse.iceberg" >/dev/null 2>&1; then
-    echo "PASS [img-imports] pyiceberg·cosmos·trino·holidays·lakehouse import"
+#    defusedxml 은 Dagster 쪽 uv.lock 에 없고 이미지 requirements 에만 있다 — 해석 충돌이 여기서 드러난다.
+if "${CLI}" run --rm "${IMAGE}" python -c "import pyiceberg, cosmos, trino, holidays, defusedxml, lakehouse.iceberg, lakehouse.geeknews" >/dev/null 2>&1; then
+    echo "PASS [img-imports] pyiceberg·cosmos·trino·holidays·defusedxml·lakehouse import"
 else
     echo "FAIL [img-imports] 이미지 안 import 실패"
     rc=1
