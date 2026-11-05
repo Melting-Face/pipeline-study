@@ -263,7 +263,7 @@
   ⓒ **`io-impl`(S3FileIO)과 `spark.hadoop.fs.s3*`(S3A)는 둘 다 필요**(S3FileIO는 카탈로그가 *아는* 파일만
   다뤄, Spark로 warehouse를 직접 나열하는 `remove_orphan_files`가 Hadoop FS를 탄다).
   **Iceberg 유지보수(컴팩션·orphan 정리)는 Trino `ALTER TABLE … EXECUTE`** 로 실행한다(`TrinoResource` —
-  Spark Connect 철거로 되돌림). 엔진은 op config `engine`으로 고르고 Spark·Flink 경로는 후속 미션이다.
+  Spark Connect 철거로 되돌림). 엔진은 Trino 하나다(Spark·Flink 경로는 #232·#233에서 진행 안 함).
   **Spark Connect·Thrift는 철거됐다**(dbt-spark·pyspark·`dagster-pyspark` 포함, 수동 관문 §5-1 철거·§5-3 중단).
   **노출은 HTTP(UI·REST)를 Ingress**로 내고 JDBC·S3만 `port-forward`를 쓴다 — kind는 **공개 포트를
   생성 시점에만** 정할 수 있어 `extraPortMappings`를 빠뜨리면 재생성이 유일한 해법이다.

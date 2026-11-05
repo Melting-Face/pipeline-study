@@ -12,9 +12,9 @@
   Spark 프로시저에서 되돌아왔다(docs/architectures/trino.md).
 - 스냅샷 만료: pyiceberg(`table.maintenance.expire_snapshots()`).
 
-엔진은 op config `engine`으로 고른다. 지금 값은 `trino` 하나뿐이다 —
-Spark(SparkApplication)·Flink 경로는 후속 미션에서 같은 op에 분기로 더한다
-(op·잡 이름은 바뀌지 않는다). Trino는 S3를 자체 파일시스템으로 나열하므로
+엔진은 op config `engine`이고 값은 `trino` 하나다 —
+Spark(SparkApplication)·Flink 경로는 진행하지 않기로 했다(#232·#233).
+Trino는 S3를 자체 파일시스템으로 나열하므로
 Spark 시절의 S3A(`spark.hadoop.fs.s3*`) 의존이 없다.
 
 모듈 스코프의 잡/스케줄 객체는 `load_defs`가 자동 수집한다(@dg.definitions 불필요).
