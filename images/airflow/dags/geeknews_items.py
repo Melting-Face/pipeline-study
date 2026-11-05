@@ -43,12 +43,7 @@ def geeknews_items() -> None:
             ingest_feed,
         )
         from lakehouse.http import request_bytes
-        from lakehouse.iceberg import (
-            S3Conf,
-            catalog_uri,
-            ensure_table,
-            make_catalog,
-        )
+        from lakehouse.iceberg import catalog_from_conns, ensure_table
 
         fetched_at = datetime.now(tz=timezone.utc)
         body = request_bytes(
@@ -57,21 +52,10 @@ def geeknews_items() -> None:
             headers={"User-Agent": USER_AGENT, "Accept": "application/atom+xml"},
         )
 
-        cat = Connection.get("iceberg_catalog")
-        s3c = Connection.get("seaweedfs_s3")
-        s3conf = S3Conf(
-            s3c.extra_dejson.get("endpoint_url", ""),
-            s3c.login or "",
-            s3c.password or "",
+        catalog = catalog_from_conns(
+            Connection.get("iceberg_catalog"), Connection.get("seaweedfs_s3")
         )
-        uri = catalog_uri(
-            cat.login or "",
-            cat.password or "",
-            cat.host or "",
-            cat.port or 5432,
-            cat.schema or "",
-        )
-        table = ensure_table(make_catalog(uri, s3conf), IDENTIFIER, GEEKNEWS_SCHEMA)
+        table = ensure_table(catalog, IDENTIFIER, GEEKNEWS_SCHEMA)
         s3 = S3Hook(aws_conn_id="seaweedfs_s3").get_conn()
 
         result = ingest_feed(s3, table, body, fetched_at)
