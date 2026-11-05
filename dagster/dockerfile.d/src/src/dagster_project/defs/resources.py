@@ -30,14 +30,12 @@ from dagster_project.common.constants import (
 )
 from dagster_project.common.dbt import build_dbt_resource
 from dagster_project.common.fred import FredResource
-from dagster_project.common.nvd import NvdResource
 from dagster_project.common.physionet import PhysioNetResource
 from dagster_project.common.polygon import PolygonResource
 from dagster_project.common.trino import TrinoResource
 from dagster_project.defs.eicu.constants import NAMESPACE as EICU_NS
 from dagster_project.defs.fred_calendar.constants import NAMESPACE as FRED_CALENDAR_NS
 from dagster_project.defs.mimic_iv.constants import NAMESPACE as MIMICIV_NS
-from dagster_project.defs.nvd.constants import NAMESPACE as NVD_NS
 from dagster_project.defs.polygon_market.constants import NAMESPACE as POLYGON_MARKET_NS
 from dagster_project.defs.usgs_water.constants import NAMESPACE as USGS_WATER_NS
 
@@ -76,13 +74,6 @@ def resources() -> dg.Definitions:
             #    그래서 `common/fred.py`가 예외를 `raise_masked`로 재포장한다 —
             #    4xx 한 번에 키가 이벤트 로그에 평문으로 박히는 것을 막는다.
             "fred": FredResource(api_key=dg.EnvVar("FRED_API_KEY")),
-            # 원천 획득: NVD CVE·Change History.
-            # 🔴 같은 이유로 `dg.EnvVar`다. 키는 **비어 있어도 된다**(키 없는 공개
-            #    한도로 돈다) — 단 EnvVar는 *미설정*이면 run을 실패시키므로
-            #    `.env`에 줄은 둔다.
-            # 🔴 키는 `apiKey` **헤더**로 나가 URL에 실리지 않는다(common/nvd.py).
-            #    CISA KEV는 이 리소스를 거치지 않는다(키를 남의 호스트로 보내지 않는다).
-            "nvd": NvdResource(api_key=dg.EnvVar("NVD_API_KEY")),
             "dbt": build_dbt_resource(),
             # Trino 접속(k8s) — Iceberg 유지보수 프로시저용(defs/maintenance.py).
             # 카탈로그 설정은 **서버 측**(gitops/apps/trino/values.yaml)에 있어 여기엔
@@ -266,62 +257,6 @@ def resources() -> dg.Definitions:
                 name=CATALOG_NAME,
                 namespace=FRED_CALENDAR_NS,
                 table="fred_release_dates",
-                config=IcebergCatalogConfig(
-                    properties={
-                        "type": "sql",
-                        "uri": ICEBERG_CATALOG_URI,
-                        "warehouse": WAREHOUSE,
-                        "s3.endpoint": S3_ENDPOINT,
-                        "s3.access-key-id": S3_ACCESS_KEY_ID,
-                        "s3.secret-access-key": S3_SECRET_ACCESS_KEY,
-                        "s3.region": AWS_REGION,
-                        "s3.path-style-access": "true",
-                    }
-                ),
-            ),
-            # NVD bronze 세 벌. 🔴 IO 매니저 없이 테이블 바인딩으로 직접 적재한다 —
-            # CVE·History는 **일자 파티션 교체**(`replace_partition_in_iceberg`,
-            # `window_date`), KEV는 **전체 overwrite**(`overwrite_iceberg_table`)라
-            # 둘 다 IO 매니저 경로에 없는 단위다. KEV에 `drop_table` 재생성을 쓰지
-            # 않는 이유는 스냅샷 계보다(상세는 nvd/assets.py).
-            "nvd_cves_table": IcebergTableResource(
-                name=CATALOG_NAME,
-                namespace=NVD_NS,
-                table="nvd_cves",
-                config=IcebergCatalogConfig(
-                    properties={
-                        "type": "sql",
-                        "uri": ICEBERG_CATALOG_URI,
-                        "warehouse": WAREHOUSE,
-                        "s3.endpoint": S3_ENDPOINT,
-                        "s3.access-key-id": S3_ACCESS_KEY_ID,
-                        "s3.secret-access-key": S3_SECRET_ACCESS_KEY,
-                        "s3.region": AWS_REGION,
-                        "s3.path-style-access": "true",
-                    }
-                ),
-            ),
-            "nvd_cve_history_table": IcebergTableResource(
-                name=CATALOG_NAME,
-                namespace=NVD_NS,
-                table="nvd_cve_history",
-                config=IcebergCatalogConfig(
-                    properties={
-                        "type": "sql",
-                        "uri": ICEBERG_CATALOG_URI,
-                        "warehouse": WAREHOUSE,
-                        "s3.endpoint": S3_ENDPOINT,
-                        "s3.access-key-id": S3_ACCESS_KEY_ID,
-                        "s3.secret-access-key": S3_SECRET_ACCESS_KEY,
-                        "s3.region": AWS_REGION,
-                        "s3.path-style-access": "true",
-                    }
-                ),
-            ),
-            "nvd_kev_table": IcebergTableResource(
-                name=CATALOG_NAME,
-                namespace=NVD_NS,
-                table="nvd_kev",
                 config=IcebergCatalogConfig(
                     properties={
                         "type": "sql",

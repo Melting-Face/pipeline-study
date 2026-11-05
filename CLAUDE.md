@@ -87,7 +87,8 @@
 ### Airflow 이관은 Dagster 구조를 1:1로 옮긴다
 
 - bronze 테이블 1개 = Asset 1개 = DAG 1개, 로직은 `images/airflow/dags/lakehouse/`(Airflow 비의존)·DAG는 배선.
-  Dagster에 남는 쪽과 **두 벌 공존**은 패리티 테스트로 막는다. 상세 [`docs/conventions/airflow.md`](docs/conventions/airflow.md).
+  Dagster에 남는 쪽과 **두 벌 공존**은 패리티 테스트로 막는다. Pool은 umbrella 차트 Job으로 선언한다.
+  상세 [`docs/conventions/airflow.md`](docs/conventions/airflow.md).
 
 ## 프로젝트 구조 컨벤션
 
@@ -99,7 +100,7 @@
   - `helper.py` — 적재 헬퍼(`read_csv_gz_table` 일반 / `load_heavy_csv_gz_to_iceberg` 대용량)
   - `dbt.py` — 공유 dbt 설정(`DbtProject`·`build_dbt_resource`); 단일 dbt 프로젝트를 데이터셋 subproject가 공유
   - `trino.py` — Trino 접속 리소스(`TrinoResource`); Iceberg 유지보수 프로시저 실행(k8s Trino)
-  - `fetch.py`(외부 → S3 `raw/`)·`physionet.py`·`polygon.py`·`fred.py`·`nvd.py` — 원천 접속 리소스
+  - `fetch.py`(외부 → S3 `raw/`)·`physionet.py`·`polygon.py`·`fred.py` — 원천 접속 리소스
 - **정의는 모두 `dagster_project/defs/` 하위**에 두고 `load_defs`가 재귀 자동발견한다.
   - **데이터셋별 서브프로젝트** `defs/<dataset>/`에 **정의만** 둔다.
     - `constants.py` — 데이터셋 전용 `NAMESPACE`·`GROUP_NAME`·`SOURCE_BASE`

@@ -169,6 +169,7 @@ def test_patient_loads_table() -> None:
 | `ruff check` · `sqlfluff lint` | 정적 검사 — **pre-commit 훅으로 자동 실행**(`.pre-commit-config.yaml`) |
 | `mypy` | 타입 정합성 — **훅 미포함, 수동 실행**(의존성 환경 필요) |
 | `bash images/airflow/tests/dag-import.test.sh` | Airflow DAG import(DagBag 파싱) — PR CI(`airflow-image.yml`, paths 필터) + 로컬 수동([`conventions/docker.md`](conventions/docker.md)) |
+| `cd dagster/dockerfile.d/src && PYTHONPATH=../../../images/airflow/dags uv run --with holidays pytest ../../../images/airflow/tests/lib -q` | Airflow `lakehouse` 단위 테스트(Dagster venv를 빌려 쓴다, 실인프라 미접속) — **CI 미실행, 로컬 관문** |
 
 > **"정적 검사"를 한 덩어리로 읽지 않는다.** 한때 이 표는 세 도구를 함께 적어
 > 셋 다 커밋 시 도는 것처럼 보였으나, 실제로는 `sqlfluff`·`mypy` **둘 다 훅에 없었다**.

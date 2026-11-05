@@ -8,13 +8,16 @@ pyiceberg SQLite 카탈로그 + `tmp_path` warehouse.
 
 from datetime import datetime, timezone
 
+import pyarrow as pa
 import pytest
 from lakehouse.fx import FX_SCHEMA, rates_json_to_arrow
 from lakehouse.iceberg import (
     S3Conf,
+    catalog_from_conns,
     catalog_uri,
     ensure_table,
     make_catalog,
+    overwrite_table,
     replace_partition,
 )
 from pyiceberg.catalog.sql import SqlCatalog
@@ -129,6 +132,51 @@ def test_make_catalog_properties(monkeypatch):
     assert captured["s3.endpoint"] == "http://s3:8333"
 
 
+class _FakeConn:
+    """Airflow Connection 대역(duck typing)."""
+
+    def __init__(self, attrs):
+        self.login = attrs.get("login")
+        self.password = attrs.get("password")
+        self.host = attrs.get("host")
+        self.port = attrs.get("port")
+        self.schema = attrs.get("schema")
+        self.extra_dejson = attrs.get("extra", {})
+
+
+def test_catalog_from_conns_maps_fields(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "lakehouse.iceberg.load_catalog",
+        lambda name, **props: captured.update(name=name, **props) or object(),
+    )
+    catalog_from_conns(
+        _FakeConn({"login": "u", "password": "p@s", "host": "h", "schema": "iceberg"}),
+        _FakeConn(
+            {
+                "login": "ak",
+                "password": "sk",
+                "extra": {"endpoint_url": "http://s3:8333"},
+            }
+        ),
+    )
+    # 포트 미지정이면 5432, 비밀번호는 인코딩
+    assert captured["uri"] == "postgresql+psycopg2://u:p%40s@h:5432/iceberg"
+    assert captured["s3.endpoint"] == "http://s3:8333"
+    assert captured["s3.access-key-id"] == "ak"
+    assert captured["s3.secret-access-key"] == "sk"
+
+
+def test_catalog_from_conns_rejects_empty_s3_endpoint():
+    with pytest.raises(ValueError, match="endpoint"):
+        catalog_from_conns(
+            _FakeConn(
+                {"login": "u", "password": "p", "host": "h", "schema": "iceberg"}
+            ),
+            _FakeConn({"login": "ak", "password": "sk"}),
+        )
+
+
 def test_catalog_uri_quotes_password():
     # 비밀번호의 @ : / 가 그대로 들어가면 URI가 다른 호스트로 해석된다
     uri = catalog_uri(
@@ -143,3 +191,53 @@ def test_catalog_uri_quotes_password():
 def test_catalog_uri_rejects_empty_password():
     with pytest.raises(ValueError, match="iceberg_catalog"):
         catalog_uri("iceberg", "", "h", 5432, "iceberg")
+
+
+# ── 전체 overwrite (KEV 같은 스냅샷 피드) ─────────────────────────────────
+# Dagster `test_kev_overwrite_is_idempotent_and_keeps_lineage`·
+# `test_full_replace_check_catches_append_variant` 이식. 합성 2열 스키마.
+
+FULL_IDENTIFIER = "nvd.nvd_kev"
+FULL_SCHEMA = pa.schema([("cve_id", pa.string()), ("fetched_at", pa.string())])
+
+
+def _full_arrow(rows):
+    return pa.table(
+        {
+            "cve_id": [f"CVE-SYN-{i}" for i in range(rows)],
+            "fetched_at": ["2026-01-01"] * rows,
+        },
+        schema=FULL_SCHEMA,
+    )
+
+
+def _append_variant(table, arrow):
+    """변이체 — `overwrite_table`의 overwrite를 append로 바꾼 것."""
+    table.append(arrow)
+
+
+def _assert_full_replace(tmp_path, loader):
+    """두 번 적재하면 두 번째 내용만 남고 스냅샷 루트가 하나인가."""
+    catalog = SqlCatalog(
+        "probe",
+        uri=f"sqlite:///{tmp_path}/catalog.db",
+        warehouse=f"file://{tmp_path}/warehouse",
+    )
+    table = ensure_table(catalog, FULL_IDENTIFIER, FULL_SCHEMA)
+    loader(table, _full_arrow(3))
+    loader(table, _full_arrow(2))
+    table.refresh()
+    assert table.scan().to_arrow().num_rows == 2
+    snapshots = table.metadata.snapshots
+    assert len(snapshots) > 1
+    assert len([s for s in snapshots if s.parent_snapshot_id is None]) == 1
+
+
+def test_overwrite_table_is_idempotent_and_keeps_lineage(tmp_path):
+    _assert_full_replace(tmp_path, overwrite_table)
+
+
+def test_full_replace_check_catches_append_variant(tmp_path):
+    # 음성 대조 — 같은 판정이 append 변이체는 잡는다(둔감하지 않다)
+    with pytest.raises(AssertionError):
+        _assert_full_replace(tmp_path, _append_variant)

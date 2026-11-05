@@ -84,7 +84,7 @@ cp .env.example .env
 | `AWS_*_CHECKSUM_*` | SeaweedFS 호환 — `when_required` 유지 |
 | `PHYSIONET_*` | MIMIC-IV·eICU 다운로드 계정(§6-1) |
 | `POLYGON_API_KEY` · `FRED_API_KEY` | 시장 데이터 API 키(§6-2) |
-| `NVD_API_KEY` | NVD CVE API 키(§6-3). **비워도 되지만 줄은 둔다** — 미설정이면 run 실패 |
+| `NVD_API_KEY` | NVD CVE API 키(§6-3). 소비자는 `scripts/k8s-secrets.sh`(→ Connection `nvd_api`). **비워도 된다**(공개 한도) |
 
 §3이 수렴한 뒤 클러스터 Secret에서 비밀값을 꺼내 채운다.
 
@@ -322,16 +322,36 @@ uv run scripts/nvd_access_probe.py --source all
 - **NVD(CVE·History) 수집은 허용**이다(이용 조건 판정 [`security/datasets.md`](security/datasets.md)).
   키는 본인만 쓰고 한도를 지킨다. 원천 값은 저장소·공개물에 담지 않는다(재배포 `미확인`).
   KEV는 CC0 1.0이다.
-- **키 없이도 돈다** — 공개 한도로 돌고 요청 간격만 길어진다(`common/nvd.py`). 다만 `.env`에
-  `NVD_API_KEY=` **줄은 둔다**: `dg.EnvVar`는 빈 값은 받고 *미설정*은 run 실패로 본다.
+- **키 없이도 돈다** — 공개 한도로 돌고 요청 간격만 길어진다. 키가 비어 있어도 Secret `airflow-conn-nvd`는
+  **항상 만들어진다**(없으면 Airflow 파드 전체가 못 뜬다).
 - 키는 `apiKey` **헤더**로 나가 URL·로그에 실리지 않는다. KEV 호스트로는 보내지 않는다.
-- `uv run scripts/nvd_access_probe.py --source all` — 종료코드 `0`이어야 자산을 켠다
+- `uv run scripts/nvd_access_probe.py --source all` — 종료코드 `0`이어야 DAG를 켠다
   (`2`는 판정 불가 — 키 부재면 키 축만 미확인으로 남는다).
-- 잡 3개(`nvd_cves_job`·`nvd_cve_history_job`·`nvd_kev_job`)는 raw + bronze 쌍이고 스케줄은 기본 `STOPPED`다.
-  과거 구간은 별도 잡 없이 **파티션 백필**로 받는다.
-- 🔴 **켜기 전에 pool 한도를 건다** — `dagster instance concurrency set nvd_api 1`(`DAGSTER_HOME`이 가리키는
-  인스턴스 DB에 저장된다). NVD를 부르는 raw 자산은 `pool="nvd_api"`라 어느 경로로 띄워도 step이 한 번에 하나만
-  돈다. 한도가 1이 아니면 raw 자산이 API를 부르기 전에 실패한다. 확인은 `dagster instance concurrency get nvd_api`.
+- DAG 3개(`nvd_cves`·`nvd_cve_history`·`nvd_kev`)는 raw 착지 + bronze 적재 2태스크이고 **기본 일시정지**다.
+  과거 구간은 `airflow backfill create --dag-id <id> --from-date <D> --to-date <D>`로 받는다
+  (요청 수 = 일수 × 페이지 — 착수 전에 계산). 구간 D의 run은 논리 날짜가 **D 19:00 UTC**다.
+  `--from-date/--to-date`가 이 논리 날짜에 어떻게 대응하는지는 `미확인`이므로 **`--dry-run`을 붙여
+  만들어질 run 목록을 먼저 확인**한 뒤 뺀다.
+- **Pool `nvd_api`(slots 1)** 는 차트 PostSync Job이 만든다. 켜기 전에 확인한다 —
+  `kubectl -n airflow exec <scheduler 파드> -- airflow pools get nvd_api`. Job은 upsert만 하므로 values에서
+  지워도 Pool은 남는다(수동 `airflow pools delete`). Pool이 없을 때 스케줄러가 태스크를 큐에 넣지 않을 수
+  있다(`미확인`). `airflow tasks test`·`dags test`는 Pool을 **우회**하므로 그 통과는 Pool 존재의 증거가 아니다.
+- **머지 전**(Dagster → Airflow 전환 전 필수): `./scripts/k8s-secrets.sh`를 돌린 뒤
+  `kubectl -n airflow get secret airflow-conn-nvd`로 Secret을 확인한다. **모든 Airflow 파드가 이 Secret을
+  참조**하는데 머지는 ArgoCD 자동 sync를 일으키므로, Secret이 없으면 파드 전체가 못 뜬다.
+- **전환 점검**(일시정지를 풀기 **전**):
+    1. Dagster의 NVD 스케줄이 `STOPPED`인지 확인한다(두 벌 공존 방지).
+    2. Dagster가 이미 적재한 날짜 하나로 `nvd_cves`를 `force=false`로 트리거한다. 기대값은
+       `skipped_committed`이고 `latest_run`이 **Dagster가 만든 회차**를 가리켜야 한다(Dagster 형식 raw를 인식한다는 뜻).
+    3. 이 실행 전후로 bronze 행 수를 비교한다 — 같아야 한다.
+- **해제 순서**: `nvd_dbt`를 **먼저**, 그다음 bronze DAG들을 푼다. 일시정지 중인 소비자에 Asset 이벤트가
+  쌓이는지는 `미확인`이라 소비자를 먼저 켜 두는 쪽이 안전하다.
+  ⚠️ 선언된 공백: CVE만 성공하고 History가 계속 실패하면 `nvd_dbt`의 **AND 조건이 조용히 대기**해 silver가
+  갱신되지 않고, 이를 알리는 경로가 없다.
+- **롤백**은 순수 revert가 아니라 **revert + 새 이미지 태그 올림**이다(태그를 올리지 않으면 이미지가 그대로 남는다).
+  차트 잔여물(Pool·Secret·완료된 Job)은 무해하다.
+- **키를 바꾸면** Secret이 이미 있어 `k8s-secrets.sh`가 불일치로 멈춘다 — Secret `airflow-conn-nvd`를 지우고
+  스크립트를 다시 돌린 뒤 Airflow 워크로드를 재기동한다(Connection이 env 주입이라 기동 때만 읽힌다).
 
 ## 7. 노트북 (옵션)
 

@@ -1,32 +1,28 @@
-"""NVD CVE·Change History·CISA KEV bronze 적재 에셋 (S3 raw/ → Iceberg).
+"""NVD CVE·Change History·CISA KEV 필드 계약, bronze 스키마, 파서 (Airflow 비의존).
 
-`raw_assets.py`가 남긴 **수집 시점 스냅샷**을 읽어 올린다 — API를 다시 부르지 않는다.
-그래서 파서를 고쳐 bronze를 다시 만들어도 "그때 받은 것"이 그대로 재료가 된다.
+옛 Dagster NVD 자산 모듈(삭제됨)에서 이식했다.
+raw 스냅샷(`raw/nvd/…`)을 읽은 페이지 JSON을
+bronze Arrow 테이블로 편다 — API를 다시 부르지 않는다.
 
 **bronze = 핵심 스칼라 + 원본 JSON 문자열(`raw_json`)이다.** 중첩 구조(metrics·
 configurations·details 등)의 펼침은 dbt(silver)가 한다 — bronze에서 펼치면 스키마가
 원천 변경마다 깨지고, 펼치지 않은 필드는 **조용히 버려진다**.
 
-적재 모드:
-- `nvd_cves`·`nvd_cve_history`: 일자 파티션 교체(`replace_partition_in_iceberg`,
-  `window_date`). 재실행 멱등이고, 같은 CVE가 다른 날 다시 수정되면 **그 날 파티션에
-  또 한 행**이 생긴다 — 버전 이력이 행으로 누적되는 것이 의도다
-  (최신 1행으로 접는 것은 silver).
-- `nvd_kev`: 테이블 전체 교체(`overwrite_iceberg_table`). 🔴 `append_arrow_to_iceberg`
-  `mode="replace"`를 쓰지 않는다 — `drop_table` 후 재생성이라 스냅샷 계보가 끊긴다.
+적재 모드(호출하는 쪽 DAG가 고른다):
+- `nvd_cves`·`nvd_cve_history`: 일자 파티션 교체(`window_date`). 재실행 멱등이고, 같은
+  CVE가 다른 날 다시 수정되면 **그 날 파티션에 또 한 행**이 생긴다 — 버전 이력이 행으로
+  누적되는 것이 의도다(최신 1행으로 접는 것은 silver).
+- `nvd_kev`: 테이블 전체 교체. 🔴 `drop_table` 후 재생성은 스냅샷 계보를 끊는다.
 
-🔴 **결측은 조용히 채우지 않는다.** 필수 필드가 없으면 KeyError로 드러낸다
-(`REQUIRED_*`).
+🔴 **결측은 조용히 채우지 않는다.** 필수 필드가 없으면
+KeyError로 드러낸다(`REQUIRED_*`).
 
 🔴 **NVD 시각 문자열에는 오프셋이 없다**(예 `2023-11-07T01:55:06.290`).
 **UTC로 해석하되 그 가정은 미확인이다** — API 파라미터는 `Z`(UTC)로 받으므로
 응답도 UTC일 개연성이 높지만, 응답 쪽을 명시한 1차 문서를 읽지 못했다(JS 렌더링).
 틀리면 모든 시각이 **같은 크기로** 밀려 에러 없이 들어간다. 확인 수단은 파티션
-구간과 `last_modified`의 대조다 — 자산이 구간 밖 건수를 메타데이터로 남긴다
-(`*_outside_window` — 판정 없이 관측만).
-
-주의: Dagster가 context를 클래스 identity로 검사하므로, 자산 모듈에서는
-`from __future__ import annotations`(어노테이션 문자열화)를 사용하지 않는다.
+구간과 `last_modified`의 대조다 — `count_outside_window`가 구간 밖 건수를 센다
+(판정 없이 관측만).
 """
 
 import json
@@ -35,43 +31,13 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import pyarrow as pa
-from dagster_aws.s3 import S3Resource
-from dagster_iceberg.resource import IcebergTableResource
+from pyiceberg.table import Table
 
-import dagster as dg
-from dagster import AssetExecutionContext
-from dagster_project.common.fetch import read_verified_gzip
-from dagster_project.common.helper import (
-    overwrite_iceberg_table,
-    parse_s3_uri,
-    replace_partition_in_iceberg,
-)
-from dagster_project.common.nvd import (
-    latest_committed_run,
-    parse_run_fetched_at,
-    read_window_pages,
-)
-from dagster_project.defs.nvd.constants import (
-    CVES_FEED,
-    CVES_ITEM_KEY,
-    CVES_ITEMS_KEY,
-    GROUP_NAME,
-    HISTORY_FEED,
-    HISTORY_ITEM_KEY,
-    HISTORY_ITEMS_KEY,
-    KEV_FEED,
-    KEV_FILE_NAME,
-    SOURCE_BASE,
-)
-from dagster_project.defs.nvd.raw_assets import (
-    CVES_PARTITIONS,
-    HISTORY_PARTITIONS,
-    raw_nvd_cve_history,
-    raw_nvd_cves,
-    raw_nvd_kev,
-)
-
-BRONZE_KINDS = {"python", "iceberg", "bronze"}
+# NVD 응답 피드 키 — 페이지 JSON에서 항목 목록과 항목 본체를 꺼내는 이름.
+CVES_ITEMS_KEY = "vulnerabilities"
+CVES_ITEM_KEY = "cve"
+HISTORY_ITEMS_KEY = "cveChanges"
+HISTORY_ITEM_KEY = "change"
 
 # ── 필드 계약 ─────────────────────────────────────────────────────────
 # 🔴 **프로브와 짝을 이루는 상수다.** `scripts/nvd_access_probe.py`의
@@ -79,7 +45,7 @@ BRONZE_KINDS = {"python", "iceberg", "bronze"}
 # `NVD_CHANGE_KNOWN_FIELDS`·`KEV_TOP_FIELDS`·`KEV_ENTRY_FIELDS`·
 # `KEV_ENTRY_KNOWN_FIELDS`와 **같은 집합**이어야 한다.
 # 프로브는 PEP 723 단독 실행이라 이 패키지를 import할 수 없어 두 벌이 존재하고, 갈라지면
-# **프로브는 통과하고 파서만 깨진다** — `tests/test_nvd_parse.py`의
+# **프로브는 통과하고 파서만 깨진다** — `tests/lib/test_nvd_contract.py`의
 # `test_probe_and_parser_share_the_field_contract`가 AST 대조로 막는다(의도한 결합).
 #
 # 필수(`REQUIRED_*`) = 없으면 행이 성립하지 않는 것(KeyError). 아는 전부(`KNOWN_*`) =
@@ -142,6 +108,7 @@ KNOWN_KEV_ENTRY_FIELDS = (
 )
 
 # ── bronze 스키마 ─────────────────────────────────────────────────────
+# 🔴 이미 적재된 테이블의 모양이다 — 바꾸면 `tests/lib/test_parity.py` 리터럴이 막는다.
 _TS = pa.timestamp("us", tz="UTC")
 
 NVD_CVES_SCHEMA = pa.schema(
@@ -193,7 +160,7 @@ NVD_KEV_SCHEMA = pa.schema(
 _FRACTION = re.compile(r"\.(\d+)")
 
 
-def _parse_timestamp(raw: str) -> datetime:
+def parse_timestamp(raw: str) -> datetime:
     """원천 시각 문자열을 tz-aware UTC로 바꾼다.
 
     🔴 **오프셋이 없으면 UTC로 간주한다 — 이 가정은 미확인이다**(모듈 독스트링).
@@ -219,13 +186,13 @@ def _dumps(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
 
 
-def _cves_to_arrow(
+def cves_to_arrow(
     pages: list[dict[str, Any]], window_date: str, fetched_at: datetime
 ) -> pa.Table:
     """CVE 구간 페이지들을 bronze Arrow 테이블로 편다.
 
     Args:
-        pages: `read_window_pages`가 읽은 페이지 JSON 목록.
+        pages: raw에서 읽은 페이지 JSON 목록.
         window_date: 파티션 키(`YYYY-MM-DD`).
         fetched_at: raw 수집 회차의 시각(경로 `fetched=`).
 
@@ -245,8 +212,8 @@ def _cves_to_arrow(
                 {
                     "window_date": day,
                     "cve_id": cve["id"],
-                    "published": _parse_timestamp(cve["published"]),
-                    "last_modified": _parse_timestamp(cve["lastModified"]),
+                    "published": parse_timestamp(cve["published"]),
+                    "last_modified": parse_timestamp(cve["lastModified"]),
                     "vuln_status": cve["vulnStatus"],
                     "raw_json": _dumps(cve),
                     "fetched_at": fetched_at.astimezone(timezone.utc),
@@ -254,7 +221,7 @@ def _cves_to_arrow(
             )
     # 🔴 한 구간 안에서 CVE는 한 번만 나온다(`lastModified`는 하나다). 두 번이면 순회 중
     #    레코드가 이동해 페이지 경계에서 겹친 것이다 — 합계는 맞아도 한 건이 빠졌다.
-    #    raw 커밋 전에 같은 가드가 먼저 걸린다(`land_window_pages`) — 여기는 두 번째 벽.
+    #    raw 커밋 전에 같은 가드가 먼저 걸린다 — 여기는 두 번째 벽.
     ids = [row["cve_id"] for row in rows]
     if len(ids) != len(set(ids)):
         message = f"cves dt={window_date}: 같은 CVE가 두 번 나왔다 — 페이지 이동 의심"
@@ -263,13 +230,13 @@ def _cves_to_arrow(
     return pa.Table.from_pylist(rows, schema=NVD_CVES_SCHEMA)
 
 
-def _changes_to_arrow(
+def changes_to_arrow(
     pages: list[dict[str, Any]], window_date: str, fetched_at: datetime
 ) -> pa.Table:
     """Change History 구간 페이지들을 bronze Arrow 테이블로 편다.
 
     Args:
-        pages: `read_window_pages`가 읽은 페이지 JSON 목록.
+        pages: raw에서 읽은 페이지 JSON 목록.
         window_date: 파티션 키.
         fetched_at: raw 수집 회차의 시각.
 
@@ -291,7 +258,7 @@ def _changes_to_arrow(
                     "cve_change_id": change["cveChangeId"],
                     "cve_id": change["cveId"],
                     "event_name": change["eventName"],
-                    "created": _parse_timestamp(change["created"]),
+                    "created": parse_timestamp(change["created"]),
                     "raw_json": _dumps(change),
                     "fetched_at": fetched_at.astimezone(timezone.utc),
                 }
@@ -304,7 +271,7 @@ def _changes_to_arrow(
     return pa.Table.from_pylist(rows, schema=NVD_CVE_HISTORY_SCHEMA)
 
 
-def _kev_to_arrow(payload: dict[str, Any], fetched_at: datetime) -> pa.Table:
+def kev_to_arrow(payload: dict[str, Any], fetched_at: datetime) -> pa.Table:
     """KEV 카탈로그 전체를 bronze Arrow 테이블로 편다.
 
     Args:
@@ -326,7 +293,7 @@ def _kev_to_arrow(payload: dict[str, Any], fetched_at: datetime) -> pa.Table:
         message = f"KEV count={payload['count']}인데 항목 {len(entries)}건 — 잘렸다"
         raise RuntimeError(message)
     catalog_version = str(payload["catalogVersion"])
-    date_released = _parse_timestamp(payload["dateReleased"])
+    date_released = parse_timestamp(payload["dateReleased"])
     rows = []
     for entry in entries:
         missing = [f for f in REQUIRED_KEV_ENTRY_FIELDS if f not in entry]
@@ -355,7 +322,7 @@ def _kev_to_arrow(payload: dict[str, Any], fetched_at: datetime) -> pa.Table:
     return pa.Table.from_pylist(rows, schema=NVD_KEV_SCHEMA)
 
 
-def _count_outside_window(stamps: list[datetime], window_date: str) -> int:
+def count_outside_window(stamps: list[datetime], window_date: str) -> int:
     """UTC 하루 구간 밖에 놓인 시각의 수(관측 셀 — 판정하지 않는다).
 
     0이 아니면 ⓐ 시각의 UTC 가정이 틀렸거나 ⓑ 원천의 구간 해석이 우리와 다르다는 신호다.
@@ -365,120 +332,17 @@ def _count_outside_window(stamps: list[datetime], window_date: str) -> int:
     return sum(1 for stamp in stamps if not start <= stamp < end)
 
 
-@dg.asset(
-    group_name=GROUP_NAME,
-    partitions_def=CVES_PARTITIONS,
-    kinds=BRONZE_KINDS,
-    deps=[raw_nvd_cves],
-)
-def nvd_cves(
-    context: AssetExecutionContext,
-    s3: S3Resource,
-    nvd_cves_table: IcebergTableResource,
-) -> dg.MaterializeResult:
-    """하루 구간에 수정된 CVE의 그날 버전을 bronze 파티션으로 적재한다."""
-    window_date = context.partition_key
-    pages, fetched_at, run_uri = read_window_pages(
-        s3,
-        source_base=SOURCE_BASE,
-        feed=CVES_FEED,
-        window_date=window_date,
-        items_key=CVES_ITEMS_KEY,
-    )
-    arrow = _cves_to_arrow(pages, window_date, fetched_at)
-    outside = _count_outside_window(
-        arrow.column("last_modified").to_pylist(), window_date
-    )
-    return replace_partition_in_iceberg(
-        context,
-        iceberg_table=nvd_cves_table,
-        arrow=arrow,
-        partition_column="window_date",
-        partition_value=window_date,
-        extra_metadata={
-            "source_run": run_uri,
-            "pages": len(pages),
-            "total_results": int(pages[0]["totalResults"]),
-            # 이 자산은 API를 부르지 않는다(raw를 읽는다) — 0이 정상이다.
-            "api_requests": 0,
-            # 🔴 관측 셀 — UTC 가정·구간 해석의 검산(모듈 독스트링).
-            "last_modified_outside_window": outside,
-        },
-    )
+def table_fetched_at(table: Table) -> datetime | None:
+    """KEV 테이블에 적재된 raw 회차 시각(`fetched_at`). 비어 있으면 None.
 
-
-@dg.asset(
-    group_name=GROUP_NAME,
-    partitions_def=HISTORY_PARTITIONS,
-    kinds=BRONZE_KINDS,
-    deps=[raw_nvd_cve_history],
-)
-def nvd_cve_history(
-    context: AssetExecutionContext,
-    s3: S3Resource,
-    nvd_cve_history_table: IcebergTableResource,
-) -> dg.MaterializeResult:
-    """하루 구간에 생긴 CVE 변경 이벤트를 bronze 파티션으로 적재한다."""
-    window_date = context.partition_key
-    pages, fetched_at, run_uri = read_window_pages(
-        s3,
-        source_base=SOURCE_BASE,
-        feed=HISTORY_FEED,
-        window_date=window_date,
-        items_key=HISTORY_ITEMS_KEY,
-    )
-    arrow = _changes_to_arrow(pages, window_date, fetched_at)
-    outside = _count_outside_window(arrow.column("created").to_pylist(), window_date)
-    return replace_partition_in_iceberg(
-        context,
-        iceberg_table=nvd_cve_history_table,
-        arrow=arrow,
-        partition_column="window_date",
-        partition_value=window_date,
-        extra_metadata={
-            "source_run": run_uri,
-            "pages": len(pages),
-            "total_results": int(pages[0]["totalResults"]),
-            "api_requests": 0,
-            "created_outside_window": outside,
-            "distinct_cve_ids": len(set(arrow.column("cve_id").to_pylist())),
-        },
-    )
-
-
-@dg.asset(group_name=GROUP_NAME, kinds=BRONZE_KINDS, deps=[raw_nvd_kev])
-def nvd_kev(
-    context: AssetExecutionContext,
-    s3: S3Resource,
-    nvd_kev_table: IcebergTableResource,
-) -> dg.MaterializeResult:
-    """가장 최근에 커밋된 KEV 스냅샷으로 bronze 테이블 전체를 교체한다.
-
-    🔴 **drop/recreate가 아니라 overwrite다**(스냅샷 계보 유지 — 모듈 독스트링).
+    전체 교체 테이블이라 모든 행의 `fetched_at`이 같다 — 한 행만 읽는다.
     """
-    feed_uri = f"{SOURCE_BASE}/{KEV_FEED}"
-    run_key = latest_committed_run(s3, feed_uri, KEV_FILE_NAME)
-    if run_key is None:
-        message = f"{feed_uri}: 커밋된 KEV 회차가 없다 — raw 자산을 먼저 돌린다"
-        raise RuntimeError(message)
-    bucket, _ = parse_s3_uri(feed_uri)
-    key = f"{run_key}/{KEV_FILE_NAME}"
-    payload = json.loads(read_verified_gzip(s3, bucket, key))
-    arrow = _kev_to_arrow(payload, parse_run_fetched_at(run_key))
-    return overwrite_iceberg_table(
-        context,
-        iceberg_table=nvd_kev_table,
-        arrow=arrow,
-        extra_metadata={
-            "source": f"s3://{bucket}/{key}",
-            "catalog_version": str(payload["catalogVersion"]),
-            "total_results": int(payload["count"]),
-            "pages": 1,
-            "api_requests": 0,
-            "with_ransomware_field": sum(
-                1
-                for value in arrow.column("known_ransomware_campaign_use").to_pylist()
-                if value is not None
-            ),
-        },
-    )
+    arrow = table.scan(selected_fields=("fetched_at",), limit=1).to_arrow()
+    if arrow.num_rows == 0:
+        return None
+    return arrow.column("fetched_at")[0].as_py()
+
+
+def kev_needs_load(table_fetched_at: datetime | None, run_fetched_at: datetime) -> bool:
+    """최신 raw 회차가 테이블에 아직 안 올라갔으면 True(첫 적재이거나 회차가 다르다)."""
+    return table_fetched_at is None or table_fetched_at != run_fetched_at

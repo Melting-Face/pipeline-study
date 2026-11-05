@@ -2,13 +2,18 @@
 # 이식 출발점은 자매 저장소 argocd-study 의 같은 차트다. 그쪽은 LocalExecutor·내장 PG 라 그 부분은 옮기지 않았다.
 # 설계: docs/superpowers/specs/*-airflow-argocd-design.md (A1~A8). 자원 근거: docs/resource-sizing.md §B.
 # 🔴 Secret 값은 Git 에 두지 않는다 — 이름만 넘기고 scripts/k8s-secrets.sh 가 미리 만든다(A5).
+# 선언형 Pool — 서브차트 밖(최상위) 값이다. templates/pools-job.yaml 이 `airflow pools set` 으로 반영한다.
+pools:
+    - name: nvd_api
+      slots: 1
+      description: "NVD API(CVE·History) 직렬화 — 키 하나의 한도를 DAG 간 공유"
 airflow:
     # --- 0. 이미지 ---
     # 태그 한 줄이 배포 상태의 단일 출처다. 🔴 bump 마커 주석은 이 파일에서 아래 tag 줄에만 둔다(정확히 1줄).
     images:
         airflow:
             repository: ghcr.io/melting-face/pipeline-study-airflow
-            tag: "v0.4.5"  # bump-image-tag
+            tag: "v0.4.6"  # bump-image-tag
 
     # --- 1. Executor (A2) ---
     # 순서가 의미다 — 첫 자리(Celery)가 기본, 태스크 단위 `executor="KubernetesExecutor"` 로 라우팅한다.
@@ -45,6 +50,10 @@ airflow:
           secretKey: connection
         - envName: AIRFLOW_CONN_POLYGON_API
           secretName: airflow-conn-polygon
+          secretKey: connection
+        # NVD 수집 DAG — 키는 password 필드(빈 키여도 Secret 은 항상 만든다: secretKeyRef 가 없으면 모든 파드가 못 뜬다)
+        - envName: AIRFLOW_CONN_NVD_API
+          secretName: airflow-conn-nvd
           secretKey: connection
     # SeaweedFS 는 aws-chunked 체크섬을 못 풀어 객체가 손상된다 — boto3 기본(when_supported)을 끈다
     env:

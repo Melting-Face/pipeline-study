@@ -68,7 +68,7 @@ models:
         +on_table_exists: replace
         # file_format을 두지 않는 이유는 위 stock_forecast 주석과 같다
     # NVD silver. 빌드 소유자는 Airflow DAG nvd_dbt(Cosmos)이고, bronze 적재 소유자는
-    # Dagster `defs/nvd/`다(source.yml). `+meta.dagster.group`을 두지 않는 이유는 위
+    # Airflow DAG `nvd_cves`·`nvd_cve_history`·`nvd_kev`다(source.yml). `+meta.dagster.group`을 두지 않는 이유는 위
     # us_equity_krw와 같다. 🔴 스키마가 bronze와 같은 `nvd`라 모델 이름이 bronze 테이블
     # (`nvd_cves`·`nvd_cve_history`·`nvd_kev`)과 겹치면 안 된다 — replace가 bronze를 덮는다.
     nvd:

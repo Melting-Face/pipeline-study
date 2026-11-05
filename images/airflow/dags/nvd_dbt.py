@@ -1,11 +1,10 @@
 """NVD silver dbt 빌드 — CVE·History bronze가 모두 갱신되면 silver 5종을 빌드.
 
 `us_equity_krw_dbt.py`(Cosmos)와 같은 모양이다(docs/conventions/airflow.md).
-- 🔴 상류 bronze는 **Dagster `defs/nvd/`가 적재**한다. Airflow 안에 두 Asset의
-  생산자가 없으므로 이 스케줄은 저절로 돌지 않는다 — bronze를 Airflow로
-  이관하기 전에는 **수동 트리거**다. cron으로 Dagster 스케줄 뒤에 맞추지 않는
-  이유: 두 오케스트레이터 사이의 암묵 결합이고, Dagster 스케줄이 STOPPED인
-  동안 빈 데이터 위에서 「돌았다」만 남긴다.
+- 🔴 상류 bronze는 Airflow DAG `nvd_cves`·`nvd_cve_history`가 적재하고 각 bronze
+  태스크의 outlet(`lakehouse/assets.py`의 URI)이 이 스케줄을 깨운다. 두 Asset이
+  **모두** 갱신돼야 돈다(AND). cron으로 맞추지 않는 이유: 상류 완료 시각을 모른 채
+  시각만 맞추면 빈 데이터 위에서 「돌았다」만 남긴다.
 - 모델 간 테스트가 없어(relationships 미사용) 전용 테스트 태스크를 두지 않는다.
 - 결과는 행 수·최신 수정 시각만 남긴다(원천 값은 남기지 않는다).
 """

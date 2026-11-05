@@ -62,6 +62,8 @@ dags = {
         "max_active_runs": d.max_active_runs,
         "max_active_tasks": d.max_active_tasks,
         "tis": {t.task_id: t.max_active_tis_per_dag for t in d.tasks},
+        "pools": {t.task_id: t.pool for t in d.tasks},
+        "params": sorted(d.params.keys()),
         # Cosmos dbt 태스크가 실행 때 dbt deps 를 다시 받는지(None = Cosmos 태스크 아님)
         "install_deps": {t.task_id: getattr(t, "install_deps", None) for t in d.tasks},
         # Cosmos 테스트 태스크의 dbt indirect selection 모드(None = 미지정 = dbt 기본 eager)
@@ -269,7 +271,7 @@ else
 fi
 
 # --- nvd_dbt (NVD silver dbt) -----------------------------------------------------------
-# 🔴 CVE·History bronze Asset 의 AND — 상류는 Dagster 가 적재해 Airflow 안에 생산자가 없다(수동 트리거).
+# 🔴 CVE·History bronze Asset 의 AND — 상류 DAG `nvd_cves`·`nvd_cve_history` 의 outlet 이 트리거한다.
 #    max_active_tasks=1 은 krw-serial 과 같은 이유(1Gi 워커 OOM)
 if echo "${result}" | jq -e '.dags.nvd_dbt | .asset_cond == "AssetAll"
         and .asset_uris == ["iceberg://nvd/nvd_cve_history", "iceberg://nvd/nvd_cves"]
@@ -307,6 +309,69 @@ else
     rc=1
 fi
 
+# --- nvd_cves·nvd_cve_history·nvd_kev (NVD·KEV bronze 수집) ---------------------------------
+# 🔴 raw 착지 → bronze 적재 2단. API 호출 태스크만 Pool `nvd_api`(slots=1)에 넣어 키 하나의 한도를 DAG 간에 공유한다
+if echo "${result}" | jq -e '.dags.nvd_cves | .tasks == {"land_raw_nvd_cves": null, "load_nvd_cves": null}
+        and .downstream.land_raw_nvd_cves == ["load_nvd_cves"]
+        and .cron == "0 19 * * *" and .cron_tz == "UTC" and .timetable == "CronDataIntervalTimetable"
+        and .paused == true and .catchup == false and .max_active_runs == 1
+        and .pools.land_raw_nvd_cves == "nvd_api" and .pools.load_nvd_cves != "nvd_api"
+        and .tis.land_raw_nvd_cves == 1
+        and .params == ["force"]' >/dev/null; then
+    echo "PASS [nvd-cves-dag] nvd_cves: raw 착지 >> 적재·0 19 * * * UTC·데이터 구간·일시정지·pool nvd_api"
+else
+    echo "FAIL [nvd-cves-dag] nvd_cves 모양이 기대와 다르다"
+    rc=1
+fi
+
+if echo "${result}" | jq -e '.dags.nvd_cves.outlets.load_nvd_cves == ["iceberg://nvd/nvd_cves"]
+        and .dags.nvd_cves.outlets.land_raw_nvd_cves == []' >/dev/null; then
+    echo "PASS [nvd-cves-outlet] load_nvd_cves → iceberg://nvd/nvd_cves (raw 착지는 outlet 없음)"
+else
+    echo "FAIL [nvd-cves-outlet] nvd_cves 의 Asset outlet이 기대와 다르다"
+    rc=1
+fi
+
+if echo "${result}" | jq -e '.dags.nvd_cve_history | .tasks == {"land_raw_nvd_cve_history": null, "load_nvd_cve_history": null}
+        and .downstream.land_raw_nvd_cve_history == ["load_nvd_cve_history"]
+        and .cron == "0 19 * * *" and .cron_tz == "UTC" and .timetable == "CronDataIntervalTimetable"
+        and .paused == true and .catchup == false and .max_active_runs == 1
+        and .pools.land_raw_nvd_cve_history == "nvd_api" and .pools.load_nvd_cve_history != "nvd_api"
+        and .tis.land_raw_nvd_cve_history == 1
+        and .params == ["force"]' >/dev/null; then
+    echo "PASS [nvd-history-dag] nvd_cve_history: raw 착지 >> 적재·0 19 * * * UTC·데이터 구간·일시정지·pool nvd_api"
+else
+    echo "FAIL [nvd-history-dag] nvd_cve_history 모양이 기대와 다르다"
+    rc=1
+fi
+
+if echo "${result}" | jq -e '.dags.nvd_cve_history.outlets.load_nvd_cve_history == ["iceberg://nvd/nvd_cve_history"]
+        and .dags.nvd_cve_history.outlets.land_raw_nvd_cve_history == []' >/dev/null; then
+    echo "PASS [nvd-history-outlet] load_nvd_cve_history → iceberg://nvd/nvd_cve_history"
+else
+    echo "FAIL [nvd-history-outlet] nvd_cve_history 의 Asset outlet이 기대와 다르다"
+    rc=1
+fi
+
+# KEV 는 다른 호스트(cisa.gov)라 nvd_api 에 넣지 않는다. 미지정 pool 의 실제 값(default_pool 예상)은 미확인이라 부정형으로 단언한다
+if echo "${result}" | jq -e '.dags.nvd_kev | .tasks == {"land_raw_nvd_kev": null, "load_nvd_kev": null}
+        and .downstream.land_raw_nvd_kev == ["load_nvd_kev"]
+        and .cron == "0 * * * *" and .cron_tz == "Asia/Seoul" and .timetable == "CronTriggerTimetable"
+        and .paused == true and .catchup == false and .max_active_runs == 1
+        and .pools.land_raw_nvd_kev != "nvd_api"' >/dev/null; then
+    echo "PASS [nvd-kev-dag] nvd_kev: 매시간 KST·트리거 timetable·일시정지·pool nvd_api 아님"
+else
+    echo "FAIL [nvd-kev-dag] nvd_kev 모양이 기대와 다르다"
+    rc=1
+fi
+
+if echo "${result}" | jq -e '.dags.nvd_kev.outlets.load_nvd_kev == ["iceberg://nvd/nvd_kev"]' >/dev/null; then
+    echo "PASS [nvd-kev-outlet] load_nvd_kev → iceberg://nvd/nvd_kev"
+else
+    echo "FAIL [nvd-kev-outlet] load_nvd_kev 의 Asset outlet이 기대와 다르다"
+    rc=1
+fi
+
 # --- 이미지 내용(원화 종가 이관 — pyiceberg·cosmos·dbt venv·dbt 프로젝트) -------------
 # 🔴 lint CI 초록은 빌드 보증이 아니다 — 이미지 안에서 실제로 import·실행해 본다.
 if "${CLI}" run --rm "${IMAGE}" python -c "import pyiceberg, cosmos, trino, holidays, lakehouse.iceberg" >/dev/null 2>&1; then
@@ -341,6 +406,15 @@ if "${CLI}" run --rm -v "${PROBE}:/tmp/probe.py:ro" "${IMAGE}" python /tmp/probe
     echo "PASS [img-dag-import-lib] DAG 파일에서 import lakehouse 가능"
 else
     echo "FAIL [img-dag-import-lib] DAG 파일에서 lakehouse import 실패(PYTHONPATH 확인)"
+    rc=1
+fi
+
+# Pool Job(`airflow pools set`)과 백필 문서(`airflow backfill create`)가 기대는 CLI 가 이 이미지에 실재하는가 —
+# 메타 DB 없이 --help 만 본다(런타임 동작은 보지 못한다)
+if "${CLI}" run --rm "${IMAGE}" bash -c "airflow pools set --help >/dev/null && airflow backfill create --help >/dev/null" >/dev/null 2>&1; then
+    echo "PASS [img-cli] airflow pools set·backfill create CLI 실재"
+else
+    echo "FAIL [img-cli] 이미지에 airflow pools set 또는 backfill create 가 없다"
     rc=1
 fi
 

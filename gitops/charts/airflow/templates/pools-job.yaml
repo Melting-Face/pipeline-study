@@ -1,0 +1,40 @@
+# 선언형 Pool — values 최상위 `pools:` 목록을 `airflow pools set`(upsert)으로 반영한다.
+# 공식 차트 1.22.0 values 에는 pool 키가 없어(`helm show values` 대조) 이 Job 으로 대신한다.
+# ArgoCD PostSync 훅: 메타 DB 마이그레이션(Sync 훅)이 끝난 뒤 매 sync 마다 재생성돼 돈다.
+# 🔴 upsert 만 한다 — values 에서 pool 을 지워도 **클러스터의 pool 은 삭제되지 않는다**(수동 `airflow pools delete`).
+# 값은 squote 로 감싼다: 큰따옴표면 설명 속 `$`·백틱을 bash 가 해석한다(작은따옴표 자체는 담을 수 없다).
+# 🔴 `helm.sh/hook` 을 달지 않는다 — tests/expect.yaml 의 no_hook_kinds: [Job] 이 막는다(ArgoCD 가 PostSync 로
+#    옮기면 마이그레이션을 기다리는 파드와 교착한다, values.yaml §7 참조). 이미지는 서브차트와 같은 값을 참조해
+#    태그 줄을 values.yaml 한 곳(bump-image-tag 마커 1줄)에만 둔다.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: airflow-pools
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: set-pools
+          image: {{ .Values.airflow.images.airflow.repository }}:{{ .Values.airflow.images.airflow.tag }}
+          env:
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-metadata
+                  key: connection
+          args:
+            - bash
+            - -c
+            - |-
+              set -e
+              {{- range .Values.pools }}
+              airflow pools set {{ .name | squote }} {{ .slots }} {{ .description | squote }}
+              {{- end }}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: 250m, memory: 512Mi}

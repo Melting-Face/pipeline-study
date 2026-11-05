@@ -5,6 +5,7 @@
 #   catalog-pg-app   : 카탈로그 Postgres 계정 — CNPG `bootstrap.initdb.secret`·`managed.roles`가 읽는다
 #   physionet-creds  : 원천 다운로드 계정(값이 있을 때만)
 #   airflow 네임스페이스 Secret 7종 + default/airflow-pg-app : Airflow 메타 DB·브로커·웹 서버 비밀(랜덤 생성)
+#   airflow-conn-nvd : Airflow Connection `nvd_api`(NVD 키는 password 필드). 값은 `.env`의 NVD_API_KEY — 빈 키여도 만든다
 # 카탈로그 Cluster CR 자체는 ArgoCD 앱 gitops/charts/catalog-postgres 가 만든다. Secret이 늦으면 CNPG가 기다린다.
 set -euo pipefail
 
@@ -259,5 +260,25 @@ else
     unset CONN_JSON
 fi
 unset POLYGON_KEY
+
+# NVD 키 — 단일 출처는 .env 의 NVD_API_KEY. 키는 password 필드에만 둔다(`apiKey` 헤더로만 나간다).
+# 🔴 Polygon 과 달리 `nonempty NVD_API_KEY` 를 두지 않는다 — 키 없는 공개 한도로 돌 수 있어야 하고,
+#    차트의 secretKeyRef 는 Secret 이 없으면 **모든 Airflow 파드**가 뜨지 못하므로 빈 키라도 Secret 은 항상 만든다
+NVD_KEY="$(env_value NVD_API_KEY)"
+# ⚠️ 아래 Connection 의 `host` 는 코드가 읽지 않는다 — 접속 호스트의 정본은 `lakehouse/nvd.py` 의 NVD_BASE_URL 이다.
+#    (Connection 은 키를 싣는 그릇이다. host 를 바꿔도 요청 대상은 그대로다.)
+if kubectl -n airflow get secret airflow-conn-nvd >/dev/null 2>&1; then
+    if [ "$(secret_field airflow airflow-conn-nvd connection | jq -r .password)" != "${NVD_KEY}" ]; then
+        printf 'NVD 키 사본 불일치: airflow/airflow-conn-nvd 가 .env 의 NVD_API_KEY 와 다르다\n' >&2
+        exit 1
+    fi
+    log "Secret 있음(건드리지 않음, 키 일치): airflow/airflow-conn-nvd"
+else
+    CONN_JSON="$(jq -cn --arg k "${NVD_KEY}" '{conn_type: "http", host: "services.nvd.nist.gov", password: $k}')"
+    nonempty airflow-conn-nvd "${CONN_JSON}"
+    ensure_secret airflow airflow-conn-nvd --from-literal=connection="${CONN_JSON}"
+    unset CONN_JSON
+fi
+unset NVD_KEY
 
 log "완료. 카탈로그 Cluster는 ArgoCD(catalog-postgres)가, S3는 클러스터 밖 스택 A(terraform/cluster/kind)가 맡는다"
