@@ -22,6 +22,15 @@ Dagster 정의를 Airflow DAG로 옮길 때 따르는 규칙이다. 첫 사례�
 - **새 데이터셋은 Airflow 전용이다** — Dagster 정의·`test_parity.py` 대조를 만들지 않는다(Dagster는 철거 예정).
   아래 두 벌 공존 규칙은 **이관 중인 기존 데이터셋**에만 적용된다. 사례 `geeknews_items`·`geeknews_dbt`.
 - **DAG는 기본 일시정지**(`is_paused_upon_creation=True`)·`catchup=False`. 켜는 것은 사람이다.
+- **일자 파티션 DAG의 과거 구간은 backfill로만 채운다** — `dags trigger --logical-date`는 interval을
+  그 날이 아니라 실행 시각 기준 최근 구간으로 잡아 **다른 파티션을 에러 없이 교체**했다(#315).
+  `partition_key`가 logical date와 interval이 다르면 멈춘다. 절차와 함정:
+  - `backfill create --dry-run`으로 run 목록을 본 뒤 생성하고, **출력을 버리지 않는다** — DAG당 활성 backfill은
+    1개라 `AlreadyRunningBackfill`(exit 1)로 거부되는데 출력을 버리면 안 보인다.
+  - 같은 날짜에 run이 이미 있으면 기본값은 건너뛰고(`already exists`), `--reprocess-behavior`는 **그 run과 그
+    interval을 재사용**한다 — 잘못 만든 run이 있는 날짜는 backfill로 고쳐지지 않는다.
+  - paused DAG의 backfill run은 `queued`에서 멈춘다. unpause하면 `catchup=False`라도 **최근 구간 정기 run이
+    하나 함께 돈다** — 끝나면 다시 pause한다.
 - **파티션 키가 API 날짜로 나가면 timetable은 UTC**다 — [타임존 정책](timezone.md)의 의도된 예외.
 - **로직은 `lakehouse`에, DAG는 배선만** 둔다. `lakehouse`는 호스트 venv에서 인프라 없이 단위 테스트한다
   (`images/airflow/tests/lib/`, `PYTHONPATH=images/airflow/dags`).

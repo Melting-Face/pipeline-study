@@ -33,6 +33,7 @@ def fx_rates_daily() -> None:
     @task(outlets=[FX_ASSET])
     def load_fx_rates(
         data_interval_start: pendulum.DateTime | None = None,
+        logical_date: pendulum.DateTime | None = None,
         outlet_events: Any = None,
     ) -> dict:
         """전일 환율을 받아 그 파티션만 교체한다."""
@@ -47,7 +48,7 @@ def fx_rates_daily() -> None:
         )
         from lakehouse.partition import partition_key
 
-        rate_date = partition_key(data_interval_start)
+        rate_date = partition_key(data_interval_start, logical_date)
         payload = request_json(f"{RATES_BASE}/{rate_date}", params={})
         arrow = rates_json_to_arrow(payload, rate_date, datetime.now(tz=timezone.utc))
 
