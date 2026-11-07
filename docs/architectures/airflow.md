@@ -12,6 +12,8 @@ Dagster는 클러스터에 배포하지 않아 정기 실행 주체가 없다. �
 - 이미지: `images/airflow/Dockerfile`. DAG를 이미지에 굽고, dbt는 별도 venv(`/opt/dbt-venv`)에 둔다.
 - DAG(`images/airflow/dags/`):
   - `fx_rates_daily.py` · `equity_ohlcv_daily.py` — 환율·시세를 Iceberg bronze에 적재한다
+  - `geeknews_items.py` — GeekNews Atom 피드를 raw gz와 Iceberg bronze에 적재한다(변경이 없으면 스킵)
+  - `geeknews_dbt.py` — bronze Asset이 갱신되면 Cosmos가 GeekNews silver를 k8s Trino에서 빌드한다
   - `us_equity_krw_dbt.py` — 위 두 Asset이 갱신되면 Cosmos `DbtTaskGroup`이 dbt 모델을 k8s Trino에서 돌린다
   - `nvd_cves.py` · `nvd_cve_history.py` · `nvd_kev.py` — NVD·KEV를 raw 착지 → Iceberg bronze 2태스크로 적재한다.
     API 태스크는 Pool `nvd_api`(slots 1)를 공유한다

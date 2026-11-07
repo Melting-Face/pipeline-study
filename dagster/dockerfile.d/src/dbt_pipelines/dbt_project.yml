@@ -77,6 +77,13 @@ models:
         +materialized: table
         +on_table_exists: replace
         # file_format을 두지 않는 이유는 위 stock_forecast 주석과 같다
+    # GeekNews silver. 빌드 소유자 Airflow DAG geeknews_dbt, 스키마가 bronze와 같아
+    # 모델 이름이 `geeknews_items`와 겹치면 안 된다(replace가 bronze를 덮는다).
+    geeknews:
+      +schema: geeknews
+      tables:
+        +materialized: table
+        +on_table_exists: replace
     mimic_iv:
       +schema: mimiciv
       # 실버 모델은 물리 테이블로 구체화한다(dbt 기본값 view 재정의).

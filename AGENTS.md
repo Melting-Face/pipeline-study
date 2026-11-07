@@ -86,6 +86,7 @@
 - 같은 로직의 추출은 세 번째 반복부터 검토한다(Rule of Three).
 - 상세 규칙은 `docs/conventions/dagster.md`, `dbt.md`, `python.md`,
   `timezone.md`, `docker.md`, `k8s.md`, `terraform.md`, `airflow.md`(Dagster→Airflow 이관)를 따른다.
+- **새 데이터셋은 Airflow 전용**(Dagster·패리티 테스트 없음).
 
 ## 데이터 분석과 거버넌스
 

@@ -220,8 +220,11 @@ def eicu_dbt_models(context, dbt: DbtCliResource):
 
 ## 새 데이터셋 서브프로젝트 추가 체크리스트
 
+⚠️ 새 데이터셋은 이 체크리스트 대상이 아니다 — Airflow 전용([airflow.md](airflow.md) §2).
+이 절은 Dagster에 남은 데이터셋의 유지보수용이다.
+
 Iceberg 네임스페이스는 **데이터셋 서브프로젝트 단위**로 만든다(예: `eicu`, `mimic_iv`).
-새 데이터셋을 추가할 때 아래를 순서대로 채워 자산·리소스·lineage 누락을 막는다.
+Dagster에 남은 기존 데이터셋의 자산을 보강할 때 아래를 순서대로 확인해 자산·리소스·lineage 누락을 막는다.
 (경로는 `src/dagster_project/` 기준 — 실제 wiring은 `defs/` 하위를 `load_defs`가 수집한다.)
 
 1. **`defs/<dataset>/constants.py`** — `NAMESPACE`·`GROUP_NAME`·`SOURCE_BASE` 정의.
