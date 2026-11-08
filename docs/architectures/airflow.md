@@ -20,7 +20,7 @@ Dagster는 클러스터에 배포하지 않아 정기 실행 주체가 없다. �
   - `nvd_dbt.py` — NVD silver 5종을 Cosmos로 빌드한다. CVE·History bronze 태스크의 Asset 갱신이 트리거다
   - `github_trending.py` — raw JSON 수집, `hello.py` — 수동 트리거 전용 확인용
 - 로직: `images/airflow/dags/lakehouse/` — Airflow를 import하지 않는 순수 패키지(Dagster의 `common/`에 대응).
-  단위 테스트는 `images/airflow/tests/lib/`.
+  단위 테스트는 `images/airflow/tests/lib/`(`lib.test.sh`, PR CI 필수 체크).
 - 접속 정보: Connection(`AIRFLOW_CONN_<ID>`) ← Secret ← `scripts/k8s-secrets.sh`.
   `gitops/charts/airflow/values.yaml`이 Secret을 env로 주입한다(S3·Iceberg 카탈로그·Polygon·NVD `nvd_api`).
   Pool은 같은 values의 `pools:`를 PostSync Job이 `airflow pools set`으로 반영한다(upsert — 삭제는 수동).

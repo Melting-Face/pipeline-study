@@ -169,7 +169,7 @@ def test_patient_loads_table() -> None:
 | `ruff check` · `sqlfluff lint` | 정적 검사 — **pre-commit 훅으로 자동 실행**(`.pre-commit-config.yaml`) |
 | `mypy` | 타입 정합성 — **훅 미포함, 수동 실행**(의존성 환경 필요) |
 | `bash images/airflow/tests/dag-import.test.sh` | Airflow DAG import(DagBag 파싱) — PR CI(`airflow-image.yml`, paths 필터) + 로컬 수동([`conventions/docker.md`](conventions/docker.md)) |
-| `cd dagster/dockerfile.d/src && PYTHONPATH=../../../images/airflow/dags uv run --with holidays --with defusedxml==0.7.1 pytest ../../../images/airflow/tests/lib -q` | Airflow `lakehouse` 단위 테스트(Dagster venv를 빌려 쓴다, 실인프라 미접속) — **CI 미실행, 로컬 관문** |
+| `bash images/airflow/tests/lib.test.sh` | Airflow `lakehouse` 단위 테스트(이미지 `requirements.txt` 판으로 독립 venv, 실인프라 미접속) — **PR CI 필수 체크**(`ci.yml` lint, paths 필터 없음) + 로컬 |
 
 > **"정적 검사"를 한 덩어리로 읽지 않는다.** 한때 이 표는 세 도구를 함께 적어
 > 셋 다 커밋 시 도는 것처럼 보였으나, 실제로는 `sqlfluff`·`mypy` **둘 다 훅에 없었다**.
@@ -299,6 +299,9 @@ dg check
 
 # 정적 검사 (pre-commit이 커밋 시 자동 실행 — repo 루트에서)
 ruff check . && sqlfluff lint dagster/dockerfile.d/src/dbt_pipelines/
+
+# Airflow lakehouse 단위 테스트 (§5) — CI lint 잡이 부르는 것과 같은 명령
+bash images/airflow/tests/lib.test.sh
 
 # 가드 단위 테스트 (§7) — 훅 `guard-tests`가 부르는 것과 같은 명령
 python3 scripts/tests/run_guard_tests.py
