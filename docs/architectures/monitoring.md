@@ -164,9 +164,10 @@ Robusta의 기존 Prometheus 연동 모드 파드 차분 · `grafana/loki`와 `g
   [../resource-sizing.md](../resource-sizing.md)가 정본이다.
 - **Flink 오퍼레이터 메트릭은 로그로만 나간다**(slf4j 리포터, 5분 간격). 값은 남지만
   시계열로 질의할 수 없고, 로그 보존 정책([../operations.md](../operations.md) §2)의 수명을 따른다.
-- **Dagster 쪽 관측은 실행 기록에 의존한다** — `run_monitoring` 부재의 이유가
-  "안 켰다"에서 **"`DefaultRunLauncher`가 지원하지 않는다"** 로 확정됐다(켜면 `NotImplementedError`).
-  ⇒ **부재가 결정**이고, 대가는 daemon 재시작 시 진행 중 run이 `STARTED`로 고아가 되는 것이다.
+- **Dagster 쪽 관측은 실행 기록에 의존한다** — `run_monitoring`은 **켜지 않았다**.
+  한때 「`DefaultRunLauncher`라 켜면 `NotImplementedError`」로 적었으나 dagster 1.12에서는 거짓이다 —
+  health check만 건너뛰고 나머지는 돈다([dagster.md](dagster.md) §run 고아).
+  어느 쪽이든 health check가 없으니 대가는 daemon 재시작 시 진행 중 run이 `STARTED`로 고아가 되는 것이다.
   `compute_logs`는 기본값(Local)에서 **`S3ComputeLogManager`로 바뀌었다** — webserver와 daemon이
   다른 파드라 로컬 디스크로는 UI에 스텝 로그가 영영 안 보였다.
   ⚠️ **그 업로드 실패는 run 상태에 나타나지 않는다** — Dagster가 예외를 삼키므로 `RUN_SUCCESS`인 채

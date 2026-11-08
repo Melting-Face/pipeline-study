@@ -103,12 +103,43 @@ in-cluster 판본에서 권한은 Role **`dagster-compute-submit`** 하나에 �
 
 > in-cluster 판본 운영 중 얻은 기록이다. 실행 위치에 묶인 서술은 「in-cluster 판본」으로 표기했다.
 
-### run 고아 — `run_monitoring`을 켤 수 없다
+### run 고아 — `run_monitoring`의 health check가 없다
 
-`DefaultRunLauncher`는 `supports_check_run_worker_health`가 `False`라 `run_monitoring`을 켜면
-`NotImplementedError`다. 결과로 **daemon이 재시작하면(in-cluster 판본에선 daemon 파드)
-진행 중이던 run이 `STARTED`로 고아가 된다.**
-부재가 *결정*이며, 이것이 `K8sRunLauncher` 후속 과제의 첫 근거다.
+`DefaultRunLauncher`는 `supports_check_run_worker_health`가 `False`다. 그래서 **daemon이 재시작하면
+(in-cluster 판본에선 daemon 파드) 진행 중이던 run이 `STARTED`로 고아가 된다** — 이것이
+`K8sRunLauncher` 후속 과제의 첫 근거다.
+
+🔴 이 문서는 한때 「`run_monitoring`을 켜면 `NotImplementedError`」라 적었다. **dagster 1.12에서는 거짓이다** —
+monitoring daemon은 런처가 health check를 지원하지 않으면 **그 단계만 건너뛰고**
+(`_daemon/monitoring/run_monitoring.py` `monitor_started_run`), 시작·취소 타임아웃·`max_runtime_seconds`·
+**끝난 run의 pool slot 회수**는 그대로 돈다. 예외는 런처의 `check_run_worker_health`를 **직접** 부를 때만 난다.
+resume 미지원 런처의 제약은 `max_resume_run_attempts` > 0일 때뿐이고 기본값은 0이다.
+
+현재는 **켜지 않았다** — 켜서 얻는 것 중 쓰이는 것이 없다(아래).
+
+#### pool slot은 끝난 run에서 자동으로 돌아오지 않는다
+
+step이 slot을 쥔 채 run worker가 죽으면(예: step 시작 전 env 미설정) run은 `FAILURE`인데
+claimed slot은 남고, 같은 pool의 step은 `Step blocked by limit for pool <p>`로 **무한 대기**한다
+(NVD 이관 전 재현, #305).
+끝난 run의 slot을 회수하는 코드는 **`MonitoringDaemon` 한 곳**이고 `run_monitoring.enabled: true` **와**
+`free_slots_after_run_end_seconds` 설정이 둘 다 있어야 돈다(`_daemon/monitoring/concurrency.py`).
+회수 대상은 인스턴스 DB 전체라 `dagster asset materialize`로 띄운 run도 daemon이 떠 있으면 회수된다.
+
+- **켤 조건**: Dagster 자산이 다시 `pool=`을 쓰게 되면 `dagster.yaml`에 아래를 함께 넣는다.
+  지금은 `pool=` 사용처가 0건이라 넣지 않는다(NVD는 Airflow로 이관됐다).
+  ```yaml
+  run_monitoring:
+    enabled: true
+    max_resume_run_attempts: 0  # DefaultRunLauncher는 resume 미지원
+    free_slots_after_run_end_seconds: 60
+  ```
+  ⚠️ 켜면 기본 `start_timeout_seconds`(180초)도 함께 발효된다 — STARTING에 묶인 run을 실패로 바꾼다.
+- **즉시 회수**(daemon 없이): `instance.event_log_storage.free_concurrency_slots_for_run(<run_id>)`.
+  남은 점유는 `get_concurrency_info(<pool>).claimed_slots`로 본다.
+- Airflow Pool에는 이 축이 **없다** — 점유를 매번 TaskInstance 상태(`queued`·`running`, 옵션 `deferred`)로
+  세므로(`airflow/models/pool.py` `Pool.slots_stats`, 3.2.2) 실패한 태스크는 즉시 빠진다.
+  남는 것은 `running`에 멈춘 좀비 태스크가 스케줄러에 정리될 때까지 slot을 쥐는 경우다.
 
 ### 성공한 run이 관측 실패를 가린다
 
