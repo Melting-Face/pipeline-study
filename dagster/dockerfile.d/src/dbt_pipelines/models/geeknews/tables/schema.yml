@@ -1,6 +1,7 @@
 version: 2
 
 # GeekNews silver. 빌드 소유자: Airflow DAG geeknews_dbt(Cosmos) — images/airflow/dags/geeknews_dbt.py.
+# 🔴 단 `tag:alerts` gold(geeknews__cve_links)는 DAG alerts_dbt가 소유한다(geeknews_dbt는 exclude).
 # 🔴 dedup 회귀 방어는 아래 unit_tests가 맡는다. 실데이터는 같은 topic_id가 두 번 수집되지
 #    않았으면 최신 선택 경로를 지나지 않고도 `dbt build`가 통과한다(「실행됐다」≠「검사했다」).
 
@@ -23,6 +24,36 @@ models:
         data_tests:
           - not_null
 
+  # 🔴 빌드 소유자는 geeknews_dbt가 아니라 alerts_dbt다(tag:alerts — geeknews_dbt는 exclude로 뺀다).
+  - name: geeknews__cve_links
+    description: >-
+      1행 = (topic_id, cve_id). GeekNews 글(geeknews_items_latest)이 본문에서 언급한 CVE와
+      NVD 요약(nvd__cve_digest)을 잇는 알림용 gold.
+      cve_id는 upper()로 정규화하고 같은 글 안의 중복을 접는다. cve_ids가 빈 글은 행이 없다(의도).
+      **in_nvd** = cve_id가 nvd__cve_digest(Rejected 제외)에 있음. false이면 cvss_score·cvss_severity·
+      is_kev는 NULL이다(「KEV 아님」이 아니라 「모름」). NVD description_en은 싣지 않는다.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [topic_id, cve_id]
+    columns:
+      - name: topic_id
+        data_tests:
+          - not_null
+      - name: cve_id
+        data_tests:
+          - not_null
+      - name: in_nvd
+        data_tests:
+          - not_null
+      - name: cvss_score
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 10
+                inclusive: true
+
 unit_tests:
   # 최신 선택: 같은 topic_id의 두 수집본 중 fetched_at이 큰 쪽을 고른다. cve_ids는 생략(NULL).
   - name: geeknews_items_latest_picks_latest_fetch
@@ -37,3 +68,38 @@ unit_tests:
       rows:
         - {topic_id: 1, title: new}
         - {topic_id: 2, title: only}
+
+  # (d) 소문자 CVE ID를 upper()로 정규화해 같은 글 안의 중복과 접고, digest에 없는 CVE는 in_nvd=false·
+  #     NVD 값 NULL이다. cve_ids가 빈 글(topic 2)은 행이 없다.
+  #     🔴 cve_ids(array)는 dict 픽스처로 줄 수 없어(문자열 → array 캐스트) sql 형식으로 준다 —
+  #        sql 형식은 모든 컬럼을 타입까지 적어야 한다.
+  - name: geeknews__cve_links_normalizes_and_flags_in_nvd
+    model: geeknews__cve_links
+    given:
+      - input: ref('geeknews_items_latest')
+        format: sql
+        rows: |
+          select
+              cast(1 as bigint) as topic_id,
+              'a' as title,
+              'https://news.hada.io/topic?id=1' as link,
+              cast(null as timestamp(6) with time zone) as published,
+              cast(null as timestamp(6) with time zone) as updated,
+              array['cve-2026-0001', 'CVE-2026-0001', 'CVE-2026-9999'] as cve_ids,
+              timestamp '2026-11-04 00:00:00 UTC' as fetched_at
+          union all
+          select
+              cast(2 as bigint),
+              'b',
+              'https://news.hada.io/topic?id=2',
+              cast(null as timestamp(6) with time zone),
+              cast(null as timestamp(6) with time zone),
+              cast(array[] as array(varchar)),
+              timestamp '2026-11-04 00:00:00 UTC'
+      - input: ref('nvd__cve_digest')
+        rows:
+          - {cve_id: CVE-2026-0001, cvss_score: 9.8, cvss_severity: CRITICAL, is_kev: true}
+    expect:
+      rows:
+        - {topic_id: 1, cve_id: CVE-2026-0001, in_nvd: true, cvss_score: 9.8, cvss_severity: CRITICAL, is_kev: true}
+        - {topic_id: 1, cve_id: CVE-2026-9999, in_nvd: false, cvss_score: null, cvss_severity: null, is_kev: null}
