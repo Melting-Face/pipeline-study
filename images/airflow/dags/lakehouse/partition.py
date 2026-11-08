@@ -27,5 +27,14 @@ def partition_key(
             "run이 없는 날짜를 airflow backfill create로 돌린다"
         )
         raise ValueError(message)
-    _ = logical_date  # [프로브] 가드 삭제 — ruff ARG001 회피
+    if logical_date is not None and logical_date != data_interval_start:
+        logical_day = logical_date.astimezone(timezone.utc).date().isoformat()
+        interval_day = data_interval_start.astimezone(timezone.utc).date().isoformat()
+        message = (
+            f"logical_date({logical_day})와 "
+            f"data_interval_start({interval_day})가 다르다 — "
+            "수동 trigger의 interval은 실행 시각 기준이라 다른 파티션을 덮는다. "
+            "run이 없는 날짜를 airflow backfill create로 돌린다"
+        )
+        raise ValueError(message)
     return data_interval_start.astimezone(timezone.utc).date().isoformat()
