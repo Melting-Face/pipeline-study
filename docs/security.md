@@ -197,7 +197,7 @@ git에 들어가지 않는다. 바뀐 것은 *데이터가 어떻게 들어오�
 | 재식별 금지 | 외부 데이터 결합은 심의 없이 하지 않는다 | 제28조의5 · DUA |
 | 공개물 반출 차단 | `reviewer` 보안 점검(체크리스트 E) + **사람이 발행**(워커 발행 금지) | `conventions/publishing.md` §5 · DUA 재배포 제한 |
 | 외부 질의 유출 차단 | `researcher` 질의 규율(내부 데이터 금지) | `conventions/publishing.md` §7 |
-| 외부 발신(egress) 차단 | `permissions.deny`의 발신 동사 · `ask`의 `gh api`·`git push`·`scp`/`rsync` | `conventions/publishing.md` §7 |
+| 외부 발신(egress) 차단 | `permissions.deny`의 발신 동사 · `ask`의 `gh api`·`git push`·`scp`/`rsync`. 예외: 본인 Discord 웹훅 스케줄 발신(DAG 집행) | `conventions/publishing.md` §7 · `risk.md` §4 예외 ② |
 
 - 🔴 **`gitleaks`는 크리덴셜 패턴을 잡지 원천 데이터를 잡지 못한다.** 자동 검사 통과를 안전으로 읽지
   않는다 — 분석 산출물의 위험은 **비밀값이 아니라 데이터 그 자체**다.

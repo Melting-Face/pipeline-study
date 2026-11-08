@@ -146,6 +146,10 @@ Python 변경은 `ruff check`, SQL 변경은 `sqlfluff lint`, Terraform 변경�
 게이트는 2단이다. 가역 작업(코드·문서·모델)은 CI와 사용자의 PR 머지가 통제한다.
 비가역 작업(apply·삭제·파괴적 SQL·외부 발신·데이터 반출·스킬 설치·통제 배선 변경)은
 실행 전에 `reviewer` 보안 체크리스트 1회와 사용자 승인을 거친다.
+예외는 `docs/risk.md` §4의 2건(GHCR 이미지 발행, 본인 Discord 웹훅으로의 Airflow 스케줄 발신)뿐이다.
+예외는 게이트를 옮길 뿐이다. GHCR 발행은 PR 머지로, Discord 발신은 PR 머지와 사람의 unpause로 옮긴다.
+에이전트는 실웹훅을 호출하거나 발신 DAG를 trigger·unpause하지 않는다.
+예외 범위(필드·수신자·상한·사용처)를 바꾸는 PR은 다시 체크리스트 E와 사용자 승인을 거친다.
 정본은 `docs/conventions/agents.md`다.
 
 ### 위임 규칙
