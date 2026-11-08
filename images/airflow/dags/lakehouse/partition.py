@@ -27,4 +27,5 @@ def partition_key(
             "run이 없는 날짜를 airflow backfill create로 돌린다"
         )
         raise ValueError(message)
+    _ = logical_date  # [프로브] 가드 삭제 — ruff ARG001 회피
     return data_interval_start.astimezone(timezone.utc).date().isoformat()
