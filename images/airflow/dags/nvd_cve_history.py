@@ -50,6 +50,7 @@ def nvd_cve_history() -> None:
     @task(pool="nvd_api", max_active_tis_per_dag=1)
     def land_raw_nvd_cve_history(
         data_interval_start: pendulum.DateTime | None = None,
+        logical_date: pendulum.DateTime | None = None,
         params: Any = None,
     ) -> dict:
         """UTC 하루 구간을 끝까지 받아 새 회차로 S3 raw에 놓는다(API 호출 단계)."""
@@ -64,7 +65,7 @@ def nvd_cve_history() -> None:
         from lakehouse.nvd_parse import HISTORY_ITEM_KEY, HISTORY_ITEMS_KEY
         from lakehouse.partition import partition_key
 
-        window_date = partition_key(data_interval_start)
+        window_date = partition_key(data_interval_start, logical_date)
         # 🔴 키는 이 지역 변수에서 fetch_page의 헤더로만 간다 — 반환값에 싣지 않는다
         api_key = Connection.get("nvd_api").password or ""
         s3 = S3Hook(aws_conn_id=S3_CONN_ID).get_conn()
@@ -88,6 +89,7 @@ def nvd_cve_history() -> None:
     @task(outlets=[HISTORY_ASSET])
     def load_nvd_cve_history(
         data_interval_start: pendulum.DateTime | None = None,
+        logical_date: pendulum.DateTime | None = None,
         outlet_events: Any = None,
     ) -> dict:
         """그 날의 최신 커밋 회차를 읽어 `window_date` 파티션만 교체한다."""
@@ -105,7 +107,7 @@ def nvd_cve_history() -> None:
         )
         from lakehouse.partition import partition_key
 
-        window_date = partition_key(data_interval_start)
+        window_date = partition_key(data_interval_start, logical_date)
         s3 = S3Hook(aws_conn_id=S3_CONN_ID).get_conn()
         pages, fetched_at, source_run = read_window_pages(
             s3,

@@ -38,6 +38,7 @@ def equity_ohlcv_daily() -> None:
     @task(outlets=[OHLCV_ASSET], max_active_tis_per_dag=1)
     def load_equity_ohlcv(
         data_interval_start: pendulum.DateTime | None = None,
+        logical_date: pendulum.DateTime | None = None,
         outlet_events: Any = None,
     ) -> dict:
         """전일 grouped daily를 받아 그 파티션만 교체한다."""
@@ -56,7 +57,7 @@ def equity_ohlcv_daily() -> None:
             grouped_to_arrow,
         )
 
-        trade_date = partition_key(data_interval_start)
+        trade_date = partition_key(data_interval_start, logical_date)
         try:
             payload = fetch_grouped_daily(
                 Connection.get("polygon_api").password or "", trade_date
