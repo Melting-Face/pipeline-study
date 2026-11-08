@@ -88,6 +88,8 @@
 
 - bronze 테이블 1개 = Asset 1개 = DAG 1개, 로직은 `images/airflow/dags/lakehouse/`(Airflow 비의존)·DAG는 배선.
   Dagster에 남는 쪽과 **두 벌 공존**은 패리티 테스트로 막는다. Pool은 umbrella 차트 Job으로 선언한다.
+  **새** 매시 DAG는 무변경 스킵을 **테이블 쪽 마커**(원천 digest → 스냅샷 속성)로 판정한다 — raw 착지 스킵은
+  판정이 아니다(`nvd_kev` 유지 사유는 airflow.md §3).
   상세 [`docs/conventions/airflow.md`](docs/conventions/airflow.md).
 - **새 데이터셋은 Airflow 전용**(Dagster·패리티 테스트 없음).
 
