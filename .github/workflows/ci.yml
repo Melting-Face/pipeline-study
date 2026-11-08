@@ -140,6 +140,13 @@ jobs:
       #    검사기는 업스트림 차트 저장소에서 의존 차트를 받으므로 네트워크는 쓰지만 인프라는 아니다.
       - uses: astral-sh/setup-uv@v10.0.1
 
+      # Airflow `lakehouse` 단위 테스트(#320). 🔴 이 잡에 두는 이유는 **필수 체크**라서다 —
+      #    별도 잡은 빨강이어도 머지를 막지 않는다(`defs` 잡 주석). paths 필터를 두지 않는 것도 결정이다:
+      #    계약 테스트가 `scripts/*_probe.py`를 읽어, 프로브만 바뀐 PR이 필터에 빠지면 계약이 무검사로 깨진다(#290).
+      #    인프라에 붙지 않는다(머리 주석 원칙 1) — 명령·의존 정본은 스크립트 머리 주석.
+      - name: Airflow lakehouse 단위 테스트
+        run: bash images/airflow/tests/lib.test.sh
+
       # 앱 목록(gitops/apps/*/config.yaml)이 차트 검사기의 앱명·네임스페이스 출처라 먼저 돈다.
       # 테스트는 검사기 자체의 음성·양성 대조다(새 게이트는 일부러 위반시켜 막히는지 본다).
       - name: gitops 앱 설정 검사

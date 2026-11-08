@@ -33,7 +33,7 @@ Dagster 정의를 Airflow DAG로 옮길 때 따르는 규칙이다. 첫 사례�
     하나 함께 돈다** — 끝나면 다시 pause한다.
 - **파티션 키가 API 날짜로 나가면 timetable은 UTC**다 — [타임존 정책](timezone.md)의 의도된 예외.
 - **로직은 `lakehouse`에, DAG는 배선만** 둔다. `lakehouse`는 호스트 venv에서 인프라 없이 단위 테스트한다
-  (`images/airflow/tests/lib/`, `PYTHONPATH=images/airflow/dags`).
+  (`images/airflow/tests/lib/`, 실행은 `images/airflow/tests/lib.test.sh`).
 - 🔴 **Dagster에 남는 데이터셋이 같은 로직을 쓰면 두 벌이 공존**한다. 이관 중 같은 테이블에 쓰는 스키마는
   `test_parity.py`가 양쪽을 대조하고, **컷오버로 Dagster 정의를 지우면 스키마 리터럴 고정으로 바꾼다**
   (필드명·타입·tz — 적재된 테이블의 모양이라서다). 프로브↔파서 필드 계약 같은 대조 테스트도 파서를 따라 옮긴다.
@@ -166,7 +166,9 @@ Airflow 3.2.2의 소스·문서 근거가 없다. 결과에 따라 하류가 매
 
 - DAG를 더하면 `images/airflow/tests/dag-import.test.sh`에 **모양 셀**(스케줄·timetable·일시정지·outlet·동시성·pool)을
   함께 더한다. 새 게이트는 일부러 위반시켜 FAIL을 본다.
-- `lakehouse` 단위 테스트 명령은 [`../test.md`](../test.md) §5 — **CI는 돌리지 않는 로컬 관문**이다.
+- `lakehouse` 단위 테스트는 **PR CI 필수 체크**(`ci.yml` lint 잡)에서 돈다 — 명령은 [`../test.md`](../test.md) §5.
+  회귀 방어가 핵심인 가드(예: `partition_key`의 logical date ≠ interval 정지)는 여기서만 잡힌다 —
+  import 셀(`dag-import.test.sh`)은 태스크 실행 경로를 보지 않는다.
 - 이미지 테스트는 **로컬 podman 빌드**로 돌린다 — 린트 CI 초록은 빌드 보증이 아니다.
 - 🔴 import 셀은 **실행 경로**(Connection 조회·Asset event·dbt 실행)를 보지 않는다. 컷오버 때 이미 적재된
   파티션을 다시 돌려 행 수·키 집합이 같은지 대조한 뒤 unpause한다.
