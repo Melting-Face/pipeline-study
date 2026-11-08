@@ -67,7 +67,102 @@ Dagster 정의를 Airflow DAG로 옮길 때 따르는 규칙이다. 첫 사례�
   구간 D의 run은 논리 날짜가 **D 19:00 UTC**다(일별 `0 19 * * *` timetable). `--from-date/--to-date`가
   이 논리 날짜에 어떻게 대응하는지는 `미확인`이라 **`--dry-run`으로 만들어질 run 목록을 먼저 확인**한다.
 
-## 3. 검증
+## 3. 무변경 스킵 — 매시 수집의 정본 패턴
+
+매시 수집 DAG는 원천이 그대로면 적재를 건너뛰고 `AirflowSkipException`으로 끝낸다(#318).
+구현이 두 갈래로 생겨 정본을 하나로 정한다.
+
+| | `geeknews_items` | `nvd_kev` |
+|---|---|---|
+| 적재 판정 | bronze 스냅샷 속성 `geeknews.feed_sha256` ↔ 새 본문 digest | 테이블 `fetched_at` ↔ 최신 raw 회차 시각 |
+| 마커가 세는 것 | **원천 내용** | **raw 회차**(내용 동일성은 land의 사이드카 대조가 맡는다) |
+| raw 착지 스킵 | 별도 단계 없음(판정이 raw 쓰기 앞에 있다) | 있다(`skipped_unchanged`) |
+| 적재 모드 | append | 전체 overwrite |
+
+**정본: 스킵 판정은 테이블 쪽 마커로 한다.** 마커는 원천 내용 digest를 적재 스냅샷의 요약 속성
+`<ns>.<원천>_sha256` 꼴로 싣는다(사례: geeknews의 `geeknews.feed_sha256`, `lakehouse/geeknews.py`).
+헬퍼 추출 때(아래 전환 조건) `<원천>` 칸의 명명을 헬퍼 인자로 고정한다.
+digest는 raw 사이드카와 같은 `gzip_sha256`(mtime=0)이다.
+raw 착지 스킵은 API 뒤 쓰기를 줄이는 **선택 단계**이고 판정이 아니다. 근거 셋:
+
+- **append·overwrite 양쪽에 쓴다.** 속성은 `append_rows(..., snapshot_properties)`로 싣는다
+  (`lakehouse/iceberg.py`). 고정판 pyiceberg 0.11.1의 `Table.overwrite`도 `snapshot_properties`를 받아
+  delete·append 스냅샷에 함께 넘긴다(한 트랜잭션 — 설치된 0.11.1 소스 대조, 저장소 내 테스트 없음).
+  overwrite 테이블에 쓰려면 헬퍼 `overwrite_table`에 이 인자를 추가해야 한다(지금은 넘기지 않는다).
+  반면 `nvd_kev`의 `table_fetched_at`은 행 하나만 읽는다(`scan(limit=1)`).
+  모든 행의 `fetched_at`이 같은 전체 교체 테이블에서만 참이고 append에는 못 옮긴다.
+- **「raw 쓰기 성공 → 적재 실패」 회차를 다음 회차가 다시 적재한다.** geeknews는 사이드카가 아니라 속성과
+  대조해 실패 뒤엔 값이 달라 보인다(`test_ingest_relands_after_failed_append`). nvd_kev도 같은 성질을 갖는다 —
+  land가 `skipped_unchanged`를 내도 load는 최신 회차 시각과 테이블을 대조한다(`load_nvd_kev`).
+  단 nvd_kev 쪽 테스트는 부품별이다 — `kev_needs_load`(순수 함수)와 `table_fetched_at`(SqlCatalog,
+  `test_nvd_parse.py`)은 있으나 「raw 착지 → 적재 실패 → 다음 회차 재적재」를 잇는 통합 테스트는 없다.
+- **판정이 데이터와 같은 커밋에 실린다.** 속성은 append와 원자적이다(`append_rows` docstring).
+  nvd_kev의 마커는 데이터 열 자체라 이 성질도 같다.
+
+뒤의 두 성질은 두 구현이 **모두** 갖는다. 정본을 가르는 것은 첫째(적재 모드 무관)와 마커의 단위다.
+회차 시각 마커는 `force`나 raw 재착지로 **같은 내용의 새 회차**가 생기면 다시 적재하고 Asset event를 낸다.
+digest 마커는 내용이 같으면 그대로 스킵한다(그때 event가 나가는지는 M4 미관측).
+판정 비용도 다르다 — 속성은 메타데이터만 읽는다.
+nvd_kev는 판정 전에 raw 전체를 받아 무결성 대조(`read_latest_kev`)를 하고 데이터 파일을 하나 스캔한다.
+
+**정본의 약점(선언).** 속성은 계보를 거슬러 찾는다(`latest_snapshot_property`). 속성 없는 스냅샷이
+현재가 되고(컴팩션) 속성 있는 조상이 만료되면 `None`이 돼 한 번 다시 적재한다(append면 행이 겹친다).
+지금 유지보수 대상은 MIMIC·eICU 3테이블뿐이라(`defs/maintenance.py`) 해당이 없다.
+**이 테이블을 유지보수에 넣는 때가 재검토 시점**이다.
+데이터 열 마커는 이 약점이 없다.
+
+**남기는 쪽: `nvd_kev`는 그대로 둔다.** overwrite 테이블이라 첫째 근거가 걸리지 않고, 재적재·원자성이 같다.
+맞추면 코드·테스트를 바꾸고, 첫 회차는 속성이 없어 한 번 더 교체 적재하며 event를 낸다. 맞추는 조건:
+
+- KEV 적재가 append·이력형으로 바뀐다.
+- KEV Asset의 소비자가 같은 내용의 재적재 event를 비용으로 느낀다 — `force`·raw 재착지를 쓰기 시작할 때
+  (Skip이 event를 내지 않는다면 — M4 미관측. 낸다면 마커를 바꿔도 event는 줄지 않는다).
+- 세 번째 매시 DAG가 같은 판정을 쓴다 — Rule of Three로 판정 헬퍼를 뽑으면서 함께 맞춘다.
+  헬퍼 추출 때 속성 키(`<ns>.<원천>_sha256`)의 `<원천>` 칸 명명을 헬퍼 인자로 고정한다.
+
+**세 번째 변형을 만들지 않는다.** 새 매시 수집 DAG는 정본을 따른다. 인접 구현을 베낄 때 `nvd_kev`를 본보기로
+삼지 않는다. raw 2태스크 구성이면 load가 최신 회차 사이드카 값과 테이블 속성을 대조한다.
+미션 ③에서 추가될 발신 DAG는 스킵 의미론에 기대지 않고 **발신 기록 테이블**로 멱등하게 만든다.
+
+### Skip → Asset event (M4 수동 관측)
+
+`outlets`가 있는 태스크가 Skip되면 Asset event가 나가는지 **미확인**이다(미관측). 저장소에는 이미지 고정판
+Airflow 3.2.2의 소스·문서 근거가 없다. 결과에 따라 하류가 매시 재빌드되는지가 갈린다.
+미션 ③에서 추가될 `alerts_dbt`(KEV Asset 소비자)도 event가 나가면 매시 재빌드된다. 사람이 실행한다.
+
+1. **대상** — event 축은 `nvd_kev`로 본다. `force=true` 회차는 같은 내용으로 새 회차를 써 load가 성공한다
+   (양성 대조, event +1 기대). 이어서 기본값 회차를 돌리면 내용이 같아 `load_nvd_kev`가 Skip된다(판정 대상).
+   **판정 회차는 2회 이상** 돌린다 — 한 번의 결과는 결론이 아니다.
+   하류 run 축은 `geeknews_items` → `geeknews_dbt`(`schedule=[ITEMS_ASSET]`)로 본다. 적재 성공 회차가
+   양성 대조다. 피드 바이트가 매번 달라 Skip이 안 걸리면 이 축은 미관측으로 남긴다([geeknews](../dataset_schema/geeknews.md)).
+2. **전제·오염 조건** — 하나라도 어기면 그 회차는 판정에 못 쓴다.
+   - ⓐ 판정 회차의 load TI 상태가 `skipped`다(`success`면 판정 대상이 아니다).
+   - ⓑ 하류 DAG가 paused면 run이 안 생겨 「안 생김」의 원인이 갈리지 않는다. unpaused에서 보고,
+     queued event를 조회할 수단이 있으면 그것으로 보충한다.
+   - ⓒ coalescing — 양성 대조로 생긴 하류 run이 생성된 것을 확인하고, 조회 수단이 있으면 queued event가
+     빈 것까지 확인한 뒤에 판정 회차를 돌린다.
+     queued event 조회 수단과 paused DAG에서 큐가 쌓이는지는 3.2.2에서 미확인이다. 수단이 없으면 ⓑ는
+     unpaused로만 보고, ⓒ는 양성 대조의 하류 run 생성 확인으로 대신한 뒤 그 사실을 결과 표에 적는다.
+   - ⓓ OR 스케줄 하류(미션 ③에서 추가될 `alerts_dbt`)는 하류 run 축에서 뺀다. 다른 Asset event가 섞여 귀속할 수 없다.
+   - ⓔ 관측 창 동안 수동 Asset event를 만들지 않는다. REST로 셀 때 `source_task_id` 같은 필터를 걸지 않는다
+     (필터가 Skip 쪽 event를 걸러 내면 증분 0이 관측이 아니라 필터의 결과가 된다).
+3. **관측 경로** — 각 회차 직후 Asset event 수를 센다(UI Asset 상세의 이벤트 목록, 또는 REST v2 asset events).
+   하류는 run 목록을 보고, queued event는 조회 수단이 있을 때만 본다(ⓒ의 미확인).
+   REST 경로·CLI 하위 명령은 이미지의 OpenAPI·`--help`로 실재를 먼저 확인한다.
+4. **판정** — 양성 대조가 +1이어야 관측 경로가 산 것이다(0이면 판정 회차 결과를 버린다).
+   그 위에서 판정 회차마다 증분이 0이면 「Skip은 event를 내지 않는다」, 1이면 「낸다」다. 회차끼리 갈리면 미결이다.
+   기대값은 DAG 주석의 **의도**일 뿐 명세가 아니므로 둘 다 열어 둔다.
+
+| 관측 | 결과 |
+|---|---|
+| 양성 대조(`force=true`) 회차의 event 증분 | 미관측 |
+| 판정 회차 1의 event 증분 | 미관측 |
+| 판정 회차 2의 event 증분 | 미관측 |
+| 판정 회차 1 뒤 하류(`geeknews_dbt`) run 생성 | 미관측 |
+| 판정 회차 2 뒤 하류(`geeknews_dbt`) run 생성 | 미관측 |
+| queued event 조회 수단(없으면 ⓑ·ⓒ를 대체했다고 적는다) | 미관측 |
+
+## 4. 검증
 
 - DAG를 더하면 `images/airflow/tests/dag-import.test.sh`에 **모양 셀**(스케줄·timetable·일시정지·outlet·동시성·pool)을
   함께 더한다. 새 게이트는 일부러 위반시켜 FAIL을 본다.
