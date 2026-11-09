@@ -8,7 +8,8 @@
 # 🔴 의존성 버전의 정본은 `images/airflow/requirements.txt`다(이미지와 같은 pyiceberg·holidays·defusedxml).
 #   단 DAG 전용인 `astronomer-cosmos`·`trino`는 뺀다 — cosmos가 `apache-airflow`를 범위로 끌어와
 #   이미지 고정판(3.2.2)이 아닌 최신판으로 해석되고(실측 3.4.0, 32개 → 160개 패키지), `lakehouse`는
-#   둘 다 import하지 않는다. 뺀 줄이 없으면 실패한다(이름이 바뀌어 필터가 조용히 무력해지지 않게).
+#   **모듈 로드 시점에** 둘 다 import하지 않는다(`lakehouse/trino.py`는 함수 안에서 지연 import하고,
+#   테스트는 가짜 `trino` 모듈을 끼운다). 뺀 줄이 없으면 실패한다(이름이 바뀌어 필터가 조용히 무력해지지 않게).
 # ⚠️ `boto3`·`requests`·`pyyaml`·`pytest`는 이미지에서 Airflow가 동반 설치하는 것이라 requirements에
 #   없다 — 여기서는 **고정하지 않는다**. 이 테스트는 그 라이브러리들의 장기 안정 API만 쓰고,
 #   판을 맞추려면 Airflow constraints 파일을 들여와야 해 비용이 크다. 상류 릴리스가 PR과 무관한

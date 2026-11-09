@@ -114,12 +114,16 @@ AND다(`nvd_cves`·`nvd_cve_history`의 bronze 태스크가 Asset을 내는 생�
 | `nvd_cve_cwe` | (CVE, `source`, `cwe_id`) — weaknesses 1:N | `nvd_cve_latest` |
 | `nvd_cve_cpe` | (CVE, `config_idx`, `node_idx`, `match_idx`) — cpeMatch·`part`·`vendor`·`product`·버전 범위 | `nvd_cve_latest` |
 | `nvd_cve_changes` | (`cve_change_id`, `detail_idx`) — 변경 이벤트의 details | `nvd_cve_history` |
+| `nvd_kev_entries` | CVE — KEV 스칼라 + `vendor_project`·`product`·`vulnerability_name` | `nvd_kev` |
 
 - **최신 = `last_modified` 최대, 동률이면 `window_date` 최대.** 백필 파티션은 「받은 날의 현재 버전」이라
   window_date만으로 고르면 옛 버전을 고를 수 있다.
 - **이력의 정본은 `nvd_cve_changes`다.** 버전 행 diff(SCD2)는 증분 시작 이후에만 존재해 두지 않는다.
-- silver는 **해석하지 않는다** — 대표 CVSS 점수, Rejected 제외, KEV 조인(`nvd_kev`는 silver 없이 gold가
-  source로 직접 읽는다), CPE operator·negate 해석은 gold의 몫이다.
+- silver는 **해석하지 않는다** — 대표 CVSS 점수, Rejected 제외, KEV 조인, CPE operator·negate 해석은
+  gold의 몫이다. KEV도 silver(`nvd_kev_entries`)를 거친다 — gold가 source를 바로 읽지 않는다
+  ([analysis.md](../conventions/analysis.md) §2).
+- 🔴 **`nvd_kev_entries`는 `nvd_dbt`가 아니라 `alerts_dbt`가 빌드한다**(`tags=['silver','alerts']`).
+  `nvd_dbt`는 `path:models/nvd`에서 `tag:alerts`를 `exclude`해 같은 모델을 두 DAG가 빌드하지 않는다.
 - CPE `vendor`·`product`는 이스케이프된 콜론(`\:`)에서 자르지 않고 뽑은 뒤 이스케이프를 푼다.
 - JSON은 `macros/cross_engine.sql`의 `json_value_at`·`json_array_at`·`unnest_array_ordinal`(Trino만 구현)로 펼친다.
 - **경로 대조는 「키가 있는 원문 수 = 펼친 행의 고유 수」로 한다** — `raw_json`에 `cvssMetric*`·비지 않은
@@ -130,6 +134,31 @@ AND다(`nvd_cves`·`nvd_cve_history`의 bronze 태스크가 Asset을 내는 생�
 - Cosmos는 모델마다 `.run`·`.test` 태스크만 만들고 unit_test 전용 태스크는 없다. `.test`의
   `--select <모델>`(cautious)은 그 모델의 unit_test도 고르므로(`dbt ls` 동등 셀렉터 기준 — Airflow 실행으로는
   미관측) unit_test는 **모델 빌드 뒤에** 돈다. 빌드 전에 막는 게이트는 로컬 `dbt build`다.
+
+## gold (dbt)
+
+`nvd.nvd__cve_digest`(`tags=['gold','alerts']`) — grain은 **CVE당 1행(Rejected 제외)** 이다. 알림이 읽는 CVE 요약이고,
+빌드 소유자는 Airflow DAG `alerts_dbt`(`images/airflow/dags/alerts_dbt.py`)다. 스케줄은 NVD silver·GeekNews silver·
+KEV bronze Asset의 **OR**다. 정의의 정본은 `models/nvd/tables/schema.yml`의 description이다.
+
+| 컬럼 | 규칙 |
+|------|------|
+| `cve_id`·`published`·`last_modified` | `nvd_cve_latest`에서 가져온다. `is_rejected`인 CVE는 **행이 없다** |
+| `cvss_version`·`cvss_score`·`cvss_severity` | 대표 CVSS: 버전 4.0 > 3.1 > 3.0 > 2.0 → `source_type` Primary > Secondary → `base_score` 큰 쪽 → `source` 사전순. 메트릭이 없으면 NULL |
+| `is_kev` | `nvd_kev_entries`에 있으면 true, 없으면 **false**(NULL 아님) |
+| `kev_date_added`·`kev_vendor_project`·`kev_product` | KEV에 있을 때만 값이 있다 |
+| `cpe_vendor_products` | `nvd_cve_cpe`에서 `vulnerable = true`인 행의 `'vendor:product'` distinct 정렬 배열. 없으면 **빈 배열** |
+
+- 🔴 **NVD `description_en`은 gold에 없다.** 재배포 가능 여부가 `미확인`이라 알림 경로에 싣지 않는다
+  ([security/datasets.md](../security/datasets.md) §Discord 발신 판정). silver `nvd_cve_latest`에는 남아 있다.
+- **관심목록(watchlist) 필터는 gold에 없다.** gold는 비공개 입력 없이 재현돼야 하므로, 필터는 발신층 Python이
+  `cpe_vendor_products`에 건다.
+- 버전이 점수보다 앞선다 — v4.0 점수가 v3.1보다 낮아도 v4.0을 고른다. 같은 CVE의 「가장 높은 점수」가 필요한
+  질문이면 이 컬럼이 아니라 `nvd_cve_metrics`를 읽는다.
+- ⚠️ `cpe_vendor_products`는 operator(AND/OR)·negate를 해석하지 않는다. 「영향받는 제품 목록」이 아니라
+  「vulnerable로 표시된 조건에 나온 vendor:product」다.
+- ⚠️ 대표 CVSS·Rejected 제외·KEV 조인은 unit_tests가 받친다. **CPE 배열(빈 배열 분기 포함)에는 unit_test가 없다** —
+  array 기대값을 dict 픽스처로 줄 수 없어 미작성이고, `not_null`이 「NULL 대신 빈 배열」만 지킨다.
 
 ## 함정
 

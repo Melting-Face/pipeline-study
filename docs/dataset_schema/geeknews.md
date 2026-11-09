@@ -1,7 +1,7 @@
 # GeekNews 피드 원천 (geeknews)
 
 원천 데이터셋 색인은 [`../dataset_schema.md`](../dataset_schema.md)이고, 이 문서는 Airflow DAG `geeknews_items`가
-적재하는 **raw 레이아웃**과 **bronze 한 테이블**, dbt silver 한 모델을 갖는다. 이용 조건 판정은
+적재하는 **raw 레이아웃**과 **bronze 한 테이블**, dbt silver 한 모델과 gold 한 모델을 갖는다. 이용 조건 판정은
 [`../security/datasets.md`](../security/datasets.md) `geeknews` 근거 절이 정본이다.
 
 Iceberg 네임스페이스 `geeknews`. 오케스트레이터는 **Airflow뿐**이다 — Dagster 정의와 패리티 테스트가 없다
@@ -57,7 +57,23 @@ bronze. 변경이 감지된 회차마다 피드의 모든 entry를 **append**한
 
 `geeknews.geeknews_items_latest` — grain은 **`topic_id`당 1행**이다. 같은 `topic_id` 중 `fetched_at` 내림차순,
 같으면 `updated` 내림차순으로 첫 행을 고른다. Airflow DAG `geeknews_dbt`(Cosmos)가 bronze Asset으로 트리거돼 빌드한다.
-gold는 없다.
+
+## gold (dbt)
+
+`geeknews.geeknews__cve_links`(`tags=['gold','alerts']`) — grain은 **(`topic_id`, `cve_id`)당 1행**이다. 글이 본문에서
+언급한 CVE와 NVD 요약(`nvd.nvd__cve_digest`, [nvd.md](nvd.md) §gold)을 잇는다. 빌드 소유자는 Airflow DAG `alerts_dbt`이고
+`geeknews_dbt`는 `tag:alerts`를 `exclude`한다. 정의의 정본은 `models/geeknews/tables/schema.yml`의 description이다.
+
+| 컬럼 | 규칙 |
+|------|------|
+| `topic_id`·`title`·`link`·`published`·`fetched_at` | `geeknews_items_latest`에서 가져온다 |
+| `cve_id` | `cve_ids`를 펼쳐 `upper()`로 정규화하고 같은 글 안의 중복을 접는다 |
+| `in_nvd` | `cve_id`가 digest(Rejected 제외)에 있으면 true |
+| `cvss_score`·`cvss_severity`·`is_kev` | digest 값. `in_nvd = false`이면 **NULL**(「KEV 아님」이 아니라 「모름」) |
+
+- `cve_ids`가 빈 글은 **행이 없다**(의도). 글 수는 이 모델이 아니라 silver에서 센다.
+- 🔴 **NVD `description_en`은 싣지 않는다** — digest에 없다(재배포 `미확인`, [security/datasets.md](../security/datasets.md)).
+- 관심목록 필터는 이 모델에 없다 — 발신층 Python이 건다.
 
 ## 함정
 
@@ -73,5 +89,5 @@ gold는 없다.
 ## 건너뛴 것
 
 - **Dagster 정의와 패리티 테스트가 없다** — 새 데이터셋은 Airflow 전용이다.
-- **gold가 없다.** Discord 알림은 후속 미션이고 아직 만들어지지 않았다.
+- 발신층은 이 문서 밖이다 — `alerts_digest`·`alerts_kev`가 gold를 읽어 보낸다([alerts.md](alerts.md)).
 - 수집물은 **모델 학습에 쓰지 않는다**(robots `Content-Signal: ai-train=no`).

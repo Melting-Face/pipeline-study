@@ -28,6 +28,9 @@ DBT_EXECUTABLE = "/opt/dbt-venv/bin/dbt"
 # 🔴 Cosmos `fqn:`은 완전 일치만 해 디렉터리를 못 고른다 — `path:`를 쓴다
 #    (us_equity_krw_dbt.py).
 DBT_SELECT = ["path:models/geeknews"]
+# 🔴 `tag:alerts` gold(geeknews__cve_links)는 alerts_dbt가 소유한다
+#    (nvd_dbt.py와 같은 이유).
+DBT_EXCLUDE = ["tag:alerts"]
 PROFILE = ProfileConfig(
     profile_name="dbt_pipelines",
     target_name="dev",
@@ -64,7 +67,9 @@ def geeknews_dbt() -> None:
             test_indirect_selection=TestIndirectSelection.CAUTIOUS,
         ),
         render_config=RenderConfig(
-            load_method=LoadMode.DBT_MANIFEST, select=DBT_SELECT
+            load_method=LoadMode.DBT_MANIFEST,
+            select=DBT_SELECT,
+            exclude=DBT_EXCLUDE,
         ),
     )
 

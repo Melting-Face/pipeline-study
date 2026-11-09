@@ -309,6 +309,16 @@ else
     rc=1
 fi
 
+# 🔴 tag:alerts 모델은 alerts_dbt 소유 — exclude 가 빠지면 path:models/nvd 가 끌고 와 두 DAG가 같은 모델을 빌드한다
+#    (nvd-models 의 접두 검사도 막지만, 그 셀은 모델 이름이 바뀌면 조용히 통과하므로 이름으로 따로 단언한다)
+if echo "${result}" | jq -e '.dags.nvd_dbt.tasks | keys
+        | any(startswith("dbt.nvd_kev_entries.") or startswith("dbt.nvd__cve_digest.")) | not' >/dev/null; then
+    echo "PASS [nvd-dbt-exclude] nvd_dbt 에 tag:alerts 모델(nvd_kev_entries·nvd__cve_digest) 없음"
+else
+    echo "FAIL [nvd-dbt-exclude] nvd_dbt 가 alerts_dbt 소유 모델을 빌드한다(exclude 누락)"
+    rc=1
+fi
+
 # --- nvd_cves·nvd_cve_history·nvd_kev (NVD·KEV bronze 수집) ---------------------------------
 # 🔴 raw 착지 → bronze 적재 2단. API 호출 태스크만 Pool `nvd_api`(slots=1)에 넣어 키 하나의 한도를 DAG 간에 공유한다
 if echo "${result}" | jq -e '.dags.nvd_cves | .tasks == {"land_raw_nvd_cves": null, "load_nvd_cves": null}
@@ -428,11 +438,90 @@ else
     rc=1
 fi
 
+# tag:alerts gold 는 alerts_dbt 소유(nvd-dbt-exclude 와 같은 이유)
+if echo "${result}" | jq -e '.dags.geeknews_dbt.tasks | keys
+        | any(startswith("dbt.geeknews__cve_links.")) | not' >/dev/null; then
+    echo "PASS [gn-dbt-exclude] geeknews_dbt 에 tag:alerts 모델(geeknews__cve_links) 없음"
+else
+    echo "FAIL [gn-dbt-exclude] geeknews_dbt 가 alerts_dbt 소유 모델을 빌드한다(exclude 누락)"
+    rc=1
+fi
+
+# --- alerts_dbt (알림 gold dbt) -----------------------------------------------------------
+# 🔴 세 Asset 의 OR(AssetAny) — 상류 갱신 주기가 달라 AND 면 가장 느린 상류에 묶인다.
+#    max_active_tasks=1 은 krw-serial 과 같은 이유(1Gi 워커 OOM)
+if echo "${result}" | jq -e '.dags.alerts_dbt | .asset_cond == "AssetAny"
+        and .asset_uris == ["iceberg://geeknews/geeknews_items_latest", "iceberg://nvd/nvd_cve_latest", "iceberg://nvd/nvd_kev"]
+        and .paused == true and .catchup == false
+        and .max_active_runs == 1 and .max_active_tasks == 1' >/dev/null; then
+    echo "PASS [alerts-schedule] alerts_dbt: silver 둘·KEV OR Asset 스케줄·일시정지·catchup 끔·run 1·태스크 동시 1"
+else
+    echo "FAIL [alerts-schedule] alerts_dbt 모양이 기대와 다르다"
+    rc=1
+fi
+
+# Cosmos 그룹은 tag:alerts 3모델만 — 상류 silver(nvd_cve_latest 등)가 끌려오면 두 DAG가 같은 모델을 빌드한다
+if echo "${result}" | jq -e '.dags.alerts_dbt.tasks | keys
+        | map(select(startswith("dbt."))) as $k
+        | (["nvd_kev_entries", "nvd__cve_digest", "geeknews__cve_links"]
+           | all(. as $m | $k | any(startswith("dbt." + $m + "."))))
+        and ($k | all(test("^dbt\\.(nvd_kev_entries|nvd__cve_digest|geeknews__cve_links)\\.")))' >/dev/null; then
+    echo "PASS [alerts-models] Cosmos 그룹 = nvd_kev_entries·nvd__cve_digest·geeknews__cve_links"
+else
+    echo "FAIL [alerts-models] Cosmos 그룹의 모델 집합이 기대와 다르다"
+    rc=1
+fi
+
+if echo "${result}" | jq -e '.dags.alerts_dbt as $d
+        | ($d.indirect | to_entries | map(select(.key | endswith(".test"))) | length > 0 and all(.value == "cautious"))
+        and ($d.install_deps | to_entries | map(select(.key | startswith("dbt."))) | length > 0 and all(.value == false))' >/dev/null; then
+    echo "PASS [alerts-cosmos] alerts_dbt 테스트 cautious·dbt deps 미수행"
+else
+    echo "FAIL [alerts-cosmos] alerts_dbt Cosmos 설정이 기대와 다르다"
+    rc=1
+fi
+
+if echo "${result}" | jq -e '.dags.alerts_dbt.outlets.record_alerts_gold == ["iceberg://geeknews/geeknews__cve_links"]
+        and .dags.alerts_dbt.downstream["dbt.geeknews__cve_links.test"] == ["record_alerts_gold"]' >/dev/null; then
+    echo "PASS [alerts-outlet] record_alerts_gold → iceberg://geeknews/geeknews__cve_links (gold 빌드 뒤)"
+else
+    echo "FAIL [alerts-outlet] record_alerts_gold 의 Asset outlet 또는 위치가 기대와 다르다"
+    rc=1
+fi
+
+# --- alerts_digest·alerts_kev (Discord 발신 — docs/risk.md §4 예외 ②) ------------------------
+# 🔴 외부 발신 DAG. 기본 일시정지(켜는 것은 사람)·catchup 끔(백필 발신 없음)·run 1·발신 태스크는 Pool
+#    discord_webhook(slots 1 — 두 DAG의 기록 조회→발신→기록이 겹치면 상한·중복 판정이 서로를 못 본다)
+if echo "${result}" | jq -e '.dags.alerts_digest | .tasks == {"send_alerts_digest": null}
+        and .cron == "30 8 * * *" and .cron_tz == "Asia/Seoul" and .timetable == "CronTriggerTimetable"
+        and .paused == true and .catchup == false and .max_active_runs == 1
+        and .pools.send_alerts_digest == "discord_webhook"
+        and .outlets.send_alerts_digest == []' >/dev/null; then
+    echo "PASS [alerts-digest-dag] alerts_digest: 30 8 * * * KST·트리거 timetable·일시정지·catchup 끔·run 1·pool discord_webhook"
+else
+    echo "FAIL [alerts-digest-dag] alerts_digest 모양이 기대와 다르다"
+    rc=1
+fi
+
+# gold Asset 단일 스케줄(alerts_dbt 의 outlet) — 단일 Asset 리스트라 조건 타입은 AssetAll(gn-dbt-schedule 과 같다)
+if echo "${result}" | jq -e '.dags.alerts_kev | .tasks == {"send_alerts_kev": null}
+        and .asset_cond == "AssetAll"
+        and .asset_uris == ["iceberg://geeknews/geeknews__cve_links"]
+        and .paused == true and .catchup == false and .max_active_runs == 1
+        and .pools.send_alerts_kev == "discord_webhook"
+        and .outlets.send_alerts_kev == []' >/dev/null; then
+    echo "PASS [alerts-kev-dag] alerts_kev: gold Asset 스케줄·일시정지·catchup 끔·run 1·pool discord_webhook"
+else
+    echo "FAIL [alerts-kev-dag] alerts_kev 모양이 기대와 다르다"
+    rc=1
+fi
+
 # --- 이미지 내용(원화 종가 이관 — pyiceberg·cosmos·dbt venv·dbt 프로젝트) -------------
 # 🔴 lint CI 초록은 빌드 보증이 아니다 — 이미지 안에서 실제로 import·실행해 본다.
 #    defusedxml 은 Dagster 쪽 uv.lock 에 없고 이미지 requirements 에만 있다 — 해석 충돌이 여기서 드러난다.
-if "${CLI}" run --rm "${IMAGE}" python -c "import pyiceberg, cosmos, trino, holidays, defusedxml, lakehouse.iceberg, lakehouse.geeknews" >/dev/null 2>&1; then
-    echo "PASS [img-imports] pyiceberg·cosmos·trino·holidays·defusedxml·lakehouse import"
+# yaml(PyYAML)은 requirements 에 없고 Airflow 가 동반 설치한다 — 관심목록(lakehouse.alerts)이 기댄다
+if "${CLI}" run --rm "${IMAGE}" python -c "import pyiceberg, cosmos, trino, holidays, defusedxml, yaml, lakehouse.iceberg, lakehouse.geeknews, lakehouse.alerts, lakehouse.trino" >/dev/null 2>&1; then
+    echo "PASS [img-imports] pyiceberg·cosmos·trino·holidays·defusedxml·yaml·lakehouse import"
 else
     echo "FAIL [img-imports] 이미지 안 import 실패"
     rc=1

@@ -47,8 +47,14 @@
    E를 맡길 때는 `Agent` 호출의 `model`에 상위 모델을 지정한다(평시 A~D는 프론트매터의 sonnet).
 3. 사용자가 승인한다. 해당 명령에 `permissions.ask` 규칙이 있으면 실행 때 프롬프트가 한 번 더 뜬다.
 
+이 순서의 예외는 [`risk.md`](../risk.md) §4의 2건(GHCR 이미지 발행 · 본인 Discord 웹훅 스케줄 발신)뿐이다.
+두 예외는 게이트를 **PR 머지(와 사람의 unpause)로 옮길** 뿐이고, 워커가 발행·발신을 실행해도 된다는
+뜻이 아니다. 🔴 **어느 워커도 실웹훅을 호출하거나 발신 DAG를 트리거·unpause하지 않는다.**
+멈춘 발신을 여는 `close_pending`·`alerts.discord_sends` 수동 쓰기도 같은 이유로 사람 전담이다.
+
 통제 배선은 `CLAUDE.md`·`AGENTS.md`·`.claude/settings.json`·`.claude/agents/**`·`.codex/**`·
-`scripts/*_guard.py`·`skills-lock.json`·`compose.yml`을 말한다.
+`scripts/*_guard.py`·`skills-lock.json`·`compose.yml`·`images/airflow/dags/lakehouse/alerts.py`·
+`images/airflow/tests/lib/test_alerts.py`를 말한다(뒤의 둘은 발신 예외의 화이트리스트·상한을 정의하고 받친다).
 이 파일들을 바꾸는 PR은 머지 전에 `reviewer` 1회를 거친다.
 
 ## 미션 규칙

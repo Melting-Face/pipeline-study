@@ -33,6 +33,9 @@ DBT_EXECUTABLE = "/opt/dbt-venv/bin/dbt"
 # 🔴 Cosmos `fqn:`은 완전 일치만 해 디렉터리를 못 고른다 — `path:`를 쓴다
 #    (us_equity_krw_dbt.py).
 DBT_SELECT = ["path:models/nvd"]
+# 🔴 `tag:alerts` 모델(nvd_kev_entries·nvd__cve_digest)은 alerts_dbt가 소유한다 —
+#    여기서 빼야 같은 모델을 두 DAG가 빌드하지 않는다(alerts_dbt.py 독스트링).
+DBT_EXCLUDE = ["tag:alerts"]
 PROFILE = ProfileConfig(
     profile_name="dbt_pipelines",
     target_name="dev",
@@ -77,7 +80,9 @@ def nvd_dbt() -> None:
             test_indirect_selection=TestIndirectSelection.CAUTIOUS,
         ),
         render_config=RenderConfig(
-            load_method=LoadMode.DBT_MANIFEST, select=DBT_SELECT
+            load_method=LoadMode.DBT_MANIFEST,
+            select=DBT_SELECT,
+            exclude=DBT_EXCLUDE,
         ),
     )
 

@@ -97,6 +97,7 @@ comm -23 <(grep -oE '^[A-Z0-9_]+=' .env.example | sort -u) \
 | `PHYSIONET_*` | MIMIC-IV·eICU 다운로드 계정(§6-1) |
 | `POLYGON_API_KEY` · `FRED_API_KEY` | 시장 데이터 API 키(§6-2) |
 | `NVD_API_KEY` | NVD CVE API 키(§6-3). 소비자는 `scripts/k8s-secrets.sh`(→ Connection `nvd_api`). **비워도 된다**(공개 한도) |
+| `DISCORD_WEBHOOK_URL` · `ALERTS_WATCHLIST_FILE` | 보안 알림 발신 웹훅 URL·관심목록 파일 경로(§6-4). 소비자는 `scripts/k8s-secrets.sh` |
 
 §3이 수렴한 뒤 클러스터 Secret에서 비밀값을 꺼내 채운다.
 
@@ -364,6 +365,38 @@ uv run scripts/nvd_access_probe.py --source all
   차트 잔여물(Pool·Secret·완료된 Job)은 무해하다.
 - **키를 바꾸면** Secret이 이미 있어 `k8s-secrets.sh`가 불일치로 멈춘다 — Secret `airflow-conn-nvd`를 지우고
   스크립트를 다시 돌린 뒤 Airflow 워크로드를 재기동한다(Connection이 env 주입이라 기동 때만 읽힌다).
+
+## 6-4. 보안 알림 발신 (Discord)
+
+GeekNews × NVD/KEV 연결 결과를 **본인 Discord 웹훅 하나**로 보낸다(`alerts_digest`·`alerts_kev`).
+외부 발신이라 경계의 정본은 [`risk.md`](risk.md) §4 예외 ②다 — 이 절은 그 배선만 다룬다.
+
+| `.env` 키 | 형식 | 가는 곳 |
+| --- | --- | --- |
+| `DISCORD_WEBHOOK_URL` | `https://discord.com/api/webhooks/<id>/<token>` | Secret `airflow-conn-discord` → Connection `discord_webhook`(password = URL 전체) |
+| `ALERTS_WATCHLIST_FILE` | **저장소 밖** 파일 경로 | Secret `airflow-alerts-watchlist`(키 `watchlist.yaml`) → Celery worker 파드의 읽기 전용 파일 |
+
+- 웹훅은 **본인만 구성원인 비공개 서버·채널**의 것이어야 한다. 토큰이 URL 경로에 있어 URL 전체가 비밀이다 —
+  화면·로그·커밋에 두지 않는다. `k8s-secrets.sh`는 값을 출력하지 않고 같음/다름만 판정한다.
+- 관심목록은 [`scripts/watchlist.example.yaml`](../scripts/watchlist.example.yaml)을 **저장소 밖으로 복사**해 고친다.
+  저장소 안 경로를 주면 스크립트가 멈춘다. 파일은 **Celery worker 파드의 전 컨테이너**(worker·log-groomer
+  사이드카·마이그레이션 대기 init)에 읽기 전용으로 마운트된다 — 차트가 마운트를 파드 단위로 붙이기 때문이다.
+  경로 env `ALERTS_WATCHLIST_PATH`는 worker 컨테이너에만 있다.
+- **웹훅 Connection은 Celery worker 컨테이너에만 env로 들어간다**(`workers.celery.env`의 `secretKeyRef`).
+  다른 Connection처럼 전역 `secret:`에 두면 scheduler·api-server·dag-processor·K8s 태스크 파드에도 URL이 실린다.
+  발신 태스크는 Celery에서 돌아야 한다 — K8s 태스크 파드에는 이 Connection이 없어 fail-closed로 실패한다.
+- **둘 다 비어도 Secret은 만들어진다.** Secret이 아예 없으면 **worker 파드만** `CreateContainerConfigError`로
+  못 뜬다(다른 파드는 뜨지만 worker가 없으니 Celery 태스크 전부가 멈춘다). `optional`은 일부러 쓰지 않는다 —
+  Secret이 빠졌는데 조용히 뜨는 것보다 실패가 낫다. 값이 비면 발신 DAG는 fail-closed로 실패하고 아무것도 보내지 않는다.
+- **Pool `discord_webhook`(slots 1)** 은 두 발신 DAG가 한 웹훅의 레이트 리밋을 공유하도록 직렬화한다.
+  차트 PostSync Job이 만든다(§6-3 Pool과 같은 방식 — upsert만 한다).
+- **순서**: `./scripts/k8s-secrets.sh`를 **머지 전에** 돌린다 → `kubectl -n airflow get secret airflow-conn-discord
+  airflow-alerts-watchlist`로 두 Secret의 존재만 확인한다(값을 꺼내 보지 않는다) → 머지(ArgoCD sync).
+  DAG는 기본 일시정지이고 **unpause·수동 trigger는 사람만 한다**(예외 ②의 사람 게이트).
+- **웹훅 URL을 바꾸는 것은 수신자 교체**다(예외 ② 재검토 조건). 스크립트는 불일치로 멈춘다 — 확인 후 Secret
+  `airflow-conn-discord`를 지우고 다시 돌린 뒤 worker를 재기동한다(Connection은 env 주입이라 기동 때만 읽힌다).
+- **관심목록을 바꾸면** Secret `airflow-alerts-watchlist`를 지우고 다시 돌린다. 디렉터리 마운트라 재기동 없이
+  kubelet 동기화 뒤 반영된다(`미측정` — 급하면 worker를 재기동한다).
 
 ## 7. 노트북 (옵션)
 

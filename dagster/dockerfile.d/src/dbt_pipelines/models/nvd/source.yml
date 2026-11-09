@@ -26,5 +26,6 @@ sources:
       # 적재 소유자: Airflow DAG nvd_kev (images/airflow/dags/).
       - name: nvd_kev
         description: >-
-          CISA KEV 카탈로그 최신 스냅샷(테이블 전체 교체). 스칼라가 이미 타입이 맞아
-          silver 모델을 두지 않고 gold가 이 source를 직접 읽는다.
+          CISA KEV 카탈로그 최신 스냅샷(테이블 전체 교체). silver nvd_kev_entries가
+          raw_json의 vendorProject·product·vulnerabilityName을 붙이고, gold는 그 silver를 읽는다
+          (source에서 gold를 바로 만들지 않는다 — analysis.md §2).

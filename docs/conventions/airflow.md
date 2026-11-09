@@ -47,7 +47,24 @@ Dagster 정의를 Airflow DAG로 옮길 때 따르는 규칙이다. 첫 사례�
 - **dbt는 별도 venv**(`/opt/dbt-venv`)이고 manifest는 이미지 빌드 때 굽는다. dbt 프로젝트는 이름 붙은 빌드
   컨텍스트 `dbt`로 넘긴다(컨텍스트를 저장소 루트로 넓히지 않는다).
 - 🔴 **Cosmos `fqn:`은 완전 일치**다(dbt는 접두 일치). 디렉터리 단위 선택은 `path:models/<dataset>`를 쓴다.
+- **데이터셋을 가로지르는 모델은 tag로 묶어 DAG 하나가 소유**하고, 그 모델이 사는 디렉터리의 dbt DAG는
+  같은 tag를 `RenderConfig(exclude=[...])`로 뺀다 — 같은 모델을 두 DAG가 빌드하지 않게 한다. 사례 `tag:alerts`
+  (`alerts_dbt` 소유, `nvd_dbt`·`geeknews_dbt` exclude). Cosmos manifest 로드도 `tag:`를 노드 tags로 거른다.
 - **원천 값을 로그·XCom·Asset event에 남기지 않는다** — 날짜·행 수·불리언만(재배포 제한 데이터셋).
+- **외부 발신 DAG는 `alerts_digest`·`alerts_kev` 둘뿐**이다([`../risk.md`](../risk.md) §4 예외 ②).
+  로직은 `lakehouse/alerts.py`(통제 배선 파일)에 있다. 기록 스키마는 [`../dataset_schema/alerts.md`](../dataset_schema/alerts.md)다.
+  - **처음 켤 때는 보내지 않는다** — 그 종류의 시드 표지가 기록에 없으면 후보를 `baseline`으로 시드만 한다
+    (kev는 관심목록이 바뀌어도 다시 시드한다).
+  - 메시지마다 **pending 기록 → 발신 → 확정(sent·400이면 rejected)** 순서다. 짝 없는 pending이 남으면 그 종류는
+    보내지 않고 실패해 사람에게 넘긴다 — 중복 발신과 상한 초과를 모두 막는 대가로 그 종류가 멈춘다.
+  - 일일 상한 `DAILY_SEND_LIMIT`과 필드 `ALLOWED_FIELDS`는 **코드 리터럴**이다. env·Variable·Param으로 덮지 않는다.
+    두 이름은 `lakehouse/alerts.py` 밖에 나오지 않고, 안에서도 재대입하지 않는다(`test_alerts.py`가 AST로 센다).
+  - 발신 태스크는 Pool `discord_webhook`(slots 1)에 넣는다. 재시도는 0이다(429·5xx는 `post_json`이 안에서 다룬다).
+  - Connection `discord_webhook`을 다른 DAG·실패 콜백에서 쓰지 않는다. `test_alerts.py`가 `dags/` 아래 `.py` 전체
+    (하위 디렉터리 포함)에서 `discord_webhook`·`AIRFLOW_CONN_DISCORD`·`webhook`·`post_json`·`run_send` 문자열을
+    따옴표·API와 무관하게 찾고, 허용 4파일(두 DAG·`lakehouse/alerts.py`·`lakehouse/http.py`) 밖에서 나오면 실패한다.
+    허용 4파일에 `callback` 문자열이 나와도 실패한다.
+    **보지 못하는 것**: `dags/` 밖(차트 values 등)과, 이 문자열들을 남기지 않는 런타임 조립(인코딩·외부 입력).
 - 🔴 **dbt DAG는 `max_active_tasks=1`**. Celery 워커(1Gi)에서 Cosmos 태스크가 겹치면 OOMKilled된다 —
   태스크마다 Airflow·Cosmos 프로세스가 떠 dbt 자체보다 크고, 같은 워커의 **다른 DAG 태스크까지 함께 죽는다**.
 - **dbt 테스트가 읽는 모델은 같은 DAG가 소유**한다. 테스트 선택은 **cautious**
@@ -126,7 +143,8 @@ nvd_kev는 판정 전에 raw 전체를 받아 무결성 대조(`read_latest_kev`
 
 **세 번째 변형을 만들지 않는다.** 새 매시 수집 DAG는 정본을 따른다. 인접 구현을 베낄 때 `nvd_kev`를 본보기로
 삼지 않는다. raw 2태스크 구성이면 load가 최신 회차 사이드카 값과 테이블 속성을 대조한다.
-미션 ③에서 추가될 발신 DAG는 스킵 의미론에 기대지 않고 **발신 기록 테이블**로 멱등하게 만든다.
+발신 DAG(`alerts_digest`·`alerts_kev`)는 스킵 의미론에 기대지 않고 **발신 기록 테이블**
+(`alerts.discord_sends`)로 멱등하게 만든다.
 
 ### Skip → Asset event (M4 수동 관측)
 

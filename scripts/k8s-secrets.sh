@@ -6,6 +6,8 @@
 #   physionet-creds  : 원천 다운로드 계정(값이 있을 때만)
 #   airflow 네임스페이스 Secret 7종 + default/airflow-pg-app : Airflow 메타 DB·브로커·웹 서버 비밀(랜덤 생성)
 #   airflow-conn-nvd : Airflow Connection `nvd_api`(NVD 키는 password 필드). 값은 `.env`의 NVD_API_KEY — 빈 키여도 만든다
+#   airflow-conn-discord     : Connection `discord_webhook`(웹훅 전체 URL 은 password). `.env`의 DISCORD_WEBHOOK_URL — 빈 값이어도 만든다
+#   airflow-alerts-watchlist : 관심목록 파일(키 watchlist.yaml). `.env`의 ALERTS_WATCHLIST_FILE(저장소 밖 경로) — 없으면 빈 키로 만든다
 # 카탈로그 Cluster CR 자체는 ArgoCD 앱 gitops/charts/catalog-postgres 가 만든다. Secret이 늦으면 CNPG가 기다린다.
 set -euo pipefail
 
@@ -280,5 +282,70 @@ else
     unset CONN_JSON
 fi
 unset NVD_KEY
+
+# 5) Discord 발신 DAG(alerts_digest·alerts_kev) — docs/risk.md §4 예외 ②. 단일 출처는 .env 의 DISCORD_WEBHOOK_URL.
+#    🔴 토큰이 URL **경로**에 있다 — URL 전체가 비밀이다. 값·경로를 출력하지 않는다(같음/다름·비었음만 판정한다).
+#    🔴 이 Connection 의 사용처는 두 발신 DAG 뿐이다. 실패 콜백 알림 등 다른 용도로 배선하지 않는다.
+#    빈 값이어도 Secret 은 항상 만든다 — values.yaml 이 worker 컨테이너에만 secretKeyRef 로 넣어(optional 아님)
+#    Secret 이 없으면 **worker 파드**가 못 뜬다(다른 파드는 뜨지만 Celery 태스크 전부가 멈춘다).
+#    그 경우 발신 DAG 는 빈 password 로 fail-closed 실패한다(발신하지 않는다).
+#    URL 을 바꾸는 것은 「수신자 교체」라 예외 ②의 재검토 조건이다 — Secret 을 지우고 다시 돌린 뒤 worker 를 재기동한다.
+DISCORD_URL="$(env_value DISCORD_WEBHOOK_URL)"
+# 형식 가드 — 엉뚱한 호스트로 발신 대상이 바뀌는 것을 적용 전에 막는다(값은 출력하지 않는다)
+if [ -n "${DISCORD_URL}" ] && [[ "${DISCORD_URL}" != https://discord.com/api/webhooks/* ]]; then
+    printf 'DISCORD_WEBHOOK_URL 형식이 아니다 — https://discord.com/api/webhooks/<id>/<token> 이어야 한다(값은 출력하지 않는다)\n' >&2
+    exit 1
+fi
+if kubectl -n airflow get secret airflow-conn-discord >/dev/null 2>&1; then
+    if [ "$(secret_field airflow airflow-conn-discord connection | jq -r .password)" != "${DISCORD_URL}" ]; then
+        printf '웹훅 사본 불일치: airflow/airflow-conn-discord 가 .env 의 DISCORD_WEBHOOK_URL 과 다르다\n' >&2
+        printf '수신자 교체다(docs/risk.md §4 예외 ② 재검토 조건) — 확인 후 Secret 을 지우고 다시 실행한 뒤 worker 를 재기동한다\n' >&2
+        exit 1
+    fi
+    log "Secret 있음(건드리지 않음, 웹훅 일치): airflow/airflow-conn-discord"
+else
+    [ -n "${DISCORD_URL}" ] || log "경고: DISCORD_WEBHOOK_URL 이 비었다 — 빈 Connection 으로 만든다(발신 DAG 는 fail-closed 로 실패한다)"
+    CONN_JSON="$(jq -cn --arg u "${DISCORD_URL}" '{conn_type: "http", password: $u}')"
+    nonempty airflow-conn-discord "${CONN_JSON}"
+    ensure_secret airflow airflow-conn-discord --from-literal=connection="${CONN_JSON}"
+    unset CONN_JSON
+fi
+unset DISCORD_URL
+
+# 6) 관심목록(watchlist) — 발신층이 거는 비공개 입력이라 Git·이미지에 두지 않는다(docs/dataset_schema/nvd.md).
+#    .env 의 ALERTS_WATCHLIST_FILE 이 가리키는 **저장소 밖** 파일을 Secret 키 watchlist.yaml 로 싣는다.
+#    예제 형식은 scripts/watchlist.example.yaml 이다 — 저장소 밖으로 복사해 고친 뒤 그 경로를 적는다.
+#    values.yaml 이 Celery worker 파드(전 컨테이너)에 읽기 전용으로 마운트하고, 경로 env ALERTS_WATCHLIST_PATH 는
+#    worker 컨테이너에만 넣는다.
+#    파일이 없으면 빈 키로 만든다(Secret 볼륨이 없으면 worker 가 못 뜬다) — 발신 DAG 는 fail-closed 로 실패한다.
+#    내용을 바꾸면 Secret 을 지우고 다시 돌린다(디렉터리 마운트라 재기동 없이 kubelet 동기화 주기 뒤 반영 — 미측정).
+WATCHLIST_FILE="$(env_value ALERTS_WATCHLIST_FILE)"
+WATCHLIST_FILE="${WATCHLIST_FILE/#\~/${HOME}}"
+if [ -n "${WATCHLIST_FILE}" ] && [ -f "${WATCHLIST_FILE}" ]; then
+    # 저장소 안 파일은 거부한다 — 실수로 커밋되거나 예제 파일이 그대로 실릴 수 있다
+    WATCHLIST_ABS="$(cd "$(dirname "${WATCHLIST_FILE}")" && pwd)/$(basename "${WATCHLIST_FILE}")"
+    case "${WATCHLIST_ABS}" in
+        "${REPO_ROOT}"/*)
+            printf 'ALERTS_WATCHLIST_FILE 이 저장소 안을 가리킨다 — 저장소 밖으로 옮긴 뒤 다시 실행한다\n' >&2
+            exit 1
+            ;;
+    esac
+    unset WATCHLIST_ABS
+else
+    log "경고: ALERTS_WATCHLIST_FILE 이 비었거나 파일이 없다 — 빈 키로 다룬다(발신 DAG 는 fail-closed 로 실패한다)"
+    WATCHLIST_FILE=/dev/null
+fi
+if kubectl -n airflow get secret airflow-alerts-watchlist >/dev/null 2>&1; then
+    # 바이트 단위로 비교한다(명령 치환은 끝 개행을 지워 차이를 숨긴다). 내용은 출력하지 않는다
+    if ! secret_field airflow airflow-alerts-watchlist 'watchlist\.yaml' | cmp -s - "${WATCHLIST_FILE}"; then
+        printf '관심목록 사본 불일치: airflow/airflow-alerts-watchlist 가 ALERTS_WATCHLIST_FILE 과 다르다\n' >&2
+        printf 'Secret 을 지우고 다시 실행한다(worker 재기동은 불요 — 디렉터리 마운트)\n' >&2
+        exit 1
+    fi
+    log "Secret 있음(건드리지 않음, 내용 일치): airflow/airflow-alerts-watchlist"
+else
+    ensure_secret airflow airflow-alerts-watchlist --from-file=watchlist.yaml="${WATCHLIST_FILE}"
+fi
+unset WATCHLIST_FILE
 
 log "완료. 카탈로그 Cluster는 ArgoCD(catalog-postgres)가, S3는 클러스터 밖 스택 A(terraform/cluster/kind)가 맡는다"
