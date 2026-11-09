@@ -50,6 +50,7 @@
 이 순서의 예외는 [`risk.md`](../risk.md) §4의 2건(GHCR 이미지 발행 · 본인 Discord 웹훅 스케줄 발신)뿐이다.
 두 예외는 게이트를 **PR 머지(와 사람의 unpause)로 옮길** 뿐이고, 워커가 발행·발신을 실행해도 된다는
 뜻이 아니다. 🔴 **어느 워커도 실웹훅을 호출하거나 발신 DAG를 트리거·unpause하지 않는다.**
+멈춘 발신을 여는 `close_pending`·`alerts.discord_sends` 수동 쓰기도 같은 이유로 사람 전담이다.
 
 통제 배선은 `CLAUDE.md`·`AGENTS.md`·`.claude/settings.json`·`.claude/agents/**`·`.codex/**`·
 `scripts/*_guard.py`·`skills-lock.json`·`compose.yml`·`images/airflow/dags/lakehouse/alerts.py`·
