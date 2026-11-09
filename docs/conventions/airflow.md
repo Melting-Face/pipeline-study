@@ -60,6 +60,10 @@ Dagster 정의를 Airflow DAG로 옮길 때 따르는 규칙이다. 첫 사례�
 - **Pool은 Git으로 선언한다** — umbrella `gitops/charts/airflow/values.yaml`의 `pools:` 목록을 PostSync Job이
   `airflow pools set`(**upsert**)으로 반영한다(공식 차트에 pool 키가 없다). 단 values에서 지워도 클러스터의 Pool은
   **삭제되지 않는다** — 수동 `airflow pools delete`가 필요하다.
+- **Pool 점유는 기록이 아니라 계산이다** — 매번 TaskInstance 상태(`queued`·`running`, `include_deferred`면
+  `deferred`)로 센다(`Pool.slots_stats`). 실패한 태스크는 즉시 빠지므로 Dagster pool처럼 slot이 새지 않는다
+  ([architectures/dagster.md](../architectures/dagster.md) §run 고아). ⚠️ 대신 **`running`에 멈춘 좀비 태스크**는
+  스케줄러가 정리할 때까지 slot을 쥔다 — Pool이 막혀 있으면 slot 수가 아니라 점유 태스크의 상태를 먼저 본다.
 - **raw 스냅샷 데이터셋은 「raw 착지 → bronze 적재」 2태스크**로 나누고 Pool은 **API 호출 태스크에만** 건다.
   다시 물으면 답이 바뀌는 원천이라 raw를 보존하고, 파서를 고친 뒤 bronze만 API 없이 재실행하기 위해서다.
 - **백필은 수동 CLI**다(`catchup=False`): `airflow backfill create --dag-id <id> --from-date <D> --to-date <D>`

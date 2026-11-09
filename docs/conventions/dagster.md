@@ -367,8 +367,10 @@ Dagster는 **kind 클러스터 안**에서 돌았다(구 "호스트 유지" 규�
   compose(별개 컨테이너)에도 있던 결함이라 in-cluster의 신규 회귀는 아니다.
 - 둘 다 `strategy: Recreate`다. 🔴 **daemon이 2개 겹치면 하트비트 중복·스케줄 이중 발화**가 나므로
   RollingUpdate의 교체 창을 허용하지 않는다.
-- `run_monitoring`은 켜지 않는다 — `DefaultRunLauncher`가 `supports_check_run_worker_health`를
-  지원하지 않는다. **부재가 결정이고**, 그 대가로 daemon 재시작 시 진행 중 run이 고아가 된다.
+- `run_monitoring`은 **켤 수 있지만 지금은 켜지 않는다** — `DefaultRunLauncher`는 health check만 지원하지 않고
+  (그 단계만 건너뛴다) 타임아웃·pool slot 회수는 돈다. 어느 쪽이든 daemon 재시작 시 진행 중 run은 고아가 된다.
+  🔴 **자산이 `pool=`을 쓰면 켠다** — 안 켜면 실패한 run의 slot이 영영 반환되지 않는다.
+  설정·즉시 회수 절차는 [`architectures/dagster.md`](../architectures/dagster.md) §run 고아.
 
 ### env 매핑 — `POSTGRES_*`와 `ICEBERG_CATALOG_*`는 다른 DB다
 
