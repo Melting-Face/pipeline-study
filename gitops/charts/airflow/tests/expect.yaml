@@ -28,11 +28,24 @@ fields:
     - {ref: Job/airflow-pools, path: [metadata, annotations, argocd.argoproj.io/hook], value: PostSync}
     - ref: Job/airflow-pools
       path: [spec, template, spec, containers, 0, args, 2]
-      value: "set -e\nairflow pools set 'nvd_api' 1 'NVD API(CVE·History) 직렬화 — 키 하나의 한도를 DAG 간 공유'"
+      value: "set -e\nairflow pools set 'nvd_api' 1 'NVD API(CVE·History) 직렬화 — 키 하나의 한도를 DAG 간 공유'\n\
+        airflow pools set 'discord_webhook' 1 'Discord 웹훅 발신 직렬화 — 두 발신 DAG 가 한 웹훅의 레이트 리밋을 공유'"
     - {ref: StatefulSet/airflow-worker, path: [spec, replicas], value: 1}
     - ref: StatefulSet/airflow-worker
       path: [spec, volumeClaimTemplates, 0, spec, resources, requests, storage]
       value: 5Gi
+    # Discord 웹훅 Connection 은 worker 컨테이너에만 secretKeyRef 로 들어간다(docs/risk.md §4 예외 ② 조건 1·k8s.md §4).
+    # 원소 전체(name·valueFrom)를 비교해 Secret 이름·키·optional 추가를 모두 잡는다. 인덱스 15 는 차트 기본 env 뒤
+    # workers.celery.env 첫 원소 자리다 — 차트 버전·전역 env 를 바꿔 자리가 밀리면 이 단언이 FAIL 로 알린다.
+    # 전역 secret: 으로 되돌리면 이 항목이 차트 기본 env 앞쪽(인덱스 9)으로 옮겨 이 단언이 FAIL 한다(오버라이드 렌더로
+    # 확인). 단 그것은 자리 이동의 부수 효과이지 「다른 파드에 없다」의 검사가 아니다.
+    # ⚠️ 선언된 공백: 「scheduler·api-server·dag-processor·pod_template 에는 없다」는 표현할 키가 없다(fields 는
+    #    지정한 경로 하나만 보고, absent 는 리소스 단위다). scheduler.env 같은 컴포넌트별 env 로 다른 파드에 더해져도 이 단언은 못 잡는다
+    - ref: StatefulSet/airflow-worker
+      path: [spec, template, spec, containers, 0, env, 15]
+      value:
+          name: AIRFLOW_CONN_DISCORD_WEBHOOK
+          valueFrom: {secretKeyRef: {name: airflow-conn-discord, key: connection}}
     # admin 비밀번호가 Secret 참조로 치환되는지 — values 의 args 가 차트 기본을 통째로 덮으므로 위치(14·15)를 함께 잡는다
     - {ref: Job/airflow-create-user, path: [spec, template, spec, containers, 0, args, 14], value: "-p"}
     - ref: Job/airflow-create-user

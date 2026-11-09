@@ -489,11 +489,39 @@ else
     rc=1
 fi
 
+# --- alerts_digest·alerts_kev (Discord 발신 — docs/risk.md §4 예외 ②) ------------------------
+# 🔴 외부 발신 DAG. 기본 일시정지(켜는 것은 사람)·catchup 끔(백필 발신 없음)·run 1·발신 태스크는 Pool
+#    discord_webhook(slots 1 — 두 DAG의 기록 조회→발신→기록이 겹치면 상한·중복 판정이 서로를 못 본다)
+if echo "${result}" | jq -e '.dags.alerts_digest | .tasks == {"send_alerts_digest": null}
+        and .cron == "30 8 * * *" and .cron_tz == "Asia/Seoul" and .timetable == "CronTriggerTimetable"
+        and .paused == true and .catchup == false and .max_active_runs == 1
+        and .pools.send_alerts_digest == "discord_webhook"
+        and .outlets.send_alerts_digest == []' >/dev/null; then
+    echo "PASS [alerts-digest-dag] alerts_digest: 30 8 * * * KST·트리거 timetable·일시정지·catchup 끔·run 1·pool discord_webhook"
+else
+    echo "FAIL [alerts-digest-dag] alerts_digest 모양이 기대와 다르다"
+    rc=1
+fi
+
+# gold Asset 단일 스케줄(alerts_dbt 의 outlet) — 단일 Asset 리스트라 조건 타입은 AssetAll(gn-dbt-schedule 과 같다)
+if echo "${result}" | jq -e '.dags.alerts_kev | .tasks == {"send_alerts_kev": null}
+        and .asset_cond == "AssetAll"
+        and .asset_uris == ["iceberg://geeknews/geeknews__cve_links"]
+        and .paused == true and .catchup == false and .max_active_runs == 1
+        and .pools.send_alerts_kev == "discord_webhook"
+        and .outlets.send_alerts_kev == []' >/dev/null; then
+    echo "PASS [alerts-kev-dag] alerts_kev: gold Asset 스케줄·일시정지·catchup 끔·run 1·pool discord_webhook"
+else
+    echo "FAIL [alerts-kev-dag] alerts_kev 모양이 기대와 다르다"
+    rc=1
+fi
+
 # --- 이미지 내용(원화 종가 이관 — pyiceberg·cosmos·dbt venv·dbt 프로젝트) -------------
 # 🔴 lint CI 초록은 빌드 보증이 아니다 — 이미지 안에서 실제로 import·실행해 본다.
 #    defusedxml 은 Dagster 쪽 uv.lock 에 없고 이미지 requirements 에만 있다 — 해석 충돌이 여기서 드러난다.
-if "${CLI}" run --rm "${IMAGE}" python -c "import pyiceberg, cosmos, trino, holidays, defusedxml, lakehouse.iceberg, lakehouse.geeknews" >/dev/null 2>&1; then
-    echo "PASS [img-imports] pyiceberg·cosmos·trino·holidays·defusedxml·lakehouse import"
+# yaml(PyYAML)은 requirements 에 없고 Airflow 가 동반 설치한다 — 관심목록(lakehouse.alerts)이 기댄다
+if "${CLI}" run --rm "${IMAGE}" python -c "import pyiceberg, cosmos, trino, holidays, defusedxml, yaml, lakehouse.iceberg, lakehouse.geeknews, lakehouse.alerts, lakehouse.trino" >/dev/null 2>&1; then
+    echo "PASS [img-imports] pyiceberg·cosmos·trino·holidays·defusedxml·yaml·lakehouse import"
 else
     echo "FAIL [img-imports] 이미지 안 import 실패"
     rc=1

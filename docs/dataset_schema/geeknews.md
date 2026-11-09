@@ -89,5 +89,5 @@ bronze. 변경이 감지된 회차마다 피드의 모든 entry를 **append**한
 ## 건너뛴 것
 
 - **Dagster 정의와 패리티 테스트가 없다** — 새 데이터셋은 Airflow 전용이다.
-- **Discord 발신 DAG가 없다.** gold(`geeknews__cve_links`)까지만 있고 발신층은 후속 단계다.
+- 발신층은 이 문서 밖이다 — `alerts_digest`·`alerts_kev`가 gold를 읽어 보낸다([alerts.md](alerts.md)).
 - 수집물은 **모델 학습에 쓰지 않는다**(robots `Content-Signal: ai-train=no`).

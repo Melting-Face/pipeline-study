@@ -20,6 +20,6 @@ GEEKNEWS_ITEMS_URI = "iceberg://geeknews/geeknews_items"
 # 생산자 geeknews_dbt, 소비자 alerts_dbt.
 GEEKNEWS_SILVER_URI = "iceberg://geeknews/geeknews_items_latest"
 # 생산자 alerts_dbt(gold 두 모델 빌드 뒤 1회). 소비자는 Discord 발신 DAG
-# (미션 ③ 다음 단계 — 아직 없다). 대표 URI는 발신이 직접 읽는
-# geeknews__cve_links다(digest는 그 상류).
+# alerts_kev(alerts_digest는 시각 스케줄이라 소비하지 않는다). 대표 URI는
+# 발신이 직접 읽는 geeknews__cve_links다(digest는 그 상류).
 ALERTS_GOLD_URI = "iceberg://geeknews/geeknews__cve_links"

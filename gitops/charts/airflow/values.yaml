@@ -7,13 +7,18 @@ pools:
     - name: nvd_api
       slots: 1
       description: "NVD API(CVE·History) 직렬화 — 키 하나의 한도를 DAG 간 공유"
+    # 두 발신 DAG(alerts_digest·alerts_kev)가 웹훅 하나와 그 레이트 리밋을 공유한다 — 동시 발신으로 429 를 맞지
+    # 않게 직렬화한다. 🔴 다른 DAG 에 쓰지 않는다(docs/risk.md §4 예외 ② 조건 1 — 웹훅 사용처는 두 DAG 뿐)
+    - name: discord_webhook
+      slots: 1
+      description: "Discord 웹훅 발신 직렬화 — 두 발신 DAG 가 한 웹훅의 레이트 리밋을 공유"
 airflow:
     # --- 0. 이미지 ---
     # 태그 한 줄이 배포 상태의 단일 출처다. 🔴 bump 마커 주석은 이 파일에서 아래 tag 줄에만 둔다(정확히 1줄).
     images:
         airflow:
             repository: ghcr.io/melting-face/pipeline-study-airflow
-            tag: "v0.4.8"  # bump-image-tag
+            tag: "v0.4.9"  # bump-image-tag
 
     # --- 1. Executor (A2) ---
     # 순서가 의미다 — 첫 자리(Celery)가 기본, 태스크 단위 `executor="KubernetesExecutor"` 로 라우팅한다.
@@ -40,6 +45,7 @@ airflow:
     # --- 2-1. DAG 가 쓰는 외부 연결 — 모든 Airflow 컨테이너(worker·k8s 태스크 파드 포함) env ---
     # S3(SeaweedFS) Connection `seaweedfs_s3` — 값(키 포함 JSON)은 scripts/k8s-secrets.sh 가 만든다.
     # 🔴 S3 키는 default/lakehouse-creds 와 한 벌이다 — 회전 시 두 Secret 을 함께 갱신한다(교차 ns 참조 불가).
+    # 🔴 Discord 웹훅 Connection 은 이 전역 목록에 두지 않는다 — workers.celery.env 에서 worker 컨테이너에만 주입한다(§6)
     secret:
         - envName: AIRFLOW_CONN_SEAWEEDFS_S3
           secretName: airflow-conn-seaweedfs
@@ -145,6 +151,43 @@ airflow:
                 resources:
                     requests: {cpu: 50m, memory: 64Mi}
                     limits: {cpu: 100m, memory: 128Mi}
+            # 관심목록(비공개 입력) — Secret airflow-alerts-watchlist(키 watchlist.yaml, scripts/k8s-secrets.sh 가 만든다).
+            # 🔴 태스크를 실행하는 Celery worker **파드**에만 읽기 전용으로 둔다(docs/conventions/k8s.md §4 최소 노출) — 전역
+            #    volumes/env 에 두면 scheduler·api-server·dag-processor 에도 실린다.
+            #    ⚠️ 범위는 컨테이너가 아니라 파드다: 차트가 extraVolumeMounts 를 worker 파드의 전 컨테이너
+            #    (worker·worker-log-groomer·init wait-for-airflow-migrations)에 붙인다(렌더 확인, 값 키로 좁힐 수 없다).
+            #    env ALERTS_WATCHLIST_PATH 와 웹훅 env 는 worker 컨테이너에만 있다. 발신 태스크를 KubernetesExecutor 로
+            #    라우팅하지 않는다는 전제다(K8s 태스크 파드에는 이 파일이 없다 → fail-closed).
+            #    subPath 를 쓰지 않는다 — subPath 마운트는 Secret 갱신이 파드에 반영되지 않는다(디렉터리 마운트 + items).
+            #    DAG 는 파일을 태스크 실행 시점에 읽는다(파싱 시점이면 dag-processor 에 파일이 없어 import 가 깨진다)
+            env:
+                # Discord 발신 DAG(alerts_digest·alerts_kev) Connection `discord_webhook` — 웹훅 전체 URL 은 password 필드.
+                # 🔴 docs/risk.md §4 예외 ② 조건 1: 사용처는 두 발신 DAG 뿐이다(실패 콜백 알림에도 쓰지 않는다).
+                # 🔴 worker 컨테이너에만 둔다(k8s.md §4 최소 노출) — 전역 secret: 이면 scheduler·api-server·dag-processor·
+                #    K8s 태스크 파드에도 URL 이 env 로 실린다. 대가: K8s 태스크 파드에서는 이 Connection 이 없다(fail-closed).
+                # 🔴 결합: Secret airflow-conn-discord 가 없으면 **worker 파드만** CreateContainerConfigError 로 못 뜬다
+                #    (다른 파드는 뜬다 — 전역 secret: 의 「전 파드 실패」보다 범위가 좁지만, worker 가 없으면 모든 Celery
+                #    태스크가 멈춘다). `optional` 을 쓰지 않는다 — Secret 이 빠졌는데 조용히 뜨는 것보다 실패가 낫다.
+                #    빈 URL 이어도 Secret 은 scripts/k8s-secrets.sh 가 항상 만든다 — 그때 DAG 가 fail-closed 로 실패한다
+                - name: AIRFLOW_CONN_DISCORD_WEBHOOK
+                  valueFrom:
+                      secretKeyRef:
+                          name: airflow-conn-discord
+                          key: connection
+                - name: ALERTS_WATCHLIST_PATH
+                  value: /opt/airflow/alerts-watchlist/watchlist.yaml
+            extraVolumes:
+                - name: alerts-watchlist
+                  secret:
+                      secretName: airflow-alerts-watchlist
+                      items:
+                          - key: watchlist.yaml
+                            path: watchlist.yaml
+                      defaultMode: 0440
+            extraVolumeMounts:
+                - name: alerts-watchlist
+                  mountPath: /opt/airflow/alerts-watchlist
+                  readOnly: true
         # KubernetesExecutor 태스크 파드(온디맨드, pod_template_file). 렌더 검사 (a)는 ConfigMap 안의 템플릿을
         # 보지 못하지만 "모든 컨테이너에 requests/limits" 규약(docs/conventions/k8s.md)의 대상이라 worker 와 같은 값을 준다.
         # 이미지: pod_template 은 차트 기본 apache/airflow:3.2.2 로 렌더되지만, 실제 태스크 파드 이미지는 airflow.cfg 의
