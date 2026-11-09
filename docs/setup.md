@@ -73,11 +73,23 @@ cp .env.example .env
 
 키와 형식은 [`.env.example`](../.env.example)의 주석을 따른다.
 
+🔴 **`cp`는 1회성이다** — 그 뒤 `.env.example`에 추가된 키는 기존 `.env`에 **생기지 않는다**.
+`git pull` 뒤에는 빠진 키를 센다(키 이름만 찍고 값은 찍지 않는다). **0줄이어야 한다.**
+
+```shell
+comm -23 <(grep -oE '^[A-Z0-9_]+=' .env.example | sort -u) \
+         <(grep -oE '^[A-Z0-9_]+=' .env         | sort -u)
+```
+
+⚠️ 패턴에서 `0-9`를 빼면 `ICEBERG_S3_*`가 **양쪽에서 함께 빠져** 그 키들의 누락이 0줄로 보인다.
+나온 키는 `.env.example`의 해당 줄(기본값 포함)을 `.env`에 옮긴다 — 비밀 키는 빈 값으로 옮긴 뒤 채운다.
+
 | 그룹 | 무엇을 가리키나 |
 | --- | --- |
 | `POSTGRES_*` | Dagster 메타 스토리지 |
 | `DAGSTER_PORT` | webserver UI 포트 |
-| `AWS_*` · `ENDPOINT_URL` | S3(SeaweedFS) 자격증명·엔드포인트 |
+| `DAGSTER_MAX_CONCURRENT_RUNS` · `DAGSTER_COMPUTE_LOG_BUCKET` | run 동시성 · step 로그 버킷. **필수** — [`dagster.yaml`](../dagster/dockerfile.d/src/dagster.yaml)이 `env:`로 참조해 미설정이면 run이 설정 단계에서 실패한다 |
+| `AWS_*` · `ENDPOINT_URL` | S3(SeaweedFS) 자격증명·엔드포인트. `AWS_REGION`은 `dagster.yaml` `compute_logs`가 읽어 **필수**다(`AWS_DEFAULT_REGION`과 별개 키) |
 | `ICEBERG_CATALOG_*` | Iceberg 카탈로그 — pyiceberg(Dagster) 경로 |
 | `ICEBERG_S3_*` · `ICEBERG_WAREHOUSE` | 같은 카탈로그의 웨어하우스·S3. dbt는 읽지 않는다(Trino 서버 측 설정). Flink 세션은 파드 env로 받는다 |
 | `TRINO_HOST` · `TRINO_PORT` | dbt·유지보수 ↔ k8s Trino(미설정 시 `trino.localtest.me`/`8080`) |
@@ -387,6 +399,7 @@ uv run scripts/nvd_access_probe.py --source all
 | `terraform apply`(스택 A)가 linked worktree 거부 | 루트 체크아웃에서 실행한다(state도 거기 있다) | §3 올리기 |
 | 호스트 포트를 바꿔야 함 | 스택 A destroy → 새 `-var`로 apply(생성 시점에만 정해진다) | [`argocd-gitops.md`](argocd-gitops.md) §6 |
 | 15432 port-forward가 접속마다 끊김 | 재기동 루프로 감싼다 | [`resource-sizing.md`](resource-sizing.md) §호스트 압박 판정 지표 |
+| run이 설정 단계에서 실패(env 미설정 `PostProcessingError`) | `.env`가 `.env.example`보다 낡았다 — 빠진 키를 센다 | §2 |
 | `dg dev` 런이 UI에 안 남음 | `DAGSTER_HOME`을 `dagster/dockerfile.d/src`로 지정 | [`operations.md`](operations.md) |
 | S3 업로드는 성공, 객체 손상 | `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` | [`conventions/k8s/checksum.md`](conventions/k8s/checksum.md) |
 | 카탈로그 나열은 되고 `load_table`이 `ACCESS_DENIED` | `ICEBERG_S3_*` 엔드포인트와 키를 한 쌍으로 맞춘다 | [`operations.md`](operations.md) |
