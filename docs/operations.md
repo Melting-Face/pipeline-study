@@ -49,6 +49,10 @@ dg.EnvVar("KEY") / os.environ["KEY"]  (코드에서 참조)
    **daemon in-process 서브프로세스**로 돌아 daemon 서비스 env로 커버된다. 향후
    `DockerRunLauncher` 등 별도 컨테이너로 바꾸면 그 컨테이너 env에도 추가해야 한다.
 4. 코드에서 `dg.EnvVar("KEY")`(필수) 또는 `os.environ.get("KEY", ...)`(선택)로 참조한다.
+5. **기존 `.env`에는 전파되지 않는다** — `.env`는 `cp`로 한 번 만든 사본이라 새 키가 저절로 생기지 않는다.
+   필수 키(미설정이면 실패하는 것)를 추가했다면 PR 본문에 적고, 받는 쪽은
+   [`setup.md`](setup.md) §2의 누락 키 확인 명령으로 센다. 위 1~4를 다 채워도 이 단계가 빠지면
+   **추가한 사람 환경에서만 돈다**.
 
 > 예) `AWS_*`·`ENDPOINT_URL`은 `x-dagster-common` 앵커에 있어 webserver·daemon에 전파된다.
 
