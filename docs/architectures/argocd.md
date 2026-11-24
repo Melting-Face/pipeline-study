@@ -52,6 +52,10 @@ Application의 자동 sync를 끈다)는 [../argocd-gitops.md](../argocd-gitops.
 | Sync Windows·Notifications·SSO·RBAC | 🔎 기각 | 로컬 단일 사용자. 읽는 사람 없는 알림은 관측이 아니다 |
 | Secret을 Git에 두기(sealed 등) | 🔎 기각 | 저장소가 public — Git엔 이름만, 값은 `scripts/k8s-secrets.sh`로 수동 생성 |
 | Spark Connect·Flink 세션을 ArgoCD로 | 🔎 기각 | 온디맨드 기동·회수를 selfHeal이 되돌린다 |
+| **Headlamp로 ArgoCD 대체** | 🔎 기각 | 층이 다르다 — ArgoCD는 Git↔클러스터를 수렴시키는 **컨트롤러**, Headlamp는 K8s **웹 UI**다. Headlamp로 고친 리소스는 Git 밖 변경이라 selfHeal이 되돌린다 |
+| **Headlamp 데스크톱 앱(보완)** | ✅ 채택 | 파드 로그·이벤트·exec처럼 ArgoCD UI가 앱 단위라 못 보여주는 진단을 맡는다. 호스트에서 기존 kubeconfig로 돌아 **클러스터 무변경·노출 0**. **읽기 습관으로 쓴다** — 편집은 위 행의 이유로 하지 않는다 |
+| Headlamp 인클러스터 배포 | 🔎 기각 | 공식 차트 기본값이 `cluster-admin` 바인딩이고 `resources`가 비어 있다(BestEffort). Ingress로 내면 **클러스터 조작 API가 함께 나간다** |
+| Headlamp Argo CD 플러그인 | 🔎 보류 | **alpha**이고 쓰기가 Argo CD의 RBAC·감사를 우회한다 — 아래 §운영 메모 |
 
 ### 데이터 보호 — 4겹 (요약)
 
@@ -72,6 +76,13 @@ Application의 자동 sync를 끈다)는 [../argocd-gitops.md](../argocd-gitops.
   `downloads.apache.org`에서 지워질 수 있다(R5).
 - repo-server probe `timeoutSeconds: 5`는 VM 공유 시 일시적 지연으로 kubelet이 재시작하는 것을 막는 교정이다.
 - 자원 값은 [../resource-sizing.md](../resource-sizing.md) 표(시작값, 실측은 수렴 관문에서).
+- **운영 UI는 셋으로 나눈다** — 수렴 상태는 ArgoCD UI, 파드 진단은 Headlamp 데스크톱 앱, 알림 보강은
+  Robusta(선행조건 뒤 — [monitoring.md](monitoring.md) §Robusta). Headlamp 플러그인은 서명·출처 증명이
+  릴리스에 붙어도 **설치기가 검사를 강제하지 않으므로** 깔지 않는 것이 기본이다.
+- **Headlamp Argo CD 플러그인을 보류한 이유** — 공식 플러그인 저장소에 디렉터리는 있으나 alpha이고 저장소의
+  공식 목록 표엔 없다. Sync·Refresh·Rollback을 **Argo CD API가 아니라 K8s API로 `Application`을 직접 patch**하므로
+  Argo CD 자체의 RBAC·감사를 거치지 않는다(권한 경계는 K8s RBAC의 `patch` 하나). Rollback은 자동 sync가 꺼진
+  앱에서만 되는데 여기 앱은 전부 `automated`라 쓸 수 없고, Sync는 자동 sync와 겹친다.
 - 관측: healthcheck·로그는 K8s 기본 경로를 쓰고 ArgoCD 전용 메트릭 수집기는 **두지 않는다**(계측 대상 없는
   수집기 금지 — [../conventions/monitoring.md](../conventions/monitoring.md)).
 

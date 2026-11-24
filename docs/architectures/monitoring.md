@@ -80,7 +80,7 @@ probe 하나를 지우면 값이 바뀌는데, 규칙 문서에 박아 두면 �
 | **Alertmanager** | 알림 묶음·중복 제거·라우팅 | 규칙은 생겼지만(`TargetDown`) **받을 사람이 없다** — 단일 사용자 학습 환경이라 수신 채널·당직 개념이 없다. 채널 없이 라우터만 두면 §2의 거짓 신호가 하나 더 늘어난다 |
 | **exporter 계열**(node·postgres 등) | 서비스별 `/metrics` | 이미 내보내는 것(SeaweedFS·Spark Operator·CNPG)부터 붙였다. **새 exporter를 더하는 것**은 그 데이터를 읽을 질문이 생긴 뒤다 — 내보내는 쪽만 늘고 읽는 쪽이 없으면 순서가 거꾸로다 |
 | **Loki** | 로그 집계·LogQL 질의 | §2를 통과하는 유일한 후보이나 **monolithic이 가볍지 않다** — 아래 §Loki |
-| **Robusta** | 알림 보강·자동 조사·K8s 이벤트 | 자원이 아니라 **데이터 거버넌스**에서 먼저 걸린다 — 아래 §Robusta |
+| **Robusta** | 알림 보강·자동 조사·K8s 이벤트 | 🚧 **채택 결정, 배포는 선행조건 뒤** — 자원이 아니라 **데이터 거버넌스**에서 먼저 걸린다 — 아래 §Robusta |
 
 #### Loki — §2는 통과하지만 «monolithic = 가볍다»가 아니다
 
@@ -97,6 +97,19 @@ Chunks cache · Results cache). 끄는 옵션은 그 문서에 없다.
 **데이터 반출 축**이 있다(아래 §운영 메모). 자원만 보면 오히려 준비가 나은 편이다 —
 차트가 컴포넌트별 `resources.requests`를 채워 두어 BestEffort 함정이 없다.
 
+**🚧 결정: 채택하되 배포는 선행조건 세 개를 통과한 뒤다**(사용자 결정 — 운영 UI 구성
+「ArgoCD UI + Headlamp(데스크톱) + Robusta」의 일부, Headlamp는 [argocd.md](argocd.md) §대안 비교).
+결정이 위 두 걸림을 지우지 않는다 — **순서를 정할 뿐**이다.
+
+| # | 선행조건 | 왜 | 통과 판정 |
+| --- | --- | --- | --- |
+| ① | **외부 전송 0 구성의 확정** | 설치 문서가 **SaaS 계정 생성에서 시작**하고, Alertmanager 연동 예시의 수신 주소도 **SaaS 엔드포인트**다. OSS 전용으로 도는 설정 키는 1차 출처에서 **미확인** | 차트 키로 SaaS sink·텔레메트리를 끈 구성을 1차 출처로 받치고, `reviewer` 보안 점검(체크리스트 E) 통과 |
+| ② | **연동 모드 파드 확정** | `enablePrometheusStack`의 **기본값이 `false`**라 기존 Prometheus 연동이 기본 경로다. values상 상주 후보는 runner·forwarder(kubewatch) 둘이지만 **템플릿을 열어 확정하지 않았다** | 차트 템플릿으로 뜨는 파드를 열거하고 각 `resources`를 [../resource-sizing.md](../resource-sizing.md)에 등록 |
+| ③ | **먹일 것과 읽을 사람** | §2 — 입력(알림)이 규칙 1건이고 수신 채널이 없다. sink는 공식 문서가 **legacy**로 표기하고 새 구성엔 HolmesGPT를 권한다 | 보강할 규칙과 **외부 전송 없는** 수신 경로를 함께 선언(없으면 관측이 아니라 무시) |
+
+배포는 `gitops/apps/robusta/` PR 하나로 하고, ①의 E 점검은 그 PR 머지 전에 둔다 — 머지가 곧 ArgoCD 자동 배포라
+**머지가 마지막 게이트**다.
+
 ### 후보를 세우는 축은 자원이 아니라 «먹일 것이 이미 있는가»
 
 비교에서 순서가 **자원 비용으로 갈리지 않았다.** [../conventions/monitoring.md](../conventions/monitoring.md)
@@ -106,12 +119,13 @@ Chunks cache · Results cache). 끄는 옵션은 그 문서에 없다.
 | | Loki | Prometheus(클러스터 안, 채택) | Robusta |
 | --- | --- | --- | --- |
 | 무엇을 먹나 | 로그 | 메트릭 | Prometheus **알림** |
-| 그 먹이가 지금 있나 | ✅ 있다 | ✅ 이미 노출 중인 엔드포인트만 붙였다 | △ 규칙 1건·수신 채널 없음 |
+| 그 먹이가 지금 있나 | ✅ 있다 | ✅ 이미 노출 중인 엔드포인트만 붙였다 | △ 규칙 1건·수신 채널 없음(채택 결정의 선행조건 ③) |
 | 붙이면 즉시 보이는 것 | Flink 오퍼레이터 메트릭(현재 로그에만 있어 질의 불가)·Dagster 스텝 로그 | 컨테이너 사용량(cAdvisor)·S3·Spark Operator·카탈로그 DB | 없음 |
 | 자원 선언 | ❌ 전부 `{}` | ✅ server·사이드카 모두 선언(초기값) | ✅ 채워져 있음 |
 
 ⇒ **권고 순서는 ① Prometheus 정리 ② Loki ③ Robusta 보류**였고 ①을 마쳤다 —
 compose 수집기를 철거하고 클러스터 안으로 옮겼다(위 §왜 이걸 골랐나). 다음 후보는 ② Loki다.
+③은 **사용자 결정으로 「선행조건부 채택」이 됐다**(위 §Robusta) — 권고 순서와 결정이 다르다는 것을 지우지 않고 남긴다.
 
 ⚠️ **자원 선언 유무는 비용의 부속이 아니라 판정의 선결 조건이다.** 차트가 `resources`를 비워 두면
 파드가 **BestEffort로 떠 `Σrequests` 합계에 0으로 잡히고**, 그러면 어떤 스택을 올려도
@@ -119,7 +133,9 @@ compose 수집기를 철거하고 클러스터 안으로 옮겼다(위 §왜 이
 ([../resource-sizing.md](../resource-sizing.md) §BestEffort). 그래서 **비용을 재기 전에 선언 유무를 먼저** 본다.
 
 **미확인으로 남은 것**(추측으로 채우지 않는다): Loki 캐시 2종의 `resources` 원문 ·
-Robusta의 기존 Prometheus 연동 모드 파드 차분 · `grafana/loki`와 `grafana-community/helm-charts`의
+Robusta의 기존 Prometheus 연동 모드에서 **실제로 뜨는 파드 목록**(번들 모드에만 뜨는 쪽 —
+Alertmanager·Prometheus·Operator·node-exporter·kube-state-metrics — 은 values로 확인, 연동 쪽은 템플릿 미개봉) ·
+Robusta 외부 전송 0 구성의 설정 키 · `grafana/loki`와 `grafana-community/helm-charts`의
 차트 정본 관계. 인용 수치는 **`grafana/loki` 기준**이며 그 경로는 이관 발표 **이후로도**
 커밋을 받고 있어 동결이 아님을 확인했다.
 
@@ -208,5 +224,8 @@ Robusta의 기존 Prometheus 연동 모드 파드 차분 · `grafana/loki`와 `g
 - Grafana Loki — Helm `values.yaml`(`resources` 기본값 원문): https://github.com/grafana/loki/blob/main/production/helm/loki/values.yaml
 - Grafana Loki — Promtail EOL 공지(2026-03-02 <!-- date-ok --> · Alloy 대체): https://grafana.com/docs/loki/latest/send-data/promtail/
 - Robusta — Open Source vs SaaS(기능 경계): https://docs.robusta.dev/master/how-it-works/oss-vs-saas.html
-- Robusta — Helm `values.yaml`(컴포넌트별 `resources`): https://github.com/robusta-dev/robusta/blob/master/helm/robusta/values.yaml
+- Robusta — Helm `values.yaml`(컴포넌트별 `resources`·`enablePrometheusStack` 기본값): https://github.com/robusta-dev/robusta/blob/master/helm/robusta/values.yaml
+- Robusta — 설치(계정 생성에서 시작하는 절차): https://docs.robusta.dev/master/setup-robusta/installation/index.html
+- Robusta — 클러스터 밖 Prometheus 연동(Alertmanager webhook 예시 수신 주소): https://docs.robusta.dev/master/configuration/alertmanager-integration/outofcluster-prometheus.html
+- Robusta — sink 목록(legacy 표기·HolmesGPT 권고): https://docs.robusta.dev/master/configuration/sinks/index.html
 - 관측 **규칙** 정본: [../conventions/monitoring.md](../conventions/monitoring.md)

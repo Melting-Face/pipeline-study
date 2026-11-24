@@ -21,8 +21,8 @@
 | [storage.md](storage.md) | ✅ | S3 호환 오브젝트 스토리지 — 클러스터 밖 컨테이너(Terraform 스택 A) | 오브젝트 스토리지 — 현행 **SeaweedFS**. 교체 검토의 동기는 **정확성 축 하나**이고, 후보 판정 수단은 **실측 프로브뿐**이다 |
 | [terraform.md](terraform.md) | ✅ | 스택 A(클러스터·S3) · 스택 B(ingress·ArgoCD) | IaC — 스택 A(cluster)·B(platform)가 ArgoCD까지 설치. 분할 축은 부트스트랩이 아니라 **폭발반경**이다 |
 | [oci.md](oci.md) | 🔎 | 쓰지 않는다(보류) — 대신 로컬 kind on Podman | 클라우드 이행 — OCI Always Free A1(ARM) + Terraform + k3s(학습·확장 경로) |
-| [trino.md](trino.md) | 🚧 | silver/gold 변환 — dbt가 k8s Trino에서 SQL을 실행하고, Trino는 Iceberg 유지보수도 맡는다 | MPP SQL 엔진 — dbt 엔진으로 **K8s upstream 앱**(재설계의 제거 결정 번복). compose Trino는 철거 |
-| [monitoring.md](monitoring.md) | ✅ | 클러스터 안 메트릭 수집 | 모니터링·관측 — 클러스터 안 Prometheus(server 단독), Grafana·Loki·Robusta 등을 **지금 쓰지 않는 이유** |
+| [trino.md](trino.md) | 🚧 | silver/gold 변환 — dbt가 k8s Trino에서 SQL을 실행하고, Trino는 Iceberg 유지보수도 맡는다 | MPP SQL 엔진 — dbt 엔진으로 **K8s upstream 앱**(재설계의 제거 결정 번복). compose Trino는 철거. StarRocks·ClickHouse 대안 비교(판정축은 **카탈로그 공유**) |
+| [monitoring.md](monitoring.md) | ✅ | 클러스터 안 메트릭 수집 | 모니터링·관측 — 클러스터 안 Prometheus(server 단독), Grafana·Loki 등을 **지금 쓰지 않는 이유**와 Robusta의 **채택 선행조건** |
 | [kafka.md](kafka.md) | 🔎 | 쓰지 않는다 — 대신 Iceberg bronze 스트리밍 읽기가 스트림 소스다 | 이벤트 스트리밍 — **미도입 유지**(스트림 소스가 Iceberg로 대체). 근거 인덱스 + 재검토 트리거 |
 | [duckdb.md](duckdb.md) | 🔎 | 쓰지 않는다 — 대신 조회 엔진은 k8s Trino | 인프로세스 OLAP — **미채택**. 선언은 남아 있었고 실행 경로가 없었다 |
 
