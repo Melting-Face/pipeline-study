@@ -61,6 +61,13 @@
 | [containers.conf(5)](https://raw.githubusercontent.com/containers/common/main/docs/containers.conf.5.md) — `pids_limit`(0=무제한)·드롭인 경로 | ✅ 채택(로컬 K8s) | [conventions/k8s/pids.md](conventions/k8s/pids.md) |
 | [systemd-system.conf(5)](https://raw.githubusercontent.com/systemd/systemd/main/man/systemd-system.conf.xml) — `DefaultTasksMax` = pid_max·threads-max·root cgroup pids.max 최솟값의 15% | ✅ 채택(로컬 K8s) | [conventions/k8s/pids.md](conventions/k8s/pids.md) |
 | [Helm](https://helm.sh/docs/) | 🔎 K8s 패키징 | [conventions/k8s.md](conventions/k8s.md) |
+| [Headlamp — 설치·인증](https://headlamp.dev/docs/latest/installation/) | ✅ 채택(데스크톱 앱) | [architectures/argocd.md](architectures/argocd.md) |
+| [Headlamp 차트 values](https://raw.githubusercontent.com/kubernetes-sigs/headlamp/main/charts/headlamp/values.yaml) — 기본 `cluster-admin` | 🔎 인클러스터 기각 | [architectures/argocd.md](architectures/argocd.md) |
+| [Headlamp Argo CD 플러그인](https://raw.githubusercontent.com/headlamp-k8s/plugins/main/argocd/README.md) — 직접 patch | 🔎 보류 | [architectures/argocd.md](architectures/argocd.md) |
+| [Headlamp 플러그인 릴리스 검증](https://raw.githubusercontent.com/headlamp-k8s/plugins/main/docs/releases.md) — 설치기 미강제 | 🔎 보류 | [architectures/argocd.md](architectures/argocd.md) |
+| [Robusta](https://docs.robusta.dev/master/) | 🚧 채택 결정(선행조건 뒤 배포) | [architectures/monitoring.md](architectures/monitoring.md) |
+| [StarRocks — Iceberg catalog](https://docs.starrocks.io/docs/data_source/catalog/iceberg/) | 🔎 보류 | [architectures/trino.md](architectures/trino.md) |
+| [ClickHouse — DataLakeCatalog](https://clickhouse.com/docs/reference/engines/database-engines/datalake) | 🔎 미채택 | [architectures/trino.md](architectures/trino.md) |
 | [Prometheus](https://prometheus.io/docs/introduction/overview/) | ✅ 채택(클러스터 안 server 단독) | [architectures/monitoring.md](architectures/monitoring.md) · [conventions/monitoring.md](conventions/monitoring.md) |
 | [Apache Kafka](https://kafka.apache.org/) | 🔎 미도입 유지 | [architectures/kafka.md](architectures/kafka.md) · [architectures/flink.md](architectures/flink.md) |
 | [DuckDB](https://duckdb.org/docs/) | 🔎 미채택 | [architectures/duckdb.md](architectures/duckdb.md) · [conventions/analysis.md](conventions/analysis.md) |

@@ -34,11 +34,11 @@
 | [Spark](architectures/spark.md) | 대용량 배치 엔진 — Spark Operator가 `SparkApplication`을 실행한다 | 재설계 컴퓨트 |
 | [Flink](architectures/flink.md) | 스트림 엔진 PoC — Iceberg 스트리밍 읽기, 세션 클러스터는 쓸 때만 띄운다 | 재설계 컴퓨트 |
 | [Kubernetes](architectures/k8s.md) | 로컬 단일 노드 플랫폼 — kind on Podman | 로컬 K8s 플랫폼 |
-| [ArgoCD](architectures/argocd.md) | `gitops/`의 선언으로 클러스터 앱을 수렴시킨다 | GitOps 채택 근거와 기각한 대안 |
+| [ArgoCD](architectures/argocd.md) | `gitops/`의 선언으로 클러스터 앱을 수렴시킨다 | GitOps 채택 근거와 기각한 대안(Headlamp 대체 포함) |
 | [오브젝트 스토리지](architectures/storage.md) | S3 호환 오브젝트 스토리지 — 클러스터 밖 컨테이너(Terraform 스택 A) | 교체 검토의 동기는 **정확성 축 하나**, 판정 수단은 실측 프로브 |
 | [Terraform](architectures/terraform.md) | 스택 A(클러스터·S3) · 스택 B(ingress·ArgoCD) | 폭발반경 기준 스택 분할 |
 | [오퍼레이터 3종](architectures/operators.md) | Spark·Flink·CNPG 오퍼레이터 — CR 한 장으로 엔진과 카탈로그 DB를 선언한다 | **왜 셋 중 둘만 전용 이미지를 굽는가**(판단축은 런타임의 확장 적재 방식) |
-| [모니터링·관측](architectures/monitoring.md) | 클러스터 안 메트릭 수집 | Grafana·Loki·Robusta 등을 **지금 쓰지 않는 이유** |
+| [모니터링·관측](architectures/monitoring.md) | 클러스터 안 메트릭 수집 | Grafana·Loki 등을 **지금 쓰지 않는 이유**, Robusta의 **채택 선행조건** |
 | [Docker/Compose](architectures/docker.md) | 호스트 보조 서비스 — `compose.yml`의 `profiles`로 전부 opt-in 기동한다 | 현행 채택 |
 | [OCI + Terraform + k3s](architectures/oci.md) | 쓰지 않는다(보류) — 대신 로컬 kind on Podman | 클라우드 이행 경로 |
 | [Kafka](architectures/kafka.md) | 쓰지 않는다 — 대신 Iceberg bronze 스트리밍 읽기가 스트림 소스다 | 미도입 유지. 근거 인덱스와 재검토 트리거 |

@@ -60,6 +60,24 @@ coordinator가 SQL을 분해해 worker들에 분산하고, 메모리 기반 파�
   단일 PC 자원(6/16) 절약과 엔진 수 축소가 목적이나, **성숙한 인터랙티브 SQL·`dbt-trino`를 잃는 비용**을 감수한다
   ([redesign.md](../redesign.md) §5). 배치 SQL은 dbt-spark, 대규모 rewrite/compaction은 Spark로 이관([spark.md](spark.md)).
 
+### 대안 비교 — 같은 카탈로그를 볼 수 있는 OLAP 엔진
+
+판정 순서는 자원보다 **카탈로그 공유**가 먼저다 — 세 엔진이 같은 Iceberg JDBC 카탈로그(`iceberg`)를 보는 것이
+이 스택의 전제라, 그걸 못 보는 엔진은 자원을 잴 필요가 없다.
+
+| 후보 | 판정 | 이유 |
+| --- | --- | --- |
+| **ClickHouse** | 🔎 미채택 | 🔴 **Iceberg JDBC 카탈로그 미지원**(Glue·Unity·REST·Hive 등만) — 첫 관문에서 걸린다 |
+| **StarRocks** | 🔎 보류 | ✅ JDBC 카탈로그와 `ALTER TABLE … EXECUTE` 유지보수 지원. 🔴 **운영 권장이 x86·AVX2** |
+
+- **ClickHouse** — 카탈로그 없이 `metadata.json`을 직접 읽는 경로는 있으나 카탈로그의 최신 스냅샷을
+  따라가는지 미확인이다. Iceberg 쓰기는 Beta, 유지보수는 experimental이다.
+- **StarRocks** — `iceberg.catalog.type=jdbc`에 PostgreSQL URI를 받는다. 다만 arm64 호스트(Apple Silicon 위 kind)에서는
+  기동 여부가 먼저 걸리고, 카탈로그 이름을 `iceberg`로 맞추는 방법·체크섬 설정·단일 FE+BE 최소 자원은 미확인이다.
+
+**두 엔진 모두 날짜 차이 의미론이 Trino와 같다는 보장이 없다** — StarRocks `datediff`는 날짜 부분만,
+ClickHouse `dateDiff`는 경계 교차 횟수를 센다. 엔진을 더하면 [교훈](#교훈)의 대조 부담이 그대로 생긴다.
+
 ## 운영 메모 (k8s)
 
 > 유지보수 프로시저는 Spark로 갔다가 **Trino `ALTER TABLE ... EXECUTE`로 되돌아왔다**
@@ -81,3 +99,10 @@ coordinator가 SQL을 분해해 worker들에 분산하고, 메모리 기반 파�
 - Trino 문서: https://trino.io/docs/current/
 - Iceberg connector: https://trino.io/docs/current/connector/iceberg.html
 - 릴리스 유형(LTS): https://trino.io/docs/current/release.html
+- StarRocks — Iceberg catalog(JDBC 타입·속성): https://docs.starrocks.io/docs/data_source/catalog/iceberg/
+- StarRocks — Iceberg procedures(`ALTER TABLE … EXECUTE`): https://docs.starrocks.io/docs/data_source/catalog/iceberg/procedures/
+- StarRocks — 배포 전제(x86·AVX2): https://docs.starrocks.io/docs/deployment/preparation/deployment_prerequisites/
+- StarRocks — `datediff`: https://docs.starrocks.io/docs/sql-reference/sql-functions/date-time-functions/datediff/
+- ClickHouse — DataLakeCatalog(지원 카탈로그 타입): https://clickhouse.com/docs/reference/engines/database-engines/datalake
+- ClickHouse — 데이터레이크 지원 매트릭스(쓰기 Beta·유지보수 experimental): https://clickhouse.com/docs/use-cases/data-lake/support-matrix
+- ClickHouse — 날짜 함수(`dateDiff` 경계 교차): https://clickhouse.com/docs/sql-reference/functions/date-time-functions
